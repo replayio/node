@@ -2611,7 +2611,7 @@ static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
     // Compile any uncompiled functions found in the script.
     bool was_compiled = false;
     for (const auto& candidate : candidates) {
-      IsCompiledScope is_compiled_scope(candidate->is_compiled_scope());
+      IsCompiledScope is_compiled_scope(candidate->is_compiled_scope(isolate));
       if (!is_compiled_scope.is_compiled()) {
         if (!Compiler::Compile(candidate, Compiler::CLEAR_EXCEPTION,
                                &is_compiled_scope)) {
@@ -3048,11 +3048,11 @@ FetchProperties(Isolate* isolate, const std::string& objectIdRaw) {
   protocol::String objectId(objectIdRaw.c_str());
 
   std::unique_ptr<protocol::Array<protocol::Runtime::PropertyDescriptor>> properties;
-  protocol::detail::PtrMaybe<protocol::Array<protocol::Runtime::InternalPropertyDescriptor>>
+  v8_crdtp::detail::PtrMaybe<protocol::Array<protocol::Runtime::InternalPropertyDescriptor>>
     maybeInternalProperties;
-  protocol::detail::PtrMaybe<protocol::Array<protocol::Runtime::PrivatePropertyDescriptor>>
+  v8_crdtp::detail::PtrMaybe<protocol::Array<protocol::Runtime::PrivatePropertyDescriptor>>
     maybePrivateProperties;
-  protocol::detail::PtrMaybe<protocol::Runtime::ExceptionDetails> exceptionDetails;
+  v8_crdtp::detail::PtrMaybe<protocol::Runtime::ExceptionDetails> exceptionDetails;
   Response response =
     gInspectorSession->runtimeAgent()->getProperties(objectId, /* ownProperties */ true,
                                                      /* accessorPropertiesOnly */ false,

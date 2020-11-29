@@ -588,6 +588,9 @@ void RegisterProcessMethodsExternalReferences(
   registry->Register(Uptime);
   registry->Register(PatchProcessObject);
   registry->Register(GetFastAPIs);
+
+  registry->Register(v8::FunctionCallbackIsRecordingOrReplaying);
+  registry->Register(v8::FunctionCallbackRecordReplayOnConsoleAPI);
 }
 
 }  // namespace node
