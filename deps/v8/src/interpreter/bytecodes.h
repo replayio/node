@@ -364,6 +364,11 @@ namespace interpreter {
   /* Block Coverage */                                                         \
   V(IncBlockCounter, AccumulatorUse::kNone, OperandType::kIdx)                 \
                                                                                \
+  /* Record Replay */                                                          \
+  V(RecordReplayIncExecutionProgressCounter, AccumulatorUse::kNone)            \
+  V(RecordReplayInstrumentation, AccumulatorUse::kNone, OperandType::kIdx)     \
+  V(RecordReplayAssertValue, AccumulatorUse::kReadWrite)                       \
+                                                                               \
   /* Execution Abort (internal error) */                                       \
   V(Abort, AccumulatorUse::kNone, OperandType::kIdx)                           \
                                                                                \

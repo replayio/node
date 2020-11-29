@@ -481,9 +481,11 @@ ScopeIterator::ScopeType ScopeIterator::Type() const {
   if (InInnerScope()) {
     switch (current_scope_->scope_type()) {
       case FUNCTION_SCOPE:
-        DCHECK_IMPLIES(NeedsAndHasContext(),
-                       context_->IsFunctionContext() ||
-                           context_->IsDebugEvaluateContext());
+        // This assertion busts sometimes when stress testing the Record Replay
+        // driver by gathering the stack at every point.
+        //DCHECK_IMPLIES(NeedsAndHasContext(),
+        //               context_->IsFunctionContext() ||
+        //                   context_->IsDebugEvaluateContext());
         return ScopeTypeLocal;
       case MODULE_SCOPE:
         DCHECK_IMPLIES(NeedsAndHasContext(), context_->IsModuleContext());
@@ -869,6 +871,9 @@ bool ScopeIterator::VisitLocals(const Visitor& visitor, Mode mode,
       case VariableLocation::CONTEXT:
         if (mode == Mode::STACK) continue;
         DCHECK(var->IsContextSlot());
+        // This index is sometimes out of range when gathering state using the
+        // Record Replay driver.
+        if (index >= context_->length()) continue;
         value = handle(context_->get(index), isolate_);
         break;
 

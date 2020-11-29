@@ -310,7 +310,7 @@ struct InitializationResult {
   std::vector<std::string> exec_args;
   bool early_return = false;
 };
-InitializationResult InitializeOncePerProcess(int argc, char** argv);
+InitializationResult InitializeOncePerProcess(int* pargc, char*** pargv);
 void TearDownOncePerProcess();
 void SetIsolateErrorHandlers(v8::Isolate* isolate, const IsolateSettings& s);
 void SetIsolateMiscHandlers(v8::Isolate* isolate, const IsolateSettings& s);

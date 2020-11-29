@@ -905,7 +905,9 @@ void InjectedScript::Scope::installCommandLineAPI() {
 void InjectedScript::Scope::ignoreExceptionsAndMuteConsole() {
   DCHECK(!m_ignoreExceptionsAndMuteConsole);
   m_ignoreExceptionsAndMuteConsole = true;
-  m_inspector->client()->muteMetrics(m_contextGroupId);
+  if (m_inspector->client()) {
+    m_inspector->client()->muteMetrics(m_contextGroupId);
+  }
   m_inspector->muteExceptions(m_contextGroupId);
   m_previousPauseOnExceptionsState =
       setPauseOnExceptionsState(v8::debug::NoBreakOnException);
@@ -946,7 +948,9 @@ void InjectedScript::Scope::cleanup() {
 InjectedScript::Scope::~Scope() {
   if (m_ignoreExceptionsAndMuteConsole) {
     setPauseOnExceptionsState(m_previousPauseOnExceptionsState);
-    m_inspector->client()->unmuteMetrics(m_contextGroupId);
+    if (m_inspector->client()) {
+      m_inspector->client()->unmuteMetrics(m_contextGroupId);
+    }
     m_inspector->unmuteExceptions(m_contextGroupId);
   }
   if (m_userGesture) m_inspector->client()->endUserGesture();

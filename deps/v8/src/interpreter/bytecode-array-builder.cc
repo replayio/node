@@ -18,6 +18,9 @@
 
 namespace v8 {
 namespace internal {
+
+extern int RegisterInstrumentationSite(const char* kind, int source_position);
+
 namespace interpreter {
 
 class RegisterTransferWriter final
@@ -180,6 +183,9 @@ void BytecodeArrayBuilder::WriteJump(BytecodeNode* node, BytecodeLabel* label) {
 
 void BytecodeArrayBuilder::WriteJumpLoop(BytecodeNode* node,
                                          BytecodeLoopHeader* loop_header) {
+  if (IsRecordingOrReplaying()) {
+    RecordReplayIncExecutionProgressCounter();
+  }
   AttachOrEmitDeferredSourceInfo(node);
   bytecode_array_writer_.WriteJumpLoop(node, loop_header);
 }
@@ -735,6 +741,9 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadGlobal(const AstRawString* name,
     DCHECK_EQ(typeof_mode, NOT_INSIDE_TYPEOF);
     OutputLdaGlobal(name_index, feedback_slot);
   }
+  if (IsRecordingOrReplaying()) {
+    OutputRecordReplayAssertValue();
+  }
   return *this;
 }
 
@@ -761,6 +770,9 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadContextSlot(
     DCHECK_EQ(mutability, kMutableSlot);
     OutputLdaContextSlot(context, slot_index, depth);
   }
+  if (IsRecordingOrReplaying()) {
+    OutputRecordReplayAssertValue();
+  }
   return *this;
 }
 
@@ -783,6 +795,9 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadLookupSlot(
   } else {
     DCHECK_EQ(typeof_mode, NOT_INSIDE_TYPEOF);
     OutputLdaLookupSlot(name_index);
+  }
+  if (IsRecordingOrReplaying()) {
+    OutputRecordReplayAssertValue();
   }
   return *this;
 }
@@ -827,6 +842,9 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadNamedProperty(
     Register object, const AstRawString* name, int feedback_slot) {
   size_t name_index = GetConstantPoolEntry(name);
   OutputLdaNamedProperty(object, name_index, feedback_slot);
+  if (IsRecordingOrReplaying()) {
+    OutputRecordReplayAssertValue();
+  }
   return *this;
 }
 
@@ -841,12 +859,18 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadNamedPropertyNoFeedback(
     Register object, const AstRawString* name) {
   size_t name_index = GetConstantPoolEntry(name);
   OutputLdaNamedPropertyNoFeedback(object, name_index);
+  if (IsRecordingOrReplaying()) {
+    OutputRecordReplayAssertValue();
+  }
   return *this;
 }
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::LoadKeyedProperty(
     Register object, int feedback_slot) {
   OutputLdaKeyedProperty(object, feedback_slot);
+  if (IsRecordingOrReplaying()) {
+    OutputRecordReplayAssertValue();
+  }
   return *this;
 }
 
@@ -1338,6 +1362,23 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::Debugger() {
 BytecodeArrayBuilder& BytecodeArrayBuilder::IncBlockCounter(
     int coverage_array_slot) {
   OutputIncBlockCounter(coverage_array_slot);
+  return *this;
+}
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayIncExecutionProgressCounter() {
+  OutputRecordReplayIncExecutionProgressCounter();
+  return *this;
+}
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayAssertValue() {
+  OutputRecordReplayAssertValue();
+  return *this;
+}
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayInstrumentation(const char* kind,
+                                                                        int source_position) {
+  int index = RegisterInstrumentationSite(kind, source_position);
+  OutputRecordReplayInstrumentation(index);
   return *this;
 }
 

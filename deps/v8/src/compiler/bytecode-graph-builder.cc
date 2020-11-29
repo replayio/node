@@ -3594,6 +3594,34 @@ void BytecodeGraphBuilder::VisitIncBlockCounter() {
   NewNode(op, closure, coverage_array_slot);
 }
 
+void BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
+  PrepareEagerCheckpoint();
+  Node* closure = GetFunctionClosure();
+  const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayAssertExecutionProgress);
+
+  Node* node = NewNode(op, closure);
+  environment()->RecordAfterState(node, Environment::kAttachFrameState);
+}
+
+void BytecodeGraphBuilder::VisitRecordReplayInstrumentation() {
+  PrepareEagerCheckpoint();
+  Node* closure = GetFunctionClosure();
+  Node* index_slot = jsgraph()->Constant(bytecode_iterator().GetIndexOperand(0));
+  const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayInstrumentation);
+
+  Node* node = NewNode(op, closure, index_slot);
+  environment()->RecordAfterState(node, Environment::kAttachFrameState);
+}
+
+void BytecodeGraphBuilder::VisitRecordReplayAssertValue() {
+  PrepareEagerCheckpoint();
+  Node* value = environment()->LookupAccumulator();
+  const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayAssertValue);
+
+  Node* node = NewNode(op, value);
+  environment()->BindAccumulator(node, Environment::kAttachFrameState);
+}
+
 void BytecodeGraphBuilder::VisitForInEnumerate() {
   Node* receiver =
       environment()->LookupRegister(bytecode_iterator().GetRegisterOperand(0));

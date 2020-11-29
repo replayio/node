@@ -479,6 +479,9 @@ class V8_EXPORT_PRIVATE StackTraceIterator {
   virtual v8::MaybeLocal<v8::String> EvaluateWasm(
       internal::Vector<const internal::byte> source, int frame_index) = 0;
 
+  virtual internal::StackFrameId FrameId() = 0;
+  virtual int InlineFrameIndex() = 0;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(StackTraceIterator);
 };

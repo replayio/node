@@ -1554,6 +1554,8 @@ class Environment : public MemoryRetainer {
   // a given pointer.
   std::unordered_map<char*, std::unique_ptr<v8::BackingStore>>
       released_allocated_buffers_;
+
+  int record_replay_task_queue_async_id_ = 0;
 };
 
 }  // namespace node

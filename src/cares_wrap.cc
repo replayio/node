@@ -60,6 +60,9 @@
 #endif
 
 namespace node {
+
+extern void RecordReplayAssert(const char* format, ...);
+
 namespace cares_wrap {
 
 using v8::Array;
@@ -491,6 +494,7 @@ void ChannelWrap::Setup() {
 }
 
 void ChannelWrap::StartTimer() {
+  RecordReplayAssert("ChannelWrap::StartTimer %d", *(int*)cares_channel());
   if (timer_handle_ == nullptr) {
     timer_handle_ = new uv_timer_t();
     timer_handle_->data = static_cast<void*>(this);
@@ -692,6 +696,8 @@ class QueryWrap : public AsyncWrap {
   }
 
   void QueueResponseCallback(int status) {
+    RecordReplayAssert("QueryWrap::QueueResponseCallback");
+
     BaseObjectPtr<QueryWrap> strong_ref{this};
     env()->SetImmediate([this, strong_ref](Environment*) {
       AfterResponse();
@@ -706,6 +712,8 @@ class QueryWrap : public AsyncWrap {
 
   void CallOnComplete(Local<Value> answer,
                       Local<Value> extra = Local<Value>()) {
+    RecordReplayAssert("QueryWrap::CallOnComplete");
+
     HandleScope handle_scope(env()->isolate());
     Context::Scope context_scope(env()->context());
     Local<Value> argv[] = {
@@ -721,6 +729,8 @@ class QueryWrap : public AsyncWrap {
   }
 
   void ParseError(int status) {
+    RecordReplayAssert("QueryWrap::ParseError");
+
     CHECK_NE(status, ARES_SUCCESS);
     HandleScope handle_scope(env()->isolate());
     Context::Scope context_scope(env()->context());
@@ -1889,6 +1899,8 @@ static void Query(const FunctionCallbackInfo<Value>& args) {
 
 
 void AfterGetAddrInfo(uv_getaddrinfo_t* req, int status, struct addrinfo* res) {
+  RecordReplayAssert("AfterGetAddrInfo");
+
   std::unique_ptr<GetAddrInfoReqWrap> req_wrap {
       static_cast<GetAddrInfoReqWrap*>(req->data)};
   Environment* env = req_wrap->env();
@@ -1959,6 +1971,8 @@ void AfterGetNameInfo(uv_getnameinfo_t* req,
                       int status,
                       const char* hostname,
                       const char* service) {
+  RecordReplayAssert("AfterGetNameInfo");
+
   std::unique_ptr<GetNameInfoReqWrap> req_wrap {
       static_cast<GetNameInfoReqWrap*>(req->data)};
   Environment* env = req_wrap->env();

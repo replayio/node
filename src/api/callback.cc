@@ -17,6 +17,8 @@ using v8::Object;
 using v8::String;
 using v8::Value;
 
+extern void RecordReplayAssert(const char* format, ...);
+
 CallbackScope::CallbackScope(Isolate* isolate,
                              Local<Object> object,
                              async_context asyncContext)
@@ -137,6 +139,8 @@ void InternalCallbackScope::Close() {
   // The tick is triggered before JS land calls SetTickCallback
   // to initializes the tick callback during bootstrap.
   CHECK(!tick_callback.IsEmpty());
+
+  RecordReplayAssert("InternalCallbackScope::Close CallTickCallback");
 
   if (tick_callback->Call(env_->context(), process, 0, nullptr).IsEmpty()) {
     failed_ = true;

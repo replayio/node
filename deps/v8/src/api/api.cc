@@ -132,6 +132,8 @@
 #endif  // V8_OS_WIN64
 #endif  // V8_OS_WIN
 
+#include <dlfcn.h>
+
 #define TRACE_BS(...)                                     \
   do {                                                    \
     if (i::FLAG_trace_backing_store) PrintF(__VA_ARGS__); \
@@ -11111,6 +11113,210 @@ CFunction::CFunction(const void* address, const CFunctionInfo* type_info)
       }
     }
   }
+}
+
+static bool gRecordingOrReplaying;
+static void (*gRecordReplayOnScriptParsed)(const char* id, const char* kind,
+                                           const char* url);
+static void (*gRecordReplayOnConsoleMessage)(const char* level, const char* source,
+                                             int firstStackFrame,
+                                             const char* params);
+static void (*gRecordReplayOnExceptionUnwind)();
+
+typedef char* (CommandCallbackRaw)(const char* params);
+static void (*gRecordReplaySetCommandCallback)(const char* method, CommandCallbackRaw callback);
+
+static void (*gRecordReplayPrintVA)(const char* format, va_list args);
+static void (*gRecordReplayInstrument)(const char* kind, const char* function, int offset);
+static void (*gRecordReplayAssert)(const char*, va_list);
+static void (*gRecordReplayBytes)(const char* why, void* buf, size_t size);
+static uintptr_t (*gRecordReplayValue)(const char* why, uintptr_t v);
+static uint64_t* (*gRecordReplayProgressCounter)();
+
+namespace internal {
+
+void RecordReplayOnScriptParsed(Isolate* isolate, const char* id,
+                                const char* kind, const char* url) {
+  DCHECK(gRecordingOrReplaying);
+  gRecordReplayOnScriptParsed(id, kind, url);
+}
+
+void RecordReplayOnConsoleMessage(Isolate* isolate, const char* level,
+                                  const char* source, int firstStackFrame,
+                                  Handle<Object> argsObj) {
+  DCHECK(gRecordingOrReplaying);
+
+  Handle<Object> undefined = isolate->factory()->undefined_value();
+  Handle<Object> argsStr =
+    JsonStringify(isolate, argsObj, undefined, undefined).ToHandleChecked();
+  std::unique_ptr<char[]> args = String::cast(*argsStr).ToCString();
+
+  gRecordReplayOnConsoleMessage(level, source, firstStackFrame, args.get());
+}
+
+void RecordReplayOnExceptionUnwind() {
+  DCHECK(gRecordingOrReplaying);
+  gRecordReplayOnExceptionUnwind();
+}
+
+void RecordReplayPrint(const char* format, ...) {
+  va_list args;
+  va_start(args, format);
+  gRecordReplayPrintVA(format, args);
+  va_end(args);
+}
+
+void RecordReplayAssert(const char* format, ...) {
+  if (gRecordingOrReplaying) {
+    va_list ap;
+    va_start(ap, format);
+    gRecordReplayAssert(format, ap);
+    va_end(ap);
+  }
+}
+
+void RecordReplayBytes(const char* why, void* buf, size_t size) {
+  if (gRecordingOrReplaying) {
+    gRecordReplayBytes(why, buf, size);
+  }
+}
+
+uintptr_t RecordReplayValue(const char* why, uintptr_t v) {
+  if (gRecordingOrReplaying) {
+    return gRecordReplayValue(why, v);
+  }
+  return v;
+}
+
+uint64_t* RecordReplayProgressCounter() {
+  return gRecordReplayProgressCounter();
+}
+
+Handle<String> CStringToHandle(Isolate* isolate, const char* str) {
+  Vector<const uint8_t> nstr((const uint8_t*) str, strlen(str));
+  return isolate->factory()->NewStringFromOneByte(nstr).ToHandleChecked();
+}
+
+extern Handle<Object> RecordReplayGetScriptSource(Isolate* isolate, Handle<Object> params);
+extern Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
+                                                      Handle<Object> params);
+extern Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
+                                                               Handle<Object> params);
+extern Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isolate,
+                                                               Handle<Object> params);
+extern Handle<Object> RecordReplayGetAllFrames(Isolate* isolate, Handle<Object> params);
+extern Handle<Object> RecordReplayGetScope(Isolate* isolate, Handle<Object> params);
+extern Handle<Object> RecordReplayGetObjectPreview(Isolate* isolate, Handle<Object> params);
+extern Handle<Object> RecordReplayEvaluateInFrame(Isolate* isolate, Handle<Object> params);
+extern Handle<Object> RecordReplayGetObjectProperty(Isolate* isolate, Handle<Object> params);
+//extern Handle<Object> RecordReplayCallFunction(Isolate* isolate, Handle<Object> params);
+
+typedef Handle<Object> (*CommandCallback)(Isolate* isolate, Handle<Object> params);
+template <CommandCallback Callback>
+static char* CommandCallbackWrapper(const char* params) {
+  Isolate* isolate = Isolate::Current();
+  Handle<Object> undefined = isolate->factory()->undefined_value();
+  Handle<String> paramsStr = CStringToHandle(isolate, params);
+
+  MaybeHandle<Object> maybeParams = JsonParser<uint8_t>::Parse(isolate, paramsStr, undefined);
+  if (maybeParams.is_null()) {
+    RecordReplayPrint("Error: CommandCallbackWrapper Parse %s failed", params);
+    V8_IMMEDIATE_CRASH();
+  }
+
+  Handle<Object> paramsObj = maybeParams.ToHandleChecked();
+  Handle<Object> rvObj = Callback(isolate, paramsObj);
+
+  Handle<Object> rvStr =
+    JsonStringify(isolate, rvObj, undefined, undefined).ToHandleChecked();
+  std::unique_ptr<char[]> rv = String::cast(*rvStr).ToCString();
+  return strdup(rv.get());
+}
+
+static void InstallCommandCallbacks() {
+  gRecordReplaySetCommandCallback("Debugger.getScriptSource",
+                                  CommandCallbackWrapper<RecordReplayGetScriptSource>);
+  gRecordReplaySetCommandCallback("Debugger.getPossibleBreakpoints",
+                                  CommandCallbackWrapper<RecordReplayGetPossibleBreakpoints>);
+  gRecordReplaySetCommandCallback("Internal.convertLocationToFunctionOffset",
+                                  CommandCallbackWrapper<RecordReplayConvertLocationToFunctionOffset>);
+  gRecordReplaySetCommandCallback("Internal.convertFunctionOffsetToLocation",
+                                  CommandCallbackWrapper<RecordReplayConvertFunctionOffsetToLocation>);
+  gRecordReplaySetCommandCallback("Pause.getAllFrames",
+                                  CommandCallbackWrapper<RecordReplayGetAllFrames>);
+  gRecordReplaySetCommandCallback("Pause.getScope",
+                                  CommandCallbackWrapper<RecordReplayGetScope>);
+  gRecordReplaySetCommandCallback("Pause.getObjectPreview",
+                                  CommandCallbackWrapper<RecordReplayGetObjectPreview>);
+  gRecordReplaySetCommandCallback("Pause.evaluateInFrame",
+                                  CommandCallbackWrapper<RecordReplayEvaluateInFrame>);
+  gRecordReplaySetCommandCallback("Pause.getObjectProperty",
+                                  CommandCallbackWrapper<RecordReplayGetObjectProperty>);
+  //gRecordReplaySetCommandCallback("Pause.callFunction",
+  //                                CommandCallbackWrapper<RecordReplayCallFunction>);
+}
+
+void RecordReplayInstrument(const char* kind, const char* function, int offset) {
+  gRecordReplayInstrument(kind, function, offset);
+}
+
+} // namespace internal
+
+template <typename Src, typename Dst>
+static inline void CastPointer(const Src src, Dst* dst) {
+  static_assert(sizeof(Src) == sizeof(uintptr_t), "bad size");
+  static_assert(sizeof(Dst) == sizeof(uintptr_t), "bad size");
+  memcpy((void*)dst, (const void*)&src, sizeof(uintptr_t));
+}
+
+template <typename T>
+static void RecordReplayLoadSymbol(const char* name, T& function) {
+  void* sym = dlsym(RTLD_DEFAULT, name);
+  if (!sym) {
+    fprintf(stderr, "Could not find %s in Record Replay driver, crashing.\n", name);
+    V8_IMMEDIATE_CRASH();
+  }
+
+  CastPointer(sym, &function);
+}
+
+THREAD_LOCAL bool gIsMainThread;
+
+void SetRecordingOrReplaying() {
+  gRecordingOrReplaying = true;
+  gIsMainThread = true;
+
+  RecordReplayLoadSymbol("RecordReplayOnScriptParsed", gRecordReplayOnScriptParsed);
+  RecordReplayLoadSymbol("RecordReplayOnConsoleMessage", gRecordReplayOnConsoleMessage);
+  RecordReplayLoadSymbol("RecordReplayOnExceptionUnwind", gRecordReplayOnExceptionUnwind);
+  RecordReplayLoadSymbol("RecordReplaySetCommandCallback", gRecordReplaySetCommandCallback);
+  RecordReplayLoadSymbol("RecordReplayPrintVA", gRecordReplayPrintVA);
+  RecordReplayLoadSymbol("RecordReplayAssert", gRecordReplayAssert);
+  RecordReplayLoadSymbol("RecordReplayBytes", gRecordReplayBytes);
+  RecordReplayLoadSymbol("RecordReplayValue", gRecordReplayValue);
+  RecordReplayLoadSymbol("RecordReplayInstrument", gRecordReplayInstrument);
+  RecordReplayLoadSymbol("RecordReplayProgressCounter", gRecordReplayProgressCounter);
+
+  internal::InstallCommandCallbacks();
+}
+
+bool IsRecordingOrReplaying() {
+  return gRecordingOrReplaying;
+}
+
+static bool gTrackingExecution;
+
+void SetTrackingExecution() {
+  gTrackingExecution = true;
+  gIsMainThread = true;
+}
+
+bool IsTrackingExecution() {
+  return gTrackingExecution;
+}
+
+bool IsMainThread() {
+  return gIsMainThread;
 }
 
 namespace internal {

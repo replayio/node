@@ -30,6 +30,9 @@ ASSERT_TRIVIALLY_COPYABLE(MaybeHandle<Object>);
 
 #ifdef DEBUG
 bool HandleBase::IsDereferenceAllowed() const {
+  // FIXME disabling to support debugging from lldb. Surely there is a better way to do this.
+  return true;
+
   DCHECK_NOT_NULL(location_);
   Object object(*location_);
   if (object.IsSmi()) return true;

@@ -31,6 +31,10 @@
 #include "src/snapshot/snapshot.h"
 #include "src/wasm/wasm-objects-inl.h"
 
+#include <dlfcn.h>
+#include <sys/time.h>
+#include <unistd.h>
+
 namespace v8 {
 namespace internal {
 
@@ -863,6 +867,295 @@ RUNTIME_FUNCTION(Runtime_ProfileCreateSnapshotDataBlob) {
   }
 
   FreeCurrentEmbeddedBlob();
+
+  return ReadOnlyRoots(isolate).undefined_value();
+}
+
+extern void RecordReplayAssert(const char* format, ...);
+extern uint64_t* RecordReplayProgressCounter();
+
+static inline void RecordReplayIncrementProgressCounter() {
+  // Note: The counter can be null, depending on the thread.
+  uint64_t* counter = RecordReplayProgressCounter();
+  if (counter) {
+    ++*counter;
+  }
+}
+
+RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(1, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+
+  RecordReplayIncrementProgressCounter();
+
+  Handle<SharedFunctionInfo> shared(function->shared(), isolate);
+  Handle<Script> script(Script::cast(shared->script()), isolate);
+
+  Script::PositionInfo info;
+  Script::GetPositionInfo(script, shared->StartPosition(), &info, Script::WITH_OFFSET);
+
+  if (script->name().IsUndefined()) {
+    RecordReplayAssert("ExecutionProgress <none>:%d:%d",
+                       info.line + 1, info.column);
+  } else {
+    std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+    RecordReplayAssert("ExecutionProgress %s:%d:%d",
+                       name.get(), info.line + 1, info.column);
+  }
+
+  return ReadOnlyRoots(isolate).undefined_value();
+}
+
+RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(1, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(Object, value, 0);
+
+  char location[1024];
+  strcpy(location, "<no frame>");
+  for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
+    StackFrame* frame = it.frame();
+    if (frame->type() != StackFrame::OPTIMIZED && frame->type() != StackFrame::INTERPRETED) {
+      continue;
+    }
+    std::vector<FrameSummary> frames;
+    StandardFrame::cast(frame)->Summarize(&frames);
+    auto& summary = frames.back();
+    CHECK(summary.IsJavaScript());
+    auto const& js = summary.AsJavaScript();
+
+    Handle<SharedFunctionInfo> shared(js.function()->shared(), isolate);
+    Handle<Script> script(Script::cast(shared->script()), isolate);
+
+    int source_position = js.SourcePosition();
+    Script::PositionInfo info;
+    Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
+
+    if (script->name().IsUndefined()) {
+      snprintf(location, sizeof(location), "<none>:%d:%d", info.line + 1, info.column);
+    } else {
+      std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+      snprintf(location, sizeof(location), "%s:%d:%d", name.get(), info.line + 1, info.column);
+    }
+    location[sizeof(location) - 1] = 0;
+    break;
+  }
+
+  if (value->IsNumber()) {
+    double num = value->Number();
+    if (std::isnan(num)) {
+      RecordReplayAssert("%s Value NaN", location);
+    } else {
+      RecordReplayAssert("%s Value Number %.2f", location, num);
+    }
+  } else if (value->IsBoolean()) {
+    RecordReplayAssert("%s Value Boolean %d", location, value->IsTrue());
+  } else if (value->IsUndefined()) {
+    RecordReplayAssert("%s Value Undefined", location);
+  } else if (value->IsNull()) {
+    RecordReplayAssert("%s Value Null", location);
+  } else if (value->IsString()) {
+    std::unique_ptr<char[]> contents = String::cast(*value).ToCString();
+    RecordReplayAssert("%s Value String %s", location, contents.get());
+  } else if (value->IsJSObject()) {
+    InstanceType type = JSObject::cast(*value).map().instance_type();
+    const char* typeStr;
+    switch (type) {
+#define STRINGIFY_TYPE(TYPE) case TYPE: typeStr = #TYPE; break;
+    INSTANCE_TYPE_LIST(STRINGIFY_TYPE)
+#undef STRINGIFY_TYPE
+    default:
+      typeStr = "<unknown>";
+    }
+    if (!strcmp(typeStr, "JS_DATE_TYPE")) {
+      JSDate date = JSDate::cast(*value);
+      double time = date.value().Number();
+      RecordReplayAssert("%s Value Date %.2f", location, time);
+    } else {
+      RecordReplayAssert("%s Value Object %s", location, typeStr);
+    }
+  } else if (value->IsJSProxy()) {
+    RecordReplayAssert("%s Value Proxy", location);
+  } else {
+    RecordReplayAssert("%s Value Unknown", location);
+  }
+
+  return *value;
+}
+
+struct InstrumentationSite {
+  const char* kind_ = nullptr;
+  int source_position_ = 0;
+
+  // Set on the first use of the instrumentation site.
+  std::string function_id_;
+};
+
+static std::vector<InstrumentationSite> gInstrumentationSites;
+static base::LazyMutex gInstrumentationSitesMutex = LAZY_MUTEX_INITIALIZER;
+
+int RegisterInstrumentationSite(const char* kind, int source_position) {
+  base::MutexGuard guard(gInstrumentationSitesMutex.Pointer());
+  InstrumentationSite site;
+  site.kind_ = kind;
+  site.source_position_ = source_position;
+  gInstrumentationSites.push_back(site);
+  return gInstrumentationSites.size() - 1;
+}
+
+const char* InstrumentationSiteKind(int index) {
+  base::MutexGuard guard(gInstrumentationSitesMutex.Pointer());
+  DCHECK(index < (int32_t)gInstrumentationSites.size());
+  InstrumentationSite& site = gInstrumentationSites[index];
+  return site.kind_;
+}
+
+int InstrumentationSiteSourcePosition(int index) {
+  base::MutexGuard guard(gInstrumentationSitesMutex.Pointer());
+  DCHECK(index < (int32_t)gInstrumentationSites.size());
+  InstrumentationSite& site = gInstrumentationSites[index];
+  return site.source_position_;
+}
+
+extern void RecordReplayInstrument(const char* kind, const char* function, int offset);
+extern void RecordReplayPrint(const char* format, ...);
+
+std::string GetRecordReplayFunctionId(Handle<SharedFunctionInfo> shared) {
+  Script script = Script::cast(shared->script());
+
+  std::ostringstream os;
+  if (IsRecordingOrReplaying()) {
+    // When recording/replaying we use a function ID we can parse to a script
+    // and source location later.
+    os << script.id() << ":" << shared->StartPosition();
+
+    // Enable to dump locations of each function to stderr.
+    /*
+    std::unique_ptr<char[]> url;
+    if (!script.name().IsUndefined()) {
+      url = String::cast(script.name()).ToCString();
+    }
+
+    Script::PositionInfo info;
+    Handle<Script> handleScript(script, Isolate::Current());
+    Script::GetPositionInfo(handleScript, shared->StartPosition(), &info, Script::WITH_OFFSET);
+    RecordReplayPrint("FunctionId %s -> %s:%d:%d",
+                      os.str().c_str(), url.get() ? url.get() : "<none>",
+                      info.line + 1, info.column);
+    */
+  } else {
+    // When tracking execution we don't need function IDs that can be converted
+    // to a script/position, so include the actual URL/location.
+    CHECK(IsTrackingExecution());
+
+    std::unique_ptr<char[]> url;
+    if (!script.name().IsUndefined()) {
+      url = String::cast(script.name()).ToCString();
+    }
+
+    Script::PositionInfo info;
+    Handle<Script> handleScript(script, Isolate::Current());
+    Script::GetPositionInfo(handleScript, shared->StartPosition(), &info, Script::WITH_OFFSET);
+    os << (url.get() ? url.get() : "<none>") << ":" << info.line + 1 << ":" << info.column;
+  }
+
+  return os.str();
+}
+
+void ParseRecordReplayFunctionId(const std::string& function_id,
+                                 int* script_id, int* source_position) {
+  const char* raw = function_id.c_str();
+  *script_id = atol(raw);
+  *source_position = atol(strchr(raw, ':') + 1);
+}
+
+static uint64_t CurrentTimeMicroseconds() {
+  timeval tv;
+  gettimeofday(&tv, nullptr);
+  return tv.tv_sec * 1e6 + tv.tv_usec;
+}
+
+// If we are tracking execution and JS code is allowed to run, the start time
+// in microseconds.
+static uint64_t gTrackExecutionStartTime;
+
+// Sites which executed while tracking.
+struct ExecutedSite {
+  uint64_t time = 0;
+  int index = 0;
+};
+static std::vector<ExecutedSite> gExecutionSites;
+
+// Threshold in milliseconds above which execution will be dumped.
+static size_t gTrackExecutionThreshold;
+
+void StartTrackingExecution() {
+  CHECK(!gTrackExecutionStartTime);
+  gTrackExecutionStartTime = CurrentTimeMicroseconds();
+
+  if (!gTrackExecutionThreshold) {
+    const char* env = getenv("TRACK_EXECUTION_THRESHOLD");
+    gTrackExecutionThreshold = env ? atol(env) : 20;
+
+    if (getenv("TRACK_EXECUTION_WAIT_AT_START")) {
+      fprintf(stderr, "Busywaiting (pid %d)...", getpid());
+      volatile int x = 1;
+      while (x) {}
+    }
+  }
+}
+
+void StopTrackingExecution() {
+  CHECK(gTrackExecutionStartTime);
+  uint64_t elapsed = CurrentTimeMicroseconds() - gTrackExecutionStartTime;
+
+  if (elapsed >= gTrackExecutionThreshold * 1000) {
+    base::MutexGuard guard(gInstrumentationSitesMutex.Pointer());
+
+    char buf[256];
+    snprintf(buf, sizeof(buf), "dumps/track-execution.%llums.%d.log", elapsed / 1000, rand());
+    FILE* f = fopen(buf, "w");
+
+    fprintf(f, "TrackExecution %.3f ms\n", (double)elapsed / 1000.0);
+
+    for (const ExecutedSite& executed : gExecutionSites) {
+      DCHECK(executed.index < (int32_t)gInstrumentationSites.size());
+      InstrumentationSite& site = gInstrumentationSites[executed.index];
+      fprintf(f, "[%.3f] %s %s\n", (double)executed.time / 1000.0, site.kind_, site.function_id_.c_str());
+    }
+
+    fclose(f);
+    fprintf(stderr, "TrackExecutionDump %s\n", buf);
+  }
+
+  gExecutionSites.clear();
+  gTrackExecutionStartTime = 0;
+}
+
+RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  CONVERT_NUMBER_CHECKED(int32_t, index, Int32, args[1]);
+
+  base::MutexGuard guard(gInstrumentationSitesMutex.Pointer());
+
+  DCHECK(index < (int32_t)gInstrumentationSites.size());
+  InstrumentationSite& site = gInstrumentationSites[index];
+
+  if (!site.function_id_.length()) {
+    CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+    Handle<SharedFunctionInfo> shared(function->shared(), isolate);
+    site.function_id_ = GetRecordReplayFunctionId(shared);
+  }
+
+  if (IsRecordingOrReplaying()) {
+    RecordReplayInstrument(site.kind_, site.function_id_.c_str(), index);
+  } else if (IsTrackingExecution() && IsMainThread()) {
+    CHECK(gTrackExecutionStartTime);
+    uint64_t time = CurrentTimeMicroseconds() - gTrackExecutionStartTime;
+    gExecutionSites.push_back({ time, index });
+  }
 
   return ReadOnlyRoots(isolate).undefined_value();
 }

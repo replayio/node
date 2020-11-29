@@ -34,6 +34,8 @@ using v8::String;
 using v8::Undefined;
 using v8::Value;
 
+void RecordReplayPrint(const char* format, ...);
+
 bool IsExceptionDecorated(Environment* env, Local<Value> er) {
   if (!er.IsEmpty() && er->IsObject()) {
     Local<Object> err_obj = er.As<Object>();
@@ -256,6 +258,15 @@ void AppendExceptionLine(Environment* env,
 
 [[noreturn]] void Assert(const AssertionInfo& info) {
   std::string name = GetHumanReadableProcessName();
+
+  if (v8::IsRecordingOrReplaying()) {
+    RecordReplayPrint("%s: %s:%s%s Assertion `%s' failed.\n",
+                      name.c_str(),
+                      info.file_line,
+                      info.function,
+                      *info.function ? ":" : "",
+                      info.message);
+  }
 
   fprintf(stderr,
           "%s: %s:%s%s Assertion `%s' failed.\n",

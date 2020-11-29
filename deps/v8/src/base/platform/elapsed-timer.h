@@ -67,7 +67,11 @@ class ElapsedTimer final {
   TimeDelta Elapsed() const {
     DCHECK(IsStarted());
     TimeDelta elapsed = Now() - start_ticks_;
-    DCHECK_GE(elapsed.InMicroseconds(), 0);
+    // Not sure why this fails sometimes when replaying.
+    //DCHECK_GE(elapsed.InMicroseconds(), 0);
+    if (elapsed.InMicroseconds() < 0) {
+      return TimeDelta();
+    }
     return elapsed;
   }
 

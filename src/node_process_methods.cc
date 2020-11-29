@@ -32,6 +32,13 @@ typedef int mode_t;
 #include <termios.h>  // tcgetattr, tcsetattr
 #endif
 
+namespace v8 {
+
+extern void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>& args);
+
+}
+
 namespace node {
 
 using v8::Array;
@@ -403,6 +410,8 @@ static void ReallyExit(const FunctionCallbackInfo<Value>& args) {
   env->Exit(code);
 }
 
+extern uintptr_t RecordReplayValue(const char* why, uintptr_t value);
+
 class FastHrtime : public BaseObject {
  public:
   static Local<Object> New(Environment* env) {
@@ -548,6 +557,11 @@ static void InitializeProcessMethods(Local<Object> target,
   env->SetMethodNoSideEffect(target, "uptime", Uptime);
   env->SetMethod(target, "patchProcessObject", PatchProcessObject);
   env->SetMethod(target, "getFastAPIs", GetFastAPIs);
+
+  env->SetMethod(target, "isRecordingOrReplaying",
+                 v8::FunctionCallbackIsRecordingOrReplaying);
+  env->SetMethod(target, "recordReplayOnConsoleAPI",
+                 v8::FunctionCallbackRecordReplayOnConsoleAPI);
 }
 
 void RegisterProcessMethodsExternalReferences(

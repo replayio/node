@@ -37,6 +37,9 @@ class DebugStackTraceIterator final : public debug::StackTraceIterator {
   v8::MaybeLocal<v8::String> EvaluateWasm(
       internal::Vector<const internal::byte> source, int frame_index) override;
 
+  StackFrameId FrameId() override;
+  int InlineFrameIndex() override;
+
  private:
   Isolate* isolate_;
   StackTraceFrameIterator iterator_;

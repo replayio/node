@@ -27,6 +27,10 @@
 #include "src/handles/global-handles.h"
 #include "src/heap/heap-inl.h"  // For NextDebuggingId.
 #include "src/init/bootstrapper.h"
+#include "src/inspector/v8-debugger-agent-impl.h"
+#include "src/inspector/v8-inspector-impl.h"
+#include "src/inspector/v8-inspector-session-impl.h"
+#include "src/inspector/v8-runtime-agent-impl.h"
 #include "src/interpreter/bytecode-array-accessor.h"
 #include "src/interpreter/bytecode-array-iterator.h"
 #include "src/interpreter/interpreter.h"
@@ -2021,7 +2025,13 @@ void Debug::OnAfterCompile(Handle<Script> script) {
   ProcessCompileEvent(false, script);
 }
 
+static void RecordReplayRegisterScript(Handle<Script> script);
+
 void Debug::ProcessCompileEvent(bool has_compile_error, Handle<Script> script) {
+  if (!has_compile_error && (IsRecordingOrReplaying() || IsTrackingExecution())) {
+    RecordReplayRegisterScript(script);
+  }
+
   // Ignore temporary scripts.
   if (script->id() == Script::kTemporaryScriptId) return;
   // TODO(kozyatinskiy): teach devtools to work with liveedit scripts better
@@ -2466,5 +2476,853 @@ bool Debug::PerformSideEffectCheckForObject(Handle<Object> object) {
   isolate_->TerminateExecution();
   return false;
 }
+
+// Record Replay handlers and associated helpers. These ought to be in their
+// own file, but it's easier to put them here.
+
+////////////////////////////////////////////////////////////////////////////////
+// Helpers
+////////////////////////////////////////////////////////////////////////////////
+
+extern void RecordReplayOnScriptParsed(Isolate* isolate, const char* id,
+                                       const char* kind, const char* url);
+extern void RecordReplayPrint(const char* format, ...);
+extern Handle<String> CStringToHandle(Isolate* isolate, const char* str);
+
+static Handle<Object> GetProperty(Isolate* isolate,
+                                  Handle<Object> obj, const char* property) {
+  return Object::GetProperty(isolate, obj, CStringToHandle(isolate, property))
+    .ToHandleChecked();
+}
+
+static void SetProperty(Isolate* isolate,
+                        Handle<Object> obj, const char* property,
+                        Handle<Object> value) {
+  Object::SetProperty(isolate, obj,
+                      CStringToHandle(isolate, property), value).Check();
+}
+
+static void SetProperty(Isolate* isolate,
+                        Handle<Object> obj, const char* property,
+                        const char* value) {
+  SetProperty(isolate, obj, property, CStringToHandle(isolate, value));
+}
+
+static void SetProperty(Isolate* isolate,
+                        Handle<Object> obj, const char* property,
+                        double value) {
+  SetProperty(isolate, obj, property, isolate->factory()->NewNumber(value));
+}
+
+// Not overloaded to avoid ambiguous calls.
+static void SetPropertyBoolean(Isolate* isolate,
+                               Handle<Object> obj, const char* property,
+                               bool value) {
+  SetProperty(isolate, obj, property,
+              value ? isolate->factory()->true_value()
+                    : isolate->factory()->false_value());
+}
+
+static Handle<JSObject> NewPlainObject(Isolate* isolate) {
+  return isolate->factory()->NewJSObject(isolate->object_function());
+}
+
+static Handle<JSArray> NewArray(Isolate* isolate) {
+  return isolate->factory()->NewJSArray(0);
+}
+
+static void ArrayPush(Isolate* isolate, Handle<Object> array, Handle<Object> value) {
+  int length = GetProperty(isolate, array, "length")->Number();
+  Object::SetElement(isolate, array, length, value, ShouldThrow::kThrowOnError).Check();
+}
+
+static void ArrayPush(Isolate* isolate, Handle<Object> array, const char* value) {
+  ArrayPush(isolate, array, CStringToHandle(isolate, value));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Script State
+////////////////////////////////////////////////////////////////////////////////
+
+static std::vector<Eternal<Value>> gRecordReplayScripts;
+
+static int GetScriptIdProperty(Isolate* isolate, Handle<Object> obj) {
+  Handle<Object> scriptIdStr = GetProperty(isolate, obj, "scriptId");
+  std::unique_ptr<char[]> scriptIdText = String::cast(*scriptIdStr).ToCString();
+  return atol(scriptIdText.get());
+}
+
+// Get the script from an ID.
+Handle<Script> GetScript(Isolate* isolate, int script_id) {
+  for (size_t i = 0; i < gRecordReplayScripts.size(); i++) {
+    Local<v8::Value> scriptValue = gRecordReplayScripts[i].Get((v8::Isolate*)isolate);
+    Handle<Object> scriptObj = Utils::OpenHandle(*scriptValue);
+    Handle<Script> script(Script::cast(*scriptObj), isolate);
+    if (script->id() == script_id) {
+      return script;
+    }
+  }
+
+  RecordReplayPrint("Error: Cannot find script with ID %d, crashing.", script_id);
+  V8_IMMEDIATE_CRASH();
+}
+
+Handle<Object> RecordReplayGetScriptSource(Isolate* isolate, Handle<Object> params) {
+  int script_id = GetScriptIdProperty(isolate, params);
+  Handle<Script> script = GetScript(isolate, script_id);
+
+  Handle<String> source(String::cast(script->source()), isolate);
+  Handle<JSObject> obj = NewPlainObject(isolate);
+  SetProperty(isolate, obj, "scriptSource", source);
+  SetProperty(isolate, obj, "contentType", "text/javascript");
+  return obj;
+}
+
+static void DecodeLocationProperty(Isolate* isolate, Handle<Object> params,
+                                   const char* property, int* line, int* column) {
+  Handle<Object> location = GetProperty(isolate, params, property);
+  if (location->IsUndefined()) {
+    return;
+  }
+
+  Handle<Object> lineProperty = GetProperty(isolate, location, "line");
+  *line = lineProperty->Number();
+
+  Handle<Object> columnProperty = GetProperty(isolate, location, "column");
+  *column = columnProperty->Number();
+}
+
+static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
+                                     std::function<void(Handle<SharedFunctionInfo>,
+                                                        int)> aCallback) {
+  // Based on Debug::GetPossibleBreakpoints.
+  while (true) {
+    HandleScope scope(isolate);
+    std::vector<Handle<SharedFunctionInfo>> candidates;
+    std::vector<IsCompiledScope> compiled_scopes;
+    SharedFunctionInfo::ScriptIterator iterator(isolate, *script);
+    for (SharedFunctionInfo info = iterator.Next(); !info.is_null();
+         info = iterator.Next()) {
+      if (!info.IsSubjectToDebugging()) continue;
+      if (!info.is_compiled() && !info.allows_lazy_compilation()) continue;
+      candidates.push_back(i::handle(info, isolate));
+    }
+
+    // Compile any uncompiled functions found in the script.
+    bool was_compiled = false;
+    for (const auto& candidate : candidates) {
+      IsCompiledScope is_compiled_scope(candidate->is_compiled_scope());
+      if (!is_compiled_scope.is_compiled()) {
+        if (!Compiler::Compile(candidate, Compiler::CLEAR_EXCEPTION,
+                               &is_compiled_scope)) {
+          RecordReplayPrint("Compiler::Compile failed, crashing.");
+          V8_IMMEDIATE_CRASH();
+        } else {
+          was_compiled = true;
+        }
+      }
+      DCHECK(is_compiled_scope.is_compiled());
+      compiled_scopes.push_back(is_compiled_scope);
+    }
+
+    // If we did any compilation, restart and look for any new functions
+    // that need to be compiled.
+    if (was_compiled) continue;
+
+    // Now we have a complete list of the functions in the script.
+    // Build the final locations.
+    for (const auto& candidate : candidates) {
+      if (!candidate->HasBytecodeArray()) {
+        continue;
+      }
+      Handle<BytecodeArray> bytecode(candidate->GetBytecodeArray(), isolate);
+
+      for (interpreter::BytecodeArrayIterator it(bytecode); !it.done();
+           it.Advance()) {
+        interpreter::Bytecode bytecode = it.current_bytecode();
+        if (bytecode == interpreter::Bytecode::kRecordReplayInstrumentation) {
+          int index = it.GetIndexOperand(0);
+          aCallback(candidate, index);
+        }
+      }
+    }
+    return;
+  }
+}
+
+// Information about breakpoints that have been sent to the record replay driver.
+struct BreakpointInfo {
+  std::string function_id_;
+  int offset_;
+  BreakpointInfo(const std::string& function_id, int offset)
+    : function_id_(function_id), offset_(offset) {}
+};
+static std::unordered_map<std::string, BreakpointInfo> gBreakpoints;
+
+static std::string BreakpointKey(int script_id, int line, int column) {
+  std::ostringstream os;
+  os << script_id << ":" << line << ":" << column;
+  return os.str();
+}
+
+extern const char* InstrumentationSiteKind(int index);
+extern int InstrumentationSiteSourcePosition(int index);
+extern std::string GetRecordReplayFunctionId(Handle<SharedFunctionInfo> shared);
+
+Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
+                                                  Handle<Object> params) {
+  int script_id = GetScriptIdProperty(isolate, params);
+  Handle<Script> script = GetScript(isolate, script_id);
+
+  int beginLine = 1, beginColumn = 0;
+  DecodeLocationProperty(isolate, params, "begin", &beginLine, &beginColumn);
+
+  int endLine = INT32_MAX, endColumn = INT32_MAX;
+  DecodeLocationProperty(isolate, params, "end", &endLine, &endColumn);
+
+  std::vector<std::vector<int>> lineColumns;
+  size_t numLines = 0;
+
+  ForEachInstrumentationOp(isolate, script, [&](Handle<SharedFunctionInfo> shared,
+                                                int instrumentation_index) {
+      if (strcmp(InstrumentationSiteKind(instrumentation_index), "breakpoint")) {
+        return;
+      }
+
+      int source_position = InstrumentationSiteSourcePosition(instrumentation_index);
+      Script::PositionInfo info;
+      Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
+
+      // Use 1-indexed lines instead of 0-indexed.
+      int line = info.line + 1;
+      int column = info.column;
+
+      if (line < beginLine ||
+          (line == beginLine && column < beginColumn) ||
+          line > endLine ||
+          (line == endLine && column > endColumn)) {
+        return;
+      }
+
+      while ((size_t)line >= lineColumns.size()) {
+        lineColumns.emplace_back();
+      }
+      if (!lineColumns[line].size()) {
+        numLines++;
+      }
+      lineColumns[line].push_back(column);
+
+      std::string key = BreakpointKey(script->id(), line, column);
+      BreakpointInfo value(GetRecordReplayFunctionId(shared),
+                           instrumentation_index);
+      gBreakpoints.insert(std::pair<std::string, BreakpointInfo>
+                          (key, value));
+    });
+
+  Handle<FixedArray> lineLocations = isolate->factory()->NewFixedArray(numLines);
+  size_t lineLocationsIndex = 0;
+  for (size_t line = 0; line < lineColumns.size(); line++) {
+    const std::vector<int>& baseColumns = lineColumns[line];
+    if (!baseColumns.size()) {
+      continue;
+    }
+
+    Handle<FixedArray> columns = isolate->factory()->NewFixedArray(baseColumns.size());
+    for (size_t i = 0; i < baseColumns.size(); i++) {
+      columns->set(i, Smi::FromInt(baseColumns[i]));
+    }
+    Handle<JSArray> columnsArray = isolate->factory()->NewJSArrayWithElements(columns);
+
+    Handle<JSObject> lineObj = NewPlainObject(isolate);
+    SetProperty(isolate, lineObj, "line", line);
+    SetProperty(isolate, lineObj, "columns", columnsArray);
+    lineLocations->set(lineLocationsIndex++, *lineObj);
+  }
+  DCHECK(lineLocationsIndex == numLines);
+
+  Handle<JSArray> lineLocationsArray =
+    isolate->factory()->NewJSArrayWithElements(lineLocations);
+
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  SetProperty(isolate, rv, "lineLocations", lineLocationsArray);
+  return rv;
+}
+
+Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
+                                                           Handle<Object> params) {
+  Handle<Object> location = GetProperty(isolate, params, "location");
+  int scriptId = GetScriptIdProperty(isolate, location);
+  int line = GetProperty(isolate, location, "line")->Number();
+  int column = GetProperty(isolate, location, "column")->Number();
+
+  std::string key = BreakpointKey(scriptId, line, column);
+  auto iter = gBreakpoints.find(key);
+  if (iter == gBreakpoints.end()) {
+    RecordReplayPrint("Unknown location for RecordReplayConvertLocationToFunctionOffset, crashing.");
+    V8_IMMEDIATE_CRASH();
+  }
+
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  SetProperty(isolate, rv, "functionId", iter->second.function_id_.c_str());
+  SetProperty(isolate, rv, "offset", iter->second.offset_);
+  return rv;
+}
+
+static Handle<String> GetProtocolScriptId(Isolate* isolate, Handle<Script> script) {
+  std::ostringstream os;
+  os << script->id();
+  return CStringToHandle(isolate, os.str().c_str());
+}
+
+extern void ParseRecordReplayFunctionId(const std::string& function_id,
+                                        int* script_id, int* source_position);
+
+Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isolate,
+                                                           Handle<Object> params) {
+  Handle<Object> function_id_raw = GetProperty(isolate, params, "functionId");
+
+  std::unique_ptr<char[]> function_id = String::cast(*function_id_raw).ToCString();
+  int script_id;
+  int function_source_position;
+  ParseRecordReplayFunctionId(std::string(function_id.get()),
+                              &script_id, &function_source_position);
+
+  Handle<Object> offset_raw = GetProperty(isolate, params, "offset");
+
+  // The offset may or may not be present. If it isn't present then we parse the
+  // function ID to get the source position, otherwise use the offset as the
+  // instrumentation site to get the source position.
+  int source_position;
+  if (offset_raw->IsUndefined()) {
+    source_position = function_source_position;
+  } else {
+    int instrumentation_index = offset_raw->Number();
+    source_position = InstrumentationSiteSourcePosition(instrumentation_index);
+  }
+
+  Handle<Script> script = GetScript(isolate, script_id);
+
+  Script::PositionInfo info;
+  Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
+
+  // Use 1-indexed lines instead of 0-indexed.
+  int line = info.line + 1;
+  int column = info.column;
+
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  SetProperty(isolate, rv, "scriptId", GetProtocolScriptId(isolate, script));
+  SetProperty(isolate, rv, "line", line);
+  SetProperty(isolate, rv, "column", column);
+  return rv;
+}
+
+static void RecordReplayRegisterScript(Handle<Script> script) {
+  Isolate* isolate = Isolate::Current();
+  gRecordReplayScripts.emplace_back((v8::Isolate*)isolate, v8::Utils::ToLocal(script));
+
+  Handle<String> idStr = GetProtocolScriptId(isolate, script);
+  std::unique_ptr<char[]> id = String::cast(*idStr).ToCString();
+
+  std::unique_ptr<char[]> url;
+  if (!script->name().IsUndefined()) {
+    url = String::cast(script->name()).ToCString();
+  }
+
+  if (IsRecordingOrReplaying()) {
+    RecordReplayOnScriptParsed(isolate, id.get(), "scriptSource", url.get());
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Pause State
+////////////////////////////////////////////////////////////////////////////////
+
+using namespace v8_inspector;
+
+// Session for using the inspector to fetch information about the current state.
+static V8InspectorSessionImpl* gInspectorSession;
+
+using protocol::Array;
+using protocol::Debugger::CallFrame;
+using protocol::Debugger::Location;
+using protocol::Runtime::RemoteObject;
+
+static void EnsureInspectorSession() {
+  if (!gInspectorSession) {
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    V8InspectorImpl* inspector =
+      new V8InspectorImpl(isolate, nullptr);
+
+    size_t ContextGroupId = 1;
+
+    Local<v8::Context> context = isolate->GetCurrentContext();
+    V8ContextInfo contextInfo(context, ContextGroupId,
+                                            StringView());
+    inspector->contextCreated(contextInfo);
+
+    std::unique_ptr<V8InspectorSession> session =
+      inspector->connect(ContextGroupId, nullptr, StringView());
+
+    gInspectorSession = (V8InspectorSessionImpl*) session.release();
+  }
+}
+
+static Handle<Object> NewPauseData(Isolate* isolate) {
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  SetProperty(isolate, rv, "frames", NewArray(isolate));
+  SetProperty(isolate, rv, "scopes", NewArray(isolate));
+  SetProperty(isolate, rv, "objects", NewArray(isolate));
+  return rv;
+}
+
+static Handle<Object> ConvertLocation(Isolate* isolate, Location* location) {
+  Handle<JSObject> locationObj = NewPlainObject(isolate);
+  SetProperty(isolate, locationObj, "scriptId", location->getScriptId().utf8().c_str());
+  // Use 1-indexed line instead of 0-indexed.
+  SetProperty(isolate, locationObj, "line", location->getLineNumber() + 1);
+  SetProperty(isolate, locationObj, "column", location->getColumnNumber(0));
+  Handle<JSArray> rv = NewArray(isolate);
+  ArrayPush(isolate, rv, locationObj);
+  return rv;
+}
+
+static std::string GetRemoteObjectId(Isolate* isolate, RemoteObject* obj) {
+  CHECK(obj->hasObjectId());
+  return obj->getObjectId(protocol::String()).utf8();
+}
+
+// Encountered scopes and objects.
+static std::unordered_map<std::string, protocol::Debugger::Scope*> gScopes;
+static std::unordered_map<std::string, RemoteObject*> gObjects;
+
+static void RememberScope(Isolate* isolate, protocol::Debugger::Scope* scope) {
+  std::string scopeId = GetRemoteObjectId(isolate, scope->getObject());
+  gScopes.insert(std::pair<std::string, protocol::Debugger::Scope*>
+                 (scopeId, scope));
+}
+
+static void RememberObject(Isolate* isolate, RemoteObject* obj) {
+  std::string objectId = GetRemoteObjectId(isolate, obj);
+  gObjects.insert(std::pair<std::string, RemoteObject*>(objectId, obj));
+}
+
+static Handle<Object> RemoteObjectToProtocolValue(Isolate* isolate, RemoteObject* obj) {
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  std::string type = obj->getType().utf8();
+  if (!strcmp(type.c_str(), "undefined")) {
+    return rv;
+  }
+  if (obj->hasObjectId() &&
+      (!strcmp(type.c_str(), "object") || !strcmp(type.c_str(), "function"))) {
+    SetProperty(isolate, rv, "object", GetRemoteObjectId(isolate, obj).c_str());
+    RememberObject(isolate, obj);
+    return rv;
+  }
+  if (obj->hasValue()) {
+    protocol::Value* value = obj->getValue(nullptr);
+    switch (value->type()) {
+      case protocol::Value::TypeNull:
+        SetProperty(isolate, rv, "value", isolate->factory()->null_value());
+        return rv;
+      case protocol::Value::TypeBoolean: {
+        bool v;
+        CHECK(value->asBoolean(&v));
+        SetPropertyBoolean(isolate, rv, "value", v);
+        return rv;
+      }
+      case protocol::Value::TypeInteger:
+      case protocol::Value::TypeDouble: {
+        double v;
+        CHECK(value->asDouble(&v));
+        SetProperty(isolate, rv, "value", v);
+        return rv;
+      }
+      case protocol::Value::TypeString: {
+        protocol::String v;
+        CHECK(value->asString(&v));
+        SetProperty(isolate, rv, "value", v.utf8().c_str());
+        return rv;
+      }
+      default:
+        RecordReplayPrint("Value type NYI %d", value->type());
+        V8_IMMEDIATE_CRASH();
+    }
+  }
+  if (obj->hasUnserializableValue() && !strcmp(type.c_str(), "number")) {
+    protocol::String v = obj->getUnserializableValue(protocol::String());
+    SetProperty(isolate, rv, "unserializableNumber", v.utf8().c_str());
+    return rv;
+  }
+  if (!strcmp(type.c_str(), "symbol")) {
+    // Symbols are not currently representable in the protocol.
+    SetProperty(isolate, rv, "value", "<symbol>");
+    return rv;
+  }
+  RecordReplayPrint("RemoteObject type NYI %s %d", type.c_str(), obj->hasObjectId());
+  V8_IMMEDIATE_CRASH();
+}
+
+static Handle<Object> ObjectToProtocolValue(Isolate* isolate, int contextId,
+                                            Handle<Object> obj) {
+  std::unique_ptr<protocol::Runtime::RemoteObject> remote =
+    gInspectorSession->debuggerAgent()->wrapObject(contextId, Utils::ToLocal(obj));
+  Handle<Object> value = RemoteObjectToProtocolValue(isolate, remote.get());
+
+  // Leak to preserve internal references.
+  remote.release();
+
+  return value;
+}
+
+static std::string ProcessFrame(Isolate* isolate, Handle<Object> pauseData,
+                                CallFrame* frame) {
+  std::string frameId = frame->getCallFrameId().utf8();
+
+  Handle<JSObject> frameObj = NewPlainObject(isolate);
+  SetProperty(isolate, frameObj, "frameId", frameId.c_str());
+
+  // FIXME frame type is NYI
+  SetProperty(isolate, frameObj, "type", "call");
+
+  if (!frame->getFunctionName().isEmpty()) {
+    SetProperty(isolate, frameObj, "functionName",
+                frame->getFunctionName().utf8().c_str());
+  }
+
+  if (frame->hasFunctionLocation()) {
+    Handle<Object> functionLocation =
+      ConvertLocation(isolate, frame->getFunctionLocation(nullptr));
+    SetProperty(isolate, frameObj, "functionLocation", functionLocation);
+  }
+
+  Handle<Object> location = ConvertLocation(isolate, frame->getLocation());
+  SetProperty(isolate, frameObj, "location", location);
+
+  Handle<JSArray> scopeChain = NewArray(isolate);
+  for (size_t i = 0; i < frame->getScopeChain()->size(); i++) {
+    protocol::Debugger::Scope* scope = (*frame->getScopeChain())[i].get();
+    ArrayPush(isolate, scopeChain,
+              GetRemoteObjectId(isolate, scope->getObject()).c_str());
+    RememberScope(isolate, scope);
+  }
+  SetProperty(isolate, frameObj, "scopeChain", scopeChain);
+
+  Handle<Object> thisv = RemoteObjectToProtocolValue(isolate, frame->getThis());
+  SetProperty(isolate, frameObj, "this", thisv);
+
+  ArrayPush(isolate, GetProperty(isolate, pauseData, "frames"), frameObj);
+  return frameId;
+}
+
+Handle<Object> RecordReplayGetAllFrames(Isolate* isolate, Handle<Object> params) {
+  EnsureInspectorSession();
+
+  std::unique_ptr<Array<CallFrame>> callFrames;
+  Response response =
+    gInspectorSession->debuggerAgent()->currentCallFrames(&callFrames);
+  CHECK(response.IsSuccess());
+
+  Handle<JSArray> framesObj = NewArray(isolate);
+  Handle<Object> pauseData = NewPauseData(isolate);
+
+  for (size_t i = 0; i < callFrames->size(); i++) {
+    CallFrame* frame = (*callFrames)[i].get();
+    std::string frameId = ProcessFrame(isolate, pauseData, frame);
+    ArrayPush(isolate, framesObj, frameId.c_str());
+  }
+
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  SetProperty(isolate, rv, "frames", framesObj);
+  SetProperty(isolate, rv, "data", pauseData);
+
+  // Leak frames to preserve internal references.
+  callFrames.release();
+
+  return rv;
+}
+
+// Not returning a unique_ptr, the return value is leaked so we can add internal
+// references to its contents in gObjects.
+static protocol::Array<protocol::Runtime::PropertyDescriptor>*
+FetchProperties(Isolate* isolate, const std::string& objectIdRaw) {
+  protocol::String objectId(objectIdRaw.c_str());
+
+  std::unique_ptr<protocol::Array<protocol::Runtime::PropertyDescriptor>> properties;
+  protocol::detail::PtrMaybe<protocol::Array<protocol::Runtime::InternalPropertyDescriptor>>
+    maybeInternalProperties;
+  protocol::detail::PtrMaybe<protocol::Array<protocol::Runtime::PrivatePropertyDescriptor>>
+    maybePrivateProperties;
+  protocol::detail::PtrMaybe<protocol::Runtime::ExceptionDetails> exceptionDetails;
+  Response response =
+    gInspectorSession->runtimeAgent()->getProperties(objectId, /* ownProperties */ true,
+                                                     /* accessorPropertiesOnly */ false,
+                                                     /* generatePreview */ false,
+                                                     &properties,
+                                                     &maybeInternalProperties,
+                                                     &maybePrivateProperties,
+                                                     &exceptionDetails);
+  if (!response.IsSuccess()) {
+    RecordReplayPrint("Warning: getProperties failed, crashing... [object %s] [message %s]",
+                      objectIdRaw.c_str(), response.Message().c_str());
+    V8_IMMEDIATE_CRASH();
+  }
+  return properties.release();
+}
+
+Handle<Object> RecordReplayGetScope(Isolate* isolate, Handle<Object> params) {
+  EnsureInspectorSession();
+
+  Handle<Object> scopeIdStr = GetProperty(isolate, params, "scopeId");
+  std::unique_ptr<char[]> scopeId = String::cast(*scopeIdStr).ToCString();
+
+  // The actual scope should have been encountered earlier, which we need to
+  // figure out its type and so forth.
+  auto iter = gScopes.find(std::string(scopeId.get()));
+  CHECK(iter != gScopes.end());
+  protocol::Debugger::Scope* scope = iter->second;
+
+  // FIXME not adding callee, not sure how to determine that.
+  Handle<JSObject> scopeObj = NewPlainObject(isolate);
+  SetProperty(isolate, scopeObj, "scopeId", scopeId.get());
+
+  std::string type = scope->getType().utf8();
+  std::string newType;
+  if (!strcmp(type.c_str(), "global") ||
+      !strcmp(type.c_str(), "module")) {
+    newType = "global";
+  } else if (!strcmp(type.c_str(), "with")) {
+    newType = "with";
+  } else if (!strcmp(type.c_str(), "closure")) {
+    newType = "function";
+  } else {
+    newType = "block";
+  }
+  SetProperty(isolate, scopeObj, "type", newType.c_str());
+
+  if (!strcmp(newType.c_str(), "global")) {
+    // Names in the scope are associated with the underlying object.
+    SetProperty(isolate, scopeObj, "object", scopeId.get());
+    RememberObject(isolate, scope->getObject());
+  } else {
+    // Names in the scope are provided as bindings.
+    protocol::Array<protocol::Runtime::PropertyDescriptor>* properties =
+      FetchProperties(isolate, scopeId.get());
+
+    Handle<JSArray> bindings = NewArray(isolate);
+
+    for (size_t i = 0; i < properties->size(); i++) {
+      protocol::Runtime::PropertyDescriptor* desc = (*properties)[i].get();
+      CHECK(desc->hasValue());
+
+      Handle<Object> value = RemoteObjectToProtocolValue(isolate, desc->getValue(nullptr));
+      SetProperty(isolate, value, "name", desc->getName().utf8().c_str());
+      ArrayPush(isolate, bindings, value);
+    }
+
+    SetProperty(isolate, scopeObj, "bindings", bindings);
+  }
+
+  Handle<Object> pauseData = NewPauseData(isolate);
+  ArrayPush(isolate, GetProperty(isolate, pauseData, "scopes"), scopeObj);
+
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  SetProperty(isolate, rv, "data", pauseData);
+  return rv;
+}
+
+Handle<Object> RecordReplayGetObjectPreview(Isolate* isolate, Handle<Object> params) {
+  EnsureInspectorSession();
+
+  Handle<Object> objectIdStr = GetProperty(isolate, params, "object");
+  std::unique_ptr<char[]> objectId = String::cast(*objectIdStr).ToCString();
+
+  // The object should have been encountered earlier.
+  auto iter = gObjects.find(std::string(objectId.get()));
+  CHECK(iter != gObjects.end());
+  RemoteObject* remoteObj = iter->second;
+
+  protocol::Array<protocol::Runtime::PropertyDescriptor>* properties =
+    FetchProperties(isolate, objectId.get());
+
+  Handle<JSObject> obj = NewPlainObject(isolate);
+  SetProperty(isolate, obj, "objectId", objectId.get());
+
+  DCHECK(remoteObj->hasClassName());
+  SetProperty(isolate, obj, "className",
+              remoteObj->getClassName(protocol::String()).utf8().c_str());
+
+  // FIXME not adding most preview contents.
+  Handle<JSObject> preview = NewPlainObject(isolate);
+
+  Handle<JSArray> propertiesObj = NewArray(isolate);
+
+  for (size_t i = 0; i < properties->size(); i++) {
+    protocol::Runtime::PropertyDescriptor* desc = (*properties)[i].get();
+
+    Handle<Object> prop;
+    if (desc->hasValue()) {
+      prop = RemoteObjectToProtocolValue(isolate, desc->getValue(nullptr));
+    } else {
+      prop = NewPlainObject(isolate);
+      RemoteObject* getter = desc->getGet(nullptr);
+      if (getter && getter->hasObjectId()) {
+        SetProperty(isolate, prop, "get", GetRemoteObjectId(isolate, getter).c_str());
+        RememberObject(isolate, getter);
+      }
+      RemoteObject* setter = desc->getGet(nullptr);
+      if (setter && setter->hasObjectId()) {
+        SetProperty(isolate, prop, "set", GetRemoteObjectId(isolate, setter).c_str());
+        RememberObject(isolate, setter);
+      }
+    }
+
+    SetProperty(isolate, prop, "name", desc->getName().utf8().c_str());
+
+    uint8_t flags = 0;
+    if (desc->getWritable(false)) {
+      flags |= 1;
+    }
+    if (desc->getConfigurable()) {
+      flags |= 2;
+    }
+    if (desc->getEnumerable()) {
+      flags |= 4;
+    }
+    if (flags != 7) {
+      SetProperty(isolate, prop, "flags", flags);
+    }
+
+    ArrayPush(isolate, propertiesObj, prop);
+  }
+
+  SetProperty(isolate, preview, "properties", propertiesObj);
+  SetProperty(isolate, obj, "preview", preview);
+
+  Handle<Object> pauseData = NewPauseData(isolate);
+  ArrayPush(isolate, GetProperty(isolate, pauseData, "objects"), obj);
+
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  SetProperty(isolate, rv, "data", pauseData);
+  return rv;
+}
+
+static Handle<Object> CreateResult(Isolate* isolate, int contextId,
+                                   MaybeHandle<Object> maybe_result) {
+  Handle<JSObject> resultObj = NewPlainObject(isolate);
+  SetProperty(isolate, resultObj, "data", NewPlainObject(isolate));
+
+  Handle<Object> result;
+  if (maybe_result.ToHandle(&result)) {
+    Handle<Object> value = ObjectToProtocolValue(isolate, contextId, result);
+    SetProperty(isolate, resultObj, "returned", value);
+  } else if (isolate->has_pending_exception()) {
+    Handle<Object> exception(isolate->pending_exception(), isolate);
+    isolate->clear_pending_exception();
+
+    Handle<Object> value = ObjectToProtocolValue(isolate, contextId, exception);
+    SetProperty(isolate, resultObj, "exception", value);
+  } else {
+    SetPropertyBoolean(isolate, resultObj, "failed", true);
+  }
+
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  SetProperty(isolate, rv, "result", resultObj);
+  return rv;
+}
+
+extern void RecordReplayGetStackFrameInfo(const std::string& frame_id,
+                                          int* context_id,
+                                          StackFrameId* stack_frame_id,
+                                          int* inline_frame_index);
+
+Handle<Object> RecordReplayEvaluateInFrame(Isolate* isolate, Handle<Object> params) {
+  EnsureInspectorSession();
+
+  Handle<Object> frameIdStr = GetProperty(isolate, params, "frameId");
+  std::unique_ptr<char[]> frameId = String::cast(*frameIdStr).ToCString();
+
+  Handle<String> expression = Handle<String>::cast(GetProperty(isolate, params, "expression"));
+
+  int contextId;
+  StackFrameId stackFrameId;
+  int inlineFrameIndex;
+  RecordReplayGetStackFrameInfo(frameId.get(), &contextId, &stackFrameId, &inlineFrameIndex);
+
+  const bool throw_on_side_effect = false;
+  MaybeHandle<Object> maybe_result =
+    DebugEvaluate::Local(isolate, stackFrameId, inlineFrameIndex,
+                         expression, throw_on_side_effect);
+  return CreateResult(isolate, contextId, maybe_result);
+}
+
+Handle<Object> RecordReplayGetObjectProperty(Isolate* isolate, Handle<Object> params) {
+  EnsureInspectorSession();
+
+  Handle<Object> objectIdStr = GetProperty(isolate, params, "object");
+  std::unique_ptr<char[]> objectId = String::cast(*objectIdStr).ToCString();
+
+  Handle<Object> property = GetProperty(isolate, params, "name");
+
+  // ObjectScope creates a new HandleScope...
+  Object rv;
+  {
+    InjectedScript::ObjectScope scope(gInspectorSession, objectId.get());
+    Response response = scope.initialize();
+    CHECK(response.IsSuccess());
+
+    MaybeHandle<Object> maybe_result =
+      Object::GetPropertyOrElement(isolate, Utils::OpenHandle(*scope.object()),
+                                   Handle<String>::cast(property));
+    int contextId = InspectedContext::contextId(scope.context());
+    rv = *CreateResult(isolate, contextId, maybe_result);
+  }
+
+  return Handle<Object>(rv, isolate);
+}
+
+//Handle<Object> RecordReplayCallFunction(Isolate* isolate, Handle<Object> params) {
+//}
+
+extern void RecordReplayOnConsoleMessage(Isolate* isolate, const char* level,
+                                         const char* source, int firstStackFrame,
+                                         Handle<Object> argsObj);
+
 }  // namespace internal
+
+namespace i = internal;
+
+void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& callArgs) {
+  Local<Boolean> rv = Boolean::New(callArgs.GetIsolate(), IsRecordingOrReplaying());
+  callArgs.GetReturnValue().Set(rv);
+}
+
+void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>& callArgs) {
+  i::EnsureInspectorSession();
+
+  Isolate* v8isolate = callArgs.GetIsolate();
+  i::Isolate* isolate = (i::Isolate*)v8isolate;
+  int contextId = i::InspectedContext::contextId(v8isolate->GetCurrentContext());
+
+  if (callArgs.Length() != 3) {
+    v8isolate->ThrowException(v8::String::NewFromUtf8Literal(
+        v8isolate, "recordReplayOnConsoleAPI() takes three arguments"));
+    return;
+  }
+
+  String::Utf8Value level(v8isolate, callArgs[0]);
+  size_t firstStackFrame = Utils::OpenHandle(*callArgs[1])->Number();
+
+  i::Handle<i::JSArray> argsObj = i::NewArray(isolate);
+
+  i::Handle<i::Object> args = Utils::OpenHandle(*callArgs[2]);
+  int length = i::GetProperty(isolate, args, "length")->Number();
+  for (int i = 0; i < length; i++) {
+    i::Handle<i::Object> arg = i::Object::GetElement(isolate, args, i).ToHandleChecked();
+    i::Handle<i::Object> argValue = i::ObjectToProtocolValue(isolate, contextId, arg);
+    i::ArrayPush(isolate, argsObj, argValue);
+  }
+
+  i::RecordReplayOnConsoleMessage(isolate, *level, "ConsoleAPI", firstStackFrame, argsObj);
+}
+
 }  // namespace v8

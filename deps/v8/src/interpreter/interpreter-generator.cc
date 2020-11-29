@@ -2797,6 +2797,29 @@ IGNITION_HANDLER(IncBlockCounter, InterpreterAssembler) {
   Dispatch();
 }
 
+IGNITION_HANDLER(RecordReplayIncExecutionProgressCounter, InterpreterAssembler) {
+  TNode<Context> context = GetContext();
+  TNode<Object> closure = LoadRegister(Register::function_closure());
+  CallRuntime(Runtime::kRecordReplayAssertExecutionProgress, context, closure);
+  Dispatch();
+}
+
+IGNITION_HANDLER(RecordReplayInstrumentation, InterpreterAssembler) {
+  TNode<Context> context = GetContext();
+  TNode<Object> closure = LoadRegister(Register::function_closure());
+  TNode<Smi> index = BytecodeOperandIdxSmi(0);
+  CallRuntime(Runtime::kRecordReplayInstrumentation, context, closure, index);
+  Dispatch();
+}
+
+IGNITION_HANDLER(RecordReplayAssertValue, InterpreterAssembler) {
+  TNode<Context> context = GetContext();
+  TNode<Object> value = GetAccumulator();
+  TNode<Object> result = CallRuntime(Runtime::kRecordReplayAssertValue, context, value);
+  SetAccumulator(result);
+  Dispatch();
+}
+
 // ForInEnumerate <receiver>
 //
 // Enumerates the enumerable keys of the |receiver| and either returns the

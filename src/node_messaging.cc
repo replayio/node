@@ -40,6 +40,9 @@ using v8::WasmModuleObject;
 
 namespace node {
 
+extern void RecordReplayAssert(const char* format, ...);
+extern void RecordReplayPrint(const char* format, ...);
+
 using BaseObjectList = std::vector<BaseObjectPtr<BaseObject>>;
 
 BaseObject::TransferMode BaseObject::GetTransferMode() const {
@@ -531,7 +534,9 @@ void MessagePortData::MemoryInfo(MemoryTracker* tracker) const {
 
 void MessagePortData::AddToIncomingQueue(Message&& message) {
   // This function will be called by other threads.
+  RecordReplayOrderedLock("MessagePort");
   Mutex::ScopedLock lock(mutex_);
+  RecordReplayOrderedUnlock("MessagePort");
   incoming_messages_.emplace_back(std::move(message));
 
   if (owner_ != nullptr) {
@@ -684,7 +689,9 @@ MaybeLocal<Value> MessagePort::ReceiveMessage(Local<Context> context,
   Message received;
   {
     // Get the head of the message queue.
+    RecordReplayOrderedLock("MessagePort");
     Mutex::ScopedLock lock(data_->mutex_);
+    RecordReplayOrderedUnlock("MessagePort");
 
     Debug(this, "MessagePort has message");
 
@@ -714,13 +721,17 @@ MaybeLocal<Value> MessagePort::ReceiveMessage(Local<Context> context,
 }
 
 void MessagePort::OnMessage() {
+  RecordReplayAssert("MessagePort::OnMessage");
+
   Debug(this, "Running MessagePort::OnMessage()");
   HandleScope handle_scope(env()->isolate());
   Local<Context> context = object(env()->isolate())->CreationContext();
 
   size_t processing_limit;
   {
+    RecordReplayOrderedLock("MessagePort");
     Mutex::ScopedLock(data_->mutex_);
+    RecordReplayOrderedUnlock("MessagePort");
     processing_limit = std::max(data_->incoming_messages_.size(),
                                 static_cast<size_t>(1000));
   }

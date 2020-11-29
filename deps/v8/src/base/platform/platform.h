@@ -46,6 +46,9 @@ namespace base {
 // ----------------------------------------------------------------------------
 // Fast TLS support
 
+// The Record Replay driver does not currently support direct access to TLS.
+#define V8_NO_FAST_TLS
+
 #ifndef V8_NO_FAST_TLS
 
 #if V8_CC_MSVC && V8_HOST_ARCH_IA32

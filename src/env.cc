@@ -56,6 +56,9 @@ using v8::Undefined;
 using v8::Value;
 using worker::Worker;
 
+extern void RecordReplayAssert(const char* format, ...);
+extern void RecordReplayEventLoopActivity(const char* why);
+
 int const Environment::kNodeContextTag = 0x6e6f64;
 void* const Environment::kNodeContextTagPtr = const_cast<void*>(
     static_cast<const void*>(&Environment::kNodeContextTag));
@@ -684,10 +687,16 @@ void Environment::AtExit(void (*cb)(void* arg), void* arg) {
 }
 
 void Environment::RunAndClearInterrupts() {
-  while (native_immediates_interrupts_.size() > 0) {
+  while (true) {
     NativeImmediateQueue queue;
     {
+      RecordReplayAssert("native_immediates_threadsafe_mutex #1");
+      RecordReplayOrderedLock("native_immediates_threadsafe_mutex");
       Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
+      RecordReplayOrderedUnlock("native_immediates_threadsafe_mutex");
+      if (native_immediates_interrupts_.size() == 0) {
+        break;
+      }
       queue.ConcatMove(std::move(native_immediates_interrupts_));
     }
     DebugSealHandleScope seal_handle_scope(isolate());
@@ -698,6 +707,8 @@ void Environment::RunAndClearInterrupts() {
 }
 
 void Environment::RunAndClearNativeImmediates(bool only_refed) {
+  RecordReplayAssert("Environment::RunAndClearNativeImmediates");
+
   TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
                               "RunAndClearNativeImmediates", this);
   HandleScope handle_scope(isolate_);
@@ -745,11 +756,14 @@ void Environment::RunAndClearNativeImmediates(bool only_refed) {
   // This is intentionally placed after the `ref_count` handling, because when
   // refed threadsafe immediates are created, they are not counted towards the
   // count in immediate_info() either.
+  RecordReplayAssert("native_immediates_threadsafe_mutex #2");
+  RecordReplayOrderedLock("native_immediates_threadsafe_mutex");
   NativeImmediateQueue threadsafe_immediates;
   if (native_immediates_threadsafe_.size() > 0) {
     Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
     threadsafe_immediates.ConcatMove(std::move(native_immediates_threadsafe_));
   }
+  RecordReplayOrderedUnlock("native_immediates_threadsafe_mutex");
   while (drain_list(&threadsafe_immediates)) {}
 }
 
@@ -805,6 +819,8 @@ void Environment::RunTimers(uv_timer_t* handle) {
   Environment* env = Environment::from_timer_handle(handle);
   TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
                               "RunTimers", env);
+
+  RecordReplayAssert("Environment::RunTimers");
 
   if (!env->can_call_into_js())
     return;
@@ -862,11 +878,12 @@ void Environment::RunTimers(uv_timer_t* handle) {
   }
 }
 
-
 void Environment::CheckImmediate(uv_check_t* handle) {
   Environment* env = Environment::from_immediate_check_handle(handle);
   TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
                               "CheckImmediate", env);
+
+  RecordReplayEventLoopActivity("Environment::CheckImmediate");
 
   HandleScope scope(env->isolate());
   Context::Scope context_scope(env->context());
@@ -877,6 +894,7 @@ void Environment::CheckImmediate(uv_check_t* handle) {
     return;
 
   do {
+    RecordReplayAssert("Environment::CheckImmediate Callback");
     MakeCallback(env->isolate(),
                  env->process_object(),
                  env->immediate_callback_function(),
@@ -900,12 +918,14 @@ void Environment::ToggleImmediateRef(bool ref) {
   }
 }
 
+extern void RecordReplayBytes(const char* why, void* buf, size_t size);
 
 Local<Value> Environment::GetNow() {
   uv_update_time(event_loop());
   uint64_t now = uv_now(event_loop());
   CHECK_GE(now, timer_base());
   now -= timer_base();
+  RecordReplayBytes("Environment::GetNow", &now, sizeof(now));
   if (now <= 0xffffffff)
     return Integer::NewFromUnsigned(isolate(), static_cast<uint32_t>(now));
   else
@@ -1158,6 +1178,8 @@ void Environment::Exit(int exit_code) {
 }
 
 void Environment::stop_sub_worker_contexts() {
+  RecordReplayAssert("Environment::stop_sub_worker_contexts");
+
   DCHECK_EQ(Isolate::GetCurrent(), isolate());
 
   while (!sub_worker_contexts_.empty()) {

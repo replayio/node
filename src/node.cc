@@ -947,7 +947,240 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
   return 0;
 }
 
-InitializationResult InitializeOncePerProcess(int argc, char** argv) {
+static void (*gRecordReplayAttach)(const char*);
+static void (*gRecordReplayRecordCommandLineArguments)(int*, char***);
+static uintptr_t (*gRecordReplayValue)(const char* why, uintptr_t value);
+static void (*gRecordReplayBytes)(const char* why, void* buf, size_t size);
+static void (*gRecordReplayPrintVA)(const char* format, va_list args);
+static void (*gRecordReplayRegisterPointer)(void* ptr);
+static int (*gRecordReplayPointerId)(void* ptr);
+static void (*gRecordReplayAssert)(const char*, va_list);
+static void (*gRecordReplayOrderedLock)(const char* name);
+static void (*gRecordReplayOrderedUnlock)(const char* name);
+static void (*gRecordReplayEventLoopActivity)(const char* why);
+static int (*gRecordReplayTriggerCreate)(const char* kind,
+                                         void (*callback)(void*), void* arg);
+static void (*gRecordReplayTriggerCalled)(int signal);
+static void (*gRecordReplayTriggerCallPending)(const char* kind);
+static bool (*gRecordReplayIsReplaying)();
+static void (*gRecordReplayNewCheckpoint)();
+static void (*gRecordReplayFinishRecording)();
+
+extern "C" void NodeRecordReplayRegisterPointer(void* ptr) {
+  if (gRecordReplayRegisterPointer) {
+    gRecordReplayRegisterPointer(ptr);
+  }
+}
+
+extern "C" int NodeRecordReplayPointerId(void* ptr) {
+  if (gRecordReplayPointerId) {
+    return gRecordReplayPointerId(ptr);
+  }
+  return 0;
+}
+
+void RecordReplayPrint(const char* format, ...) {
+  va_list args;
+  va_start(args, format);
+
+  if (gRecordReplayPrintVA) {
+    gRecordReplayPrintVA(format, args);
+  } else {
+    char buf[4096];
+    vsnprintf(buf, sizeof(buf), format, args);
+    buf[sizeof(buf) - 1] = 0;
+    fprintf(stderr, "[NotRecording]%s\n", buf);
+  }
+
+  va_end(args);
+}
+
+extern "C" void NodeRecordReplayPrint(const char* format, ...) {
+  va_list args;
+  va_start(args, format);
+
+  if (gRecordReplayPrintVA) {
+    gRecordReplayPrintVA(format, args);
+  } else {
+    char buf[4096];
+    vsnprintf(buf, sizeof(buf), format, args);
+    buf[sizeof(buf) - 1] = 0;
+    fprintf(stderr, "[NotRecording]%s\n", buf);
+  }
+
+  va_end(args);
+}
+
+void RecordReplayAssert(const char* format, ...) {
+  if (gRecordReplayAssert) {
+    va_list ap;
+    va_start(ap, format);
+    gRecordReplayAssert(format, ap);
+    va_end(ap);
+  }
+}
+
+extern "C" void NodeRecordReplayAssert(const char* format, ...) {
+  if (gRecordReplayAssert) {
+    va_list ap;
+    va_start(ap, format);
+    gRecordReplayAssert(format, ap);
+    va_end(ap);
+  }
+}
+
+void RecordReplayOrderedLock(const char* name) {
+  if (gRecordReplayOrderedLock) {
+    gRecordReplayOrderedLock(name);
+  }
+}
+
+extern "C" void NodeRecordReplayOrderedLock(const char* name) {
+  RecordReplayOrderedLock(name);
+}
+
+void RecordReplayOrderedUnlock(const char* name) {
+  if (gRecordReplayOrderedUnlock) {
+    gRecordReplayOrderedUnlock(name);
+  }
+}
+
+extern "C" void NodeRecordReplayOrderedUnlock(const char* name) {
+  RecordReplayOrderedUnlock(name);
+}
+
+uintptr_t RecordReplayValue(const char* why, uintptr_t value) {
+  if (gRecordReplayValue) {
+    return gRecordReplayValue(why, value);
+  }
+  return value;
+}
+
+extern "C" uintptr_t NodeRecordReplayValue(const char* why, uintptr_t value) {
+  return RecordReplayValue(why, value);
+}
+
+void RecordReplayBytes(const char* why, void* buf, size_t size) {
+  if (gRecordReplayBytes) {
+    gRecordReplayBytes(why, buf, size);
+  }
+}
+
+extern "C" void NodeRecordReplayBytes(const char* why, void* buf, size_t size) {
+  RecordReplayBytes(why, buf, size);
+}
+
+void RecordReplayEventLoopActivity(const char* why) {
+  if (gRecordReplayEventLoopActivity) {
+    gRecordReplayEventLoopActivity(why);
+  }
+}
+
+extern "C" int NodeRecordReplayTriggerCreate(const char* kind,
+                                             void (*callback)(void*), void* arg) {
+  if (gRecordReplayTriggerCreate) {
+    return gRecordReplayTriggerCreate(kind, callback, arg);
+  }
+  return 0;
+}
+
+extern "C" void NodeRecordReplayTriggerCalled(int signal) {
+  if (gRecordReplayTriggerCalled) {
+    gRecordReplayTriggerCalled(signal);
+  }
+}
+
+extern "C" void NodeRecordReplayTriggerCallPending(const char* kind) {
+  if (gRecordReplayTriggerCallPending) {
+    gRecordReplayTriggerCallPending(kind);
+  }
+}
+
+extern "C" int NodeRecordReplayIsReplaying() {
+  if (gRecordReplayIsReplaying) {
+    return gRecordReplayIsReplaying();
+  }
+  return 0;
+}
+
+void RecordReplayFinishRecording() {
+  if (gRecordReplayFinishRecording) {
+    gRecordReplayFinishRecording();
+  }
+}
+
+template <typename Src, typename Dst>
+static inline void CastPointer(const Src src, Dst* dst) {
+  static_assert(sizeof(Src) == sizeof(uintptr_t), "bad size");
+  static_assert(sizeof(Dst) == sizeof(uintptr_t), "bad size");
+  memcpy((void*)dst, (const void*)&src, sizeof(uintptr_t));
+}
+
+template <typename T>
+static void RecordReplayLoadSymbol(void* handle, const char* name, T& function) {
+  void* sym = dlsym(handle, name);
+  if (!sym) {
+    fprintf(stderr, "Could not find %s in Record Replay driver.\n", name);
+    return;
+  }
+
+  CastPointer(sym, &function);
+}
+
+static void InitializeRecordReplay(int* pargc, char*** pargv) {
+  const char* driver = getenv("RECORD_REPLAY_DRIVER");
+  if (!driver) {
+    if (getenv("TRACK_EXECUTION")) {
+      v8::SetTrackingExecution();
+    }
+    return;
+  }
+
+  void* handle = dlopen(driver, RTLD_LAZY);
+  if (!handle) {
+    fprintf(stderr, "Loading Record Replay driver failed.\n");
+    return;
+  }
+
+  RecordReplayLoadSymbol(handle, "RecordReplayAttach", gRecordReplayAttach);
+  RecordReplayLoadSymbol(handle, "RecordReplayRecordCommandLineArguments",
+                         gRecordReplayRecordCommandLineArguments);
+  RecordReplayLoadSymbol(handle, "RecordReplayValue", gRecordReplayValue);
+  RecordReplayLoadSymbol(handle, "RecordReplayBytes", gRecordReplayBytes);
+  RecordReplayLoadSymbol(handle, "RecordReplayPrintVA", gRecordReplayPrintVA);
+  RecordReplayLoadSymbol(handle, "RecordReplayFinishRecording", gRecordReplayFinishRecording);
+  RecordReplayLoadSymbol(handle, "RecordReplayRegisterPointer", gRecordReplayRegisterPointer);
+  RecordReplayLoadSymbol(handle, "RecordReplayPointerId", gRecordReplayPointerId);
+  RecordReplayLoadSymbol(handle, "RecordReplayAssert", gRecordReplayAssert);
+  RecordReplayLoadSymbol(handle, "RecordReplayOrderedLock", gRecordReplayOrderedLock);
+  RecordReplayLoadSymbol(handle, "RecordReplayOrderedUnlock", gRecordReplayOrderedUnlock);
+  RecordReplayLoadSymbol(handle, "RecordReplayEventLoopActivity",
+                         gRecordReplayEventLoopActivity);
+  RecordReplayLoadSymbol(handle, "RecordReplayTriggerCreate",
+                         gRecordReplayTriggerCreate);
+  RecordReplayLoadSymbol(handle, "RecordReplayTriggerCalled",
+                         gRecordReplayTriggerCalled);
+  RecordReplayLoadSymbol(handle, "RecordReplayTriggerCallPending",
+                         gRecordReplayTriggerCallPending);
+  RecordReplayLoadSymbol(handle, "RecordReplayIsReplaying",
+                         gRecordReplayIsReplaying);
+  RecordReplayLoadSymbol(handle, "RecordReplayNewCheckpoint",
+                         gRecordReplayNewCheckpoint);
+
+  if (gRecordReplayAttach && gRecordReplayFinishRecording) {
+    gRecordReplayAttach("macOS-node-???");
+    gRecordReplayRecordCommandLineArguments(pargc, pargv);
+    gRecordReplayNewCheckpoint();
+    v8::SetRecordingOrReplaying();
+  }
+}
+
+InitializationResult InitializeOncePerProcess(int* pargc, char*** pargv) {
+  InitializeRecordReplay(pargc, pargv);
+
+  int argc = *pargc;
+  char** argv = *pargv;
+
   // Initialized the enabled list for Debug() calls with system
   // environment variables.
   per_process::enabled_debug_list.Parse(nullptr);
@@ -1048,7 +1281,7 @@ void TearDownOncePerProcess() {
 }
 
 int Start(int argc, char** argv) {
-  InitializationResult result = InitializeOncePerProcess(argc, argv);
+  InitializationResult result = InitializeOncePerProcess(&argc, &argv);
   if (result.early_return) {
     return result.exit_code;
   }

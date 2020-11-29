@@ -47,6 +47,12 @@ class Task {
   virtual ~Task() = default;
 
   virtual void Run() = 0;
+
+  /**
+   * When recording/replaying, whether this task might not consistently occur
+   * between recording and replaying.
+   */
+  virtual bool IsRecordReplayNonDeterministic() const { return false; }
 };
 
 /**

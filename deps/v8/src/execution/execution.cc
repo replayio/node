@@ -14,6 +14,9 @@
 namespace v8 {
 namespace internal {
 
+extern void StartTrackingExecution();
+extern void StopTrackingExecution();
+
 namespace {
 
 Handle<Object> NormalizeReceiver(Isolate* isolate, Handle<Object> receiver) {
@@ -238,6 +241,8 @@ MaybeHandle<Context> NewScriptContext(Isolate* isolate,
   return result;
 }
 
+static int gStackDepth = 0;
+
 V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
                                                  const InvokeParams& params) {
   RuntimeCallTimerScope timer(isolate, RuntimeCallCounterId::kInvoke);
@@ -336,6 +341,10 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
     }
   }
 
+  if (IsTrackingExecution() && IsMainThread() && gStackDepth++ == 0) {
+    StartTrackingExecution();
+  }
+
   // Placeholder for return value.
   Object value;
 
@@ -365,6 +374,7 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
       Address recv = params.receiver->ptr();
       Address** argv = reinterpret_cast<Address**>(params.argv);
       RuntimeCallTimerScope timer(isolate, RuntimeCallCounterId::kJS_Execution);
+
       value = Object(stub_entry.Call(isolate->isolate_data()->isolate_root(),
                                      orig_func, func, recv, params.argc, argv));
     } else {
@@ -380,9 +390,14 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
           JSEntryFunction::FromAddress(isolate, code->InstructionStart());
 
       RuntimeCallTimerScope timer(isolate, RuntimeCallCounterId::kJS_Execution);
+
       value = Object(stub_entry.Call(isolate->isolate_data()->isolate_root(),
                                      params.microtask_queue));
     }
+  }
+
+  if (IsTrackingExecution() && IsMainThread() && --gStackDepth == 0) {
+    StopTrackingExecution();
   }
 
 #ifdef VERIFY_HEAP

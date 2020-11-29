@@ -4914,6 +4914,8 @@ MaybeHandle<JSDate> JSDate::New(Handle<JSFunction> constructor,
   return Handle<JSDate>::cast(result);
 }
 
+extern void RecordReplayBytes(const char* why, void* buf, size_t size);
+
 // static
 double JSDate::CurrentTimeValue(Isolate* isolate) {
   if (FLAG_log_internal_timer_events) LOG(isolate, CurrentTimeEvent());
@@ -4922,7 +4924,9 @@ double JSDate::CurrentTimeValue(Isolate* isolate) {
   // the number in a Date object representing a particular instant in
   // time is milliseconds. Therefore, we floor the result of getting
   // the OS time.
-  return std::floor(V8::GetCurrentPlatform()->CurrentClockTimeMillis());
+  double rv = std::floor(V8::GetCurrentPlatform()->CurrentClockTimeMillis());
+  RecordReplayBytes("JSDate::CurrentTimeValue", &rv, sizeof(rv));
+  return rv;
 }
 
 // static

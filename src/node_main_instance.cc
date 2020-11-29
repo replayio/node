@@ -125,6 +125,8 @@ NodeMainInstance::~NodeMainInstance() {
   isolate_->Dispose();
 }
 
+extern void RecordReplayFinishRecording();
+
 int NodeMainInstance::Run(const EnvSerializeInfo* env_info) {
   Locker locker(isolate_);
   Isolate::Scope isolate_scope(isolate_);
@@ -144,6 +146,7 @@ int NodeMainInstance::Run(const EnvSerializeInfo* env_info) {
       exit_code = SpinEventLoop(env.get()).FromMaybe(1);
     }
 
+    RecordReplayFinishRecording();
     ResetStdio();
 
     // TODO(addaleax): Neither NODE_SHARED_MODE nor HAVE_INSPECTOR really
