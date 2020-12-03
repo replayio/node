@@ -2484,8 +2484,8 @@ bool Debug::PerformSideEffectCheckForObject(Handle<Object> object) {
 // Helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-extern void RecordReplayOnScriptParsed(Isolate* isolate, const char* id,
-                                       const char* kind, const char* url);
+extern void RecordReplayOnNewSource(Isolate* isolate, const char* id,
+                                    const char* kind, const char* url);
 extern void RecordReplayPrint(const char* format, ...);
 extern Handle<String> CStringToHandle(Isolate* isolate, const char* str);
 
@@ -2829,7 +2829,7 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
   }
 
   if (IsRecordingOrReplaying()) {
-    RecordReplayOnScriptParsed(isolate, id.get(), "scriptSource", url.get());
+    RecordReplayOnNewSource(isolate, id.get(), "scriptSource", url.get());
   }
 }
 

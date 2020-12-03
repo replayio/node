@@ -947,7 +947,7 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
   return 0;
 }
 
-static void (*gRecordReplayAttach)(const char*);
+static void (*gRecordReplayAttach)(const char* dispatchAddress, const char* buildId);
 static void (*gRecordReplayRecordCommandLineArguments)(int*, char***);
 static uintptr_t (*gRecordReplayValue)(const char* why, uintptr_t value);
 static void (*gRecordReplayBytes)(const char* why, void* buf, size_t size);
@@ -957,11 +957,6 @@ static int (*gRecordReplayPointerId)(void* ptr);
 static void (*gRecordReplayAssert)(const char*, va_list);
 static void (*gRecordReplayOrderedLock)(const char* name);
 static void (*gRecordReplayOrderedUnlock)(const char* name);
-static void (*gRecordReplayEventLoopActivity)(const char* why);
-static int (*gRecordReplayTriggerCreate)(const char* kind,
-                                         void (*callback)(void*), void* arg);
-static void (*gRecordReplayTriggerCalled)(int signal);
-static void (*gRecordReplayTriggerCallPending)(const char* kind);
 static bool (*gRecordReplayIsReplaying)();
 static void (*gRecordReplayNewCheckpoint)();
 static void (*gRecordReplayFinishRecording)();
@@ -1070,32 +1065,6 @@ extern "C" void NodeRecordReplayBytes(const char* why, void* buf, size_t size) {
   RecordReplayBytes(why, buf, size);
 }
 
-void RecordReplayEventLoopActivity(const char* why) {
-  if (gRecordReplayEventLoopActivity) {
-    gRecordReplayEventLoopActivity(why);
-  }
-}
-
-extern "C" int NodeRecordReplayTriggerCreate(const char* kind,
-                                             void (*callback)(void*), void* arg) {
-  if (gRecordReplayTriggerCreate) {
-    return gRecordReplayTriggerCreate(kind, callback, arg);
-  }
-  return 0;
-}
-
-extern "C" void NodeRecordReplayTriggerCalled(int signal) {
-  if (gRecordReplayTriggerCalled) {
-    gRecordReplayTriggerCalled(signal);
-  }
-}
-
-extern "C" void NodeRecordReplayTriggerCallPending(const char* kind) {
-  if (gRecordReplayTriggerCallPending) {
-    gRecordReplayTriggerCallPending(kind);
-  }
-}
-
 extern "C" int NodeRecordReplayIsReplaying() {
   if (gRecordReplayIsReplaying) {
     return gRecordReplayIsReplaying();
@@ -1136,6 +1105,12 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
     return;
   }
 
+  const char* dispatchAddress = getenv("RECORD_REPLAY_DISPATCH");
+  if (!dispatchAddress) {
+    fprintf(stderr, "RECORD_REPLAY_DISPATCH not set.\n");
+    return;
+  }
+
   void* handle = dlopen(driver, RTLD_LAZY);
   if (!handle) {
     fprintf(stderr, "Loading Record Replay driver failed.\n");
@@ -1147,28 +1122,20 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
                          gRecordReplayRecordCommandLineArguments);
   RecordReplayLoadSymbol(handle, "RecordReplayValue", gRecordReplayValue);
   RecordReplayLoadSymbol(handle, "RecordReplayBytes", gRecordReplayBytes);
-  RecordReplayLoadSymbol(handle, "RecordReplayPrintVA", gRecordReplayPrintVA);
+  RecordReplayLoadSymbol(handle, "RecordReplayPrint", gRecordReplayPrintVA);
   RecordReplayLoadSymbol(handle, "RecordReplayFinishRecording", gRecordReplayFinishRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayRegisterPointer", gRecordReplayRegisterPointer);
   RecordReplayLoadSymbol(handle, "RecordReplayPointerId", gRecordReplayPointerId);
   RecordReplayLoadSymbol(handle, "RecordReplayAssert", gRecordReplayAssert);
   RecordReplayLoadSymbol(handle, "RecordReplayOrderedLock", gRecordReplayOrderedLock);
   RecordReplayLoadSymbol(handle, "RecordReplayOrderedUnlock", gRecordReplayOrderedUnlock);
-  RecordReplayLoadSymbol(handle, "RecordReplayEventLoopActivity",
-                         gRecordReplayEventLoopActivity);
-  RecordReplayLoadSymbol(handle, "RecordReplayTriggerCreate",
-                         gRecordReplayTriggerCreate);
-  RecordReplayLoadSymbol(handle, "RecordReplayTriggerCalled",
-                         gRecordReplayTriggerCalled);
-  RecordReplayLoadSymbol(handle, "RecordReplayTriggerCallPending",
-                         gRecordReplayTriggerCallPending);
   RecordReplayLoadSymbol(handle, "RecordReplayIsReplaying",
                          gRecordReplayIsReplaying);
   RecordReplayLoadSymbol(handle, "RecordReplayNewCheckpoint",
                          gRecordReplayNewCheckpoint);
 
   if (gRecordReplayAttach && gRecordReplayFinishRecording) {
-    gRecordReplayAttach("macOS-node-???");
+    gRecordReplayAttach(dispatchAddress, "macOS-node-???");
     gRecordReplayRecordCommandLineArguments(pargc, pargv);
     gRecordReplayNewCheckpoint();
     v8::SetRecordingOrReplaying();

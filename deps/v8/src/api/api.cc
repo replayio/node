@@ -11116,8 +11116,8 @@ CFunction::CFunction(const void* address, const CFunctionInfo* type_info)
 }
 
 static bool gRecordingOrReplaying;
-static void (*gRecordReplayOnScriptParsed)(const char* id, const char* kind,
-                                           const char* url);
+static void (*gRecordReplayOnNewSource)(const char* id, const char* kind,
+                                        const char* url);
 static void (*gRecordReplayOnConsoleMessage)(const char* level, const char* source,
                                              int firstStackFrame,
                                              const char* params);
@@ -11126,8 +11126,8 @@ static void (*gRecordReplayOnExceptionUnwind)();
 typedef char* (CommandCallbackRaw)(const char* params);
 static void (*gRecordReplaySetCommandCallback)(const char* method, CommandCallbackRaw callback);
 
-static void (*gRecordReplayPrintVA)(const char* format, va_list args);
-static void (*gRecordReplayInstrument)(const char* kind, const char* function, int offset);
+static void (*gRecordReplayPrint)(const char* format, va_list args);
+static void (*gRecordReplayOnInstrument)(const char* kind, const char* function, int offset);
 static void (*gRecordReplayAssert)(const char*, va_list);
 static void (*gRecordReplayBytes)(const char* why, void* buf, size_t size);
 static uintptr_t (*gRecordReplayValue)(const char* why, uintptr_t v);
@@ -11135,10 +11135,10 @@ static uint64_t* (*gRecordReplayProgressCounter)();
 
 namespace internal {
 
-void RecordReplayOnScriptParsed(Isolate* isolate, const char* id,
-                                const char* kind, const char* url) {
+void RecordReplayOnNewSource(Isolate* isolate, const char* id,
+                             const char* kind, const char* url) {
   DCHECK(gRecordingOrReplaying);
-  gRecordReplayOnScriptParsed(id, kind, url);
+  gRecordReplayOnNewSource(id, kind, url);
 }
 
 void RecordReplayOnConsoleMessage(Isolate* isolate, const char* level,
@@ -11162,7 +11162,7 @@ void RecordReplayOnExceptionUnwind() {
 void RecordReplayPrint(const char* format, ...) {
   va_list args;
   va_start(args, format);
-  gRecordReplayPrintVA(format, args);
+  gRecordReplayPrint(format, args);
   va_end(args);
 }
 
@@ -11257,7 +11257,7 @@ static void InstallCommandCallbacks() {
 }
 
 void RecordReplayInstrument(const char* kind, const char* function, int offset) {
-  gRecordReplayInstrument(kind, function, offset);
+  gRecordReplayOnInstrument(kind, function, offset);
 }
 
 } // namespace internal
@@ -11286,15 +11286,15 @@ void SetRecordingOrReplaying() {
   gRecordingOrReplaying = true;
   gIsMainThread = true;
 
-  RecordReplayLoadSymbol("RecordReplayOnScriptParsed", gRecordReplayOnScriptParsed);
+  RecordReplayLoadSymbol("RecordReplayOnNewSource", gRecordReplayOnNewSource);
   RecordReplayLoadSymbol("RecordReplayOnConsoleMessage", gRecordReplayOnConsoleMessage);
   RecordReplayLoadSymbol("RecordReplayOnExceptionUnwind", gRecordReplayOnExceptionUnwind);
   RecordReplayLoadSymbol("RecordReplaySetCommandCallback", gRecordReplaySetCommandCallback);
-  RecordReplayLoadSymbol("RecordReplayPrintVA", gRecordReplayPrintVA);
+  RecordReplayLoadSymbol("RecordReplayPrint", gRecordReplayPrint);
   RecordReplayLoadSymbol("RecordReplayAssert", gRecordReplayAssert);
   RecordReplayLoadSymbol("RecordReplayBytes", gRecordReplayBytes);
   RecordReplayLoadSymbol("RecordReplayValue", gRecordReplayValue);
-  RecordReplayLoadSymbol("RecordReplayInstrument", gRecordReplayInstrument);
+  RecordReplayLoadSymbol("RecordReplayOnInstrument", gRecordReplayOnInstrument);
   RecordReplayLoadSymbol("RecordReplayProgressCounter", gRecordReplayProgressCounter);
 
   internal::InstallCommandCallbacks();

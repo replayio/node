@@ -57,7 +57,6 @@ using v8::Value;
 using worker::Worker;
 
 extern void RecordReplayAssert(const char* format, ...);
-extern void RecordReplayEventLoopActivity(const char* why);
 
 int const Environment::kNodeContextTag = 0x6e6f64;
 void* const Environment::kNodeContextTagPtr = const_cast<void*>(
@@ -882,8 +881,6 @@ void Environment::CheckImmediate(uv_check_t* handle) {
   Environment* env = Environment::from_immediate_check_handle(handle);
   TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
                               "CheckImmediate", env);
-
-  RecordReplayEventLoopActivity("Environment::CheckImmediate");
 
   HandleScope scope(env->isolate());
   Context::Scope context_scope(env->context());
