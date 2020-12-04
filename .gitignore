@@ -145,3 +145,5 @@ tools/*/*.i.tmp
 __pycache__
 .DS_Store
 *~
+
+/src/node_build_id.cc

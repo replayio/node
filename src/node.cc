@@ -1096,6 +1096,8 @@ static void RecordReplayLoadSymbol(void* handle, const char* name, T& function) 
   CastPointer(sym, &function);
 }
 
+extern char gBuildId[];
+
 static void InitializeRecordReplay(int* pargc, char*** pargv) {
   const char* driver = getenv("RECORD_REPLAY_DRIVER");
   if (!driver) {
@@ -1135,7 +1137,7 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
                          gRecordReplayNewCheckpoint);
 
   if (gRecordReplayAttach && gRecordReplayFinishRecording) {
-    gRecordReplayAttach(dispatchAddress, "macOS-node-???");
+    gRecordReplayAttach(dispatchAddress, gBuildId);
     gRecordReplayRecordCommandLineArguments(pargc, pargv);
     gRecordReplayNewCheckpoint();
     v8::SetRecordingOrReplaying();
