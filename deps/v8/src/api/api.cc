@@ -11197,7 +11197,7 @@ Handle<String> CStringToHandle(Isolate* isolate, const char* str) {
   return isolate->factory()->NewStringFromOneByte(nstr).ToHandleChecked();
 }
 
-extern Handle<Object> RecordReplayGetScriptSource(Isolate* isolate, Handle<Object> params);
+extern Handle<Object> RecordReplayGetSourceContents(Isolate* isolate, Handle<Object> params);
 extern Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
                                                       Handle<Object> params);
 extern Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
@@ -11234,8 +11234,8 @@ static char* CommandCallbackWrapper(const char* params) {
 }
 
 static void InstallCommandCallbacks() {
-  gRecordReplaySetCommandCallback("Debugger.getScriptSource",
-                                  CommandCallbackWrapper<RecordReplayGetScriptSource>);
+  gRecordReplaySetCommandCallback("Debugger.getSourceContents",
+                                  CommandCallbackWrapper<RecordReplayGetSourceContents>);
   gRecordReplaySetCommandCallback("Debugger.getPossibleBreakpoints",
                                   CommandCallbackWrapper<RecordReplayGetPossibleBreakpoints>);
   gRecordReplaySetCommandCallback("Internal.convertLocationToFunctionOffset",

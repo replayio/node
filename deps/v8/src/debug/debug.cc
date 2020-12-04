@@ -2546,10 +2546,10 @@ static void ArrayPush(Isolate* isolate, Handle<Object> array, const char* value)
 
 static std::vector<Eternal<Value>> gRecordReplayScripts;
 
-static int GetScriptIdProperty(Isolate* isolate, Handle<Object> obj) {
-  Handle<Object> scriptIdStr = GetProperty(isolate, obj, "scriptId");
-  std::unique_ptr<char[]> scriptIdText = String::cast(*scriptIdStr).ToCString();
-  return atol(scriptIdText.get());
+static int GetSourceIdProperty(Isolate* isolate, Handle<Object> obj) {
+  Handle<Object> sourceIdStr = GetProperty(isolate, obj, "sourceId");
+  std::unique_ptr<char[]> sourceIdText = String::cast(*sourceIdStr).ToCString();
+  return atol(sourceIdText.get());
 }
 
 // Get the script from an ID.
@@ -2567,13 +2567,13 @@ Handle<Script> GetScript(Isolate* isolate, int script_id) {
   V8_IMMEDIATE_CRASH();
 }
 
-Handle<Object> RecordReplayGetScriptSource(Isolate* isolate, Handle<Object> params) {
-  int script_id = GetScriptIdProperty(isolate, params);
+Handle<Object> RecordReplayGetSourceContents(Isolate* isolate, Handle<Object> params) {
+  int script_id = GetSourceIdProperty(isolate, params);
   Handle<Script> script = GetScript(isolate, script_id);
 
   Handle<String> source(String::cast(script->source()), isolate);
   Handle<JSObject> obj = NewPlainObject(isolate);
-  SetProperty(isolate, obj, "scriptSource", source);
+  SetProperty(isolate, obj, "contents", source);
   SetProperty(isolate, obj, "contentType", "text/javascript");
   return obj;
 }
@@ -2671,7 +2671,7 @@ extern std::string GetRecordReplayFunctionId(Handle<SharedFunctionInfo> shared);
 
 Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
                                                   Handle<Object> params) {
-  int script_id = GetScriptIdProperty(isolate, params);
+  int script_id = GetSourceIdProperty(isolate, params);
   Handle<Script> script = GetScript(isolate, script_id);
 
   int beginLine = 1, beginColumn = 0;
@@ -2751,11 +2751,11 @@ Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
 Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
                                                            Handle<Object> params) {
   Handle<Object> location = GetProperty(isolate, params, "location");
-  int scriptId = GetScriptIdProperty(isolate, location);
+  int sourceId = GetSourceIdProperty(isolate, location);
   int line = GetProperty(isolate, location, "line")->Number();
   int column = GetProperty(isolate, location, "column")->Number();
 
-  std::string key = BreakpointKey(scriptId, line, column);
+  std::string key = BreakpointKey(sourceId, line, column);
   auto iter = gBreakpoints.find(key);
   if (iter == gBreakpoints.end()) {
     RecordReplayPrint("Unknown location for RecordReplayConvertLocationToFunctionOffset, crashing.");
@@ -2768,7 +2768,7 @@ Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
   return rv;
 }
 
-static Handle<String> GetProtocolScriptId(Isolate* isolate, Handle<Script> script) {
+static Handle<String> GetProtocolSourceId(Isolate* isolate, Handle<Script> script) {
   std::ostringstream os;
   os << script->id();
   return CStringToHandle(isolate, os.str().c_str());
@@ -2810,7 +2810,7 @@ Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isolate,
   int column = info.column;
 
   Handle<JSObject> rv = NewPlainObject(isolate);
-  SetProperty(isolate, rv, "scriptId", GetProtocolScriptId(isolate, script));
+  SetProperty(isolate, rv, "sourceId", GetProtocolSourceId(isolate, script));
   SetProperty(isolate, rv, "line", line);
   SetProperty(isolate, rv, "column", column);
   return rv;
@@ -2820,7 +2820,7 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
   Isolate* isolate = Isolate::Current();
   gRecordReplayScripts.emplace_back((v8::Isolate*)isolate, v8::Utils::ToLocal(script));
 
-  Handle<String> idStr = GetProtocolScriptId(isolate, script);
+  Handle<String> idStr = GetProtocolSourceId(isolate, script);
   std::unique_ptr<char[]> id = String::cast(*idStr).ToCString();
 
   std::unique_ptr<char[]> url;
@@ -2877,7 +2877,7 @@ static Handle<Object> NewPauseData(Isolate* isolate) {
 
 static Handle<Object> ConvertLocation(Isolate* isolate, Location* location) {
   Handle<JSObject> locationObj = NewPlainObject(isolate);
-  SetProperty(isolate, locationObj, "scriptId", location->getScriptId().utf8().c_str());
+  SetProperty(isolate, locationObj, "sourceId", location->getScriptId().utf8().c_str());
   // Use 1-indexed line instead of 0-indexed.
   SetProperty(isolate, locationObj, "line", location->getLineNumber() + 1);
   SetProperty(isolate, locationObj, "column", location->getColumnNumber(0));
