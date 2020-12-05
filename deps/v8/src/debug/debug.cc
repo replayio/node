@@ -2848,6 +2848,8 @@ using protocol::Debugger::Location;
 using protocol::Runtime::RemoteObject;
 
 static void EnsureInspectorSession() {
+  CHECK(IsMainThread());
+
   if (!gInspectorSession) {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     V8InspectorImpl* inspector =
@@ -3283,9 +3285,15 @@ Handle<Object> RecordReplayGetObjectProperty(Isolate* isolate, Handle<Object> pa
 //Handle<Object> RecordReplayCallFunction(Isolate* isolate, Handle<Object> params) {
 //}
 
-extern void RecordReplayOnConsoleMessage(Isolate* isolate, const char* level,
-                                         const char* source, int firstStackFrame,
-                                         Handle<Object> argsObj);
+extern void RecordReplayOnConsoleMessage(Isolate* isolate, size_t bookmark);
+
+static Handle<JSObject>* gCurrentMessage;
+
+Handle<Object> RecordReplayGetCurrentMessageContents(Isolate* isolate,
+                                                     Handle<i::Object> params) {
+  CHECK(gCurrentMessage);
+  return *gCurrentMessage;
+}
 
 }  // namespace internal
 
@@ -3297,6 +3305,10 @@ void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& c
 }
 
 void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>& callArgs) {
+  if (!IsMainThread()) {
+    return;
+  }
+
   i::EnsureInspectorSession();
 
   Isolate* v8isolate = callArgs.GetIsolate();
@@ -3310,7 +3322,7 @@ void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>&
   }
 
   String::Utf8Value level(v8isolate, callArgs[0]);
-  size_t firstStackFrame = Utils::OpenHandle(*callArgs[1])->Number();
+  //size_t firstStackFrame = Utils::OpenHandle(*callArgs[1])->Number();
 
   i::Handle<i::JSArray> argsObj = i::NewArray(isolate);
 
@@ -3322,7 +3334,19 @@ void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>&
     i::ArrayPush(isolate, argsObj, argValue);
   }
 
-  i::RecordReplayOnConsoleMessage(isolate, *level, "ConsoleAPI", firstStackFrame, argsObj);
+  i::Handle<i::JSObject> message = i::NewPlainObject(isolate);
+
+  SetProperty(isolate, message, "source", "ConsoleAPI");
+  SetProperty(isolate, message, "level", *level);
+  SetProperty(isolate, message, "text", "");
+  SetProperty(isolate, message, "argumentValues", argsObj);
+
+  CHECK(!i::gCurrentMessage);
+  i::gCurrentMessage = &message;
+
+  i::RecordReplayOnConsoleMessage(isolate, 0);
+
+  i::gCurrentMessage = nullptr;
 }
 
 }  // namespace v8

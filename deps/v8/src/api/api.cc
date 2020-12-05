@@ -11118,9 +11118,7 @@ CFunction::CFunction(const void* address, const CFunctionInfo* type_info)
 static bool gRecordingOrReplaying;
 static void (*gRecordReplayOnNewSource)(const char* id, const char* kind,
                                         const char* url);
-static void (*gRecordReplayOnConsoleMessage)(const char* level, const char* source,
-                                             int firstStackFrame,
-                                             const char* params);
+static void (*gRecordReplayOnConsoleMessage)(size_t bookmark);
 static void (*gRecordReplayOnExceptionUnwind)();
 
 typedef char* (CommandCallbackRaw)(const char* params);
@@ -11141,17 +11139,9 @@ void RecordReplayOnNewSource(Isolate* isolate, const char* id,
   gRecordReplayOnNewSource(id, kind, url);
 }
 
-void RecordReplayOnConsoleMessage(Isolate* isolate, const char* level,
-                                  const char* source, int firstStackFrame,
-                                  Handle<Object> argsObj) {
+void RecordReplayOnConsoleMessage(Isolate* isolate, size_t bookmark) {
   DCHECK(gRecordingOrReplaying);
-
-  Handle<Object> undefined = isolate->factory()->undefined_value();
-  Handle<Object> argsStr =
-    JsonStringify(isolate, argsObj, undefined, undefined).ToHandleChecked();
-  std::unique_ptr<char[]> args = String::cast(*argsStr).ToCString();
-
-  gRecordReplayOnConsoleMessage(level, source, firstStackFrame, args.get());
+  gRecordReplayOnConsoleMessage(bookmark);
 }
 
 void RecordReplayOnExceptionUnwind() {
@@ -11199,11 +11189,13 @@ Handle<String> CStringToHandle(Isolate* isolate, const char* str) {
 
 extern Handle<Object> RecordReplayGetSourceContents(Isolate* isolate, Handle<Object> params);
 extern Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
-                                                      Handle<Object> params);
+                                                         Handle<Object> params);
 extern Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
-                                                               Handle<Object> params);
+                                                                  Handle<Object> params);
 extern Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isolate,
-                                                               Handle<Object> params);
+                                                                  Handle<Object> params);
+extern Handle<Object> RecordReplayGetCurrentMessageContents(Isolate* isolate,
+                                                            Handle<Object> params);
 extern Handle<Object> RecordReplayGetAllFrames(Isolate* isolate, Handle<Object> params);
 extern Handle<Object> RecordReplayGetScope(Isolate* isolate, Handle<Object> params);
 extern Handle<Object> RecordReplayGetObjectPreview(Isolate* isolate, Handle<Object> params);
@@ -11238,10 +11230,12 @@ static void InstallCommandCallbacks() {
                                   CommandCallbackWrapper<RecordReplayGetSourceContents>);
   gRecordReplaySetCommandCallback("Debugger.getPossibleBreakpoints",
                                   CommandCallbackWrapper<RecordReplayGetPossibleBreakpoints>);
-  gRecordReplaySetCommandCallback("Internal.convertLocationToFunctionOffset",
+  gRecordReplaySetCommandCallback("Target.convertLocationToFunctionOffset",
                                   CommandCallbackWrapper<RecordReplayConvertLocationToFunctionOffset>);
-  gRecordReplaySetCommandCallback("Internal.convertFunctionOffsetToLocation",
+  gRecordReplaySetCommandCallback("Target.convertFunctionOffsetToLocation",
                                   CommandCallbackWrapper<RecordReplayConvertFunctionOffsetToLocation>);
+  gRecordReplaySetCommandCallback("Target.getCurrentMessageContents",
+                                  CommandCallbackWrapper<RecordReplayGetCurrentMessageContents>);
   gRecordReplaySetCommandCallback("Pause.getAllFrames",
                                   CommandCallbackWrapper<RecordReplayGetAllFrames>);
   gRecordReplaySetCommandCallback("Pause.getScope",
