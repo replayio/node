@@ -955,6 +955,7 @@ static void (*gRecordReplayPrintVA)(const char* format, va_list args);
 static void (*gRecordReplayRegisterPointer)(void* ptr);
 static int (*gRecordReplayPointerId)(void* ptr);
 static void (*gRecordReplayAssert)(const char*, va_list);
+static void (*gRecordReplayAssertBytes)(const char* why, const void* ptr, size_t nbytes);
 static size_t (*gRecordReplayCreateOrderedLock)(const char* name);
 static void (*gRecordReplayOrderedLock)(int lock);
 static void (*gRecordReplayOrderedUnlock)(int lock);
@@ -1028,6 +1029,16 @@ extern "C" void NodeRecordReplayAssert(const char* format, ...) {
     gRecordReplayAssert(format, ap);
     va_end(ap);
   }
+}
+
+void AssertBytes(const char* why, const void* buf, size_t size) {
+  if (gRecordReplayAssertBytes) {
+    gRecordReplayAssertBytes(why, buf, size);
+  }
+}
+
+extern "C" void NodeRecordReplayAssertBytes(const char* why, const void* buf, size_t size) {
+  AssertBytes(why, buf, size);
 }
 
 size_t CreateOrderedLock(const char* name) {
@@ -1167,6 +1178,7 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   RecordReplayLoadSymbol(handle, "RecordReplayRegisterPointer", gRecordReplayRegisterPointer);
   RecordReplayLoadSymbol(handle, "RecordReplayPointerId", gRecordReplayPointerId);
   RecordReplayLoadSymbol(handle, "RecordReplayAssert", gRecordReplayAssert);
+  RecordReplayLoadSymbol(handle, "RecordReplayAssertBytes", gRecordReplayAssertBytes);
   RecordReplayLoadSymbol(handle, "RecordReplayCreateOrderedLock",
                          gRecordReplayCreateOrderedLock);
   RecordReplayLoadSymbol(handle, "RecordReplayOrderedLock", gRecordReplayOrderedLock);
