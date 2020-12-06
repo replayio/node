@@ -19,7 +19,9 @@ class Environment;
 
 namespace performance {
 
-extern const uint64_t timeOrigin;
+extern uint64_t timeOrigin;
+
+void InitPerformance();
 
 static inline const char* GetPerformanceMilestoneName(
     enum PerformanceMilestone milestone) {

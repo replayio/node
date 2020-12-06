@@ -1147,6 +1147,8 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
 InitializationResult InitializeOncePerProcess(int* pargc, char*** pargv) {
   InitializeRecordReplay(pargc, pargv);
 
+  performance::InitPerformance();
+
   int argc = *pargc;
   char** argv = *pargv;
 

@@ -38,10 +38,17 @@ using v8::Value;
 #define MICROS_PER_MILLIS 1e3
 
 // https://w3c.github.io/hr-time/#dfn-time-origin
-const uint64_t timeOrigin = PERFORMANCE_NOW();
+uint64_t timeOrigin;
 // https://w3c.github.io/hr-time/#dfn-time-origin-timestamp
-const double timeOriginTimestamp = GetCurrentTimeInMicroseconds();
+double timeOriginTimestamp;
 uint64_t performance_v8_start;
+
+void InitPerformance() {
+  // Don't initialize these statically so they will have consistent values when
+  // recording/replaying.
+  timeOrigin = PERFORMANCE_NOW();
+  timeOriginTimestamp = GetCurrentTimeInMicroseconds();
+}
 
 PerformanceState::PerformanceState(Isolate* isolate,
                                    const PerformanceState::SerializeInfo* info)
