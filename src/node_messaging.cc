@@ -40,9 +40,6 @@ using v8::WasmModuleObject;
 
 namespace node {
 
-extern void RecordReplayAssert(const char* format, ...);
-extern void RecordReplayPrint(const char* format, ...);
-
 using BaseObjectList = std::vector<BaseObjectPtr<BaseObject>>;
 
 BaseObject::TransferMode BaseObject::GetTransferMode() const {
@@ -718,7 +715,7 @@ MaybeLocal<Value> MessagePort::ReceiveMessage(Local<Context> context,
 }
 
 void MessagePort::OnMessage() {
-  RecordReplayAssert("MessagePort::OnMessage");
+  recordreplay::Assert("MessagePort::OnMessage");
 
   Debug(this, "Running MessagePort::OnMessage()");
   HandleScope handle_scope(env()->isolate());

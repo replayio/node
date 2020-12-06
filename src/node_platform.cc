@@ -14,9 +14,6 @@ using v8::Object;
 using v8::Platform;
 using v8::Task;
 
-extern void RecordReplayAssert(const char* format, ...);
-extern void RecordReplayPrint(const char* format, ...);
-
 namespace {
 
 struct PlatformWorkerData {
@@ -250,7 +247,7 @@ void PerIsolatePlatformData::PostTask(std::unique_ptr<Task> task) {
     // For now we ignore non-deterministic tasks. This prevents the GC from working.
     return;
   }
-  RecordReplayAssert("PerIsolatePlatformData::PostTask");
+  recordreplay::Assert("PerIsolatePlatformData::PostTask");
 
   if (flush_tasks_ == nullptr) {
     // V8 may post tasks during Isolate disposal. In that case, the only
@@ -267,7 +264,7 @@ void PerIsolatePlatformData::PostDelayedTask(
     // For now we ignore non-deterministic tasks. This prevents the GC from working.
     return;
   }
-  RecordReplayAssert("PerIsolatePlatformData::PostDelayedTask");
+  recordreplay::Assert("PerIsolatePlatformData::PostDelayedTask");
   if (flush_tasks_ == nullptr) {
     // V8 may post tasks during Isolate disposal. In that case, the only
     // sensible path forward is to discard the task.
@@ -445,7 +442,7 @@ void PerIsolatePlatformData::DeleteFromScheduledTasks(DelayedTask* task) {
 }
 
 void PerIsolatePlatformData::RunForegroundTask(uv_timer_t* handle) {
-  RecordReplayAssert("PerIsolatePlatformData::RunForegroundTask");
+  recordreplay::Assert("PerIsolatePlatformData::RunForegroundTask");
   DelayedTask* delayed = ContainerOf(&DelayedTask::timer, handle);
   delayed->platform_data->RunForegroundTask(std::move(delayed->task));
   delayed->platform_data->DeleteFromScheduledTasks(delayed);
@@ -549,6 +546,7 @@ NodePlatform::GetForegroundTaskRunner(Isolate* isolate) {
 
 double NodePlatform::MonotonicallyIncreasingTime() {
   // Convert nanos to seconds.
+  recordreplay::AutoPassThroughEvents pt;
   return uv_hrtime() / 1e9;
 }
 

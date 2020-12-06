@@ -410,8 +410,6 @@ static void ReallyExit(const FunctionCallbackInfo<Value>& args) {
   env->Exit(code);
 }
 
-extern uintptr_t RecordReplayValue(const char* why, uintptr_t value);
-
 class FastHrtime : public BaseObject {
  public:
   static Local<Object> New(Environment* env) {

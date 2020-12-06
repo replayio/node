@@ -38,8 +38,6 @@ using v8::Signature;
 using v8::String;
 using v8::Value;
 
-extern void RecordReplayAssert(const char* format, ...);
-
 template int StreamBase::WriteString<ASCII>(
     const FunctionCallbackInfo<Value>& args);
 template int StreamBase::WriteString<UTF8>(
@@ -327,7 +325,7 @@ MaybeLocal<Value> StreamBase::CallJSOnreadMethod(ssize_t nread,
                                                  StreamBaseJSChecks checks) {
   Environment* env = env_;
 
-  RecordReplayAssert("StreamBase::CallJSOnreadMethod");
+  recordreplay::Assert("StreamBase::CallJSOnreadMethod");
 
   DCHECK_EQ(static_cast<int32_t>(nread), nread);
   DCHECK_LE(offset, INT32_MAX);
@@ -551,7 +549,7 @@ void CustomBufferJSListener::OnStreamRead(ssize_t nread, const uv_buf_t& buf) {
 
 void ReportWritesToJSStreamListener::OnStreamAfterReqFinished(
     StreamReq* req_wrap, int status) {
-  RecordReplayAssert("ReportWritesToJSStreamListener::OnStreamAfterReqFinished");
+  recordreplay::Assert("ReportWritesToJSStreamListener::OnStreamAfterReqFinished");
 
   StreamBase* stream = static_cast<StreamBase*>(stream_);
   Environment* env = stream->stream_env();

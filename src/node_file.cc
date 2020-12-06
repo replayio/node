@@ -48,8 +48,6 @@
 
 namespace node {
 
-extern void RecordReplayAssert(const char* format, ...);
-
 namespace fs {
 
 using v8::Array;
@@ -564,7 +562,7 @@ int FileHandle::DoShutdown(ShutdownWrap* req_wrap) {
 
 
 void FSReqCallback::Reject(Local<Value> reject) {
-  RecordReplayAssert("FSReqCallback::Reject");
+  recordreplay::Assert("FSReqCallback::Reject");
   MakeCallback(env()->oncomplete_string(), 1, &reject);
 }
 
@@ -573,7 +571,7 @@ void FSReqCallback::ResolveStat(const uv_stat_t* stat) {
 }
 
 void FSReqCallback::Resolve(Local<Value> value) {
-  RecordReplayAssert("FSReqCallback::Resolve");
+  recordreplay::Assert("FSReqCallback::Resolve");
   Local<Value> argv[2] {
     Null(env()->isolate()),
     value

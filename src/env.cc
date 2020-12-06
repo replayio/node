@@ -56,8 +56,6 @@ using v8::Undefined;
 using v8::Value;
 using worker::Worker;
 
-extern void RecordReplayAssert(const char* format, ...);
-
 int const Environment::kNodeContextTag = 0x6e6f64;
 void* const Environment::kNodeContextTagPtr = const_cast<void*>(
     static_cast<const void*>(&Environment::kNodeContextTag));
@@ -690,7 +688,7 @@ void Environment::RunAndClearInterrupts() {
   while (true) {
     NativeImmediateQueue queue;
     {
-      RecordReplayAssert("native_immediates_threadsafe_mutex #1");
+      recordreplay::Assert("native_immediates_threadsafe_mutex #1");
       Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
       if (native_immediates_interrupts_.size() == 0) {
         break;
@@ -705,7 +703,7 @@ void Environment::RunAndClearInterrupts() {
 }
 
 void Environment::RunAndClearNativeImmediates(bool only_refed) {
-  RecordReplayAssert("Environment::RunAndClearNativeImmediates");
+  recordreplay::Assert("Environment::RunAndClearNativeImmediates");
 
   TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
                               "RunAndClearNativeImmediates", this);
@@ -754,7 +752,7 @@ void Environment::RunAndClearNativeImmediates(bool only_refed) {
   // This is intentionally placed after the `ref_count` handling, because when
   // refed threadsafe immediates are created, they are not counted towards the
   // count in immediate_info() either.
-  RecordReplayAssert("native_immediates_threadsafe_mutex #2");
+  recordreplay::Assert("native_immediates_threadsafe_mutex #2");
   NativeImmediateQueue threadsafe_immediates;
   {
     Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
@@ -816,7 +814,7 @@ void Environment::RunTimers(uv_timer_t* handle) {
   TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
                               "RunTimers", env);
 
-  RecordReplayAssert("Environment::RunTimers");
+  recordreplay::Assert("Environment::RunTimers");
 
   if (!env->can_call_into_js())
     return;
@@ -888,7 +886,7 @@ void Environment::CheckImmediate(uv_check_t* handle) {
     return;
 
   do {
-    RecordReplayAssert("Environment::CheckImmediate Callback");
+    recordreplay::Assert("Environment::CheckImmediate Callback");
     MakeCallback(env->isolate(),
                  env->process_object(),
                  env->immediate_callback_function(),
@@ -912,14 +910,12 @@ void Environment::ToggleImmediateRef(bool ref) {
   }
 }
 
-extern void RecordReplayBytes(const char* why, void* buf, size_t size);
-
 Local<Value> Environment::GetNow() {
   uv_update_time(event_loop());
   uint64_t now = uv_now(event_loop());
   CHECK_GE(now, timer_base());
   now -= timer_base();
-  RecordReplayBytes("Environment::GetNow", &now, sizeof(now));
+  recordreplay::RecordReplayBytes("Environment::GetNow", &now, sizeof(now));
   if (now <= 0xffffffff)
     return Integer::NewFromUnsigned(isolate(), static_cast<uint32_t>(now));
   else
@@ -1172,7 +1168,7 @@ void Environment::Exit(int exit_code) {
 }
 
 void Environment::stop_sub_worker_contexts() {
-  RecordReplayAssert("Environment::stop_sub_worker_contexts");
+  recordreplay::Assert("Environment::stop_sub_worker_contexts");
 
   DCHECK_EQ(Isolate::GetCurrent(), isolate());
 

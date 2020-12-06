@@ -328,6 +328,7 @@ typedef struct {
   uv_async_cb async_cb;                                                       \
   void* queue[2];                                                             \
   int pending;                                                                \
+  int ordered_lock_id;
 
 #define UV_TIMER_PRIVATE_FIELDS                                               \
   uv_timer_cb timer_cb;                                                       \

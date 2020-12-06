@@ -48,8 +48,6 @@ using v8::Uint32;
 using v8::Undefined;
 using v8::Value;
 
-extern void RecordReplayAssert(const char* format, ...);
-
 class SendWrap : public ReqWrap<uv_udp_send_t> {
  public:
   SendWrap(Environment* env, Local<Object> req_wrap_obj, bool have_callback);
@@ -669,7 +667,7 @@ int UDPWrap::RecvStop() {
 
 
 void UDPWrap::OnSendDone(ReqWrap<uv_udp_send_t>* req, int status) {
-  RecordReplayAssert("UDPWrap::OnSendDone");
+  recordreplay::Assert("UDPWrap::OnSendDone");
   std::unique_ptr<SendWrap> req_wrap{static_cast<SendWrap*>(req)};
   if (req_wrap->have_callback()) {
     Environment* env = req_wrap->env();

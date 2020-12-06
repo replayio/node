@@ -16,8 +16,6 @@ using v8::Object;
 using v8::String;
 using v8::Value;
 
-extern void RecordReplayAssert(const char* format, ...);
-
 StreamPipe::StreamPipe(StreamBase* source,
                        StreamBase* sink,
                        Local<Object> obj)
@@ -167,7 +165,7 @@ void StreamPipe::ProcessData(size_t nread, AllocatedBuffer&& buf) {
 
 void StreamPipe::WritableListener::OnStreamAfterWrite(WriteWrap* w,
                                                       int status) {
-  RecordReplayAssert("StreamPipe::WritableListener::OnStreamAfterWrite");
+  recordreplay::Assert("StreamPipe::WritableListener::OnStreamAfterWrite");
 
   StreamPipe* pipe = ContainerOf(&StreamPipe::writable_listener_, this);
   pipe->pending_writes_--;

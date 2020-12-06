@@ -45,6 +45,8 @@
 #define EV_OOBAND  EV_FLAG1
 #endif
 
+extern void NodeRecordReplayAssert(const char* format, ...);
+
 static void uv__fs_event(uv_loop_t* loop, uv__io_t* w, unsigned int fflags);
 
 
@@ -131,6 +133,8 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
   int i;
   int user_timeout;
   int reset_timeout;
+
+  NodeRecordReplayAssert("uv__io_poll");
 
   if (loop->nfds == 0) {
     assert(QUEUE_EMPTY(&loop->watcher_queue));

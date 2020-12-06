@@ -962,6 +962,10 @@ static void (*gRecordReplayAddOrderedPthreadMutex)(const char* name, pthread_mut
 static bool (*gRecordReplayIsReplaying)();
 static void (*gRecordReplayNewCheckpoint)();
 static void (*gRecordReplayFinishRecording)();
+static void (*gRecordReplayBeginPassThroughEvents)();
+static void (*gRecordReplayEndPassThroughEvents)();
+
+namespace recordreplay {
 
 extern "C" void NodeRecordReplayRegisterPointer(void* ptr) {
   if (gRecordReplayRegisterPointer) {
@@ -976,7 +980,7 @@ extern "C" int NodeRecordReplayPointerId(void* ptr) {
   return 0;
 }
 
-void RecordReplayPrint(const char* format, ...) {
+void Print(const char* format, ...) {
   va_list args;
   va_start(args, format);
 
@@ -1008,7 +1012,7 @@ extern "C" void NodeRecordReplayPrint(const char* format, ...) {
   va_end(args);
 }
 
-void RecordReplayAssert(const char* format, ...) {
+void Assert(const char* format, ...) {
   if (gRecordReplayAssert) {
     va_list ap;
     va_start(ap, format);
@@ -1026,16 +1030,35 @@ extern "C" void NodeRecordReplayAssert(const char* format, ...) {
   }
 }
 
-void RecordReplayOrderedLock(int lock) {
+size_t CreateOrderedLock(const char* name) {
+  if (gRecordReplayCreateOrderedLock) {
+    return gRecordReplayCreateOrderedLock(name);
+  }
+  return 0;
+}
+
+extern "C" size_t NodeRecordReplayCreateOrderedLock(const char* name) {
+  return CreateOrderedLock(name);
+}
+
+void OrderedLock(int lock) {
   if (gRecordReplayOrderedLock) {
     gRecordReplayOrderedLock(lock);
   }
 }
 
-void RecordReplayOrderedUnlock(int lock) {
+extern "C" void NodeRecordReplayOrderedLock(int lock) {
+  OrderedLock(lock);
+}
+
+void OrderedUnlock(int lock) {
   if (gRecordReplayOrderedUnlock) {
     gRecordReplayOrderedUnlock(lock);
   }
+}
+
+extern "C" void NodeRecordReplayOrderedUnlock(int lock) {
+  OrderedUnlock(lock);
 }
 
 extern "C" void NodeRecordReplayAddOrderedPthreadMutex(const char* name,
@@ -1072,6 +1095,20 @@ extern "C" int NodeRecordReplayIsReplaying() {
   }
   return 0;
 }
+
+void BeginPassThroughEvents() {
+  if (gRecordReplayBeginPassThroughEvents) {
+    gRecordReplayBeginPassThroughEvents();
+  }
+}
+
+void EndPassThroughEvents() {
+  if (gRecordReplayEndPassThroughEvents) {
+    gRecordReplayEndPassThroughEvents();
+  }
+}
+
+} // namespace recordreplay
 
 void RecordReplayFinishRecording() {
   if (gRecordReplayFinishRecording) {
@@ -1140,6 +1177,10 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
                          gRecordReplayIsReplaying);
   RecordReplayLoadSymbol(handle, "RecordReplayNewCheckpoint",
                          gRecordReplayNewCheckpoint);
+  RecordReplayLoadSymbol(handle, "RecordReplayBeginPassThroughEvents",
+                         gRecordReplayBeginPassThroughEvents);
+  RecordReplayLoadSymbol(handle, "RecordReplayEndPassThroughEvents",
+                         gRecordReplayEndPassThroughEvents);
 
   if (gRecordReplayAttach && gRecordReplayFinishRecording) {
     gRecordReplayAttach(dispatchAddress, gBuildId);

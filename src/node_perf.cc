@@ -10,8 +10,6 @@
 
 namespace node {
 
-extern uintptr_t RecordReplayValue(const char* why, uintptr_t value);
-
 namespace performance {
 
 using v8::Context;
@@ -683,19 +681,15 @@ void Initialize(Local<Object> target,
   PropertyAttribute attr =
       static_cast<PropertyAttribute>(ReadOnly | DontDelete);
 
-  size_t recordedTimeOrigin =
-    RecordReplayValue("timeOrigin", timeOrigin / 1e6);
   target->DefineOwnProperty(context,
                             FIXED_ONE_BYTE_STRING(isolate, "timeOrigin"),
-                            Number::New(isolate, recordedTimeOrigin),
+                            Number::New(isolate, timeOrigin / 1e6),
                             attr).ToChecked();
 
-  size_t recordedTimeOriginTimestamp =
-    RecordReplayValue("timeOriginTimestamp", timeOriginTimestamp / MICROS_PER_MILLIS);
   target->DefineOwnProperty(
       context,
       FIXED_ONE_BYTE_STRING(isolate, "timeOriginTimestamp"),
-      Number::New(isolate, recordedTimeOriginTimestamp),
+      Number::New(isolate, timeOriginTimestamp / MICROS_PER_MILLIS),
       attr).ToChecked();
 
   target->DefineOwnProperty(context,
