@@ -955,8 +955,10 @@ static void (*gRecordReplayPrintVA)(const char* format, va_list args);
 static void (*gRecordReplayRegisterPointer)(void* ptr);
 static int (*gRecordReplayPointerId)(void* ptr);
 static void (*gRecordReplayAssert)(const char*, va_list);
-static void (*gRecordReplayOrderedLock)(const char* name);
-static void (*gRecordReplayOrderedUnlock)(const char* name);
+static size_t (*gRecordReplayCreateOrderedLock)(const char* name);
+static void (*gRecordReplayOrderedLock)(int lock);
+static void (*gRecordReplayOrderedUnlock)(int lock);
+static void (*gRecordReplayAddOrderedPthreadMutex)(const char* name, pthread_mutex_t* mutex);
 static bool (*gRecordReplayIsReplaying)();
 static void (*gRecordReplayNewCheckpoint)();
 static void (*gRecordReplayFinishRecording)();
@@ -1024,24 +1026,23 @@ extern "C" void NodeRecordReplayAssert(const char* format, ...) {
   }
 }
 
-void RecordReplayOrderedLock(const char* name) {
+void RecordReplayOrderedLock(int lock) {
   if (gRecordReplayOrderedLock) {
-    gRecordReplayOrderedLock(name);
+    gRecordReplayOrderedLock(lock);
   }
 }
 
-extern "C" void NodeRecordReplayOrderedLock(const char* name) {
-  RecordReplayOrderedLock(name);
-}
-
-void RecordReplayOrderedUnlock(const char* name) {
+void RecordReplayOrderedUnlock(int lock) {
   if (gRecordReplayOrderedUnlock) {
-    gRecordReplayOrderedUnlock(name);
+    gRecordReplayOrderedUnlock(lock);
   }
 }
 
-extern "C" void NodeRecordReplayOrderedUnlock(const char* name) {
-  RecordReplayOrderedUnlock(name);
+extern "C" void NodeRecordReplayAddOrderedPthreadMutex(const char* name,
+                                                       pthread_mutex_t* mutex) {
+  if (gRecordReplayAddOrderedPthreadMutex) {
+    gRecordReplayAddOrderedPthreadMutex(name, mutex);
+  }
 }
 
 uintptr_t RecordReplayValue(const char* why, uintptr_t value) {
@@ -1129,8 +1130,12 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   RecordReplayLoadSymbol(handle, "RecordReplayRegisterPointer", gRecordReplayRegisterPointer);
   RecordReplayLoadSymbol(handle, "RecordReplayPointerId", gRecordReplayPointerId);
   RecordReplayLoadSymbol(handle, "RecordReplayAssert", gRecordReplayAssert);
+  RecordReplayLoadSymbol(handle, "RecordReplayCreateOrderedLock",
+                         gRecordReplayCreateOrderedLock);
   RecordReplayLoadSymbol(handle, "RecordReplayOrderedLock", gRecordReplayOrderedLock);
   RecordReplayLoadSymbol(handle, "RecordReplayOrderedUnlock", gRecordReplayOrderedUnlock);
+  RecordReplayLoadSymbol(handle, "RecordReplayAddOrderedPthreadMutex",
+                         gRecordReplayAddOrderedPthreadMutex);
   RecordReplayLoadSymbol(handle, "RecordReplayIsReplaying",
                          gRecordReplayIsReplaying);
   RecordReplayLoadSymbol(handle, "RecordReplayNewCheckpoint",

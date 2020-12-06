@@ -66,7 +66,7 @@ class ExclusiveAccess {
 template <typename Traits>
 class MutexBase {
  public:
-  inline MutexBase();
+  inline MutexBase(bool ordered = false);
   inline ~MutexBase();
   inline void Lock();
   inline void Unlock();
@@ -167,6 +167,10 @@ struct LibuvMutexTraits {
   static inline void mutex_unlock(MutexT* mutex) {
     uv_mutex_unlock(mutex);
   }
+
+  static inline void mutex_mark_ordered(MutexT* mutex) {
+    uv_mutex_mark_ordered(mutex);
+  }
 };
 
 template <typename Traits>
@@ -195,8 +199,11 @@ void ConditionVariableBase<Traits>::Wait(const ScopedLock& scoped_lock) {
 }
 
 template <typename Traits>
-MutexBase<Traits>::MutexBase() {
+MutexBase<Traits>::MutexBase(bool ordered) {
   CHECK_EQ(0, Traits::mutex_init(&mutex_));
+  if (ordered) {
+    Traits::mutex_mark_ordered(&mutex_);
+  }
 }
 
 template <typename Traits>

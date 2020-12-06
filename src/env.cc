@@ -334,7 +334,8 @@ Environment::Environment(IsolateData* isolate_data,
       flags_(flags),
       thread_id_(thread_id.id == static_cast<uint64_t>(-1)
                      ? AllocateEnvironmentThreadId().id
-                     : thread_id.id) {
+                     : thread_id.id),
+      native_immediates_threadsafe_mutex_(/* ordered */ true) {
   // We'll be creating new objects so make sure we've entered the context.
   HandleScope handle_scope(isolate);
 
@@ -690,9 +691,7 @@ void Environment::RunAndClearInterrupts() {
     NativeImmediateQueue queue;
     {
       RecordReplayAssert("native_immediates_threadsafe_mutex #1");
-      RecordReplayOrderedLock("native_immediates_threadsafe_mutex");
       Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
-      RecordReplayOrderedUnlock("native_immediates_threadsafe_mutex");
       if (native_immediates_interrupts_.size() == 0) {
         break;
       }
@@ -756,13 +755,11 @@ void Environment::RunAndClearNativeImmediates(bool only_refed) {
   // refed threadsafe immediates are created, they are not counted towards the
   // count in immediate_info() either.
   RecordReplayAssert("native_immediates_threadsafe_mutex #2");
-  RecordReplayOrderedLock("native_immediates_threadsafe_mutex");
   NativeImmediateQueue threadsafe_immediates;
-  if (native_immediates_threadsafe_.size() > 0) {
+  {
     Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
     threadsafe_immediates.ConcatMove(std::move(native_immediates_threadsafe_));
   }
-  RecordReplayOrderedUnlock("native_immediates_threadsafe_mutex");
   while (drain_list(&threadsafe_immediates)) {}
 }
 

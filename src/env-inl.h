@@ -743,17 +743,12 @@ void Environment::SetImmediate(Fn&& cb, CallbackFlags::Flags flags) {
   }
 }
 
-extern void RecordReplayOrderedLock(const char* name);
-extern void RecordReplayOrderedUnlock(const char* name);
-
 template <typename Fn>
 void Environment::SetImmediateThreadsafe(Fn&& cb, CallbackFlags::Flags flags) {
   auto callback = native_immediates_threadsafe_.CreateCallback(
       std::move(cb), flags);
   {
-    RecordReplayOrderedLock("native_immediates_threadsafe_mutex");
     Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
-    RecordReplayOrderedUnlock("native_immediates_threadsafe_mutex");
     native_immediates_threadsafe_.Push(std::move(callback));
     if (task_queues_async_initialized_)
       uv_async_send(&task_queues_async_);
@@ -765,9 +760,7 @@ void Environment::RequestInterrupt(Fn&& cb) {
   auto callback = native_immediates_interrupts_.CreateCallback(
       std::move(cb), CallbackFlags::kRefed);
   {
-    RecordReplayOrderedLock("native_immediates_threadsafe_mutex");
     Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
-    RecordReplayOrderedUnlock("native_immediates_threadsafe_mutex");
     native_immediates_interrupts_.Push(std::move(callback));
     if (task_queues_async_initialized_)
       uv_async_send(&task_queues_async_);

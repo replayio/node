@@ -353,6 +353,14 @@ void uv_mutex_unlock(uv_mutex_t* mutex) {
 }
 
 
+extern void NodeRecordReplayAddOrderedPthreadMutex(const char* name,
+                                                   pthread_mutex_t* mutex);
+
+void uv_mutex_mark_ordered(uv_mutex_t* mutex) {
+  NodeRecordReplayAddOrderedPthreadMutex("UVMutex", mutex);
+}
+
+
 int uv_rwlock_init(uv_rwlock_t* rwlock) {
   return UV__ERR(pthread_rwlock_init(rwlock, NULL));
 }

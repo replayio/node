@@ -520,7 +520,8 @@ void Message::MemoryInfo(MemoryTracker* tracker) const {
   tracker->TrackField("transferables", transferables_);
 }
 
-MessagePortData::MessagePortData(MessagePort* owner) : owner_(owner) { }
+MessagePortData::MessagePortData(MessagePort* owner)
+  : mutex_(/* ordered */ true), owner_(owner) { }
 
 MessagePortData::~MessagePortData() {
   CHECK_NULL(owner_);
@@ -534,9 +535,7 @@ void MessagePortData::MemoryInfo(MemoryTracker* tracker) const {
 
 void MessagePortData::AddToIncomingQueue(Message&& message) {
   // This function will be called by other threads.
-  RecordReplayOrderedLock("MessagePort");
   Mutex::ScopedLock lock(mutex_);
-  RecordReplayOrderedUnlock("MessagePort");
   incoming_messages_.emplace_back(std::move(message));
 
   if (owner_ != nullptr) {
@@ -689,9 +688,7 @@ MaybeLocal<Value> MessagePort::ReceiveMessage(Local<Context> context,
   Message received;
   {
     // Get the head of the message queue.
-    RecordReplayOrderedLock("MessagePort");
     Mutex::ScopedLock lock(data_->mutex_);
-    RecordReplayOrderedUnlock("MessagePort");
 
     Debug(this, "MessagePort has message");
 
@@ -729,9 +726,7 @@ void MessagePort::OnMessage() {
 
   size_t processing_limit;
   {
-    RecordReplayOrderedLock("MessagePort");
     Mutex::ScopedLock(data_->mutex_);
-    RecordReplayOrderedUnlock("MessagePort");
     processing_limit = std::max(data_->incoming_messages_.size(),
                                 static_cast<size_t>(1000));
   }
