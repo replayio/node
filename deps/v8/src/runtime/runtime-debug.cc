@@ -887,7 +887,9 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
 
-  RecordReplayIncrementProgressCounter();
+  if (IsMainThread()) {
+    RecordReplayIncrementProgressCounter();
+  }
 
   Handle<SharedFunctionInfo> shared(function->shared(), isolate);
   Handle<Script> script(Script::cast(shared->script()), isolate);
