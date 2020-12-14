@@ -3295,6 +3295,24 @@ Handle<Object> RecordReplayGetCurrentMessageContents(Isolate* isolate,
   return *gCurrentMessage;
 }
 
+Handle<Object> RecordReplayTopFrameLocation(Isolate* isolate, Handle<Object> params) {
+  EnsureInspectorSession();
+
+  std::unique_ptr<Array<CallFrame>> callFrames;
+  Response response =
+    gInspectorSession->debuggerAgent()->currentCallFrames(&callFrames);
+  CHECK(response.IsSuccess());
+
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  if (callFrames->size()) {
+    CallFrame* frame = (*callFrames)[0].get();
+    Handle<Object> location = ConvertLocation(isolate, frame->getLocation());
+    SetProperty(isolate, rv, "location", location);
+  }
+
+  return rv;
+}
+
 }  // namespace internal
 
 namespace i = internal;

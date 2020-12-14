@@ -11144,9 +11144,17 @@ void RecordReplayOnConsoleMessage(Isolate* isolate, size_t bookmark) {
   gRecordReplayOnConsoleMessage(bookmark);
 }
 
-void RecordReplayOnExceptionUnwind() {
+void RecordReplayOnExceptionUnwind(Isolate* isolate) {
   DCHECK(gRecordingOrReplaying);
-  gRecordReplayOnExceptionUnwind();
+
+  CHECK(isolate->has_pending_exception());
+  Handle<Object> exception(isolate->pending_exception(), isolate);
+  if (isolate->is_catchable_by_javascript(*exception)) {
+    isolate->clear_pending_exception();
+    gRecordReplayOnExceptionUnwind();
+    CHECK(!isolate->has_pending_exception());
+    isolate->set_pending_exception(*exception);
+  }
 }
 
 void RecordReplayPrint(const char* format, ...) {
@@ -11196,6 +11204,7 @@ extern Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isola
                                                                   Handle<Object> params);
 extern Handle<Object> RecordReplayGetCurrentMessageContents(Isolate* isolate,
                                                             Handle<Object> params);
+extern Handle<Object> RecordReplayTopFrameLocation(Isolate* isolate, Handle<Object> params);
 extern Handle<Object> RecordReplayGetAllFrames(Isolate* isolate, Handle<Object> params);
 extern Handle<Object> RecordReplayGetScope(Isolate* isolate, Handle<Object> params);
 extern Handle<Object> RecordReplayGetObjectPreview(Isolate* isolate, Handle<Object> params);
@@ -11236,6 +11245,8 @@ static void InstallCommandCallbacks() {
                                   CommandCallbackWrapper<RecordReplayConvertFunctionOffsetToLocation>);
   gRecordReplaySetCommandCallback("Target.getCurrentMessageContents",
                                   CommandCallbackWrapper<RecordReplayGetCurrentMessageContents>);
+  gRecordReplaySetCommandCallback("Target.topFrameLocation",
+                                  CommandCallbackWrapper<RecordReplayTopFrameLocation>);
   gRecordReplaySetCommandCallback("Pause.getAllFrames",
                                   CommandCallbackWrapper<RecordReplayGetAllFrames>);
   gRecordReplaySetCommandCallback("Pause.getScope",
