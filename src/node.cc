@@ -963,6 +963,7 @@ static void (*gRecordReplayAddOrderedPthreadMutex)(const char* name, pthread_mut
 static bool (*gRecordReplayIsReplaying)();
 static void (*gRecordReplayNewCheckpoint)();
 static void (*gRecordReplayFinishRecording)();
+static const char* (*gRecordReplayGetRecordingId)();
 static void (*gRecordReplayBeginPassThroughEvents)();
 static void (*gRecordReplayEndPassThroughEvents)();
 static void (*gRecordReplayInvalidateRecording)(const char* format, ...);
@@ -1131,6 +1132,19 @@ void InvalidateRecording(const char* why) {
 void RecordReplayFinishRecording() {
   if (gRecordReplayFinishRecording) {
     gRecordReplayFinishRecording();
+
+    // If specified via the environment, append the recording ID to a file.
+    const char* env = getenv("RECORD_REPLAY_RECORDING_ID_FILE");
+    if (env) {
+      FILE* file = fopen(env, "a");
+      if (file) {
+        const char* recordingId = gRecordReplayGetRecordingId();
+        fprintf(file, "%s\n", recordingId);
+        fclose(file);
+      } else {
+        fprintf(stderr, "Error: Could not open %s for adding recording ID", env);
+      }
+    }
   }
 }
 
@@ -1182,6 +1196,7 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   RecordReplayLoadSymbol(handle, "RecordReplayBytes", gRecordReplayBytes);
   RecordReplayLoadSymbol(handle, "RecordReplayPrint", gRecordReplayPrintVA);
   RecordReplayLoadSymbol(handle, "RecordReplayFinishRecording", gRecordReplayFinishRecording);
+  RecordReplayLoadSymbol(handle, "RecordReplayGetRecordingId", gRecordReplayGetRecordingId);
   RecordReplayLoadSymbol(handle, "RecordReplayRegisterPointer", gRecordReplayRegisterPointer);
   RecordReplayLoadSymbol(handle, "RecordReplayPointerId", gRecordReplayPointerId);
   RecordReplayLoadSymbol(handle, "RecordReplayAssert", gRecordReplayAssert);
