@@ -34,6 +34,8 @@
 #include "src/interpreter/bytecode-array-accessor.h"
 #include "src/interpreter/bytecode-array-iterator.h"
 #include "src/interpreter/interpreter.h"
+#include "src/json/json-parser.h"
+#include "src/json/json-stringifier.h"
 #include "src/logging/counters.h"
 #include "src/objects/api-callbacks-inl.h"
 #include "src/objects/debug-objects-inl.h"
@@ -2487,7 +2489,11 @@ bool Debug::PerformSideEffectCheckForObject(Handle<Object> object) {
 extern void RecordReplayOnNewSource(Isolate* isolate, const char* id,
                                     const char* kind, const char* url);
 extern void RecordReplayPrint(const char* format, ...);
-extern Handle<String> CStringToHandle(Isolate* isolate, const char* str);
+
+static Handle<String> CStringToHandle(Isolate* isolate, const char* str) {
+  Vector<const uint8_t> nstr((const uint8_t*) str, strlen(str));
+  return isolate->factory()->NewStringFromOneByte(nstr).ToHandleChecked();
+}
 
 static Handle<Object> GetProperty(Isolate* isolate,
                                   Handle<Object> obj, const char* property) {
@@ -2813,6 +2819,58 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
 
 extern void RecordReplayOnConsoleMessage(Isolate* isolate, size_t bookmark);
 
+// Command callbacks which we handle directly.
+struct InternalCommandCallback {
+  const char* mCommand;
+  Handle<Object> (*mCallback)(Isolate* isolate, Handle<Object> params);
+};
+static InternalCommandCallback gInternalCommandCallbacks[] = {
+  { "Debugger.getSourceContents", RecordReplayGetSourceContents },
+  { "Debugger.getPossibleBreakpoints", RecordReplayGetPossibleBreakpoints },
+  { "Target.convertLocationToFunctionOffset", RecordReplayConvertLocationToFunctionOffset },
+  { "Target.convertFunctionOffsetToLocation", RecordReplayConvertFunctionOffsetToLocation },
+};
+
+// Function to invoke on command callbacks which we don't have a C++ implementation for.
+static Eternal<Value>* gCommandCallback;
+
+char* CommandCallback(const char* command, const char* params) {
+  Isolate* isolate = Isolate::Current();
+  Handle<Object> undefined = isolate->factory()->undefined_value();
+  Handle<String> paramsStr = CStringToHandle(isolate, params);
+
+  MaybeHandle<Object> maybeParams = JsonParser<uint8_t>::Parse(isolate, paramsStr, undefined);
+  if (maybeParams.is_null()) {
+    RecordReplayPrint("Error: CommandCallbackWrapper Parse %s failed", params);
+    V8_IMMEDIATE_CRASH();
+  }
+  Handle<Object> paramsObj = maybeParams.ToHandleChecked();
+
+  MaybeHandle<Object> rv;
+  for (const InternalCommandCallback& cb : gInternalCommandCallbacks) {
+    if (!strcmp(cb.mCommand, command)) {
+      rv = cb.mCallback(isolate, paramsObj);
+      CHECK(!rv.is_null());
+    }
+  }
+  if (rv.is_null()) {
+    CHECK(gCommandCallback);
+    Local<v8::Value> callbackValue = gCommandCallback->Get((v8::Isolate*)isolate);
+    Handle<Object> callback = Utils::OpenHandle(*callbackValue);
+
+    Handle<Object> callArgs[2];
+    callArgs[0] = CStringToHandle(isolate, command);
+    callArgs[1] = paramsObj;
+    rv = Execution::Call(isolate, callback, undefined, 2, callArgs);
+    CHECK(!rv.is_null());
+  }
+
+  Handle<Object> rvStr =
+    JsonStringify(isolate, rv.ToHandleChecked(), undefined, undefined).ToHandleChecked();
+  std::unique_ptr<char[]> rvCStr = String::cast(*rvStr).ToCString();
+  return strdup(rvCStr.get());
+}
+
 }  // namespace internal
 
 namespace i = internal;
@@ -2828,6 +2886,14 @@ void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>&
     i::Isolate* isolate = (i::Isolate*)v8isolate;
     i::RecordReplayOnConsoleMessage(isolate, 0);
   }
+}
+
+void FunctionCallbackRecordReplaySetCommandCallback(const FunctionCallbackInfo<Value>& callArgs) {
+  CHECK(IsMainThread());
+  CHECK(!i::gCommandCallback);
+
+  Isolate* v8isolate = callArgs.GetIsolate();
+  i::gCommandCallback = new Eternal<Value>(v8isolate, callArgs[0]);
 }
 
 }  // namespace v8

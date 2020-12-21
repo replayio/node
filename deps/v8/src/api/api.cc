@@ -11190,55 +11190,11 @@ uint64_t* RecordReplayProgressCounter() {
   return gRecordReplayProgressCounter();
 }
 
-Handle<String> CStringToHandle(Isolate* isolate, const char* str) {
-  Vector<const uint8_t> nstr((const uint8_t*) str, strlen(str));
-  return isolate->factory()->NewStringFromOneByte(nstr).ToHandleChecked();
-}
-
-extern Handle<Object> RecordReplayGetSourceContents(Isolate* isolate, Handle<Object> params);
-extern Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
-                                                         Handle<Object> params);
-extern Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
-                                                                  Handle<Object> params);
-extern Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isolate,
-                                                                  Handle<Object> params);
-
-typedef Handle<Object> (*CommandCallback)(Isolate* isolate, Handle<Object> params);
-template <CommandCallback Callback>
-static char* CommandCallbackWrapper(const char* params) {
-  Isolate* isolate = Isolate::Current();
-  Handle<Object> undefined = isolate->factory()->undefined_value();
-  Handle<String> paramsStr = CStringToHandle(isolate, params);
-
-  MaybeHandle<Object> maybeParams = JsonParser<uint8_t>::Parse(isolate, paramsStr, undefined);
-  if (maybeParams.is_null()) {
-    RecordReplayPrint("Error: CommandCallbackWrapper Parse %s failed", params);
-    V8_IMMEDIATE_CRASH();
-  }
-
-  Handle<Object> paramsObj = maybeParams.ToHandleChecked();
-  Handle<Object> rvObj = Callback(isolate, paramsObj);
-
-  Handle<Object> rvStr =
-    JsonStringify(isolate, rvObj, undefined, undefined).ToHandleChecked();
-  std::unique_ptr<char[]> rv = String::cast(*rvStr).ToCString();
-  return strdup(rv.get());
-}
-
-static void InstallCommandCallbacks() {
-  gRecordReplaySetCommandCallback("Debugger.getSourceContents",
-                                  CommandCallbackWrapper<RecordReplayGetSourceContents>);
-  gRecordReplaySetCommandCallback("Debugger.getPossibleBreakpoints",
-                                  CommandCallbackWrapper<RecordReplayGetPossibleBreakpoints>);
-  gRecordReplaySetCommandCallback("Target.convertLocationToFunctionOffset",
-                                  CommandCallbackWrapper<RecordReplayConvertLocationToFunctionOffset>);
-  gRecordReplaySetCommandCallback("Target.convertFunctionOffsetToLocation",
-                                  CommandCallbackWrapper<RecordReplayConvertFunctionOffsetToLocation>);
-}
-
 void RecordReplayInstrument(const char* kind, const char* function, int offset) {
   gRecordReplayOnInstrument(kind, function, offset);
 }
+
+extern char* CommandCallback(const char* command, const char* params);
 
 } // namespace internal
 
@@ -11277,7 +11233,9 @@ void SetRecordingOrReplaying() {
   RecordReplayLoadSymbol("RecordReplayOnInstrument", gRecordReplayOnInstrument);
   RecordReplayLoadSymbol("RecordReplayProgressCounter", gRecordReplayProgressCounter);
 
-  internal::InstallCommandCallbacks();
+  void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
+  RecordReplayLoadSymbol("RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);
+  setDefaultCommandCallback(i::CommandCallback);
 }
 
 bool IsRecordingOrReplaying() {

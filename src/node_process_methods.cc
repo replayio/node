@@ -36,6 +36,7 @@ namespace v8 {
 
 extern void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& args);
 extern void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplaySetCommandCallback(const FunctionCallbackInfo<Value>& args);
 
 }
 
@@ -560,6 +561,8 @@ static void InitializeProcessMethods(Local<Object> target,
                  v8::FunctionCallbackIsRecordingOrReplaying);
   env->SetMethod(target, "recordReplayOnConsoleAPI",
                  v8::FunctionCallbackRecordReplayOnConsoleAPI);
+  env->SetMethod(target, "recordReplaySetCommandCallback",
+                 v8::FunctionCallbackRecordReplaySetCommandCallback);
 }
 
 void RegisterProcessMethodsExternalReferences(
@@ -589,6 +592,7 @@ void RegisterProcessMethodsExternalReferences(
 
   registry->Register(v8::FunctionCallbackIsRecordingOrReplaying);
   registry->Register(v8::FunctionCallbackRecordReplayOnConsoleAPI);
+  registry->Register(v8::FunctionCallbackRecordReplaySetCommandCallback);
 }
 
 }  // namespace node

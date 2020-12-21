@@ -258,6 +258,7 @@
       'lib/internal/streams/state.js',
       'lib/internal/streams/pipeline.js',
       'lib/internal/streams/end-of-stream.js',
+      'lib/internal/recordreplay.js',
       'deps/v8/tools/splaytree.js',
       'deps/v8/tools/codemap.js',
       'deps/v8/tools/consarray.js',
