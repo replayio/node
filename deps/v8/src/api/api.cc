@@ -11202,15 +11202,6 @@ extern Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isola
                                                                   Handle<Object> params);
 extern Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isolate,
                                                                   Handle<Object> params);
-extern Handle<Object> RecordReplayGetCurrentMessageContents(Isolate* isolate,
-                                                            Handle<Object> params);
-extern Handle<Object> RecordReplayTopFrameLocation(Isolate* isolate, Handle<Object> params);
-extern Handle<Object> RecordReplayGetAllFrames(Isolate* isolate, Handle<Object> params);
-extern Handle<Object> RecordReplayGetScope(Isolate* isolate, Handle<Object> params);
-extern Handle<Object> RecordReplayGetObjectPreview(Isolate* isolate, Handle<Object> params);
-extern Handle<Object> RecordReplayEvaluateInFrame(Isolate* isolate, Handle<Object> params);
-extern Handle<Object> RecordReplayGetObjectProperty(Isolate* isolate, Handle<Object> params);
-//extern Handle<Object> RecordReplayCallFunction(Isolate* isolate, Handle<Object> params);
 
 typedef Handle<Object> (*CommandCallback)(Isolate* isolate, Handle<Object> params);
 template <CommandCallback Callback>
@@ -11243,22 +11234,6 @@ static void InstallCommandCallbacks() {
                                   CommandCallbackWrapper<RecordReplayConvertLocationToFunctionOffset>);
   gRecordReplaySetCommandCallback("Target.convertFunctionOffsetToLocation",
                                   CommandCallbackWrapper<RecordReplayConvertFunctionOffsetToLocation>);
-  gRecordReplaySetCommandCallback("Target.getCurrentMessageContents",
-                                  CommandCallbackWrapper<RecordReplayGetCurrentMessageContents>);
-  gRecordReplaySetCommandCallback("Target.topFrameLocation",
-                                  CommandCallbackWrapper<RecordReplayTopFrameLocation>);
-  gRecordReplaySetCommandCallback("Pause.getAllFrames",
-                                  CommandCallbackWrapper<RecordReplayGetAllFrames>);
-  gRecordReplaySetCommandCallback("Pause.getScope",
-                                  CommandCallbackWrapper<RecordReplayGetScope>);
-  gRecordReplaySetCommandCallback("Pause.getObjectPreview",
-                                  CommandCallbackWrapper<RecordReplayGetObjectPreview>);
-  gRecordReplaySetCommandCallback("Pause.evaluateInFrame",
-                                  CommandCallbackWrapper<RecordReplayEvaluateInFrame>);
-  gRecordReplaySetCommandCallback("Pause.getObjectProperty",
-                                  CommandCallbackWrapper<RecordReplayGetObjectProperty>);
-  //gRecordReplaySetCommandCallback("Pause.callFunction",
-  //                                CommandCallbackWrapper<RecordReplayCallFunction>);
 }
 
 void RecordReplayInstrument(const char* kind, const char* function, int offset) {

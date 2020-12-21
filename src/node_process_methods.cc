@@ -35,7 +35,6 @@ typedef int mode_t;
 namespace v8 {
 
 extern void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& args);
-extern void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>& args);
 
 }
 
@@ -558,8 +557,6 @@ static void InitializeProcessMethods(Local<Object> target,
 
   env->SetMethod(target, "isRecordingOrReplaying",
                  v8::FunctionCallbackIsRecordingOrReplaying);
-  env->SetMethod(target, "recordReplayOnConsoleAPI",
-                 v8::FunctionCallbackRecordReplayOnConsoleAPI);
 }
 
 void RegisterProcessMethodsExternalReferences(
@@ -588,7 +585,6 @@ void RegisterProcessMethodsExternalReferences(
   registry->Register(GetFastAPIs);
 
   registry->Register(v8::FunctionCallbackIsRecordingOrReplaying);
-  registry->Register(v8::FunctionCallbackRecordReplayOnConsoleAPI);
 }
 
 }  // namespace node
