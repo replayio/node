@@ -762,6 +762,9 @@ void Environment::RunAndClearNativeImmediates(bool only_refed) {
 }
 
 void Environment::RequestInterruptFromV8() {
+  // V8 interrupts will not be replayed at precise positions.
+  recordreplay::InvalidateRecording("RequestInterruptFromV8 called");
+
   // The Isolate may outlive the Environment, so some logic to handle the
   // situation in which the Environment is destroyed before the handler runs
   // is required.

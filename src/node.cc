@@ -965,6 +965,7 @@ static void (*gRecordReplayNewCheckpoint)();
 static void (*gRecordReplayFinishRecording)();
 static void (*gRecordReplayBeginPassThroughEvents)();
 static void (*gRecordReplayEndPassThroughEvents)();
+static void (*gRecordReplayInvalidateRecording)(const char* format, ...);
 
 namespace recordreplay {
 
@@ -1119,6 +1120,12 @@ void EndPassThroughEvents() {
   }
 }
 
+void InvalidateRecording(const char* why) {
+  if (gRecordReplayInvalidateRecording) {
+    gRecordReplayInvalidateRecording("%s", why);
+  }
+}
+
 } // namespace recordreplay
 
 void RecordReplayFinishRecording() {
@@ -1193,6 +1200,8 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
                          gRecordReplayBeginPassThroughEvents);
   RecordReplayLoadSymbol(handle, "RecordReplayEndPassThroughEvents",
                          gRecordReplayEndPassThroughEvents);
+  RecordReplayLoadSymbol(handle, "RecordReplayInvalidateRecording",
+                         gRecordReplayInvalidateRecording);
 
   if (gRecordReplayAttach && gRecordReplayFinishRecording) {
     gRecordReplayAttach(dispatchAddress, gBuildId);

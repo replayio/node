@@ -1106,6 +1106,7 @@ uintptr_t RecordReplayValue(const char* why, uintptr_t value);
 void RecordReplayBytes(const char* why, void* buf, size_t size);
 void BeginPassThroughEvents();
 void EndPassThroughEvents();
+void InvalidateRecording(const char* why);
 
 struct AutoPassThroughEvents {
   AutoPassThroughEvents() { BeginPassThroughEvents(); }
