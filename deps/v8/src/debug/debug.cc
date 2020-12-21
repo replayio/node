@@ -2518,11 +2518,6 @@ static Handle<JSObject> NewPlainObject(Isolate* isolate) {
   return isolate->factory()->NewJSObject(isolate->object_function());
 }
 
-static void ArrayPush(Isolate* isolate, Handle<Object> array, Handle<Object> value) {
-  int length = GetProperty(isolate, array, "length")->Number();
-  Object::SetElement(isolate, array, length, value, ShouldThrow::kThrowOnError).Check();
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Script State
 ////////////////////////////////////////////////////////////////////////////////
@@ -2816,6 +2811,8 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
   }
 }
 
+extern void RecordReplayOnConsoleMessage(Isolate* isolate, size_t bookmark);
+
 }  // namespace internal
 
 namespace i = internal;
@@ -2823,6 +2820,14 @@ namespace i = internal;
 void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& callArgs) {
   Local<Boolean> rv = Boolean::New(callArgs.GetIsolate(), IsRecordingOrReplaying());
   callArgs.GetReturnValue().Set(rv);
+}
+
+void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>& callArgs) {
+  if (IsMainThread()) {
+    Isolate* v8isolate = callArgs.GetIsolate();
+    i::Isolate* isolate = (i::Isolate*)v8isolate;
+    i::RecordReplayOnConsoleMessage(isolate, 0);
+  }
 }
 
 }  // namespace v8
