@@ -2881,6 +2881,7 @@ void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& c
 }
 
 void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>& callArgs) {
+  CHECK(IsRecordingOrReplaying());
   if (IsMainThread()) {
     Isolate* v8isolate = callArgs.GetIsolate();
     i::Isolate* isolate = (i::Isolate*)v8isolate;
@@ -2889,6 +2890,9 @@ void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>&
 }
 
 void FunctionCallbackRecordReplaySetCommandCallback(const FunctionCallbackInfo<Value>& callArgs) {
+  if (!IsRecordingOrReplaying()) {
+    return;
+  }
   CHECK(IsMainThread());
   CHECK(!i::gCommandCallback);
 
