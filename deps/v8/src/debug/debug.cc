@@ -2895,9 +2895,7 @@ void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>&
 }
 
 void FunctionCallbackRecordReplaySetCommandCallback(const FunctionCallbackInfo<Value>& callArgs) {
-  if (!IsRecordingOrReplaying()) {
-    return;
-  }
+  CHECK(IsRecordingOrReplaying());
   CHECK(IsMainThread());
   CHECK(!i::gCommandCallback);
 

@@ -11,6 +11,7 @@
 #include "uv.h"
 #include "v8-fast-api-calls.h"
 #include "v8.h"
+#include "v8-inspector.h"
 
 #include <vector>
 
@@ -525,11 +526,57 @@ static void GetFastAPIs(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(ret);
 }
 
+// Function to invoke on CDP responses and events.
+static v8::Eternal<v8::Function>* gCDPMessageCallback;
+
+static void RecordReplaySetCDPMessageCallback(const FunctionCallbackInfo<Value>& args) {
+  CHECK(!gCDPMessageCallback);
+  Isolate* isolate = args.GetIsolate();
+  CHECK(args[0]->IsFunction());
+  Local<v8::Function> callback = args[0].As<v8::Function>();
+  gCDPMessageCallback = new v8::Eternal<v8::Function>(isolate, callback);
+}
+
+static std::unique_ptr<inspector::InspectorSession> gRecordReplayInspectorSession;
+
+class RecordReplaySessionDelegate : public inspector::InspectorSessionDelegate {
+ public:
+  void SendMessageToFrontend(const v8_inspector::StringView& message) override {
+    CHECK(gCDPMessageCallback);
+    CHECK(!message.is8Bit());
+
+    Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::HandleScope scope(isolate);
+
+    Local<Context> context = isolate->GetCurrentContext();
+
+    Local<Value> arg = v8::String::NewFromTwoByte(isolate, message.characters16(),
+                                                  NewStringType::kNormal,
+                                                  message.length()).ToLocalChecked();
+    Local<v8::Function> callback = gCDPMessageCallback->Get(isolate);
+    v8::MaybeLocal<Value> rv = callback->Call(context, v8::Undefined(isolate), 1, &arg);
+    CHECK(!rv.IsEmpty());
+  }
+};
+
 static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) {
   CHECK(args.Length() == 1 && args[0]->IsString() &&
         "must be called with a single string");
   Utf8Value message(args.GetIsolate(), args[0]);
-  FPrintF(stderr, "%s\n", message.ToString().c_str());
+  fprintf(stderr, "SendCDPMessage %s\n", message.ToString().c_str());
+
+  if (!gRecordReplayInspectorSession) {
+    Environment* env = Environment::GetCurrent(args);
+    inspector::Agent* agent = env->inspector_agent();
+
+    auto delegate = std::make_unique<RecordReplaySessionDelegate>();
+    gRecordReplayInspectorSession = agent->Connect(std::move(delegate),
+                                                   /* prevent_shutdown */ false);
+  }
+
+  std::string nmessage(message.ToString());
+  v8_inspector::StringView messageView((const uint8_t*)nmessage.c_str(), nmessage.length());
+  gRecordReplayInspectorSession->Dispatch(messageView);
 }
 
 static void InitializeProcessMethods(Local<Object> target,
@@ -570,6 +617,8 @@ static void InitializeProcessMethods(Local<Object> target,
                  v8::FunctionCallbackRecordReplayOnConsoleAPI);
   env->SetMethod(target, "recordReplaySetCommandCallback",
                  v8::FunctionCallbackRecordReplaySetCommandCallback);
+  env->SetMethod(target, "recordReplaySetCDPMessageCallback",
+                 RecordReplaySetCDPMessageCallback);
   env->SetMethod(target, "recordReplaySendCDPMessage",
                  RecordReplaySendCDPMessage);
 }
@@ -602,6 +651,7 @@ void RegisterProcessMethodsExternalReferences(
   registry->Register(v8::FunctionCallbackIsRecordingOrReplaying);
   registry->Register(v8::FunctionCallbackRecordReplayOnConsoleAPI);
   registry->Register(v8::FunctionCallbackRecordReplaySetCommandCallback);
+  registry->Register(RecordReplaySetCDPMessageCallback);
   registry->Register(RecordReplaySendCDPMessage);
 }
 
