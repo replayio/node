@@ -5,8 +5,8 @@ function foo() {
   }
 }
 
-function bar(i) {
-  console.log("HELLO", i);
+function bar(num) {
+  console.log("HELLO", num, { num });
 }
 
 setTimeout(foo, 0);
