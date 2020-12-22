@@ -452,6 +452,8 @@ MaybeLocal<Value> StartExecution(Environment* env, const char* main_script_id) {
 }
 
 MaybeLocal<Value> StartExecution(Environment* env, StartExecutionCallback cb) {
+  recordreplay::NewCheckpoint();
+
   InternalCallbackScope callback_scope(
       env,
       Object::New(env->isolate()),
@@ -1127,6 +1129,12 @@ void InvalidateRecording(const char* why) {
   }
 }
 
+void NewCheckpoint() {
+  if (gRecordReplayNewCheckpoint) {
+    gRecordReplayNewCheckpoint();
+  }
+}
+
 } // namespace recordreplay
 
 void RecordReplayFinishRecording() {
@@ -1221,7 +1229,6 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   if (gRecordReplayAttach && gRecordReplayFinishRecording) {
     gRecordReplayAttach(dispatchAddress, gBuildId);
     gRecordReplayRecordCommandLineArguments(pargc, pargv);
-    gRecordReplayNewCheckpoint();
     v8::SetRecordingOrReplaying();
   }
 }

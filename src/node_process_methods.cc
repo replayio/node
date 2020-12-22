@@ -525,6 +525,13 @@ static void GetFastAPIs(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(ret);
 }
 
+static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) {
+  CHECK(args.Length() == 1 && args[0]->IsString() &&
+        "must be called with a single string");
+  Utf8Value message(args.GetIsolate(), args[0]);
+  FPrintF(stderr, "%s\n", message.ToString().c_str());
+}
+
 static void InitializeProcessMethods(Local<Object> target,
                                      Local<Value> unused,
                                      Local<Context> context,
@@ -563,6 +570,8 @@ static void InitializeProcessMethods(Local<Object> target,
                  v8::FunctionCallbackRecordReplayOnConsoleAPI);
   env->SetMethod(target, "recordReplaySetCommandCallback",
                  v8::FunctionCallbackRecordReplaySetCommandCallback);
+  env->SetMethod(target, "recordReplaySendCDPMessage",
+                 RecordReplaySendCDPMessage);
 }
 
 void RegisterProcessMethodsExternalReferences(
@@ -593,6 +602,7 @@ void RegisterProcessMethodsExternalReferences(
   registry->Register(v8::FunctionCallbackIsRecordingOrReplaying);
   registry->Register(v8::FunctionCallbackRecordReplayOnConsoleAPI);
   registry->Register(v8::FunctionCallbackRecordReplaySetCommandCallback);
+  registry->Register(RecordReplaySendCDPMessage);
 }
 
 }  // namespace node

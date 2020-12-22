@@ -2854,6 +2854,11 @@ char* CommandCallback(const char* command, const char* params) {
     }
   }
   if (rv.is_null()) {
+    if (!gCommandCallback) {
+      // Handle commands sent at the start of the recording.
+      return strdup("{ \"error\": \"Command callback not installed\" }");
+    }
+
     CHECK(gCommandCallback);
     Local<v8::Value> callbackValue = gCommandCallback->Get((v8::Isolate*)isolate);
     Handle<Object> callback = Utils::OpenHandle(*callbackValue);
