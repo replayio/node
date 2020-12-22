@@ -542,6 +542,10 @@ static std::unique_ptr<inspector::InspectorSession> gRecordReplayInspectorSessio
 class RecordReplaySessionDelegate : public inspector::InspectorSessionDelegate {
  public:
   void SendMessageToFrontend(const v8_inspector::StringView& message) override {
+    if (recordreplay::IsRecordingFinished()) {
+      return;
+    }
+
     CHECK(gCDPMessageCallback);
     CHECK(!message.is8Bit());
 

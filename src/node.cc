@@ -1135,11 +1135,18 @@ void NewCheckpoint() {
   }
 }
 
+static bool gRecordingFinished;
+
+bool IsRecordingFinished() {
+  return gRecordingFinished;
+}
+
 } // namespace recordreplay
 
 void RecordReplayFinishRecording() {
   if (gRecordReplayFinishRecording) {
     gRecordReplayFinishRecording();
+    recordreplay::gRecordingFinished = true;
 
     // If specified via the environment, append the recording ID to a file.
     const char* env = getenv("RECORD_REPLAY_RECORDING_ID_FILE");

@@ -1108,6 +1108,7 @@ void BeginPassThroughEvents();
 void EndPassThroughEvents();
 void InvalidateRecording(const char* why);
 void NewCheckpoint();
+bool IsRecordingFinished();
 
 struct AutoPassThroughEvents {
   AutoPassThroughEvents() { BeginPassThroughEvents(); }
