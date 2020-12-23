@@ -77,11 +77,21 @@ String fromDouble(double d) {
 }
 
 double toDouble(const char* buffer, size_t length, bool* ok) {
+  // Workaround problems using istringstream when replaying. This needs to get fixed.
+  /*
   std::istringstream stream(std::string(buffer, length));
   stream.imbue(std::locale("C"));  // Ignore locale
   double d;
   stream >> d;
   *ok = !stream.fail();
+  */
+  std::string str(buffer, length);
+  if (!strcmp(str.c_str(), "0")) {
+    *ok = true;
+    return 0;
+  }
+  double d = strtod(str.c_str(), nullptr);
+  *ok = d != 0;
   return d;
 }
 

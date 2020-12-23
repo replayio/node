@@ -2800,7 +2800,17 @@ Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isolate,
   return rv;
 }
 
+static std::set<int> gRegisteredScripts;
+
 static void RecordReplayRegisterScript(Handle<Script> script) {
+  CHECK(IsMainThread());
+
+  // FIXME why do we get multiple notifications for the same script?
+  if (gRegisteredScripts.find(script->id()) != gRegisteredScripts.end()) {
+    return;
+  }
+  gRegisteredScripts.insert(script->id());
+
   Isolate* isolate = Isolate::Current();
   gRecordReplayScripts.emplace_back((v8::Isolate*)isolate, v8::Utils::ToLocal(script));
 
@@ -2876,6 +2886,20 @@ char* CommandCallback(const char* command, const char* params) {
   return strdup(rvCStr.get());
 }
 
+static Eternal<Value>* gClearPauseDataCallback;
+
+void ClearPauseDataCallback() {
+  if (gClearPauseDataCallback) {
+    Isolate* isolate = Isolate::Current();
+    Local<v8::Value> callbackValue = gClearPauseDataCallback->Get((v8::Isolate*)isolate);
+    Handle<Object> callback = Utils::OpenHandle(*callbackValue);
+
+    Handle<Object> undefined = isolate->factory()->undefined_value();
+    MaybeHandle<Object> rv = Execution::Call(isolate, callback, undefined, 0, nullptr);
+    CHECK(!rv.is_null());
+  }
+}
+
 }  // namespace internal
 
 namespace i = internal;
@@ -2901,6 +2925,15 @@ void FunctionCallbackRecordReplaySetCommandCallback(const FunctionCallbackInfo<V
 
   Isolate* v8isolate = callArgs.GetIsolate();
   i::gCommandCallback = new Eternal<Value>(v8isolate, callArgs[0]);
+}
+
+void FunctionCallbackRecordReplaySetClearPauseDataCallback(const FunctionCallbackInfo<Value>& callArgs) {
+  CHECK(IsRecordingOrReplaying());
+  CHECK(IsMainThread());
+  CHECK(!i::gClearPauseDataCallback);
+
+  Isolate* v8isolate = callArgs.GetIsolate();
+  i::gClearPauseDataCallback = new Eternal<Value>(v8isolate, callArgs[0]);
 }
 
 }  // namespace v8

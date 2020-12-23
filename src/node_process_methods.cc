@@ -38,6 +38,7 @@ namespace v8 {
 extern void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& args);
 extern void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>& args);
 extern void FunctionCallbackRecordReplaySetCommandCallback(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplaySetClearPauseDataCallback(const FunctionCallbackInfo<Value>& callArgs);
 
 }
 
@@ -526,6 +527,13 @@ static void GetFastAPIs(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(ret);
 }
 
+static void RecordReplayLog(const FunctionCallbackInfo<Value>& args) {
+  CHECK(args.Length() == 1 && args[0]->IsString() &&
+        "must be called with a single string");
+  Utf8Value text(args.GetIsolate(), args[0]);
+  recordreplay::Print("%s", text.ToString().c_str());
+}
+
 // Function to invoke on CDP responses and events.
 static v8::Eternal<v8::Function>* gCDPMessageCallback;
 
@@ -617,10 +625,13 @@ static void InitializeProcessMethods(Local<Object> target,
 
   env->SetMethod(target, "isRecordingOrReplaying",
                  v8::FunctionCallbackIsRecordingOrReplaying);
+  env->SetMethod(target, "recordReplayLog", RecordReplayLog);
   env->SetMethod(target, "recordReplayOnConsoleAPI",
                  v8::FunctionCallbackRecordReplayOnConsoleAPI);
   env->SetMethod(target, "recordReplaySetCommandCallback",
                  v8::FunctionCallbackRecordReplaySetCommandCallback);
+  env->SetMethod(target, "recordReplaySetClearPauseDataCallback",
+                 v8::FunctionCallbackRecordReplaySetClearPauseDataCallback);
   env->SetMethod(target, "recordReplaySetCDPMessageCallback",
                  RecordReplaySetCDPMessageCallback);
   env->SetMethod(target, "recordReplaySendCDPMessage",
@@ -653,8 +664,10 @@ void RegisterProcessMethodsExternalReferences(
   registry->Register(GetFastAPIs);
 
   registry->Register(v8::FunctionCallbackIsRecordingOrReplaying);
+  registry->Register(RecordReplayLog);
   registry->Register(v8::FunctionCallbackRecordReplayOnConsoleAPI);
   registry->Register(v8::FunctionCallbackRecordReplaySetCommandCallback);
+  registry->Register(v8::FunctionCallbackRecordReplaySetClearPauseDataCallback);
   registry->Register(RecordReplaySetCDPMessageCallback);
   registry->Register(RecordReplaySendCDPMessage);
 }

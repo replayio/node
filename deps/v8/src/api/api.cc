@@ -11130,6 +11130,7 @@ static void (*gRecordReplayAssert)(const char*, va_list);
 static void (*gRecordReplayBytes)(const char* why, void* buf, size_t size);
 static uintptr_t (*gRecordReplayValue)(const char* why, uintptr_t v);
 static uint64_t* (*gRecordReplayProgressCounter)();
+static bool (*gRecordReplayAreEventsDisallowed)();
 
 namespace internal {
 
@@ -11190,11 +11191,16 @@ uint64_t* RecordReplayProgressCounter() {
   return gRecordReplayProgressCounter();
 }
 
+bool RecordReplayAreEventsDisallowed() {
+  return gRecordReplayAreEventsDisallowed();
+}
+
 void RecordReplayInstrument(const char* kind, const char* function, int offset) {
   gRecordReplayOnInstrument(kind, function, offset);
 }
 
 extern char* CommandCallback(const char* command, const char* params);
+extern void ClearPauseDataCallback();
 
 } // namespace internal
 
@@ -11232,10 +11238,15 @@ void SetRecordingOrReplaying() {
   RecordReplayLoadSymbol("RecordReplayValue", gRecordReplayValue);
   RecordReplayLoadSymbol("RecordReplayOnInstrument", gRecordReplayOnInstrument);
   RecordReplayLoadSymbol("RecordReplayProgressCounter", gRecordReplayProgressCounter);
+  RecordReplayLoadSymbol("RecordReplayAreEventsDisallowed", gRecordReplayAreEventsDisallowed);
 
   void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
   RecordReplayLoadSymbol("RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);
   setDefaultCommandCallback(i::CommandCallback);
+
+  void (*setClearPauseDataCallback)(void (*callback)());
+  RecordReplayLoadSymbol("RecordReplaySetClearPauseDataCallback", setClearPauseDataCallback);
+  setClearPauseDataCallback(i::ClearPauseDataCallback);
 }
 
 bool IsRecordingOrReplaying() {

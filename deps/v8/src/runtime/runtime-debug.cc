@@ -873,6 +873,7 @@ RUNTIME_FUNCTION(Runtime_ProfileCreateSnapshotDataBlob) {
 
 extern void RecordReplayAssert(const char* format, ...);
 extern uint64_t* RecordReplayProgressCounter();
+extern bool RecordReplayAreEventsDisallowed();
 
 static inline void RecordReplayIncrementProgressCounter() {
   // Note: The counter can be null, depending on the thread.
@@ -886,6 +887,10 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+
+  if (RecordReplayAreEventsDisallowed()) {
+    return ReadOnlyRoots(isolate).undefined_value();
+  }
 
   if (IsMainThread()) {
     RecordReplayIncrementProgressCounter();
@@ -913,6 +918,10 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(Object, value, 0);
+
+  if (RecordReplayAreEventsDisallowed()) {
+    return *value;
+  }
 
   char location[1024];
   strcpy(location, "<no frame>");
