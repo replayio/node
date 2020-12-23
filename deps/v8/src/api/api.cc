@@ -11131,6 +11131,10 @@ static void (*gRecordReplayBytes)(const char* why, void* buf, size_t size);
 static uintptr_t (*gRecordReplayValue)(const char* why, uintptr_t v);
 static uint64_t* (*gRecordReplayProgressCounter)();
 static bool (*gRecordReplayAreEventsDisallowed)();
+static void (*gRecordReplayBeginPassThroughEvents)();
+static void (*gRecordReplayEndPassThroughEvents)();
+static void (*gRecordReplayBeginDisallowEvents)();
+static void (*gRecordReplayEndDisallowEvents)();
 
 namespace internal {
 
@@ -11199,6 +11203,30 @@ void RecordReplayInstrument(const char* kind, const char* function, int offset) 
   gRecordReplayOnInstrument(kind, function, offset);
 }
 
+void RecordReplayBeginPassThroughEvents() {
+  if (gRecordReplayBeginPassThroughEvents) {
+    gRecordReplayBeginPassThroughEvents();
+  }
+}
+
+void RecordReplayEndPassThroughEvents() {
+  if (gRecordReplayEndPassThroughEvents) {
+    gRecordReplayEndPassThroughEvents();
+  }
+}
+
+void RecordReplayBeginDisallowEvents() {
+  if (gRecordReplayBeginDisallowEvents) {
+    gRecordReplayBeginDisallowEvents();
+  }
+}
+
+void RecordReplayEndDisallowEvents() {
+  if (gRecordReplayEndDisallowEvents) {
+    gRecordReplayEndDisallowEvents();
+  }
+}
+
 extern char* CommandCallback(const char* command, const char* params);
 extern void ClearPauseDataCallback();
 
@@ -11239,6 +11267,10 @@ void SetRecordingOrReplaying() {
   RecordReplayLoadSymbol("RecordReplayOnInstrument", gRecordReplayOnInstrument);
   RecordReplayLoadSymbol("RecordReplayProgressCounter", gRecordReplayProgressCounter);
   RecordReplayLoadSymbol("RecordReplayAreEventsDisallowed", gRecordReplayAreEventsDisallowed);
+  RecordReplayLoadSymbol("RecordReplayBeginPassThroughEvents", gRecordReplayBeginPassThroughEvents);
+  RecordReplayLoadSymbol("RecordReplayEndPassThroughEvents", gRecordReplayEndPassThroughEvents);
+  RecordReplayLoadSymbol("RecordReplayBeginDisallowEvents", gRecordReplayBeginDisallowEvents);
+  RecordReplayLoadSymbol("RecordReplayEndDisallowEvents", gRecordReplayEndDisallowEvents);
 
   void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
   RecordReplayLoadSymbol("RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);
