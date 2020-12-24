@@ -575,7 +575,6 @@ static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) 
   CHECK(args.Length() == 1 && args[0]->IsString() &&
         "must be called with a single string");
   Utf8Value message(args.GetIsolate(), args[0]);
-  fprintf(stderr, "SendCDPMessage %s\n", message.ToString().c_str());
 
   if (!gRecordReplayInspectorSession) {
     Environment* env = Environment::GetCurrent(args);
