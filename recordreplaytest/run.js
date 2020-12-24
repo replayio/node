@@ -6,7 +6,7 @@ const { spawn, spawnSync } = require("child_process");
 const { findGeckoPath } = require("../../devtools/test/utils");
 
 const tests = [
-  "basic.js",
+  { example: "basic.js", script: "node_console-01.js" },
 ];
 
 if (!process.env.RECORD_REPLAY_DRIVER) {
@@ -31,11 +31,11 @@ async function runTests() {
 }
 runTests();
 
-async function runTest(test) {
+async function runTest({ example, script }) {
   const recordingIdFile = tmpFile();
   spawnSync(
     `${__dirname}/../out/Release/node`,
-    [`${__dirname}/tests/${test}`],
+    [`${__dirname}/tests/${example}`],
     {
       env: {
         ...process.env,
@@ -57,6 +57,6 @@ async function runTest(test) {
 
   const geckoPath = findGeckoPath();
 
-  const url = `http://localhost:8080/view?id=${recordingId}&dispatch=${dispatch}`;
+  const url = `http://localhost:8080/view?id=${recordingId}&dispatch=${dispatch}&test=${script}`;
   const gecko = spawn(geckoPath, ["-foreground", ...profileArgs, url]);
 }
