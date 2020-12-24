@@ -953,6 +953,14 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
     break;
   }
 
+  // Internal record/replay libraries can see different values for IDs
+  // obtained from interacting with the inspector, as different CDP messages
+  // may be sent and objects have different CDP IDs. These differences won't
+  // affect the script's behavior.
+  if (strstr(location, "internal/recordreplay")) {
+    return *value;
+  }
+
   if (value->IsNumber()) {
     double num = value->Number();
     if (std::isnan(num)) {
