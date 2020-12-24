@@ -883,6 +883,8 @@ static inline void RecordReplayIncrementProgressCounter() {
   }
 }
 
+extern bool RecordReplayIgnoreScript(Handle<Script> script);
+
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
@@ -892,12 +894,16 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
     return ReadOnlyRoots(isolate).undefined_value();
   }
 
+  Handle<SharedFunctionInfo> shared(function->shared(), isolate);
+  Handle<Script> script(Script::cast(shared->script()), isolate);
+
+  if (RecordReplayIgnoreScript(script)) {
+    return ReadOnlyRoots(isolate).undefined_value();
+  }
+
   if (IsMainThread()) {
     RecordReplayIncrementProgressCounter();
   }
-
-  Handle<SharedFunctionInfo> shared(function->shared(), isolate);
-  Handle<Script> script(Script::cast(shared->script()), isolate);
 
   Script::PositionInfo info;
   Script::GetPositionInfo(script, shared->StartPosition(), &info, Script::WITH_OFFSET);
@@ -939,6 +945,10 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
     Handle<SharedFunctionInfo> shared(js.function()->shared(), isolate);
     Handle<Script> script(Script::cast(shared->script()), isolate);
 
+    if (RecordReplayIgnoreScript(script)) {
+      return *value;
+    }
+
     int source_position = js.SourcePosition();
     Script::PositionInfo info;
     Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
@@ -951,14 +961,6 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
     }
     location[sizeof(location) - 1] = 0;
     break;
-  }
-
-  // Internal record/replay libraries can see different values for IDs
-  // obtained from interacting with the inspector, as different CDP messages
-  // may be sent and objects have different CDP IDs. These differences won't
-  // affect the script's behavior.
-  if (strstr(location, "internal/recordreplay")) {
-    return *value;
   }
 
   if (value->IsNumber()) {
@@ -1157,11 +1159,17 @@ RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
 
   CHECK(IsMainThread());
 
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+
+  Handle<Script> script(Script::cast(function->shared().script()), isolate);
+  if (RecordReplayIgnoreScript(script)) {
+    return ReadOnlyRoots(isolate).undefined_value();
+  }
+
   DCHECK(index < (int32_t)gInstrumentationSites.size());
   InstrumentationSite& site = gInstrumentationSites[index];
 
   if (!site.function_id_.length()) {
-    CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
     Handle<SharedFunctionInfo> shared(function->shared(), isolate);
     site.function_id_ = GetRecordReplayFunctionId(shared);
   }

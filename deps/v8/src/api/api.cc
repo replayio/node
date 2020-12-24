@@ -11230,6 +11230,8 @@ void RecordReplayEndDisallowEvents() {
 extern char* CommandCallback(const char* command, const char* params);
 extern void ClearPauseDataCallback();
 
+bool gRecordReplayInstrumentNodeInternals;
+
 } // namespace internal
 
 template <typename Src, typename Dst>
@@ -11279,6 +11281,8 @@ void SetRecordingOrReplaying() {
   void (*setClearPauseDataCallback)(void (*callback)());
   RecordReplayLoadSymbol("RecordReplaySetClearPauseDataCallback", setClearPauseDataCallback);
   setClearPauseDataCallback(i::ClearPauseDataCallback);
+
+  internal::gRecordReplayInstrumentNodeInternals = !!getenv("RECORD_REPLAY_INSTRUMENT_NODE");
 }
 
 bool IsRecordingOrReplaying() {

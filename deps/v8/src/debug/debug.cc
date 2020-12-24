@@ -2953,6 +2953,30 @@ void ClearPauseDataCallback() {
   }
 }
 
+extern bool gRecordReplayInstrumentNodeInternals;
+
+bool RecordReplayIgnoreScript(Handle<Script> script) {
+  if (script->name().IsUndefined()) {
+    return false;
+  }
+
+  std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+
+  if (gRecordReplayInstrumentNodeInternals) {
+    // When exposing node internals, we still ignore the record/replay specific
+    // scripts, as these will have on stack frames when processing commands.
+    return strstr(name.get(), "node:internal/recordreplay");
+  }
+
+  // Normally we ignore node internal scripts entirely.
+  return !strncmp(name.get(), "node:", 5);
+}
+
+static bool RecordReplayIgnoreScriptById(Isolate* isolate, int script_id) {
+  Handle<Script> script = GetScript(isolate, script_id);
+  return RecordReplayIgnoreScript(script);
+}
+
 }  // namespace internal
 
 namespace i = internal;
@@ -2987,6 +3011,22 @@ void FunctionCallbackRecordReplaySetClearPauseDataCallback(const FunctionCallbac
 
   Isolate* v8isolate = callArgs.GetIsolate();
   i::gClearPauseDataCallback = new Eternal<Value>(v8isolate, callArgs[0]);
+}
+
+void FunctionCallbackRecordReplayIgnoreScript(const FunctionCallbackInfo<Value>& callArgs) {
+  CHECK(IsRecordingOrReplaying());
+  CHECK(IsMainThread());
+
+  Isolate* isolate = callArgs.GetIsolate();
+
+  i::Handle<i::Object> base = Utils::OpenHandle(*callArgs[0]);
+  std::unique_ptr<char[]> name = i::String::cast(*base).ToCString();
+  int script_id = atoi(name.get());
+
+  bool ignore = i::RecordReplayIgnoreScriptById((i::Isolate*)isolate, script_id);
+
+  Local<Boolean> rv = Boolean::New(isolate, ignore);
+  callArgs.GetReturnValue().Set(rv);
 }
 
 }  // namespace v8
