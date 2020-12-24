@@ -1432,6 +1432,11 @@ Response V8DebuggerAgentImpl::setBlackboxedRanges(
   return Response::Success();
 }
 
+Response V8DebuggerAgentImpl::getCallFrames(
+    std::unique_ptr<protocol::Array<protocol::Debugger::CallFrame>>* out_callFrames) {
+  return currentCallFrames(out_callFrames);
+}
+
 // Map generated call frame IDs to the associated frame's information.
 struct FrameInfo {
   int context_id_;

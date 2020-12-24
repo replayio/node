@@ -499,6 +499,10 @@ domain Debugger
       # Actual breakpoint location.
       Location location
 
+  command getCallFrames
+    returns
+      array of CallFrame callFrames
+
   # Fired when the virtual machine stopped on breakpoint or exception or any other stop criteria.
   event paused
     parameters
