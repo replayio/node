@@ -2528,7 +2528,8 @@ static Handle<JSObject> NewPlainObject(Isolate* isolate) {
 // Script State
 ////////////////////////////////////////////////////////////////////////////////
 
-static std::vector<Eternal<Value>> gRecordReplayScripts;
+// Map ScriptId => Script. We keep all scripts around forever when recording/replaying.
+static std::unordered_map<int, Eternal<Value>> gRecordReplayScripts;
 
 static int GetSourceIdProperty(Isolate* isolate, Handle<Object> obj) {
   Handle<Object> sourceIdStr = GetProperty(isolate, obj, "sourceId");
@@ -2538,17 +2539,14 @@ static int GetSourceIdProperty(Isolate* isolate, Handle<Object> obj) {
 
 // Get the script from an ID.
 Handle<Script> GetScript(Isolate* isolate, int script_id) {
-  for (size_t i = 0; i < gRecordReplayScripts.size(); i++) {
-    Local<v8::Value> scriptValue = gRecordReplayScripts[i].Get((v8::Isolate*)isolate);
-    Handle<Object> scriptObj = Utils::OpenHandle(*scriptValue);
-    Handle<Script> script(Script::cast(*scriptObj), isolate);
-    if (script->id() == script_id) {
-      return script;
-    }
-  }
+  auto iter = gRecordReplayScripts.find(script_id);
+  CHECK(iter != gRecordReplayScripts.end());
 
-  RecordReplayPrint("Error: Cannot find script with ID %d, crashing.", script_id);
-  V8_IMMEDIATE_CRASH();
+  Local<v8::Value> scriptValue = iter->second.Get((v8::Isolate*)isolate);
+  Handle<Object> scriptObj = Utils::OpenHandle(*scriptValue);
+  Handle<Script> script(Script::cast(*scriptObj), isolate);
+  CHECK(script->id() == script_id);
+  return script;
 }
 
 Handle<Object> RecordReplayGetSourceContents(Isolate* isolate, Handle<Object> params) {
@@ -2800,19 +2798,19 @@ Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isolate,
   return rv;
 }
 
-static std::set<int> gRegisteredScripts;
-
 static void RecordReplayRegisterScript(Handle<Script> script) {
   CHECK(IsMainThread());
 
-  // FIXME why do we get multiple notifications for the same script?
-  if (gRegisteredScripts.find(script->id()) != gRegisteredScripts.end()) {
+  auto iter = gRecordReplayScripts.find(script->id());
+  if (iter != gRecordReplayScripts.end()) {
+    // Ignore duplicate registers.
     return;
   }
-  gRegisteredScripts.insert(script->id());
 
   Isolate* isolate = Isolate::Current();
-  gRecordReplayScripts.emplace_back((v8::Isolate*)isolate, v8::Utils::ToLocal(script));
+
+  gRecordReplayScripts[script->id()] =
+    Eternal<Value>((v8::Isolate*)isolate, v8::Utils::ToLocal(script));
 
   Handle<String> idStr = GetProtocolSourceId(isolate, script);
   std::unique_ptr<char[]> id = String::cast(*idStr).ToCString();
@@ -2822,8 +2820,20 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
     url = String::cast(script->name()).ToCString();
   }
 
-  if (IsRecordingOrReplaying()) {
-    RecordReplayOnNewSource(isolate, id.get(), "scriptSource", url.get());
+  RecordReplayOnNewSource(isolate, id.get(), "scriptSource", url.get());
+
+  // If this is the first script we were notified about, look for other scripts
+  // that were already added without a notification. It would be nice to figure
+  // out how to get notified about the other scripts and remove this...
+  if (gRecordReplayScripts.size() == 1) {
+    Script::Iterator iterator(isolate);
+    for (Script script = iterator.Next(); !script.is_null();
+         script = iterator.Next()) {
+      if (script.HasValidSource()) {
+        Handle<Script> handle(script, isolate);
+        RecordReplayRegisterScript(handle);
+      }
+    }
   }
 }
 
