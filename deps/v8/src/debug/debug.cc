@@ -2651,8 +2651,10 @@ extern const char* InstrumentationSiteKind(int index);
 extern int InstrumentationSiteSourcePosition(int index);
 extern std::string GetRecordReplayFunctionId(Handle<SharedFunctionInfo> shared);
 
-Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
-                                                  Handle<Object> params) {
+static void ForEachInstrumentationOpInRange(
+  Isolate* isolate, Handle<Object> params,
+  const std::function<void(Handle<Script> script, int instrumentation_index,
+                           const std::string& function_id, int line, int column)> callback) {
   int script_id = GetSourceIdProperty(isolate, params);
   Handle<Script> script = GetScript(isolate, script_id);
 
@@ -2662,44 +2664,54 @@ Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
   int endLine = INT32_MAX, endColumn = INT32_MAX;
   DecodeLocationProperty(isolate, params, "end", &endLine, &endColumn);
 
+  ForEachInstrumentationOp(isolate, script, [&](Handle<SharedFunctionInfo> shared,
+                                                int instrumentation_index) {
+    if (strcmp(InstrumentationSiteKind(instrumentation_index), "breakpoint")) {
+      return;
+    }
+
+    int source_position = InstrumentationSiteSourcePosition(instrumentation_index);
+    Script::PositionInfo info;
+    Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
+
+    // Use 1-indexed lines instead of 0-indexed.
+    int line = info.line + 1;
+    int column = info.column;
+
+    if (line < beginLine ||
+        (line == beginLine && column < beginColumn) ||
+        line > endLine ||
+        (line == endLine && column > endColumn)) {
+      return;
+    }
+
+    std::string function_id = GetRecordReplayFunctionId(shared);
+    callback(script, instrumentation_index, function_id, line, column);
+  });
+}
+
+static Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
+                                                         Handle<Object> params) {
+
   std::vector<std::vector<int>> lineColumns;
   size_t numLines = 0;
 
-  ForEachInstrumentationOp(isolate, script, [&](Handle<SharedFunctionInfo> shared,
-                                                int instrumentation_index) {
-      if (strcmp(InstrumentationSiteKind(instrumentation_index), "breakpoint")) {
-        return;
-      }
+  ForEachInstrumentationOpInRange(isolate, params,
+     [&](Handle<Script> script, int instrumentation_index,
+         const std::string& function_id, int line, int column) {
+    while ((size_t)line >= lineColumns.size()) {
+      lineColumns.emplace_back();
+    }
+    if (!lineColumns[line].size()) {
+      numLines++;
+    }
+    lineColumns[line].push_back(column);
 
-      int source_position = InstrumentationSiteSourcePosition(instrumentation_index);
-      Script::PositionInfo info;
-      Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
-
-      // Use 1-indexed lines instead of 0-indexed.
-      int line = info.line + 1;
-      int column = info.column;
-
-      if (line < beginLine ||
-          (line == beginLine && column < beginColumn) ||
-          line > endLine ||
-          (line == endLine && column > endColumn)) {
-        return;
-      }
-
-      while ((size_t)line >= lineColumns.size()) {
-        lineColumns.emplace_back();
-      }
-      if (!lineColumns[line].size()) {
-        numLines++;
-      }
-      lineColumns[line].push_back(column);
-
-      std::string key = BreakpointKey(script->id(), line, column);
-      BreakpointInfo value(GetRecordReplayFunctionId(shared),
-                           instrumentation_index);
-      gBreakpoints.insert(std::pair<std::string, BreakpointInfo>
-                          (key, value));
-    });
+    std::string key = BreakpointKey(script->id(), line, column);
+    BreakpointInfo value(function_id, instrumentation_index);
+    gBreakpoints.insert(std::pair<std::string, BreakpointInfo>
+                        (key, value));
+  });
 
   Handle<FixedArray> lineLocations = isolate->factory()->NewFixedArray(numLines);
   size_t lineLocationsIndex = 0;
@@ -2759,8 +2771,8 @@ static Handle<String> GetProtocolSourceId(Isolate* isolate, Handle<Script> scrip
 extern void ParseRecordReplayFunctionId(const std::string& function_id,
                                         int* script_id, int* source_position);
 
-Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isolate,
-                                                           Handle<Object> params) {
+static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isolate,
+                                                                  Handle<Object> params) {
   Handle<Object> function_id_raw = GetProperty(isolate, params, "functionId");
 
   std::unique_ptr<char[]> function_id = String::cast(*function_id_raw).ToCString();
@@ -2798,6 +2810,32 @@ Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isolate,
   return rv;
 }
 
+static Handle<Object> RecordReplayGetFunctionsInRange(Isolate* isolate,
+                                                      Handle<Object> params) {
+  std::set<std::string> functions;
+  ForEachInstrumentationOpInRange(isolate, params,
+     [&](Handle<Script> script, int instrumentation_index,
+         const std::string& function_id, int line, int column) {
+    functions.insert(function_id);
+  });
+
+  Handle<FixedArray> functionsArray = isolate->factory()->NewFixedArray(functions.size());
+
+  size_t index = 0;
+  for (const std::string& function_id : functions) {
+    Handle<String> str = CStringToHandle(isolate, function_id.c_str());
+    functionsArray->set(index++, *str);
+  }
+  CHECK(index == functions.size());
+
+  Handle<JSArray> functionsJSArray =
+    isolate->factory()->NewJSArrayWithElements(functionsArray);
+
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  SetProperty(isolate, rv, "functions", functionsJSArray);
+  return rv;
+}
+
 static void RecordReplayRegisterScript(Handle<Script> script) {
   CHECK(IsMainThread());
 
@@ -2815,12 +2853,13 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
   Handle<String> idStr = GetProtocolSourceId(isolate, script);
   std::unique_ptr<char[]> id = String::cast(*idStr).ToCString();
 
-  std::unique_ptr<char[]> url;
+  std::string url;
   if (!script->name().IsUndefined()) {
-    url = String::cast(script->name()).ToCString();
+    std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+    url = std::string("file://") + name.get();
   }
 
-  RecordReplayOnNewSource(isolate, id.get(), "scriptSource", url.get());
+  RecordReplayOnNewSource(isolate, id.get(), "scriptSource", url.length() ? url.c_str() : nullptr);
 
   // If this is the first script we were notified about, look for other scripts
   // that were already added without a notification. It would be nice to figure
@@ -2849,6 +2888,7 @@ static InternalCommandCallback gInternalCommandCallbacks[] = {
   { "Debugger.getPossibleBreakpoints", RecordReplayGetPossibleBreakpoints },
   { "Target.convertLocationToFunctionOffset", RecordReplayConvertLocationToFunctionOffset },
   { "Target.convertFunctionOffsetToLocation", RecordReplayConvertFunctionOffsetToLocation },
+  { "Target.getFunctionsInRange", RecordReplayGetFunctionsInRange },
 };
 
 // Function to invoke on command callbacks which we don't have a C++ implementation for.
