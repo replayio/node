@@ -1011,11 +1011,11 @@ struct InstrumentationSite {
   std::string function_id_;
 };
 
+// Main thread only.
 static std::vector<InstrumentationSite> gInstrumentationSites;
-static base::LazyMutex gInstrumentationSitesMutex = LAZY_MUTEX_INITIALIZER;
 
 int RegisterInstrumentationSite(const char* kind, int source_position) {
-  base::MutexGuard guard(gInstrumentationSitesMutex.Pointer());
+  CHECK(IsMainThread());
   InstrumentationSite site;
   site.kind_ = kind;
   site.source_position_ = source_position;
@@ -1024,14 +1024,14 @@ int RegisterInstrumentationSite(const char* kind, int source_position) {
 }
 
 const char* InstrumentationSiteKind(int index) {
-  base::MutexGuard guard(gInstrumentationSitesMutex.Pointer());
+  CHECK(IsMainThread());
   DCHECK(index < (int32_t)gInstrumentationSites.size());
   InstrumentationSite& site = gInstrumentationSites[index];
   return site.kind_;
 }
 
 int InstrumentationSiteSourcePosition(int index) {
-  base::MutexGuard guard(gInstrumentationSitesMutex.Pointer());
+  CHECK(IsMainThread());
   DCHECK(index < (int32_t)gInstrumentationSites.size());
   InstrumentationSite& site = gInstrumentationSites[index];
   return site.source_position_;
@@ -1130,8 +1130,6 @@ void StopTrackingExecution() {
   uint64_t elapsed = CurrentTimeMicroseconds() - gTrackExecutionStartTime;
 
   if (elapsed >= gTrackExecutionThreshold * 1000) {
-    base::MutexGuard guard(gInstrumentationSitesMutex.Pointer());
-
     char buf[256];
     snprintf(buf, sizeof(buf), "dumps/track-execution.%llums.%d.log", elapsed / 1000, rand());
     FILE* f = fopen(buf, "w");
@@ -1157,7 +1155,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
   DCHECK_EQ(2, args.length());
   CONVERT_NUMBER_CHECKED(int32_t, index, Int32, args[1]);
 
-  base::MutexGuard guard(gInstrumentationSitesMutex.Pointer());
+  CHECK(IsMainThread());
 
   DCHECK(index < (int32_t)gInstrumentationSites.size());
   InstrumentationSite& site = gInstrumentationSites[index];
