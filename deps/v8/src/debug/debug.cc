@@ -2803,10 +2803,13 @@ static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isola
   int line = info.line + 1;
   int column = info.column;
 
+  Handle<JSObject> location = NewPlainObject(isolate);
+  SetProperty(isolate, location, "sourceId", GetProtocolSourceId(isolate, script));
+  SetProperty(isolate, location, "line", line);
+  SetProperty(isolate, location, "column", column);
+
   Handle<JSObject> rv = NewPlainObject(isolate);
-  SetProperty(isolate, rv, "sourceId", GetProtocolSourceId(isolate, script));
-  SetProperty(isolate, rv, "line", line);
-  SetProperty(isolate, rv, "column", column);
+  SetProperty(isolate, rv, "location", location);
   return rv;
 }
 
