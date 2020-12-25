@@ -1437,14 +1437,6 @@ Response V8DebuggerAgentImpl::getCallFrames(
   return currentCallFrames(out_callFrames);
 }
 
-// Map generated call frame IDs to the associated frame's information.
-struct FrameInfo {
-  int context_id_;
-  v8::internal::StackFrameId stack_frame_id_;
-  int inline_frame_index_;
-};
-static std::unordered_map<std::string, FrameInfo> gFrameInfo;
-
 Response V8DebuggerAgentImpl::currentCallFrames(
     std::unique_ptr<Array<CallFrame>>* result) {
   if (!isPaused()) {
@@ -1461,14 +1453,6 @@ Response V8DebuggerAgentImpl::currentCallFrames(
     if (contextId) m_session->findInjectedScript(contextId, injectedScript);
     String16 callFrameId =
         RemoteCallFrameId::serialize(contextId, frameOrdinal);
-
-    if (v8::IsRecordingOrReplaying()) {
-      gFrameInfo.insert(std::pair<std::string, FrameInfo>
-                        (callFrameId.utf8(),
-                         { iterator->GetContextId(),
-                           iterator->FrameId(),
-                           iterator->InlineFrameIndex() }));
-    }
 
     v8::debug::Location loc = iterator->GetSourceLocation();
 
@@ -2012,20 +1996,3 @@ V8DebuggerAgentImpl::wrapObject(int context_id, v8::Local<v8::Value> val) {
 }
 
 }  // namespace v8_inspector
-
-namespace v8 {
-namespace internal {
-
-void RecordReplayGetStackFrameInfo(const std::string& frame_id,
-                                   int* context_id,
-                                   v8::internal::StackFrameId* stack_frame_id,
-                                   int* inline_frame_index) {
-  auto iter = v8_inspector::gFrameInfo.find(frame_id);
-  CHECK(iter != v8_inspector::gFrameInfo.end());
-  *context_id = iter->second.context_id_;
-  *stack_frame_id = iter->second.stack_frame_id_;
-  *inline_frame_index = iter->second.inline_frame_index_;
-}
-
-} // namespace internal
-} // namespace v8
