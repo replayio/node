@@ -9,6 +9,7 @@ const startTime = Date.now();
 
 const tests = [
   { example: "basic.js", script: "node_console-01.js" },
+  { example: "objects.js", script: "node_object_preview-01.js" },
 ];
 
 if (!process.env.RECORD_REPLAY_DRIVER) {
@@ -139,6 +140,6 @@ async function runTest({ example, script }, timeout = 120) {
 
     // Log an error which github will recognize.
     let msg = `::error ::Failure ${script}`;
-    spawnChecked("echo", [msg], { stdio: "inherit" });
+    spawnSync("echo", [msg], { stdio: "inherit" });
   }
 }
