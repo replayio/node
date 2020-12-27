@@ -10,6 +10,12 @@
 #include "src/base/platform/time.h"
 
 namespace v8 {
+
+namespace internal {
+  void RecordReplayBeginPassThroughEvents();
+  void RecordReplayEndPassThroughEvents();
+}
+
 namespace base {
 
 #if V8_OS_POSIX
@@ -95,7 +101,9 @@ bool ConditionVariable::WaitFor(Mutex* mutex, const TimeDelta& rel_time) {
      (V8_OS_LINUX && V8_LIBC_GLIBC))
   // On Free/Net/OpenBSD and Linux with glibc we can change the time
   // source for pthread_cond_timedwait() to use the monotonic clock.
+  v8::internal::RecordReplayBeginPassThroughEvents();
   result = clock_gettime(CLOCK_MONOTONIC, &ts);
+  v8::internal::RecordReplayEndPassThroughEvents();
   DCHECK_EQ(0, result);
   Time now = Time::FromTimespec(ts);
 #else

@@ -361,17 +361,22 @@ int uv_loop_alive(const uv_loop_t* loop) {
     return uv__loop_alive(loop);
 }
 
+extern void NodeRecordReplayAssert(const char* format, ...);
 
 int uv_run(uv_loop_t* loop, uv_run_mode mode) {
   int timeout;
   int r;
   int ran_pending;
 
+  NodeRecordReplayAssert("uv_run START");
+
   r = uv__loop_alive(loop);
   if (!r)
     uv__update_time(loop);
 
   while (r != 0 && loop->stop_flag == 0) {
+    NodeRecordReplayAssert("uv_run #2");
+
     uv__update_time(loop);
     uv__run_timers(loop);
     ran_pending = uv__run_pending(loop);
@@ -417,6 +422,8 @@ int uv_run(uv_loop_t* loop, uv_run_mode mode) {
    */
   if (loop->stop_flag != 0)
     loop->stop_flag = 0;
+
+  NodeRecordReplayAssert("uv_run DONE");
 
   return r;
 }
