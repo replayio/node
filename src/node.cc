@@ -1236,7 +1236,7 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   if (gRecordReplayAttach && gRecordReplayFinishRecording) {
     gRecordReplayAttach(dispatchAddress, gBuildId);
     gRecordReplayRecordCommandLineArguments(pargc, pargv);
-    v8::SetRecordingOrReplaying();
+    v8::SetRecordingOrReplaying(handle);
   }
 }
 

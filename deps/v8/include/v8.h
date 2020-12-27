@@ -12110,7 +12110,7 @@ size_t SnapshotCreator::AddData(Local<T> object) {
  * \example process.cc
  */
 
-void SetRecordingOrReplaying();
+void SetRecordingOrReplaying(void* handle);
 bool IsRecordingOrReplaying();
 
 void SetTrackingExecution();

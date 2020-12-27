@@ -11242,8 +11242,8 @@ static inline void CastPointer(const Src src, Dst* dst) {
 }
 
 template <typename T>
-static void RecordReplayLoadSymbol(const char* name, T& function) {
-  void* sym = dlsym(RTLD_DEFAULT, name);
+static void RecordReplayLoadSymbol(void* handle, const char* name, T& function) {
+  void* sym = dlsym(handle, name);
   if (!sym) {
     fprintf(stderr, "Could not find %s in Record Replay driver, crashing.\n", name);
     V8_IMMEDIATE_CRASH();
@@ -11254,32 +11254,32 @@ static void RecordReplayLoadSymbol(const char* name, T& function) {
 
 THREAD_LOCAL bool gIsMainThread;
 
-void SetRecordingOrReplaying() {
+void SetRecordingOrReplaying(void* handle) {
   gRecordingOrReplaying = true;
   gIsMainThread = true;
 
-  RecordReplayLoadSymbol("RecordReplayOnNewSource", gRecordReplayOnNewSource);
-  RecordReplayLoadSymbol("RecordReplayOnConsoleMessage", gRecordReplayOnConsoleMessage);
-  RecordReplayLoadSymbol("RecordReplayOnExceptionUnwind", gRecordReplayOnExceptionUnwind);
-  RecordReplayLoadSymbol("RecordReplaySetCommandCallback", gRecordReplaySetCommandCallback);
-  RecordReplayLoadSymbol("RecordReplayPrint", gRecordReplayPrint);
-  RecordReplayLoadSymbol("RecordReplayAssert", gRecordReplayAssert);
-  RecordReplayLoadSymbol("RecordReplayBytes", gRecordReplayBytes);
-  RecordReplayLoadSymbol("RecordReplayValue", gRecordReplayValue);
-  RecordReplayLoadSymbol("RecordReplayOnInstrument", gRecordReplayOnInstrument);
-  RecordReplayLoadSymbol("RecordReplayProgressCounter", gRecordReplayProgressCounter);
-  RecordReplayLoadSymbol("RecordReplayAreEventsDisallowed", gRecordReplayAreEventsDisallowed);
-  RecordReplayLoadSymbol("RecordReplayBeginPassThroughEvents", gRecordReplayBeginPassThroughEvents);
-  RecordReplayLoadSymbol("RecordReplayEndPassThroughEvents", gRecordReplayEndPassThroughEvents);
-  RecordReplayLoadSymbol("RecordReplayBeginDisallowEvents", gRecordReplayBeginDisallowEvents);
-  RecordReplayLoadSymbol("RecordReplayEndDisallowEvents", gRecordReplayEndDisallowEvents);
+  RecordReplayLoadSymbol(handle, "RecordReplayOnNewSource", gRecordReplayOnNewSource);
+  RecordReplayLoadSymbol(handle, "RecordReplayOnConsoleMessage", gRecordReplayOnConsoleMessage);
+  RecordReplayLoadSymbol(handle, "RecordReplayOnExceptionUnwind", gRecordReplayOnExceptionUnwind);
+  RecordReplayLoadSymbol(handle, "RecordReplaySetCommandCallback", gRecordReplaySetCommandCallback);
+  RecordReplayLoadSymbol(handle, "RecordReplayPrint", gRecordReplayPrint);
+  RecordReplayLoadSymbol(handle, "RecordReplayAssert", gRecordReplayAssert);
+  RecordReplayLoadSymbol(handle, "RecordReplayBytes", gRecordReplayBytes);
+  RecordReplayLoadSymbol(handle, "RecordReplayValue", gRecordReplayValue);
+  RecordReplayLoadSymbol(handle, "RecordReplayOnInstrument", gRecordReplayOnInstrument);
+  RecordReplayLoadSymbol(handle, "RecordReplayProgressCounter", gRecordReplayProgressCounter);
+  RecordReplayLoadSymbol(handle, "RecordReplayAreEventsDisallowed", gRecordReplayAreEventsDisallowed);
+  RecordReplayLoadSymbol(handle, "RecordReplayBeginPassThroughEvents", gRecordReplayBeginPassThroughEvents);
+  RecordReplayLoadSymbol(handle, "RecordReplayEndPassThroughEvents", gRecordReplayEndPassThroughEvents);
+  RecordReplayLoadSymbol(handle, "RecordReplayBeginDisallowEvents", gRecordReplayBeginDisallowEvents);
+  RecordReplayLoadSymbol(handle, "RecordReplayEndDisallowEvents", gRecordReplayEndDisallowEvents);
 
   void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
-  RecordReplayLoadSymbol("RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);
+  RecordReplayLoadSymbol(handle, "RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);
   setDefaultCommandCallback(i::CommandCallback);
 
   void (*setClearPauseDataCallback)(void (*callback)());
-  RecordReplayLoadSymbol("RecordReplaySetClearPauseDataCallback", setClearPauseDataCallback);
+  RecordReplayLoadSymbol(handle, "RecordReplaySetClearPauseDataCallback", setClearPauseDataCallback);
   setClearPauseDataCallback(i::ClearPauseDataCallback);
 
   internal::gRecordReplayInstrumentNodeInternals = !!getenv("RECORD_REPLAY_INSTRUMENT_NODE");
