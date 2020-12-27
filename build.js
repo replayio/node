@@ -7,10 +7,13 @@
 const fs = require("fs");
 const os = require("os");
 const { spawnSync } = require("child_process");
-const { buildSymbolsArchive } = require("../backend/src/shared/instanceUtils");
+const {
+  buildSymbolsArchive,
+  currentPlatform,
+} = require("../backend/src/shared/instanceUtils");
 
 // Generate a new build ID.
-const buildId = `macOS-node-${makeDate()}-${makeRandomId()}`;
+const buildId = `${currentPlatform()}-node-${makeDate()}-${makeRandomId()}`;
 
 fs.writeFileSync(
   "src/node_build_id.cc",
