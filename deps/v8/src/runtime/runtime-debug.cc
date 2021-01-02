@@ -1042,6 +1042,9 @@ int InstrumentationSiteSourcePosition(int index) {
 extern void RecordReplayInstrument(const char* kind, const char* function, int offset);
 extern void RecordReplayPrint(const char* format, ...);
 
+// Enable to dump locations of each function to stderr.
+static bool gDumpFunctionLocations;
+
 std::string GetRecordReplayFunctionId(Handle<SharedFunctionInfo> shared) {
   Script script = Script::cast(shared->script());
 
@@ -1051,20 +1054,19 @@ std::string GetRecordReplayFunctionId(Handle<SharedFunctionInfo> shared) {
   // and source location later.
   os << script.id() << ":" << shared->StartPosition();
 
-  // Enable to dump locations of each function to stderr.
-  /*
-  std::unique_ptr<char[]> url;
-  if (!script.name().IsUndefined()) {
-    url = String::cast(script.name()).ToCString();
-  }
+  if (gDumpFunctionLocations) {
+    std::unique_ptr<char[]> url;
+    if (!script.name().IsUndefined()) {
+      url = String::cast(script.name()).ToCString();
+    }
 
-  Script::PositionInfo info;
-  Handle<Script> handleScript(script, Isolate::Current());
-  Script::GetPositionInfo(handleScript, shared->StartPosition(), &info, Script::WITH_OFFSET);
-  RecordReplayPrint("FunctionId %s -> %s:%d:%d",
-                    os.str().c_str(), url.get() ? url.get() : "<none>",
-                    info.line + 1, info.column);
-  */
+    Script::PositionInfo info;
+    Handle<Script> handleScript(script, Isolate::Current());
+    Script::GetPositionInfo(handleScript, shared->StartPosition(), &info, Script::WITH_OFFSET);
+    RecordReplayPrint("FunctionId %s -> %s:%d:%d",
+                      os.str().c_str(), url.get() ? url.get() : "<none>",
+                      info.line + 1, info.column);
+  }
 
   return os.str();
 }
@@ -1079,11 +1081,12 @@ void ParseRecordReplayFunctionId(const std::string& function_id,
 RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
   HandleScope scope(isolate);
   DCHECK_EQ(2, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
   CONVERT_NUMBER_CHECKED(int32_t, index, Int32, args[1]);
 
-  CHECK(IsMainThread());
-
-  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+  if (!IsMainThread()) {
+    return ReadOnlyRoots(isolate).undefined_value();
+  }
 
   Handle<Script> script(Script::cast(function->shared().script()), isolate);
   if (RecordReplayIgnoreScript(script)) {

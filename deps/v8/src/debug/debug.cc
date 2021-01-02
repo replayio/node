@@ -2899,6 +2899,8 @@ static Eternal<Value>* gCommandCallback;
 
 char* CommandCallback(const char* command, const char* params) {
   Isolate* isolate = Isolate::Current();
+  HandleScope scope(isolate);
+
   Handle<Object> undefined = isolate->factory()->undefined_value();
   Handle<String> paramsStr = CStringToHandle(isolate, params);
 

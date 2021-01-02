@@ -62,6 +62,9 @@ async function runTest({ example, script }, timeout = 120) {
       stdio: "inherit",
     },
   );
+  if (!fs.existsSync(recordingIdFile)) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
   const recordingId = fs.readFileSync(recordingIdFile, "utf8").trim();
 
   const profileArgs = [];
