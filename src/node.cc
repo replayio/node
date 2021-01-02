@@ -1186,9 +1186,6 @@ extern char gBuildId[];
 static void InitializeRecordReplay(int* pargc, char*** pargv) {
   const char* driver = getenv("RECORD_REPLAY_DRIVER");
   if (!driver) {
-    if (getenv("TRACK_EXECUTION")) {
-      v8::SetTrackingExecution();
-    }
     return;
   }
 

@@ -11289,17 +11289,6 @@ bool IsRecordingOrReplaying() {
   return gRecordingOrReplaying;
 }
 
-static bool gTrackingExecution;
-
-void SetTrackingExecution() {
-  gTrackingExecution = true;
-  gIsMainThread = true;
-}
-
-bool IsTrackingExecution() {
-  return gTrackingExecution;
-}
-
 bool IsMainThread() {
   return gIsMainThread;
 }

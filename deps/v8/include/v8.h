@@ -12113,9 +12113,6 @@ size_t SnapshotCreator::AddData(Local<T> object) {
 void SetRecordingOrReplaying(void* handle);
 bool IsRecordingOrReplaying();
 
-void SetTrackingExecution();
-bool IsTrackingExecution();
-
 bool IsMainThread();
 
 }  // namespace v8

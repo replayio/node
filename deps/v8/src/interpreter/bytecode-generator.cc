@@ -1359,8 +1359,6 @@ void BytecodeGenerator::GenerateBytecodeBody() {
     }
 
     builder()->RecordReplayInstrumentation("main");
-  } else if (IsTrackingExecution()) {
-    builder()->RecordReplayInstrumentation("main");
   }
 
   // Increment the function-scope block coverage counter.
@@ -4214,7 +4212,7 @@ void BytecodeGenerator::BuildSuspendPoint(int position) {
   // [[input_or_debug_pos]] slot of the generator object.
   builder()->ResumeGenerator(generator_object(), registers);
 
-  if (IsRecordingOrReplaying() || IsTrackingExecution()) {
+  if (IsRecordingOrReplaying()) {
     builder()->RecordReplayInstrumentation("entry");
   }
 }

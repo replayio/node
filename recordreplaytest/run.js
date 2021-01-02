@@ -11,6 +11,7 @@ const tests = [
   { example: "basic.js", script: "node_console-01.js" },
   { example: "objects.js", script: "node_object_preview-01.js" },
   { example: "basic.js", script: "node_logpoint-01.js" },
+  { example: "run_worker.js", script: "node_worker-01.js" },
 ];
 
 if (!process.env.RECORD_REPLAY_DRIVER) {

@@ -61,7 +61,7 @@ static UBool U_CALLCONV umtx_cleanup() {
     initCondition->~condition_variable();
     UMutex::cleanup();
 
-    initFlag = 0;
+    initFlag = PTHREAD_ONCE_INIT;
     return true;
 }
 

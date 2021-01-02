@@ -1046,40 +1046,25 @@ std::string GetRecordReplayFunctionId(Handle<SharedFunctionInfo> shared) {
   Script script = Script::cast(shared->script());
 
   std::ostringstream os;
-  if (IsRecordingOrReplaying()) {
-    // When recording/replaying we use a function ID we can parse to a script
-    // and source location later.
-    os << script.id() << ":" << shared->StartPosition();
 
-    // Enable to dump locations of each function to stderr.
-    /*
-    std::unique_ptr<char[]> url;
-    if (!script.name().IsUndefined()) {
-      url = String::cast(script.name()).ToCString();
-    }
+  // When recording/replaying we use a function ID we can parse to a script
+  // and source location later.
+  os << script.id() << ":" << shared->StartPosition();
 
-    Script::PositionInfo info;
-    Handle<Script> handleScript(script, Isolate::Current());
-    Script::GetPositionInfo(handleScript, shared->StartPosition(), &info, Script::WITH_OFFSET);
-    RecordReplayPrint("FunctionId %s -> %s:%d:%d",
-                      os.str().c_str(), url.get() ? url.get() : "<none>",
-                      info.line + 1, info.column);
-    */
-  } else {
-    // When tracking execution we don't need function IDs that can be converted
-    // to a script/position, so include the actual URL/location.
-    CHECK(IsTrackingExecution());
-
-    std::unique_ptr<char[]> url;
-    if (!script.name().IsUndefined()) {
-      url = String::cast(script.name()).ToCString();
-    }
-
-    Script::PositionInfo info;
-    Handle<Script> handleScript(script, Isolate::Current());
-    Script::GetPositionInfo(handleScript, shared->StartPosition(), &info, Script::WITH_OFFSET);
-    os << (url.get() ? url.get() : "<none>") << ":" << info.line + 1 << ":" << info.column;
+  // Enable to dump locations of each function to stderr.
+  /*
+  std::unique_ptr<char[]> url;
+  if (!script.name().IsUndefined()) {
+    url = String::cast(script.name()).ToCString();
   }
+
+  Script::PositionInfo info;
+  Handle<Script> handleScript(script, Isolate::Current());
+  Script::GetPositionInfo(handleScript, shared->StartPosition(), &info, Script::WITH_OFFSET);
+  RecordReplayPrint("FunctionId %s -> %s:%d:%d",
+                    os.str().c_str(), url.get() ? url.get() : "<none>",
+                    info.line + 1, info.column);
+  */
 
   return os.str();
 }
@@ -1089,67 +1074,6 @@ void ParseRecordReplayFunctionId(const std::string& function_id,
   const char* raw = function_id.c_str();
   *script_id = atol(raw);
   *source_position = atol(strchr(raw, ':') + 1);
-}
-
-static uint64_t CurrentTimeMicroseconds() {
-  timeval tv;
-  gettimeofday(&tv, nullptr);
-  return tv.tv_sec * 1e6 + tv.tv_usec;
-}
-
-// If we are tracking execution and JS code is allowed to run, the start time
-// in microseconds.
-static uint64_t gTrackExecutionStartTime;
-
-// Sites which executed while tracking.
-struct ExecutedSite {
-  uint64_t time = 0;
-  int index = 0;
-};
-static std::vector<ExecutedSite> gExecutionSites;
-
-// Threshold in milliseconds above which execution will be dumped.
-static size_t gTrackExecutionThreshold;
-
-void StartTrackingExecution() {
-  CHECK(!gTrackExecutionStartTime);
-  gTrackExecutionStartTime = CurrentTimeMicroseconds();
-
-  if (!gTrackExecutionThreshold) {
-    const char* env = getenv("TRACK_EXECUTION_THRESHOLD");
-    gTrackExecutionThreshold = env ? atol(env) : 20;
-
-    if (getenv("TRACK_EXECUTION_WAIT_AT_START")) {
-      fprintf(stderr, "Busywaiting (pid %d)...", getpid());
-      volatile int x = 1;
-      while (x) {}
-    }
-  }
-}
-
-void StopTrackingExecution() {
-  CHECK(gTrackExecutionStartTime);
-  uint64_t elapsed = CurrentTimeMicroseconds() - gTrackExecutionStartTime;
-
-  if (elapsed >= gTrackExecutionThreshold * 1000) {
-    char buf[256];
-    snprintf(buf, sizeof(buf), "dumps/track-execution.%llums.%d.log", elapsed / 1000, rand());
-    FILE* f = fopen(buf, "w");
-
-    fprintf(f, "TrackExecution %.3f ms\n", (double)elapsed / 1000.0);
-
-    for (const ExecutedSite& executed : gExecutionSites) {
-      DCHECK(executed.index < (int32_t)gInstrumentationSites.size());
-      InstrumentationSite& site = gInstrumentationSites[executed.index];
-      fprintf(f, "[%.3f] %s %s\n", (double)executed.time / 1000.0, site.kind_, site.function_id_.c_str());
-    }
-
-    fclose(f);
-    fprintf(stderr, "TrackExecutionDump %s\n", buf);
-  }
-
-  gExecutionSites.clear();
-  gTrackExecutionStartTime = 0;
 }
 
 RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
@@ -1174,13 +1098,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
     site.function_id_ = GetRecordReplayFunctionId(shared);
   }
 
-  if (IsRecordingOrReplaying()) {
-    RecordReplayInstrument(site.kind_, site.function_id_.c_str(), index);
-  } else if (IsTrackingExecution() && IsMainThread()) {
-    CHECK(gTrackExecutionStartTime);
-    uint64_t time = CurrentTimeMicroseconds() - gTrackExecutionStartTime;
-    gExecutionSites.push_back({ time, index });
-  }
+  RecordReplayInstrument(site.kind_, site.function_id_.c_str(), index);
 
   return ReadOnlyRoots(isolate).undefined_value();
 }

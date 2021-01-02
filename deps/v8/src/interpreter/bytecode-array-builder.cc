@@ -1377,8 +1377,10 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayAssertValue() {
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayInstrumentation(const char* kind,
                                                                         int source_position) {
-  int index = RegisterInstrumentationSite(kind, source_position);
-  OutputRecordReplayInstrumentation(index);
+  if (IsMainThread()) {
+    int index = RegisterInstrumentationSite(kind, source_position);
+    OutputRecordReplayInstrumentation(index);
+  }
   return *this;
 }
 

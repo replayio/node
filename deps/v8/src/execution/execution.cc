@@ -14,9 +14,6 @@
 namespace v8 {
 namespace internal {
 
-extern void StartTrackingExecution();
-extern void StopTrackingExecution();
-
 namespace {
 
 Handle<Object> NormalizeReceiver(Isolate* isolate, Handle<Object> receiver) {
@@ -241,8 +238,6 @@ MaybeHandle<Context> NewScriptContext(Isolate* isolate,
   return result;
 }
 
-static int gStackDepth = 0;
-
 V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
                                                  const InvokeParams& params) {
   RuntimeCallTimerScope timer(isolate, RuntimeCallCounterId::kInvoke);
@@ -341,10 +336,6 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
     }
   }
 
-  if (IsTrackingExecution() && IsMainThread() && gStackDepth++ == 0) {
-    StartTrackingExecution();
-  }
-
   // Placeholder for return value.
   Object value;
 
@@ -394,10 +385,6 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
       value = Object(stub_entry.Call(isolate->isolate_data()->isolate_root(),
                                      params.microtask_queue));
     }
-  }
-
-  if (IsTrackingExecution() && IsMainThread() && --gStackDepth == 0) {
-    StopTrackingExecution();
   }
 
 #ifdef VERIFY_HEAP

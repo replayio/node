@@ -2030,7 +2030,7 @@ void Debug::OnAfterCompile(Handle<Script> script) {
 static void RecordReplayRegisterScript(Handle<Script> script);
 
 void Debug::ProcessCompileEvent(bool has_compile_error, Handle<Script> script) {
-  if (!has_compile_error && (IsRecordingOrReplaying() || IsTrackingExecution())) {
+  if (!has_compile_error && IsRecordingOrReplaying() && IsMainThread()) {
     RecordReplayRegisterScript(script);
   }
 
