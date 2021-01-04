@@ -22,12 +22,31 @@ fs.writeFileSync(
 
 const numCPUs = os.cpus().length;
 
-spawnSync("make", [
-  `-j${numCPUs}`,
-  "-C",
-  "out",
-  "BUILDTYPE=Release",
-], { stdio: "inherit" });
+if (process.platform == "linux") {
+  // Do the build inside a container, to ensure a consistent result
+  // with the right glibc dependencies and so forth.
+  spawnSync("docker", [
+    "build",
+    ".",
+    "-f",
+    "Dockerfile.build",
+    "-t",
+    "node-build",
+  ], { stdio: "inherit" });
+  spawnSync("docker", [
+    "run",
+    "-v",
+    `${__dirname}:/node`,
+    "node-build",
+  ], { stdio: "inherit" });
+} else {
+  spawnSync("make", [
+    `-j${numCPUs}`,
+    "-C",
+    "out",
+    "BUILDTYPE=Release",
+  ], { stdio: "inherit" });
+}
 
 const objectDirectory = "out/Release";
 const libraries = ["node"];
