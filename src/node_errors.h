@@ -94,6 +94,7 @@ void OnFatalError(const char* location, const char* message);
     return e;                                                                 \
   }                                                                           \
   inline void THROW_ ## code(v8::Isolate* isolate, const char* message) {     \
+    recordreplay::Assert("ThrowException %s", message);                       \
     isolate->ThrowException(code(isolate, message));                          \
   }                                                                           \
   inline void THROW_ ## code(Environment* env, const char* message) {         \
@@ -165,6 +166,7 @@ void OnFatalError(const char* location, const char* message);
     return code(isolate, message);                                           \
   }                                                                          \
   inline void THROW_ ## code(v8::Isolate* isolate) {                         \
+    recordreplay::Assert("ThrowException %s", message);                      \
     isolate->ThrowException(code(isolate, message));                         \
   }                                                                          \
   inline void THROW_ ## code(Environment* env) {                             \
