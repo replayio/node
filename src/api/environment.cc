@@ -81,7 +81,7 @@ void* NodeArrayBufferAllocator::Allocate(size_t size) {
   void* ret;
   if (zero_fill_field_ ||
       per_process::cli_options->zero_fill_all_buffers ||
-      v8::IsRecordingOrReplaying())
+      v8::recordreplay::IsRecordingOrReplaying())
     ret = UncheckedCalloc(size);
   else
     ret = UncheckedMalloc(size);

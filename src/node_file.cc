@@ -562,7 +562,7 @@ int FileHandle::DoShutdown(ShutdownWrap* req_wrap) {
 
 
 void FSReqCallback::Reject(Local<Value> reject) {
-  recordreplay::Assert("FSReqCallback::Reject");
+  v8::recordreplay::Assert("FSReqCallback::Reject");
   MakeCallback(env()->oncomplete_string(), 1, &reject);
 }
 
@@ -571,7 +571,7 @@ void FSReqCallback::ResolveStat(const uv_stat_t* stat) {
 }
 
 void FSReqCallback::Resolve(Local<Value> value) {
-  recordreplay::Assert("FSReqCallback::Resolve");
+  v8::recordreplay::Assert("FSReqCallback::Resolve");
   Local<Value> argv[2] {
     Null(env()->isolate()),
     value

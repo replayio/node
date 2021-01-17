@@ -68,7 +68,7 @@ void HandleWrap::Close(const FunctionCallbackInfo<Value>& args) {
 }
 
 void HandleWrap::Close(Local<Value> close_callback) {
-  recordreplay::Assert("HandleWrap::Close");
+  v8::recordreplay::Assert("HandleWrap::Close");
 
   if (state_ != kInitialized)
     return;
@@ -124,7 +124,7 @@ HandleWrap::HandleWrap(Environment* env,
 
 
 void HandleWrap::OnClose(uv_handle_t* handle) {
-  recordreplay::Assert("HandleWrap::OnClose");
+  v8::recordreplay::Assert("HandleWrap::OnClose");
 
   CHECK_NOT_NULL(handle->data);
   BaseObjectPtr<HandleWrap> wrap { static_cast<HandleWrap*>(handle->data) };
@@ -144,11 +144,11 @@ void HandleWrap::OnClose(uv_handle_t* handle) {
   if (!wrap->persistent().IsEmpty() &&
       wrap->object()->Has(env->context(), env->handle_onclose_symbol())
       .FromMaybe(false)) {
-    recordreplay::Assert("HandleWrap::OnClose #1");
+    v8::recordreplay::Assert("HandleWrap::OnClose #1");
     wrap->MakeCallback(env->handle_onclose_symbol(), 0, nullptr);
   }
 
-  recordreplay::Assert("HandleWrap::OnClose #2");
+  v8::recordreplay::Assert("HandleWrap::OnClose #2");
 }
 
 Local<FunctionTemplate> HandleWrap::GetConstructorTemplate(Environment* env) {

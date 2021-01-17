@@ -518,7 +518,7 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
     if (stmt->position() == kNoSourcePosition) return;
     latest_source_info_.MakeStatementPosition(stmt->position());
 
-    if (IsRecordingOrReplaying()) {
+    if (recordreplay::IsRecordingOrReplaying()) {
       RecordReplayInstrumentation("breakpoint", stmt->position());
     }
   }

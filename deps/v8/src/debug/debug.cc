@@ -2030,7 +2030,7 @@ void Debug::OnAfterCompile(Handle<Script> script) {
 static void RecordReplayRegisterScript(Handle<Script> script);
 
 void Debug::ProcessCompileEvent(bool has_compile_error, Handle<Script> script) {
-  if (!has_compile_error && IsRecordingOrReplaying() && IsMainThread()) {
+  if (!has_compile_error && recordreplay::IsRecordingOrReplaying() && IsMainThread()) {
     RecordReplayRegisterScript(script);
   }
 
@@ -2984,12 +2984,12 @@ static bool RecordReplayIgnoreScriptById(Isolate* isolate, int script_id) {
 namespace i = internal;
 
 void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& callArgs) {
-  Local<Boolean> rv = Boolean::New(callArgs.GetIsolate(), IsRecordingOrReplaying());
+  Local<Boolean> rv = Boolean::New(callArgs.GetIsolate(), recordreplay::IsRecordingOrReplaying());
   callArgs.GetReturnValue().Set(rv);
 }
 
 void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>& callArgs) {
-  CHECK(IsRecordingOrReplaying());
+  CHECK(recordreplay::IsRecordingOrReplaying());
   if (IsMainThread()) {
     Isolate* v8isolate = callArgs.GetIsolate();
     i::Isolate* isolate = (i::Isolate*)v8isolate;
@@ -2998,7 +2998,7 @@ void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>&
 }
 
 void FunctionCallbackRecordReplaySetCommandCallback(const FunctionCallbackInfo<Value>& callArgs) {
-  CHECK(IsRecordingOrReplaying());
+  CHECK(recordreplay::IsRecordingOrReplaying());
   CHECK(IsMainThread());
   CHECK(!i::gCommandCallback);
 
@@ -3007,7 +3007,7 @@ void FunctionCallbackRecordReplaySetCommandCallback(const FunctionCallbackInfo<V
 }
 
 void FunctionCallbackRecordReplaySetClearPauseDataCallback(const FunctionCallbackInfo<Value>& callArgs) {
-  CHECK(IsRecordingOrReplaying());
+  CHECK(recordreplay::IsRecordingOrReplaying());
   CHECK(IsMainThread());
   CHECK(!i::gClearPauseDataCallback);
 
@@ -3016,7 +3016,7 @@ void FunctionCallbackRecordReplaySetClearPauseDataCallback(const FunctionCallbac
 }
 
 void FunctionCallbackRecordReplayIgnoreScript(const FunctionCallbackInfo<Value>& callArgs) {
-  CHECK(IsRecordingOrReplaying());
+  CHECK(recordreplay::IsRecordingOrReplaying());
   CHECK(IsMainThread());
 
   Isolate* isolate = callArgs.GetIsolate();

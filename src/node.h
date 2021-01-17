@@ -1093,27 +1093,9 @@ void RegisterSignalHandler(int signal,
 #endif  // _WIN32
 
 // Record/replay stuff.
-
 namespace recordreplay {
 
-void Print(const char* format, ...);
-void Assert(const char* format, ...);
-void AssertBytes(const char* why, const void* buf, size_t size);
-size_t CreateOrderedLock(const char* name);
-void OrderedLock(int lock);
-void OrderedUnlock(int lock);
-uintptr_t RecordReplayValue(const char* why, uintptr_t value);
-void RecordReplayBytes(const char* why, void* buf, size_t size);
-void BeginPassThroughEvents();
-void EndPassThroughEvents();
-void InvalidateRecording(const char* why);
-void NewCheckpoint();
 bool IsRecordingFinished();
-
-struct AutoPassThroughEvents {
-  AutoPassThroughEvents() { BeginPassThroughEvents(); }
-  ~AutoPassThroughEvents() { EndPassThroughEvents(); }
-};
 
 } // namespace recordreplay
 

@@ -715,7 +715,7 @@ MaybeLocal<Value> MessagePort::ReceiveMessage(Local<Context> context,
 }
 
 void MessagePort::OnMessage() {
-  recordreplay::Assert("MessagePort::OnMessage");
+  v8::recordreplay::Assert("MessagePort::OnMessage");
 
   Debug(this, "Running MessagePort::OnMessage()");
   HandleScope handle_scope(env()->isolate());

@@ -212,7 +212,7 @@ void MainThreadInterface::Post(std::unique_ptr<Request> request) {
 
   // When recording/replaying this is single threaded, and we don't want to
   // interrupt V8 because that will invalidate the recording.
-  if (v8::IsRecordingOrReplaying()) {
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
     requests_.push_back(std::move(request));
     DispatchMessages();
     return;

@@ -1349,7 +1349,7 @@ void BytecodeGenerator::GenerateBytecodeBody() {
     }
   }
 
-  if (IsRecordingOrReplaying()) {
+  if (recordreplay::IsRecordingOrReplaying()) {
     builder()->RecordReplayIncExecutionProgressCounter();
 
     int num_parameters = closure_scope()->num_parameters();
@@ -3221,7 +3221,7 @@ void BytecodeGenerator::BuildReturn(int source_position) {
   if (info()->flags().collect_type_profile()) {
     builder()->CollectTypeProfile(info()->literal()->return_position());
   }
-  if (IsRecordingOrReplaying()) {
+  if (recordreplay::IsRecordingOrReplaying()) {
     builder()->RecordReplayInstrumentation("exit");
   }
   builder()->SetReturnPosition(source_position, info()->literal());
@@ -4196,7 +4196,7 @@ void BytecodeGenerator::BuildSuspendPoint(int position) {
 
   RegisterList registers = register_allocator()->AllLiveRegisters();
 
-  if (IsRecordingOrReplaying()) {
+  if (recordreplay::IsRecordingOrReplaying()) {
     builder()->RecordReplayInstrumentation("exit");
   }
 
@@ -4212,7 +4212,7 @@ void BytecodeGenerator::BuildSuspendPoint(int position) {
   // [[input_or_debug_pos]] slot of the generator object.
   builder()->ResumeGenerator(generator_object(), registers);
 
-  if (IsRecordingOrReplaying()) {
+  if (recordreplay::IsRecordingOrReplaying()) {
     builder()->RecordReplayInstrumentation("entry");
   }
 }

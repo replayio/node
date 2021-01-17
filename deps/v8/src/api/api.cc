@@ -11127,6 +11127,7 @@ static void (*gRecordReplaySetCommandCallback)(const char* method, CommandCallba
 static void (*gRecordReplayPrint)(const char* format, va_list args);
 static void (*gRecordReplayOnInstrument)(const char* kind, const char* function, int offset);
 static void (*gRecordReplayAssert)(const char*, va_list);
+static void (*gRecordReplayAssertBytes)(const char* why, const void* ptr, size_t nbytes);
 static void (*gRecordReplayBytes)(const char* why, void* buf, size_t size);
 static uintptr_t (*gRecordReplayValue)(const char* why, uintptr_t v);
 static uint64_t* (*gRecordReplayProgressCounter)();
@@ -11135,6 +11136,16 @@ static void (*gRecordReplayBeginPassThroughEvents)();
 static void (*gRecordReplayEndPassThroughEvents)();
 static void (*gRecordReplayBeginDisallowEvents)();
 static void (*gRecordReplayEndDisallowEvents)();
+static size_t (*gRecordReplayCreateOrderedLock)(const char* name);
+static void (*gRecordReplayOrderedLock)(int lock);
+static void (*gRecordReplayOrderedUnlock)(int lock);
+static void (*gRecordReplayAddOrderedPthreadMutex)(const char* name, pthread_mutex_t* mutex);
+static void (*gRecordReplayInvalidateRecording)(const char* format, ...);
+static void (*gRecordReplayNewCheckpoint)();
+static bool (*gRecordReplayIsReplaying)();
+static void (*gRecordReplayRegisterPointer)(void* ptr);
+static void (*gRecordReplayUnregisterPointer)(void* ptr);
+static int (*gRecordReplayPointerId)(void* ptr);
 
 namespace internal {
 
@@ -11162,14 +11173,42 @@ void RecordReplayOnExceptionUnwind(Isolate* isolate) {
   }
 }
 
-void RecordReplayPrint(const char* format, ...) {
-  va_list args;
-  va_start(args, format);
-  gRecordReplayPrint(format, args);
-  va_end(args);
+uint64_t* RecordReplayProgressCounter() {
+  return gRecordReplayProgressCounter();
 }
 
-void RecordReplayAssert(const char* format, ...) {
+void RecordReplayInstrument(const char* kind, const char* function, int offset) {
+  gRecordReplayOnInstrument(kind, function, offset);
+}
+
+extern char* CommandCallback(const char* command, const char* params);
+extern void ClearPauseDataCallback();
+
+bool gRecordReplayInstrumentNodeInternals;
+
+} // namespace internal
+
+namespace recordreplay {
+
+void Print(const char* format, ...) {
+  if (gRecordingOrReplaying) {
+    va_list args;
+    va_start(args, format);
+    gRecordReplayPrint(format, args);
+    va_end(args);
+  }
+}
+
+extern "C" void V8RecordReplayPrint(const char* format, ...) {
+  if (gRecordingOrReplaying) {
+    va_list args;
+    va_start(args, format);
+    gRecordReplayPrint(format, args);
+    va_end(args);
+  }
+}
+
+void Assert(const char* format, ...) {
   if (gRecordingOrReplaying) {
     va_list ap;
     va_start(ap, format);
@@ -11178,10 +11217,23 @@ void RecordReplayAssert(const char* format, ...) {
   }
 }
 
-void RecordReplayBytes(const char* why, void* buf, size_t size) {
+extern "C" void V8RecordReplayAssert(const char* format, ...) {
   if (gRecordingOrReplaying) {
-    gRecordReplayBytes(why, buf, size);
+    va_list ap;
+    va_start(ap, format);
+    gRecordReplayAssert(format, ap);
+    va_end(ap);
   }
+}
+
+void AssertBytes(const char* why, const void* buf, size_t size) {
+  if (gRecordingOrReplaying) {
+    gRecordReplayAssertBytes(why, buf, size);
+  }
+}
+
+extern "C" void V8RecordReplayAssertBytes(const char* why, const void* buf, size_t size) {
+  AssertBytes(why, buf, size);
 }
 
 uintptr_t RecordReplayValue(const char* why, uintptr_t v) {
@@ -11191,48 +11243,145 @@ uintptr_t RecordReplayValue(const char* why, uintptr_t v) {
   return v;
 }
 
-uint64_t* RecordReplayProgressCounter() {
-  return gRecordReplayProgressCounter();
+extern "C" uintptr_t V8RecordReplayValue(const char* why, uintptr_t value) {
+  return RecordReplayValue(why, value);
 }
 
-bool RecordReplayAreEventsDisallowed() {
+void RecordReplayBytes(const char* why, void* buf, size_t size) {
+  if (gRecordingOrReplaying) {
+    gRecordReplayBytes(why, buf, size);
+  }
+}
+
+extern "C" void V8RecordReplayBytes(const char* why, void* buf, size_t size) {
+  RecordReplayBytes(why, buf, size);
+}
+
+bool AreEventsDisallowed() {
   return gRecordReplayAreEventsDisallowed();
 }
 
-void RecordReplayInstrument(const char* kind, const char* function, int offset) {
-  gRecordReplayOnInstrument(kind, function, offset);
-}
-
-void RecordReplayBeginPassThroughEvents() {
-  if (gRecordReplayBeginPassThroughEvents) {
+void BeginPassThroughEvents() {
+  if (gRecordingOrReplaying) {
     gRecordReplayBeginPassThroughEvents();
   }
 }
 
-void RecordReplayEndPassThroughEvents() {
-  if (gRecordReplayEndPassThroughEvents) {
+void EndPassThroughEvents() {
+  if (gRecordingOrReplaying) {
     gRecordReplayEndPassThroughEvents();
   }
 }
 
-void RecordReplayBeginDisallowEvents() {
-  if (gRecordReplayBeginDisallowEvents) {
+void BeginDisallowEvents() {
+  if (gRecordingOrReplaying) {
     gRecordReplayBeginDisallowEvents();
   }
 }
 
-void RecordReplayEndDisallowEvents() {
-  if (gRecordReplayEndDisallowEvents) {
+void EndDisallowEvents() {
+  if (gRecordingOrReplaying) {
     gRecordReplayEndDisallowEvents();
   }
 }
 
-extern char* CommandCallback(const char* command, const char* params);
-extern void ClearPauseDataCallback();
+void InvalidateRecording(const char* why) {
+  if (gRecordingOrReplaying) {
+    gRecordReplayInvalidateRecording("%s", why);
+  }
+}
 
-bool gRecordReplayInstrumentNodeInternals;
+void NewCheckpoint() {
+  if (gRecordingOrReplaying) {
+    gRecordReplayNewCheckpoint();
+  }
+}
 
-} // namespace internal
+size_t CreateOrderedLock(const char* name) {
+  if (gRecordingOrReplaying) {
+    return gRecordReplayCreateOrderedLock(name);
+  }
+  return 0;
+}
+
+extern "C" size_t V8RecordReplayCreateOrderedLock(const char* name) {
+  return CreateOrderedLock(name);
+}
+
+void OrderedLock(int lock) {
+  if (gRecordingOrReplaying) {
+    gRecordReplayOrderedLock(lock);
+  }
+}
+
+extern "C" void V8RecordReplayOrderedLock(int lock) {
+  OrderedLock(lock);
+}
+
+void OrderedUnlock(int lock) {
+  if (gRecordingOrReplaying) {
+    gRecordReplayOrderedUnlock(lock);
+  }
+}
+
+extern "C" void V8RecordReplayOrderedUnlock(int lock) {
+  OrderedUnlock(lock);
+}
+
+extern "C" void V8RecordReplayAddOrderedPthreadMutex(const char* name,
+                                                     pthread_mutex_t* mutex) {
+  if (gRecordingOrReplaying) {
+    gRecordReplayAddOrderedPthreadMutex(name, mutex);
+  }
+}
+
+bool IsReplaying() {
+  if (gRecordingOrReplaying) {
+    return gRecordReplayIsReplaying();
+  }
+  return false;
+}
+
+extern "C" int V8RecordReplayIsReplaying() {
+  return IsReplaying();
+}
+
+bool IsRecording() {
+  return !IsReplaying();
+}
+
+void RegisterPointer(void* ptr) {
+  if (gRecordingOrReplaying) {
+    gRecordReplayRegisterPointer(ptr);
+  }
+}
+
+extern "C" void V8RecordReplayRegisterPointer(void* ptr) {
+  RegisterPointer(ptr);
+}
+
+void UnregisterPointer(void* ptr) {
+  if (gRecordingOrReplaying) {
+    gRecordReplayUnregisterPointer(ptr);
+  }
+}
+
+extern "C" void V8RecordReplayUnregisterPointer(void* ptr) {
+  UnregisterPointer(ptr);
+}
+
+int PointerId(void* ptr) {
+  if (gRecordingOrReplaying) {
+    return gRecordReplayPointerId(ptr);
+  }
+  return 0;
+}
+
+extern "C" int V8RecordReplayPointerId(void* ptr) {
+  return PointerId(ptr);
+}
+
+} // namespace recordreplay
 
 template <typename Src, typename Dst>
 static inline void CastPointer(const Src src, Dst* dst) {
@@ -11264,6 +11413,7 @@ void SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplaySetCommandCallback", gRecordReplaySetCommandCallback);
   RecordReplayLoadSymbol(handle, "RecordReplayPrint", gRecordReplayPrint);
   RecordReplayLoadSymbol(handle, "RecordReplayAssert", gRecordReplayAssert);
+  RecordReplayLoadSymbol(handle, "RecordReplayAssertBytes", gRecordReplayAssertBytes);
   RecordReplayLoadSymbol(handle, "RecordReplayBytes", gRecordReplayBytes);
   RecordReplayLoadSymbol(handle, "RecordReplayValue", gRecordReplayValue);
   RecordReplayLoadSymbol(handle, "RecordReplayOnInstrument", gRecordReplayOnInstrument);
@@ -11273,6 +11423,16 @@ void SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayEndPassThroughEvents", gRecordReplayEndPassThroughEvents);
   RecordReplayLoadSymbol(handle, "RecordReplayBeginDisallowEvents", gRecordReplayBeginDisallowEvents);
   RecordReplayLoadSymbol(handle, "RecordReplayEndDisallowEvents", gRecordReplayEndDisallowEvents);
+  RecordReplayLoadSymbol(handle, "RecordReplayInvalidateRecording", gRecordReplayInvalidateRecording);
+  RecordReplayLoadSymbol(handle, "RecordReplayNewCheckpoint", gRecordReplayNewCheckpoint);
+  RecordReplayLoadSymbol(handle, "RecordReplayCreateOrderedLock", gRecordReplayCreateOrderedLock);
+  RecordReplayLoadSymbol(handle, "RecordReplayOrderedLock", gRecordReplayOrderedLock);
+  RecordReplayLoadSymbol(handle, "RecordReplayOrderedUnlock", gRecordReplayOrderedUnlock);
+  RecordReplayLoadSymbol(handle, "RecordReplayAddOrderedPthreadMutex", gRecordReplayAddOrderedPthreadMutex);
+  RecordReplayLoadSymbol(handle, "RecordReplayIsReplaying", gRecordReplayIsReplaying);
+  RecordReplayLoadSymbol(handle, "RecordReplayRegisterPointer", gRecordReplayRegisterPointer);
+  RecordReplayLoadSymbol(handle, "RecordReplayUnregisterPointer", gRecordReplayUnregisterPointer);
+  RecordReplayLoadSymbol(handle, "RecordReplayPointerId", gRecordReplayPointerId);
 
   void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
   RecordReplayLoadSymbol(handle, "RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);

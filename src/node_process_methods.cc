@@ -532,7 +532,7 @@ static void RecordReplayLog(const FunctionCallbackInfo<Value>& args) {
   CHECK(args.Length() == 1 && args[0]->IsString() &&
         "must be called with a single string");
   Utf8Value text(args.GetIsolate(), args[0]);
-  recordreplay::Print("%s", text.ToString().c_str());
+  v8::recordreplay::Print("%s", text.ToString().c_str());
 }
 
 // Function to invoke on CDP responses and events.

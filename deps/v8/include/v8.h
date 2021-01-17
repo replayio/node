@@ -12110,10 +12110,50 @@ size_t SnapshotCreator::AddData(Local<T> object) {
  * \example process.cc
  */
 
+bool IsMainThread();
+
+namespace recordreplay {
+
 void SetRecordingOrReplaying(void* handle);
 bool IsRecordingOrReplaying();
+bool IsRecording();
+bool IsReplaying();
 
-bool IsMainThread();
+void Print(const char* format, ...);
+void Assert(const char* format, ...);
+void AssertBytes(const char* why, const void* buf, size_t size);
+
+uintptr_t RecordReplayValue(const char* why, uintptr_t v);
+void RecordReplayBytes(const char* why, void* buf, size_t size);
+
+size_t CreateOrderedLock(const char* name);
+void OrderedLock(int lock);
+void OrderedUnlock(int lock);
+
+void InvalidateRecording(const char* why);
+void NewCheckpoint();
+
+bool AreEventsDisallowed();
+void BeginPassThroughEvents();
+void EndPassThroughEvents();
+void BeginDisallowEvents();
+void EndDisallowEvents();
+
+struct AutoPassThroughEvents {
+  AutoPassThroughEvents() { BeginPassThroughEvents(); }
+  ~AutoPassThroughEvents() { EndPassThroughEvents(); }
+};
+
+struct AutoDisallowEvents {
+  AutoDisallowEvents() { BeginDisallowEvents(); }
+  ~AutoDisallowEvents() { EndDisallowEvents(); }
+};
+
+void RegisterPointer(void* ptr);
+void UnregisterPointer(void* ptr);
+int PointerId(void* ptr);
+
+} // namespace recordreplay
 
 }  // namespace v8
 

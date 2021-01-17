@@ -257,13 +257,13 @@ void AppendExceptionLine(Environment* env,
 [[noreturn]] void Assert(const AssertionInfo& info) {
   std::string name = GetHumanReadableProcessName();
 
-  if (v8::IsRecordingOrReplaying()) {
-    recordreplay::Print("%s: %s:%s%s Assertion `%s' failed.\n",
-                        name.c_str(),
-                        info.file_line,
-                        info.function,
-                        *info.function ? ":" : "",
-                        info.message);
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    v8::recordreplay::Print("%s: %s:%s%s Assertion `%s' failed.\n",
+                            name.c_str(),
+                            info.file_line,
+                            info.function,
+                            *info.function ? ":" : "",
+                            info.message);
   }
 
   fprintf(stderr,

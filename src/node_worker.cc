@@ -370,14 +370,14 @@ void Worker::CreateEnvMessagePort(Environment* env) {
 }
 
 void Worker::JoinThread() {
-  recordreplay::Assert("Worker::JoinThread");
+  v8::recordreplay::Assert("Worker::JoinThread");
 
   if (thread_joined_)
     return;
   CHECK_EQ(uv_thread_join(&tid_), 0);
   thread_joined_ = true;
 
-  recordreplay::Assert("Worker::JoinThread Joined");
+  v8::recordreplay::Assert("Worker::JoinThread Joined");
 
   env()->remove_sub_worker_context(this);
 
@@ -401,7 +401,7 @@ void Worker::JoinThread() {
             : Null(env()->isolate()).As<Value>(),
     };
 
-    recordreplay::Assert("Worker::JoinThread Callback");
+    v8::recordreplay::Assert("Worker::JoinThread Callback");
     MakeCallback(env()->onexit_string(), arraysize(args), args);
   }
 

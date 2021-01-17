@@ -492,7 +492,7 @@ void ChannelWrap::Setup() {
 }
 
 void ChannelWrap::StartTimer() {
-  recordreplay::Assert("ChannelWrap::StartTimer %d", *(int*)cares_channel());
+  v8::recordreplay::Assert("ChannelWrap::StartTimer %d", *(int*)cares_channel());
   if (timer_handle_ == nullptr) {
     timer_handle_ = new uv_timer_t();
     timer_handle_->data = static_cast<void*>(this);
@@ -694,7 +694,7 @@ class QueryWrap : public AsyncWrap {
   }
 
   void QueueResponseCallback(int status) {
-    recordreplay::Assert("QueryWrap::QueueResponseCallback");
+    v8::recordreplay::Assert("QueryWrap::QueueResponseCallback");
 
     BaseObjectPtr<QueryWrap> strong_ref{this};
     env()->SetImmediate([this, strong_ref](Environment*) {
@@ -710,7 +710,7 @@ class QueryWrap : public AsyncWrap {
 
   void CallOnComplete(Local<Value> answer,
                       Local<Value> extra = Local<Value>()) {
-    recordreplay::Assert("QueryWrap::CallOnComplete");
+    v8::recordreplay::Assert("QueryWrap::CallOnComplete");
 
     HandleScope handle_scope(env()->isolate());
     Context::Scope context_scope(env()->context());
@@ -727,7 +727,7 @@ class QueryWrap : public AsyncWrap {
   }
 
   void ParseError(int status) {
-    recordreplay::Assert("QueryWrap::ParseError");
+    v8::recordreplay::Assert("QueryWrap::ParseError");
 
     CHECK_NE(status, ARES_SUCCESS);
     HandleScope handle_scope(env()->isolate());
@@ -1897,7 +1897,7 @@ static void Query(const FunctionCallbackInfo<Value>& args) {
 
 
 void AfterGetAddrInfo(uv_getaddrinfo_t* req, int status, struct addrinfo* res) {
-  recordreplay::Assert("AfterGetAddrInfo");
+  v8::recordreplay::Assert("AfterGetAddrInfo");
 
   std::unique_ptr<GetAddrInfoReqWrap> req_wrap {
       static_cast<GetAddrInfoReqWrap*>(req->data)};
@@ -1969,7 +1969,7 @@ void AfterGetNameInfo(uv_getnameinfo_t* req,
                       int status,
                       const char* hostname,
                       const char* service) {
-  recordreplay::Assert("AfterGetNameInfo");
+  v8::recordreplay::Assert("AfterGetNameInfo");
 
   std::unique_ptr<GetNameInfoReqWrap> req_wrap {
       static_cast<GetNameInfoReqWrap*>(req->data)};

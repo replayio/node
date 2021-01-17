@@ -165,7 +165,7 @@ void StreamPipe::ProcessData(size_t nread, AllocatedBuffer&& buf) {
 
 void StreamPipe::WritableListener::OnStreamAfterWrite(WriteWrap* w,
                                                       int status) {
-  recordreplay::Assert("StreamPipe::WritableListener::OnStreamAfterWrite");
+  v8::recordreplay::Assert("StreamPipe::WritableListener::OnStreamAfterWrite");
 
   StreamPipe* pipe = ContainerOf(&StreamPipe::writable_listener_, this);
   pipe->pending_writes_--;

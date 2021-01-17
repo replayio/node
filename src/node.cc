@@ -452,7 +452,7 @@ MaybeLocal<Value> StartExecution(Environment* env, const char* main_script_id) {
 }
 
 MaybeLocal<Value> StartExecution(Environment* env, StartExecutionCallback cb) {
-  recordreplay::NewCheckpoint();
+  v8::recordreplay::NewCheckpoint();
 
   InternalCallbackScope callback_scope(
       env,
@@ -951,189 +951,10 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
 
 static void (*gRecordReplayAttach)(const char* dispatchAddress, const char* buildId);
 static void (*gRecordReplayRecordCommandLineArguments)(int*, char***);
-static uintptr_t (*gRecordReplayValue)(const char* why, uintptr_t value);
-static void (*gRecordReplayBytes)(const char* why, void* buf, size_t size);
-static void (*gRecordReplayPrintVA)(const char* format, va_list args);
-static void (*gRecordReplayRegisterPointer)(void* ptr);
-static int (*gRecordReplayPointerId)(void* ptr);
-static void (*gRecordReplayAssert)(const char*, va_list);
-static void (*gRecordReplayAssertBytes)(const char* why, const void* ptr, size_t nbytes);
-static size_t (*gRecordReplayCreateOrderedLock)(const char* name);
-static void (*gRecordReplayOrderedLock)(int lock);
-static void (*gRecordReplayOrderedUnlock)(int lock);
-static void (*gRecordReplayAddOrderedPthreadMutex)(const char* name, pthread_mutex_t* mutex);
-static bool (*gRecordReplayIsReplaying)();
-static void (*gRecordReplayNewCheckpoint)();
 static void (*gRecordReplayFinishRecording)();
 static const char* (*gRecordReplayGetRecordingId)();
-static void (*gRecordReplayBeginPassThroughEvents)();
-static void (*gRecordReplayEndPassThroughEvents)();
-static void (*gRecordReplayInvalidateRecording)(const char* format, ...);
 
 namespace recordreplay {
-
-extern "C" void NodeRecordReplayRegisterPointer(void* ptr) {
-  if (gRecordReplayRegisterPointer) {
-    gRecordReplayRegisterPointer(ptr);
-  }
-}
-
-extern "C" int NodeRecordReplayPointerId(void* ptr) {
-  if (gRecordReplayPointerId) {
-    return gRecordReplayPointerId(ptr);
-  }
-  return 0;
-}
-
-void Print(const char* format, ...) {
-  va_list args;
-  va_start(args, format);
-
-  if (gRecordReplayPrintVA) {
-    gRecordReplayPrintVA(format, args);
-  } else {
-    char buf[4096];
-    vsnprintf(buf, sizeof(buf), format, args);
-    buf[sizeof(buf) - 1] = 0;
-    fprintf(stderr, "[NotRecording]%s\n", buf);
-  }
-
-  va_end(args);
-}
-
-extern "C" void NodeRecordReplayPrint(const char* format, ...) {
-  va_list args;
-  va_start(args, format);
-
-  if (gRecordReplayPrintVA) {
-    gRecordReplayPrintVA(format, args);
-  } else {
-    char buf[4096];
-    vsnprintf(buf, sizeof(buf), format, args);
-    buf[sizeof(buf) - 1] = 0;
-    fprintf(stderr, "[NotRecording]%s\n", buf);
-  }
-
-  va_end(args);
-}
-
-void Assert(const char* format, ...) {
-  if (gRecordReplayAssert) {
-    va_list ap;
-    va_start(ap, format);
-    gRecordReplayAssert(format, ap);
-    va_end(ap);
-  }
-}
-
-extern "C" void NodeRecordReplayAssert(const char* format, ...) {
-  if (gRecordReplayAssert) {
-    va_list ap;
-    va_start(ap, format);
-    gRecordReplayAssert(format, ap);
-    va_end(ap);
-  }
-}
-
-void AssertBytes(const char* why, const void* buf, size_t size) {
-  if (gRecordReplayAssertBytes) {
-    gRecordReplayAssertBytes(why, buf, size);
-  }
-}
-
-extern "C" void NodeRecordReplayAssertBytes(const char* why, const void* buf, size_t size) {
-  AssertBytes(why, buf, size);
-}
-
-size_t CreateOrderedLock(const char* name) {
-  if (gRecordReplayCreateOrderedLock) {
-    return gRecordReplayCreateOrderedLock(name);
-  }
-  return 0;
-}
-
-extern "C" size_t NodeRecordReplayCreateOrderedLock(const char* name) {
-  return CreateOrderedLock(name);
-}
-
-void OrderedLock(int lock) {
-  if (gRecordReplayOrderedLock) {
-    gRecordReplayOrderedLock(lock);
-  }
-}
-
-extern "C" void NodeRecordReplayOrderedLock(int lock) {
-  OrderedLock(lock);
-}
-
-void OrderedUnlock(int lock) {
-  if (gRecordReplayOrderedUnlock) {
-    gRecordReplayOrderedUnlock(lock);
-  }
-}
-
-extern "C" void NodeRecordReplayOrderedUnlock(int lock) {
-  OrderedUnlock(lock);
-}
-
-extern "C" void NodeRecordReplayAddOrderedPthreadMutex(const char* name,
-                                                       pthread_mutex_t* mutex) {
-  if (gRecordReplayAddOrderedPthreadMutex) {
-    gRecordReplayAddOrderedPthreadMutex(name, mutex);
-  }
-}
-
-uintptr_t RecordReplayValue(const char* why, uintptr_t value) {
-  if (gRecordReplayValue) {
-    return gRecordReplayValue(why, value);
-  }
-  return value;
-}
-
-extern "C" uintptr_t NodeRecordReplayValue(const char* why, uintptr_t value) {
-  return RecordReplayValue(why, value);
-}
-
-void RecordReplayBytes(const char* why, void* buf, size_t size) {
-  if (gRecordReplayBytes) {
-    gRecordReplayBytes(why, buf, size);
-  }
-}
-
-extern "C" void NodeRecordReplayBytes(const char* why, void* buf, size_t size) {
-  RecordReplayBytes(why, buf, size);
-}
-
-extern "C" int NodeRecordReplayIsReplaying() {
-  if (gRecordReplayIsReplaying) {
-    return gRecordReplayIsReplaying();
-  }
-  return 0;
-}
-
-void BeginPassThroughEvents() {
-  if (gRecordReplayBeginPassThroughEvents) {
-    gRecordReplayBeginPassThroughEvents();
-  }
-}
-
-void EndPassThroughEvents() {
-  if (gRecordReplayEndPassThroughEvents) {
-    gRecordReplayEndPassThroughEvents();
-  }
-}
-
-void InvalidateRecording(const char* why) {
-  if (gRecordReplayInvalidateRecording) {
-    gRecordReplayInvalidateRecording("%s", why);
-  }
-}
-
-void NewCheckpoint() {
-  if (gRecordReplayNewCheckpoint) {
-    gRecordReplayNewCheckpoint();
-  }
-}
 
 static bool gRecordingFinished;
 
@@ -1204,36 +1025,13 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   RecordReplayLoadSymbol(handle, "RecordReplayAttach", gRecordReplayAttach);
   RecordReplayLoadSymbol(handle, "RecordReplayRecordCommandLineArguments",
                          gRecordReplayRecordCommandLineArguments);
-  RecordReplayLoadSymbol(handle, "RecordReplayValue", gRecordReplayValue);
-  RecordReplayLoadSymbol(handle, "RecordReplayBytes", gRecordReplayBytes);
-  RecordReplayLoadSymbol(handle, "RecordReplayPrint", gRecordReplayPrintVA);
   RecordReplayLoadSymbol(handle, "RecordReplayFinishRecording", gRecordReplayFinishRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayGetRecordingId", gRecordReplayGetRecordingId);
-  RecordReplayLoadSymbol(handle, "RecordReplayRegisterPointer", gRecordReplayRegisterPointer);
-  RecordReplayLoadSymbol(handle, "RecordReplayPointerId", gRecordReplayPointerId);
-  RecordReplayLoadSymbol(handle, "RecordReplayAssert", gRecordReplayAssert);
-  RecordReplayLoadSymbol(handle, "RecordReplayAssertBytes", gRecordReplayAssertBytes);
-  RecordReplayLoadSymbol(handle, "RecordReplayCreateOrderedLock",
-                         gRecordReplayCreateOrderedLock);
-  RecordReplayLoadSymbol(handle, "RecordReplayOrderedLock", gRecordReplayOrderedLock);
-  RecordReplayLoadSymbol(handle, "RecordReplayOrderedUnlock", gRecordReplayOrderedUnlock);
-  RecordReplayLoadSymbol(handle, "RecordReplayAddOrderedPthreadMutex",
-                         gRecordReplayAddOrderedPthreadMutex);
-  RecordReplayLoadSymbol(handle, "RecordReplayIsReplaying",
-                         gRecordReplayIsReplaying);
-  RecordReplayLoadSymbol(handle, "RecordReplayNewCheckpoint",
-                         gRecordReplayNewCheckpoint);
-  RecordReplayLoadSymbol(handle, "RecordReplayBeginPassThroughEvents",
-                         gRecordReplayBeginPassThroughEvents);
-  RecordReplayLoadSymbol(handle, "RecordReplayEndPassThroughEvents",
-                         gRecordReplayEndPassThroughEvents);
-  RecordReplayLoadSymbol(handle, "RecordReplayInvalidateRecording",
-                         gRecordReplayInvalidateRecording);
 
   if (gRecordReplayAttach && gRecordReplayFinishRecording) {
     gRecordReplayAttach(dispatchAddress, gBuildId);
     gRecordReplayRecordCommandLineArguments(pargc, pargv);
-    v8::SetRecordingOrReplaying(handle);
+    v8::recordreplay::SetRecordingOrReplaying(handle);
   }
 }
 

@@ -175,7 +175,7 @@ RUNTIME_FUNCTION(Runtime_UnwindAndFindExceptionHandler) {
   SealHandleScope shs(isolate);
   DCHECK_EQ(0, args.length());
 
-  if (IsRecordingOrReplaying()) {
+  if (recordreplay::IsRecordingOrReplaying()) {
     RecordReplayOnExceptionUnwind(isolate);
   }
 
