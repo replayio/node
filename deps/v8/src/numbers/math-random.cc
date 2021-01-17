@@ -32,8 +32,6 @@ void MathRandom::ResetContext(Context native_context) {
   PodArray<State>::cast(native_context.math_random_state()).set(0, state);
 }
 
-extern void RecordReplayBytes(const char* why, void* buf, size_t size);
-
 Address MathRandom::RefillCache(Isolate* isolate, Address raw_native_context) {
   Context native_context = Context::cast(Object(raw_native_context));
   DisallowHeapAllocation no_gc;
@@ -63,7 +61,6 @@ Address MathRandom::RefillCache(Isolate* isolate, Address raw_native_context) {
     // Generate random numbers using xorshift128+.
     base::RandomNumberGenerator::XorShift128(&state.s0, &state.s1);
     double v = base::RandomNumberGenerator::ToDouble(state.s0);
-    RecordReplayBytes("MathRandom", &v, sizeof(v));
     cache.set(i, v);
   }
   pod.set(0, state);

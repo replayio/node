@@ -1710,14 +1710,6 @@ bool Compiler::CollectSourcePositions(Isolate* isolate,
   return true;
 }
 
-extern void RecordReplayBeginDisallowEvents();
-extern void RecordReplayEndDisallowEvents();
-
-struct RecordReplayAutoDisallowEvents {
-  RecordReplayAutoDisallowEvents() { RecordReplayBeginDisallowEvents(); }
-  ~RecordReplayAutoDisallowEvents() { RecordReplayEndDisallowEvents(); }
-};
-
 // static
 bool Compiler::Compile(Handle<SharedFunctionInfo> shared_info,
                        ClearExceptionFlag flag,
@@ -1726,7 +1718,7 @@ bool Compiler::Compile(Handle<SharedFunctionInfo> shared_info,
   DCHECK(!shared_info->is_compiled());
   DCHECK(!is_compiled_scope->is_compiled());
 
-  RecordReplayAutoDisallowEvents disallow;
+  recordreplay::AutoDisallowEvents disallow;
 
   Isolate* isolate = shared_info->GetIsolate();
   DCHECK(AllowCompilation::IsAllowed(isolate));

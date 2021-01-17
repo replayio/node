@@ -2488,7 +2488,6 @@ bool Debug::PerformSideEffectCheckForObject(Handle<Object> object) {
 
 extern void RecordReplayOnNewSource(Isolate* isolate, const char* id,
                                     const char* kind, const char* url);
-extern void RecordReplayPrint(const char* format, ...);
 
 static Handle<String> CStringToHandle(Isolate* isolate, const char* str) {
   Vector<const uint8_t> nstr((const uint8_t*) str, strlen(str));
@@ -2597,7 +2596,7 @@ static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
       if (!is_compiled_scope.is_compiled()) {
         if (!Compiler::Compile(candidate, Compiler::CLEAR_EXCEPTION,
                                &is_compiled_scope)) {
-          RecordReplayPrint("Compiler::Compile failed, crashing.");
+          recordreplay::Print("Compiler::Compile failed, crashing.");
           V8_IMMEDIATE_CRASH();
         } else {
           was_compiled = true;
@@ -2752,7 +2751,7 @@ Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
   std::string key = BreakpointKey(sourceId, line, column);
   auto iter = gBreakpoints.find(key);
   if (iter == gBreakpoints.end()) {
-    RecordReplayPrint("Unknown location for RecordReplayConvertLocationToFunctionOffset, crashing.");
+    recordreplay::Print("Unknown location for RecordReplayConvertLocationToFunctionOffset, crashing.");
     V8_IMMEDIATE_CRASH();
   }
 
@@ -2906,7 +2905,7 @@ char* CommandCallback(const char* command, const char* params) {
 
   MaybeHandle<Object> maybeParams = JsonParser<uint8_t>::Parse(isolate, paramsStr, undefined);
   if (maybeParams.is_null()) {
-    RecordReplayPrint("Error: CommandCallbackWrapper Parse %s failed", params);
+    recordreplay::Print("Error: CommandCallbackWrapper Parse %s failed", params);
     V8_IMMEDIATE_CRASH();
   }
   Handle<Object> paramsObj = maybeParams.ToHandleChecked();

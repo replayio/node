@@ -11190,8 +11190,12 @@ bool gRecordReplayInstrumentNodeInternals;
 
 namespace recordreplay {
 
+bool IsRecordingOrReplaying() {
+  return gRecordingOrReplaying;
+}
+
 void Print(const char* format, ...) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     va_list args;
     va_start(args, format);
     gRecordReplayPrint(format, args);
@@ -11200,7 +11204,7 @@ void Print(const char* format, ...) {
 }
 
 extern "C" void V8RecordReplayPrint(const char* format, ...) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     va_list args;
     va_start(args, format);
     gRecordReplayPrint(format, args);
@@ -11209,7 +11213,7 @@ extern "C" void V8RecordReplayPrint(const char* format, ...) {
 }
 
 void Assert(const char* format, ...) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     va_list ap;
     va_start(ap, format);
     gRecordReplayAssert(format, ap);
@@ -11218,7 +11222,7 @@ void Assert(const char* format, ...) {
 }
 
 extern "C" void V8RecordReplayAssert(const char* format, ...) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     va_list ap;
     va_start(ap, format);
     gRecordReplayAssert(format, ap);
@@ -11227,7 +11231,7 @@ extern "C" void V8RecordReplayAssert(const char* format, ...) {
 }
 
 void AssertBytes(const char* why, const void* buf, size_t size) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     gRecordReplayAssertBytes(why, buf, size);
   }
 }
@@ -11237,7 +11241,7 @@ extern "C" void V8RecordReplayAssertBytes(const char* why, const void* buf, size
 }
 
 uintptr_t RecordReplayValue(const char* why, uintptr_t v) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     return gRecordReplayValue(why, v);
   }
   return v;
@@ -11248,7 +11252,7 @@ extern "C" uintptr_t V8RecordReplayValue(const char* why, uintptr_t value) {
 }
 
 void RecordReplayBytes(const char* why, void* buf, size_t size) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     gRecordReplayBytes(why, buf, size);
   }
 }
@@ -11262,43 +11266,43 @@ bool AreEventsDisallowed() {
 }
 
 void BeginPassThroughEvents() {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     gRecordReplayBeginPassThroughEvents();
   }
 }
 
 void EndPassThroughEvents() {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     gRecordReplayEndPassThroughEvents();
   }
 }
 
 void BeginDisallowEvents() {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     gRecordReplayBeginDisallowEvents();
   }
 }
 
 void EndDisallowEvents() {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     gRecordReplayEndDisallowEvents();
   }
 }
 
 void InvalidateRecording(const char* why) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     gRecordReplayInvalidateRecording("%s", why);
   }
 }
 
 void NewCheckpoint() {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     gRecordReplayNewCheckpoint();
   }
 }
 
 size_t CreateOrderedLock(const char* name) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     return gRecordReplayCreateOrderedLock(name);
   }
   return 0;
@@ -11309,7 +11313,7 @@ extern "C" size_t V8RecordReplayCreateOrderedLock(const char* name) {
 }
 
 void OrderedLock(int lock) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     gRecordReplayOrderedLock(lock);
   }
 }
@@ -11319,7 +11323,7 @@ extern "C" void V8RecordReplayOrderedLock(int lock) {
 }
 
 void OrderedUnlock(int lock) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     gRecordReplayOrderedUnlock(lock);
   }
 }
@@ -11330,13 +11334,13 @@ extern "C" void V8RecordReplayOrderedUnlock(int lock) {
 
 extern "C" void V8RecordReplayAddOrderedPthreadMutex(const char* name,
                                                      pthread_mutex_t* mutex) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     gRecordReplayAddOrderedPthreadMutex(name, mutex);
   }
 }
 
 bool IsReplaying() {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     return gRecordReplayIsReplaying();
   }
   return false;
@@ -11351,7 +11355,7 @@ bool IsRecording() {
 }
 
 void RegisterPointer(void* ptr) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     gRecordReplayRegisterPointer(ptr);
   }
 }
@@ -11361,7 +11365,7 @@ extern "C" void V8RecordReplayRegisterPointer(void* ptr) {
 }
 
 void UnregisterPointer(void* ptr) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     gRecordReplayUnregisterPointer(ptr);
   }
 }
@@ -11371,7 +11375,7 @@ extern "C" void V8RecordReplayUnregisterPointer(void* ptr) {
 }
 
 int PointerId(void* ptr) {
-  if (gRecordingOrReplaying) {
+  if (IsRecordingOrReplaying()) {
     return gRecordReplayPointerId(ptr);
   }
   return 0;
@@ -11380,8 +11384,6 @@ int PointerId(void* ptr) {
 extern "C" int V8RecordReplayPointerId(void* ptr) {
   return PointerId(ptr);
 }
-
-} // namespace recordreplay
 
 template <typename Src, typename Dst>
 static inline void CastPointer(const Src src, Dst* dst) {
@@ -11445,12 +11447,10 @@ void SetRecordingOrReplaying(void* handle) {
   internal::gRecordReplayInstrumentNodeInternals = !!getenv("RECORD_REPLAY_INSTRUMENT_NODE");
 }
 
-bool IsRecordingOrReplaying() {
-  return gRecordingOrReplaying;
-}
+} // namespace recordreplay
 
 bool IsMainThread() {
-  return gIsMainThread;
+  return recordreplay::gIsMainThread;
 }
 
 namespace internal {

@@ -871,9 +871,7 @@ RUNTIME_FUNCTION(Runtime_ProfileCreateSnapshotDataBlob) {
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
-extern void RecordReplayAssert(const char* format, ...);
 extern uint64_t* RecordReplayProgressCounter();
-extern bool RecordReplayAreEventsDisallowed();
 
 static inline void RecordReplayIncrementProgressCounter() {
   // Note: The counter can be null, depending on the thread.
@@ -890,7 +888,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
 
-  if (RecordReplayAreEventsDisallowed()) {
+  if (recordreplay::AreEventsDisallowed()) {
     return ReadOnlyRoots(isolate).undefined_value();
   }
 
@@ -909,12 +907,12 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   Script::GetPositionInfo(script, shared->StartPosition(), &info, Script::WITH_OFFSET);
 
   if (script->name().IsUndefined()) {
-    RecordReplayAssert("ExecutionProgress <none>:%d:%d",
-                       info.line + 1, info.column);
+    recordreplay::Assert("ExecutionProgress <none>:%d:%d",
+                         info.line + 1, info.column);
   } else {
     std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
-    RecordReplayAssert("ExecutionProgress %s:%d:%d",
-                       name.get(), info.line + 1, info.column);
+    recordreplay::Assert("ExecutionProgress %s:%d:%d",
+                         name.get(), info.line + 1, info.column);
   }
 
   return ReadOnlyRoots(isolate).undefined_value();
@@ -925,7 +923,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(Object, value, 0);
 
-  if (RecordReplayAreEventsDisallowed()) {
+  if (recordreplay::AreEventsDisallowed()) {
     return *value;
   }
 
@@ -966,19 +964,19 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
   if (value->IsNumber()) {
     double num = value->Number();
     if (std::isnan(num)) {
-      RecordReplayAssert("%s Value NaN", location);
+      recordreplay::Assert("%s Value NaN", location);
     } else {
-      RecordReplayAssert("%s Value Number %.2f", location, num);
+      recordreplay::Assert("%s Value Number %.2f", location, num);
     }
   } else if (value->IsBoolean()) {
-    RecordReplayAssert("%s Value Boolean %d", location, value->IsTrue());
+    recordreplay::Assert("%s Value Boolean %d", location, value->IsTrue());
   } else if (value->IsUndefined()) {
-    RecordReplayAssert("%s Value Undefined", location);
+    recordreplay::Assert("%s Value Undefined", location);
   } else if (value->IsNull()) {
-    RecordReplayAssert("%s Value Null", location);
+    recordreplay::Assert("%s Value Null", location);
   } else if (value->IsString()) {
     std::unique_ptr<char[]> contents = String::cast(*value).ToCString();
-    RecordReplayAssert("%s Value String %s", location, contents.get());
+    recordreplay::Assert("%s Value String %s", location, contents.get());
   } else if (value->IsJSObject()) {
     InstanceType type = JSObject::cast(*value).map().instance_type();
     const char* typeStr;
@@ -992,14 +990,14 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
     if (!strcmp(typeStr, "JS_DATE_TYPE")) {
       JSDate date = JSDate::cast(*value);
       double time = date.value().Number();
-      RecordReplayAssert("%s Value Date %.2f", location, time);
+      recordreplay::Assert("%s Value Date %.2f", location, time);
     } else {
-      RecordReplayAssert("%s Value Object %s", location, typeStr);
+      recordreplay::Assert("%s Value Object %s", location, typeStr);
     }
   } else if (value->IsJSProxy()) {
-    RecordReplayAssert("%s Value Proxy", location);
+    recordreplay::Assert("%s Value Proxy", location);
   } else {
-    RecordReplayAssert("%s Value Unknown", location);
+    recordreplay::Assert("%s Value Unknown", location);
   }
 
   return *value;
@@ -1040,7 +1038,6 @@ int InstrumentationSiteSourcePosition(int index) {
 }
 
 extern void RecordReplayInstrument(const char* kind, const char* function, int offset);
-extern void RecordReplayPrint(const char* format, ...);
 
 // Enable to dump locations of each function to stderr.
 static bool gDumpFunctionLocations;
@@ -1063,9 +1060,9 @@ std::string GetRecordReplayFunctionId(Handle<SharedFunctionInfo> shared) {
     Script::PositionInfo info;
     Handle<Script> handleScript(script, Isolate::Current());
     Script::GetPositionInfo(handleScript, shared->StartPosition(), &info, Script::WITH_OFFSET);
-    RecordReplayPrint("FunctionId %s -> %s:%d:%d",
-                      os.str().c_str(), url.get() ? url.get() : "<none>",
-                      info.line + 1, info.column);
+    recordreplay::Print("FunctionId %s -> %s:%d:%d",
+                        os.str().c_str(), url.get() ? url.get() : "<none>",
+                        info.line + 1, info.column);
   }
 
   return os.str();

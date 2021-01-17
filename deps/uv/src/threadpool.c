@@ -29,7 +29,7 @@
 
 #define MAX_THREADPOOL_SIZE 1024
 
-extern void NodeRecordReplayAssert(const char* format, ...);
+extern void V8RecordReplayAssert(const char* format, ...);
 
 static uv_once_t once = UV_ONCE_INIT;
 static uv_cond_t cond;
@@ -302,7 +302,7 @@ void uv__work_done(uv_async_t* handle) {
   QUEUE wq;
   int err;
 
-  NodeRecordReplayAssert("uv__work_done");
+  V8RecordReplayAssert("uv__work_done");
 
   loop = container_of(handle, uv_loop_t, wq_async);
   uv_mutex_lock(&loop->wq_mutex);

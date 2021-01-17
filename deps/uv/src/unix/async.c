@@ -41,10 +41,10 @@
 static void uv__async_send(uv_loop_t* loop);
 static int uv__async_start(uv_loop_t* loop);
 
-extern void NodeRecordReplayAssert(const char* format, ...);
-extern size_t NodeRecordReplayCreateOrderedLock(const char* name);
-extern void NodeRecordReplayOrderedLock(int lock);
-extern void NodeRecordReplayOrderedUnlock(int lock);
+extern void V8RecordReplayAssert(const char* format, ...);
+extern size_t V8RecordReplayCreateOrderedLock(const char* name);
+extern void V8RecordReplayOrderedLock(int lock);
+extern void V8RecordReplayOrderedUnlock(int lock);
 
 
 int uv_async_init(uv_loop_t* loop, uv_async_t* handle, uv_async_cb async_cb) {
@@ -57,7 +57,7 @@ int uv_async_init(uv_loop_t* loop, uv_async_t* handle, uv_async_cb async_cb) {
   uv__handle_init(loop, (uv_handle_t*)handle, UV_ASYNC);
   handle->async_cb = async_cb;
   handle->pending = 0;
-  handle->ordered_lock_id = NodeRecordReplayCreateOrderedLock("uv_async_t");
+  handle->ordered_lock_id = V8RecordReplayCreateOrderedLock("uv_async_t");
 
   QUEUE_INSERT_TAIL(&loop->async_handles, &handle->queue);
   uv__handle_start(handle);
@@ -67,17 +67,17 @@ int uv_async_init(uv_loop_t* loop, uv_async_t* handle, uv_async_cb async_cb) {
 
 
 int uv_async_send(uv_async_t* handle) {
-  NodeRecordReplayOrderedLock(handle->ordered_lock_id);
+  V8RecordReplayOrderedLock(handle->ordered_lock_id);
 
   /* Do a cheap read first. */
   if (ACCESS_ONCE(int, handle->pending) != 0) {
-    NodeRecordReplayOrderedUnlock(handle->ordered_lock_id);
+    V8RecordReplayOrderedUnlock(handle->ordered_lock_id);
     return 0;
   }
 
   /* Tell the other thread we're busy with the handle. */
   if (cmpxchgi(&handle->pending, 0, 1) != 0) {
-    NodeRecordReplayOrderedUnlock(handle->ordered_lock_id);
+    V8RecordReplayOrderedUnlock(handle->ordered_lock_id);
     return 0;
   }
 
@@ -88,7 +88,7 @@ int uv_async_send(uv_async_t* handle) {
   if (cmpxchgi(&handle->pending, 1, 2) != 1)
     abort();
 
-  NodeRecordReplayOrderedUnlock(handle->ordered_lock_id);
+  V8RecordReplayOrderedUnlock(handle->ordered_lock_id);
   return 0;
 }
 
@@ -98,7 +98,7 @@ static int uv__async_spin(uv_async_t* handle) {
   int i;
   int rc;
 
-  NodeRecordReplayOrderedLock(handle->ordered_lock_id);
+  V8RecordReplayOrderedLock(handle->ordered_lock_id);
 
   for (;;) {
     /* 997 is not completely chosen at random. It's a prime number, acyclical
@@ -126,9 +126,9 @@ static int uv__async_spin(uv_async_t* handle) {
   }
 
 done:
-  NodeRecordReplayOrderedUnlock(handle->ordered_lock_id);
+  V8RecordReplayOrderedUnlock(handle->ordered_lock_id);
 
-  NodeRecordReplayAssert("uv__async_spin %d", rc);
+  V8RecordReplayAssert("uv__async_spin %d", rc);
   return rc;
 }
 
@@ -147,14 +147,14 @@ static void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
   QUEUE* q;
   uv_async_t* h;
 
-  NodeRecordReplayAssert("uv__async_io");
+  V8RecordReplayAssert("uv__async_io");
 
   assert(w == &loop->async_io_watcher);
 
   for (;;) {
     r = read(w->fd, buf, sizeof(buf));
 
-    //NodeRecordReplayAssert("uv__async_io #1 %d", r);
+    //V8RecordReplayAssert("uv__async_io #1 %d", r);
 
     if (r == sizeof(buf))
       continue;
@@ -173,7 +173,7 @@ static void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
 
   QUEUE_MOVE(&loop->async_handles, &queue);
   while (!QUEUE_EMPTY(&queue)) {
-    NodeRecordReplayAssert("uv__async_io #2");
+    V8RecordReplayAssert("uv__async_io #2");
 
     q = QUEUE_HEAD(&queue);
     h = QUEUE_DATA(q, uv_async_t, queue);
@@ -182,11 +182,11 @@ static void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
     QUEUE_INSERT_TAIL(&loop->async_handles, q);
 
     if (0 == uv__async_spin(h)) {
-      NodeRecordReplayAssert("uv__async_io #3");
+      V8RecordReplayAssert("uv__async_io #3");
       continue;  /* Not pending. */
     }
 
-    NodeRecordReplayAssert("uv__async_io #4");
+    V8RecordReplayAssert("uv__async_io #4");
 
     if (h->async_cb == NULL)
       continue;
@@ -194,7 +194,7 @@ static void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
     h->async_cb(h);
   }
 
-  NodeRecordReplayAssert("uv__async_io Done");
+  V8RecordReplayAssert("uv__async_io Done");
 }
 
 
