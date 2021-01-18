@@ -545,8 +545,28 @@ static void napi_module_register_cb(v8::Local<v8::Object> exports,
                                     v8::Local<v8::Context> context,
                                     void* priv) {
   napi_module_register_by_symbol(exports, module, context,
-      static_cast<const napi_module*>(priv)->nm_register_func);
+      v8::recordreplay::IsReplaying()
+      ? (napi_addon_register_func)0x1
+      : static_cast<const napi_module*>(priv)->nm_register_func);
 }
+
+namespace node {
+
+void RecordReplayAddonContextRegister(addon_context_register_func* pfunc) {
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
+  if (v8::recordreplay::RecordReplayValue("RecordReplayAddonContextRegisterFunc",
+                                          *pfunc == napi_module_register_cb)) {
+    *pfunc = napi_module_register_cb;
+    return;
+  }
+
+  v8::recordreplay::InvalidateRecording("Binary module unknown addon_context_register_func");
+}
+
+} // namespace node
 
 void napi_module_register_by_symbol(v8::Local<v8::Object> exports,
                                     v8::Local<v8::Value> module,
