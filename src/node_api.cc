@@ -585,7 +585,15 @@ void napi_module_register_by_symbol(v8::Local<v8::Object> exports,
 
   napi_value _exports;
   env->CallIntoModule([&](napi_env env) {
-    _exports = init(env, v8impl::JsValueFromV8LocalValue(exports));
+    node::recordreplay::AutoCallbackRegion region;
+    if (v8::recordreplay::IsReplaying()) {
+      int id = v8::recordreplay::RecordReplayValue("napi_module_register_by_symbol", 0);
+      _exports = (napi_value) v8::recordreplay::IdPointer(id);
+    } else {
+      _exports = init(env, v8impl::JsValueFromV8LocalValue(exports));
+      int id = v8::recordreplay::PointerId(_exports);
+      v8::recordreplay::RecordReplayValue("napi_module_register_by_symbol", id);
+    }
   });
 
   // If register function returned a non-null exports object different from

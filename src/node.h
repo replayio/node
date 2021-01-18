@@ -1096,6 +1096,13 @@ void RegisterSignalHandler(int signal,
 namespace recordreplay {
 
 bool IsRecordingFinished();
+void BeginCallbackRegion();
+void EndCallbackRegion();
+
+struct AutoCallbackRegion {
+  AutoCallbackRegion() { BeginCallbackRegion(); }
+  ~AutoCallbackRegion() { EndCallbackRegion(); }
+};
 
 } // namespace recordreplay
 

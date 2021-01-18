@@ -952,6 +952,8 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
 static void (*gRecordReplayAttach)(const char* dispatchAddress, const char* buildId);
 static void (*gRecordReplayRecordCommandLineArguments)(int*, char***);
 static void (*gRecordReplayFinishRecording)();
+static void (*gBeginCallbackRegion)();
+static void (*gEndCallbackRegion)();
 static const char* (*gRecordReplayGetRecordingId)();
 
 namespace recordreplay {
@@ -960,6 +962,18 @@ static bool gRecordingFinished;
 
 bool IsRecordingFinished() {
   return gRecordingFinished;
+}
+
+void BeginCallbackRegion() {
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    gBeginCallbackRegion();
+  }
+}
+
+void EndCallbackRegion() {
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    gEndCallbackRegion();
+  }
 }
 
 } // namespace recordreplay
@@ -1027,6 +1041,8 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
                          gRecordReplayRecordCommandLineArguments);
   RecordReplayLoadSymbol(handle, "RecordReplayFinishRecording", gRecordReplayFinishRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayGetRecordingId", gRecordReplayGetRecordingId);
+  RecordReplayLoadSymbol(handle, "RecordReplayBeginCallbackRegion", gBeginCallbackRegion);
+  RecordReplayLoadSymbol(handle, "RecordReplayEndCallbackRegion", gEndCallbackRegion);
 
   if (gRecordReplayAttach && gRecordReplayFinishRecording) {
     gRecordReplayAttach(dispatchAddress, gBuildId);

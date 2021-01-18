@@ -12152,6 +12152,7 @@ struct AutoDisallowEvents {
 void RegisterPointer(void* ptr);
 void UnregisterPointer(void* ptr);
 int PointerId(void* ptr);
+void* IdPointer(int id);
 
 } // namespace recordreplay
 

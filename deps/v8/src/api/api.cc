@@ -11146,6 +11146,7 @@ static bool (*gRecordReplayIsReplaying)();
 static void (*gRecordReplayRegisterPointer)(void* ptr);
 static void (*gRecordReplayUnregisterPointer)(void* ptr);
 static int (*gRecordReplayPointerId)(void* ptr);
+static void* (*gRecordReplayIdPointer)(int id);
 
 namespace internal {
 
@@ -11385,6 +11386,11 @@ extern "C" int V8RecordReplayPointerId(void* ptr) {
   return PointerId(ptr);
 }
 
+void* IdPointer(int id) {
+  CHECK(IsRecordingOrReplaying());
+  return gRecordReplayIdPointer(id);
+}
+
 template <typename Src, typename Dst>
 static inline void CastPointer(const Src src, Dst* dst) {
   static_assert(sizeof(Src) == sizeof(uintptr_t), "bad size");
@@ -11435,6 +11441,7 @@ void SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayRegisterPointer", gRecordReplayRegisterPointer);
   RecordReplayLoadSymbol(handle, "RecordReplayUnregisterPointer", gRecordReplayUnregisterPointer);
   RecordReplayLoadSymbol(handle, "RecordReplayPointerId", gRecordReplayPointerId);
+  RecordReplayLoadSymbol(handle, "RecordReplayIdPointer", gRecordReplayIdPointer);
 
   void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
   RecordReplayLoadSymbol(handle, "RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);
