@@ -4213,6 +4213,7 @@ void BytecodeGenerator::BuildSuspendPoint(int position) {
   builder()->ResumeGenerator(generator_object(), registers);
 
   if (recordreplay::IsRecordingOrReplaying()) {
+    builder()->RecordReplayIncExecutionProgressCounter();
     builder()->RecordReplayInstrumentation("entry");
   }
 }
