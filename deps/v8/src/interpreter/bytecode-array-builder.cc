@@ -20,6 +20,7 @@ namespace v8 {
 namespace internal {
 
 extern int RegisterInstrumentationSite(const char* kind, int source_position);
+extern bool ShouldEmitRecordReplayAssertValue();
 
 namespace interpreter {
 
@@ -741,9 +742,7 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadGlobal(const AstRawString* name,
     DCHECK_EQ(typeof_mode, NOT_INSIDE_TYPEOF);
     OutputLdaGlobal(name_index, feedback_slot);
   }
-  if (recordreplay::IsRecordingOrReplaying()) {
-    OutputRecordReplayAssertValue();
-  }
+  RecordReplayAssertValue();
   return *this;
 }
 
@@ -770,9 +769,7 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadContextSlot(
     DCHECK_EQ(mutability, kMutableSlot);
     OutputLdaContextSlot(context, slot_index, depth);
   }
-  if (recordreplay::IsRecordingOrReplaying()) {
-    OutputRecordReplayAssertValue();
-  }
+  RecordReplayAssertValue();
   return *this;
 }
 
@@ -796,9 +793,7 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadLookupSlot(
     DCHECK_EQ(typeof_mode, NOT_INSIDE_TYPEOF);
     OutputLdaLookupSlot(name_index);
   }
-  if (recordreplay::IsRecordingOrReplaying()) {
-    OutputRecordReplayAssertValue();
-  }
+  RecordReplayAssertValue();
   return *this;
 }
 
@@ -842,9 +837,7 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadNamedProperty(
     Register object, const AstRawString* name, int feedback_slot) {
   size_t name_index = GetConstantPoolEntry(name);
   OutputLdaNamedProperty(object, name_index, feedback_slot);
-  if (recordreplay::IsRecordingOrReplaying()) {
-    OutputRecordReplayAssertValue();
-  }
+  RecordReplayAssertValue();
   return *this;
 }
 
@@ -859,18 +852,14 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadNamedPropertyNoFeedback(
     Register object, const AstRawString* name) {
   size_t name_index = GetConstantPoolEntry(name);
   OutputLdaNamedPropertyNoFeedback(object, name_index);
-  if (recordreplay::IsRecordingOrReplaying()) {
-    OutputRecordReplayAssertValue();
-  }
+  RecordReplayAssertValue();
   return *this;
 }
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::LoadKeyedProperty(
     Register object, int feedback_slot) {
   OutputLdaKeyedProperty(object, feedback_slot);
-  if (recordreplay::IsRecordingOrReplaying()) {
-    OutputRecordReplayAssertValue();
-  }
+  RecordReplayAssertValue();
   return *this;
 }
 
@@ -1371,7 +1360,9 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayIncExecutionProgressCoun
 }
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayAssertValue() {
-  OutputRecordReplayAssertValue();
+  if (ShouldEmitRecordReplayAssertValue()) {
+    OutputRecordReplayAssertValue();
+  }
   return *this;
 }
 

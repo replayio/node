@@ -11186,6 +11186,11 @@ extern char* CommandCallback(const char* command, const char* params);
 extern void ClearPauseDataCallback();
 
 bool gRecordReplayInstrumentNodeInternals;
+bool gRecordReplayAssertValues;
+
+bool ShouldEmitRecordReplayAssertValue() {
+  return gRecordReplayAssertValues;
+}
 
 } // namespace internal
 
@@ -11452,6 +11457,7 @@ void SetRecordingOrReplaying(void* handle) {
   setClearPauseDataCallback(i::ClearPauseDataCallback);
 
   internal::gRecordReplayInstrumentNodeInternals = !!getenv("RECORD_REPLAY_INSTRUMENT_NODE");
+  internal::gRecordReplayAssertValues = !!getenv("RECORD_REPLAY_JS_ASSERTS");
 }
 
 } // namespace recordreplay
