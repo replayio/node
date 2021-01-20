@@ -12,6 +12,8 @@
 #include "src/base/debug/stack_trace.h"
 #include "src/base/platform/platform.h"
 
+#include <dlfcn.h>
+
 namespace v8 {
 namespace base {
 
@@ -134,6 +136,26 @@ class FailureMessage {
 
 }  // namespace
 
+template <typename Src, typename Dst>
+static inline void CastPointer(const Src src, Dst* dst) {
+  static_assert(sizeof(Src) == sizeof(uintptr_t), "bad size");
+  static_assert(sizeof(Dst) == sizeof(uintptr_t), "bad size");
+  memcpy((void*)dst, (const void*)&src, sizeof(uintptr_t));
+}
+
+static void RecordReplayPrint(const char* format, ...) {
+  void* sym = dlsym(RTLD_DEFAULT, "RecordReplayPrint");
+  if (sym) {
+    void (*recordReplayPrint)(const char* format, va_list args);
+    CastPointer(sym, &recordReplayPrint);
+
+    va_list arguments;
+    va_start(arguments, format);
+    recordReplayPrint(format, arguments);
+    va_end(arguments);
+  }
+}
+
 #ifdef DEBUG
 void V8_Fatal(const char* file, int line, const char* format, ...) {
 #else
@@ -141,6 +163,18 @@ void V8_Fatal(const char* format, ...) {
   const char* file = "";
   int line = 0;
 #endif
+
+  {
+    char str[1024];
+    va_list arguments;
+    va_start(arguments, format);
+    vsnprintf(str, sizeof(str), format, arguments);
+    str[sizeof(str) - 1] = 0;
+    va_end(arguments);
+
+    RecordReplayPrint("V8_Fatal: %s", str);
+  }
+
   va_list arguments;
   va_start(arguments, format);
   // Format the error message into a stack object for later retrieveal by the
