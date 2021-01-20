@@ -184,9 +184,7 @@ void BytecodeArrayBuilder::WriteJump(BytecodeNode* node, BytecodeLabel* label) {
 
 void BytecodeArrayBuilder::WriteJumpLoop(BytecodeNode* node,
                                          BytecodeLoopHeader* loop_header) {
-  if (recordreplay::IsRecordingOrReplaying()) {
-    RecordReplayIncExecutionProgressCounter();
-  }
+  RecordReplayIncExecutionProgressCounter();
   AttachOrEmitDeferredSourceInfo(node);
   bytecode_array_writer_.WriteJumpLoop(node, loop_header);
 }
@@ -1355,7 +1353,9 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::IncBlockCounter(
 }
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayIncExecutionProgressCounter() {
-  OutputRecordReplayIncExecutionProgressCounter();
+  if (recordreplay::IsRecordingOrReplaying()) {
+    OutputRecordReplayIncExecutionProgressCounter();
+  }
   return *this;
 }
 
@@ -1368,7 +1368,7 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayAssertValue() {
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayInstrumentation(const char* kind,
                                                                         int source_position) {
-  if (IsMainThread()) {
+  if (recordreplay::IsRecordingOrReplaying()) {
     int index = RegisterInstrumentationSite(kind, source_position);
     OutputRecordReplayInstrumentation(index);
   }

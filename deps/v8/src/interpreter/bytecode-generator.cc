@@ -3221,9 +3221,7 @@ void BytecodeGenerator::BuildReturn(int source_position) {
   if (info()->flags().collect_type_profile()) {
     builder()->CollectTypeProfile(info()->literal()->return_position());
   }
-  if (recordreplay::IsRecordingOrReplaying()) {
-    builder()->RecordReplayInstrumentation("exit");
-  }
+  builder()->RecordReplayInstrumentation("exit");
   builder()->SetReturnPosition(source_position, info()->literal());
   builder()->Return();
 }
@@ -4196,9 +4194,7 @@ void BytecodeGenerator::BuildSuspendPoint(int position) {
 
   RegisterList registers = register_allocator()->AllLiveRegisters();
 
-  if (recordreplay::IsRecordingOrReplaying()) {
-    builder()->RecordReplayInstrumentation("exit");
-  }
+  builder()->RecordReplayInstrumentation("exit");
 
   // Save context, registers, and state. This bytecode then returns the value
   // in the accumulator.
@@ -4212,10 +4208,8 @@ void BytecodeGenerator::BuildSuspendPoint(int position) {
   // [[input_or_debug_pos]] slot of the generator object.
   builder()->ResumeGenerator(generator_object(), registers);
 
-  if (recordreplay::IsRecordingOrReplaying()) {
-    builder()->RecordReplayIncExecutionProgressCounter();
-    builder()->RecordReplayInstrumentation("entry");
-  }
+  builder()->RecordReplayIncExecutionProgressCounter();
+  builder()->RecordReplayInstrumentation("entry");
 }
 
 void BytecodeGenerator::VisitYield(Yield* expr) {
