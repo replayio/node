@@ -882,6 +882,7 @@ static inline void RecordReplayIncrementProgressCounter() {
 }
 
 extern bool RecordReplayIgnoreScript(Handle<Script> script);
+extern bool ShouldEmitRecordReplayAssertValue();
 
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   HandleScope scope(isolate);
@@ -903,22 +904,26 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
     RecordReplayIncrementProgressCounter();
   }
 
-  Script::PositionInfo info;
-  Script::GetPositionInfo(script, shared->StartPosition(), &info, Script::WITH_OFFSET);
+  if (ShouldEmitRecordReplayAssertValue()) {
+    Script::PositionInfo info;
+    Script::GetPositionInfo(script, shared->StartPosition(), &info, Script::WITH_OFFSET);
 
-  if (script->name().IsUndefined()) {
-    recordreplay::Assert("ExecutionProgress <none>:%d:%d",
-                         info.line + 1, info.column);
-  } else {
-    std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
-    recordreplay::Assert("ExecutionProgress %s:%d:%d",
-                         name.get(), info.line + 1, info.column);
+    if (script->name().IsUndefined()) {
+      recordreplay::Assert("ExecutionProgress <none>:%d:%d",
+                          info.line + 1, info.column);
+    } else {
+      std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+      recordreplay::Assert("ExecutionProgress %s:%d:%d",
+                          name.get(), info.line + 1, info.column);
+    }
   }
 
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
+  CHECK(ShouldEmitRecordReplayAssertValue());
+
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(Object, value, 0);
