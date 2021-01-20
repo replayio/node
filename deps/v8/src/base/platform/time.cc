@@ -110,6 +110,10 @@ V8_INLINE int64_t ClockNow(clockid_t clk_id) {
 }
 
 V8_INLINE bool IsHighResolutionTimer(clockid_t clk_id) {
+  // Avoid interacting with the system when recording/replaying.
+  // Testing IsRecordingOrReplaying() here leads to link errors...
+  return true;
+
   // Limit duration of timer resolution measurement to 100 ms. If we cannot
   // measure timer resoltuion within this time, we assume a low resolution
   // timer.
