@@ -1368,7 +1368,7 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayAssertValue() {
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayInstrumentation(const char* kind,
                                                                         int source_position) {
-  if (recordreplay::IsRecordingOrReplaying()) {
+  if (recordreplay::IsRecordingOrReplaying() && IsMainThread()) {
     int index = RegisterInstrumentationSite(kind, source_position);
     OutputRecordReplayInstrumentation(index);
   }

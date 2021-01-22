@@ -1,4 +1,8 @@
 FROM node:14.15.0
 RUN apt-get install gcc
 WORKDIR /node
+
+# Build with debugging symbols and no optimization.
+# CMD ./configure && make CFLAGS="-g -O0" CPPFLAGS="-g -O0" -j1 -C out BUILDTYPE=Release
+
 CMD ./configure && make -j4 -C out BUILDTYPE=Release

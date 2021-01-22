@@ -11164,6 +11164,8 @@ void RecordReplayOnConsoleMessage(Isolate* isolate, size_t bookmark) {
 void RecordReplayOnExceptionUnwind(Isolate* isolate) {
   DCHECK(gRecordingOrReplaying);
 
+  HandleScope scope(isolate);
+
   CHECK(isolate->has_pending_exception());
   Handle<Object> exception(isolate->pending_exception(), isolate);
   if (isolate->is_catchable_by_javascript(*exception)) {

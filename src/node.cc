@@ -452,7 +452,9 @@ MaybeLocal<Value> StartExecution(Environment* env, const char* main_script_id) {
 }
 
 MaybeLocal<Value> StartExecution(Environment* env, StartExecutionCallback cb) {
-  v8::recordreplay::NewCheckpoint();
+  if (v8::IsMainThread()) {
+    v8::recordreplay::NewCheckpoint();
+  }
 
   InternalCallbackScope callback_scope(
       env,

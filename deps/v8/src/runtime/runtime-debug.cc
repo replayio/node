@@ -889,7 +889,8 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
 
-  if (recordreplay::AreEventsDisallowed()) {
+  if (recordreplay::AreEventsDisallowed() ||
+      !IsMainThread()) {
     return ReadOnlyRoots(isolate).undefined_value();
   }
 
@@ -900,9 +901,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
     return ReadOnlyRoots(isolate).undefined_value();
   }
 
-  if (IsMainThread()) {
-    RecordReplayIncrementProgressCounter();
-  }
+  RecordReplayIncrementProgressCounter();
 
   if (ShouldEmitRecordReplayAssertValue()) {
     Script::PositionInfo info;

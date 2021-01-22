@@ -551,6 +551,8 @@ static std::unique_ptr<inspector::InspectorSession> gRecordReplayInspectorSessio
 class RecordReplaySessionDelegate : public inspector::InspectorSessionDelegate {
  public:
   void SendMessageToFrontend(const v8_inspector::StringView& message) override {
+    CHECK(v8::IsMainThread());
+
     if (recordreplay::IsRecordingFinished()) {
       return;
     }

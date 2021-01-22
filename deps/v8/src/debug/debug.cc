@@ -2867,13 +2867,19 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
   // that were already added without a notification. It would be nice to figure
   // out how to get notified about the other scripts and remove this...
   if (gRecordReplayScripts.size() == 1) {
-    Script::Iterator iterator(isolate);
-    for (Script script = iterator.Next(); !script.is_null();
-         script = iterator.Next()) {
-      if (script.HasValidSource()) {
-        Handle<Script> handle(script, isolate);
-        RecordReplayRegisterScript(handle);
+    std::vector<Handle<Script>> scriptHandles;
+    {
+      Script::Iterator iterator(isolate);
+      for (Script script = iterator.Next(); !script.is_null();
+           script = iterator.Next()) {
+        if (script.HasValidSource()) {
+          Handle<Script> handle(script, isolate);
+          scriptHandles.push_back(handle);
+        }
       }
+    }
+    for (Handle<Script> handle : scriptHandles) {
+      RecordReplayRegisterScript(handle);
     }
   }
 }
@@ -2897,6 +2903,8 @@ static InternalCommandCallback gInternalCommandCallbacks[] = {
 static Eternal<Value>* gCommandCallback;
 
 char* CommandCallback(const char* command, const char* params) {
+  CHECK(IsMainThread());
+
   Isolate* isolate = Isolate::Current();
   HandleScope scope(isolate);
 
@@ -2943,6 +2951,8 @@ char* CommandCallback(const char* command, const char* params) {
 static Eternal<Value>* gClearPauseDataCallback;
 
 void ClearPauseDataCallback() {
+  CHECK(IsMainThread());
+
   if (gClearPauseDataCallback) {
     Isolate* isolate = Isolate::Current();
     Local<v8::Value> callbackValue = gClearPauseDataCallback->Get((v8::Isolate*)isolate);
@@ -2956,7 +2966,9 @@ void ClearPauseDataCallback() {
 
 extern bool gRecordReplayInstrumentNodeInternals;
 
-bool RecordReplayIgnoreScript(Handle<Script> script) {
+static std::unordered_map<int, bool> gShouldIgnoreScripts;
+
+static bool RecordReplayIgnoreScriptRaw(Handle<Script> script) {
   if (script->name().IsUndefined()) {
     return false;
   }
@@ -2971,6 +2983,19 @@ bool RecordReplayIgnoreScript(Handle<Script> script) {
 
   // Normally we ignore node internal scripts entirely.
   return !strncmp(name.get(), "node:", 5);
+}
+
+bool RecordReplayIgnoreScript(Handle<Script> script) {
+  CHECK(IsMainThread());
+
+  auto iter = gShouldIgnoreScripts.find(script->id());
+  if (iter != gShouldIgnoreScripts.end()) {
+    return iter->second;
+  }
+
+  bool rv = RecordReplayIgnoreScriptRaw(script);
+  gShouldIgnoreScripts[script->id()] = rv;
+  return rv;
 }
 
 static bool RecordReplayIgnoreScriptById(Isolate* isolate, int script_id) {

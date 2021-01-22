@@ -144,16 +144,28 @@ static inline void CastPointer(const Src src, Dst* dst) {
 }
 
 static void RecordReplayPrint(const char* format, ...) {
-  void* sym = dlsym(RTLD_DEFAULT, "RecordReplayPrint");
-  if (sym) {
-    void (*recordReplayPrint)(const char* format, va_list args);
-    CastPointer(sym, &recordReplayPrint);
-
-    va_list arguments;
-    va_start(arguments, format);
-    recordReplayPrint(format, arguments);
-    va_end(arguments);
+  const char* driver = getenv("RECORD_REPLAY_DRIVER");
+  if (!driver) {
+    return;
   }
+
+  void* handle = dlopen(driver, RTLD_LAZY);
+  if (!handle) {
+    return;
+  }
+
+  void* sym = dlsym(handle, "RecordReplayPrint");
+  if (!sym) {
+    return;
+  }
+
+  void (*recordReplayPrint)(const char* format, va_list args);
+  CastPointer(sym, &recordReplayPrint);
+
+  va_list arguments;
+  va_start(arguments, format);
+  recordReplayPrint(format, arguments);
+  va_end(arguments);
 }
 
 #ifdef DEBUG
