@@ -25,14 +25,16 @@ const numCPUs = os.cpus().length;
 if (process.platform == "linux") {
   // Do the build inside a container, to ensure a consistent result
   // with the right glibc dependencies and so forth.
-  spawnSync("docker", [
-    "build",
-    ".",
-    "-f",
-    "Dockerfile.build",
-    "-t",
-    "node-build",
-  ], { stdio: "inherit" });
+  if (process.argv.some(arg => arg.includes("--build-container"))) {
+    spawnSync("docker", [
+      "build",
+      ".",
+      "-f",
+      "Dockerfile.build",
+      "-t",
+      "node-build",
+    ], { stdio: "inherit" });
+  }
   spawnSync("docker", [
     "run",
     "-v",
