@@ -22,9 +22,13 @@ namespace v8 {
 namespace internal {
 
 RUNTIME_FUNCTION(Runtime_CompileLazy) {
+  recordreplay::Diagnostic("CompileLazy %p", isolate);
+
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+
+  CHECK(isolate == function->GetIsolate());
 
   Handle<SharedFunctionInfo> sfi(function->shared(), isolate);
 

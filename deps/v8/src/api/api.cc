@@ -11125,6 +11125,7 @@ typedef char* (CommandCallbackRaw)(const char* params);
 static void (*gRecordReplaySetCommandCallback)(const char* method, CommandCallbackRaw callback);
 
 static void (*gRecordReplayPrint)(const char* format, va_list args);
+static void (*gRecordReplayDiagnostic)(const char* format, va_list args);
 static void (*gRecordReplayOnInstrument)(const char* kind, const char* function, int offset);
 static void (*gRecordReplayAssert)(const char*, va_list);
 static void (*gRecordReplayAssertBytes)(const char* why, const void* ptr, size_t nbytes);
@@ -11216,6 +11217,15 @@ extern "C" void V8RecordReplayPrint(const char* format, ...) {
     va_list args;
     va_start(args, format);
     gRecordReplayPrint(format, args);
+    va_end(args);
+  }
+}
+
+void Diagnostic(const char* format, ...) {
+  if (IsRecordingOrReplaying()) {
+    va_list args;
+    va_start(args, format);
+    gRecordReplayDiagnostic(format, args);
     va_end(args);
   }
 }
@@ -11427,6 +11437,7 @@ void SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayOnExceptionUnwind", gRecordReplayOnExceptionUnwind);
   RecordReplayLoadSymbol(handle, "RecordReplaySetCommandCallback", gRecordReplaySetCommandCallback);
   RecordReplayLoadSymbol(handle, "RecordReplayPrint", gRecordReplayPrint);
+  RecordReplayLoadSymbol(handle, "RecordReplayDiagnostic", gRecordReplayDiagnostic);
   RecordReplayLoadSymbol(handle, "RecordReplayAssert", gRecordReplayAssert);
   RecordReplayLoadSymbol(handle, "RecordReplayAssertBytes", gRecordReplayAssertBytes);
   RecordReplayLoadSymbol(handle, "RecordReplayBytes", gRecordReplayBytes);

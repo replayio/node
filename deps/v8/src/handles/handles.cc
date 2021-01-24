@@ -78,6 +78,10 @@ Address* HandleScope::Extend(Isolate* isolate) {
   DCHECK(result == current->limit);
   // Make sure there's at least one scope on the stack and that the
   // top of the scope stack isn't a barrier.
+  if (current->level == current->sealed_level) {
+    recordreplay::Diagnostic("Bad HandleScope level %d isolate %p",
+                             current->level, isolate);
+  }
   if (!Utils::ApiCheck(current->level != current->sealed_level,
                        "v8::HandleScope::CreateHandle()",
                        "Cannot create a handle without a HandleScope")) {
