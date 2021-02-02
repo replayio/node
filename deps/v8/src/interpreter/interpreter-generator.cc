@@ -2814,8 +2814,11 @@ IGNITION_HANDLER(RecordReplayInstrumentation, InterpreterAssembler) {
 
 IGNITION_HANDLER(RecordReplayAssertValue, InterpreterAssembler) {
   TNode<Context> context = GetContext();
+  TNode<Object> closure = LoadRegister(Register::function_closure());
+  TNode<Smi> index = BytecodeOperandIdxSmi(0);
   TNode<Object> value = GetAccumulator();
-  TNode<Object> result = CallRuntime(Runtime::kRecordReplayAssertValue, context, value);
+  TNode<Object> result = CallRuntime(Runtime::kRecordReplayAssertValue,
+                                     context, closure, index, value);
   SetAccumulator(result);
   Dispatch();
 }

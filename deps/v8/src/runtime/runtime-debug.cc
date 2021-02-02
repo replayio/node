@@ -966,37 +966,41 @@ std::string GetStackLocation(Isolate* isolate) {
   return std::string(location);
 }
 
+// Locations for each assertion site, filled in lazily.
+static std::vector<std::string> gAssertionSites;
+
+int RegisterAssertValueSite() {
+  CHECK(IsMainThread());
+  int index = gAssertionSites.size();
+  gAssertionSites.push_back("");
+  return index;
+}
+
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
   CHECK(ShouldEmitRecordReplayAssertValue());
 
   HandleScope scope(isolate);
-  DCHECK_EQ(1, args.length());
-  CONVERT_ARG_HANDLE_CHECKED(Object, value, 0);
+  DCHECK_EQ(3, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+  CONVERT_NUMBER_CHECKED(int32_t, index, Int32, args[1]);
+  CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
 
-  if (recordreplay::AreEventsDisallowed()) {
+  if (recordreplay::AreEventsDisallowed() || !IsMainThread()) {
     return *value;
   }
 
-  for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
-    StackFrame* frame = it.frame();
-    if (frame->type() != StackFrame::OPTIMIZED && frame->type() != StackFrame::INTERPRETED) {
-      continue;
-    }
-    std::vector<FrameSummary> frames;
-    StandardFrame::cast(frame)->Summarize(&frames);
-    auto& summary = frames.back();
-    CHECK(summary.IsJavaScript());
-    auto const& js = summary.AsJavaScript();
-
-    Handle<SharedFunctionInfo> shared(js.function()->shared(), isolate);
-    Handle<Script> script(Script::cast(shared->script()), isolate);
-
-    if (RecordReplayIgnoreScript(script)) {
-      return *value;
-    }
+  Handle<Script> script(Script::cast(function->shared().script()), isolate);
+  if (RecordReplayIgnoreScript(script)) {
+    return *value;
   }
 
-  std::string locationStr = GetStackLocation(isolate);
+  CHECK(index < gAssertionSites.size());
+  std::string& locationStr = gAssertionSites[index];
+
+  if (!locationStr.length()) {
+    locationStr = GetStackLocation(isolate);
+  }
+
   const char* location = locationStr.c_str();
 
   if (value->IsNumber()) {

@@ -3615,10 +3615,12 @@ void BytecodeGraphBuilder::VisitRecordReplayInstrumentation() {
 
 void BytecodeGraphBuilder::VisitRecordReplayAssertValue() {
   PrepareEagerCheckpoint();
+  Node* closure = GetFunctionClosure();
+  Node* index_slot = jsgraph()->Constant(bytecode_iterator().GetIndexOperand(0));
   Node* value = environment()->LookupAccumulator();
   const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayAssertValue);
 
-  Node* node = NewNode(op, value);
+  Node* node = NewNode(op, closure, index_slot, value);
   environment()->BindAccumulator(node, Environment::kAttachFrameState);
 }
 

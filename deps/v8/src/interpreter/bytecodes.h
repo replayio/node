@@ -367,7 +367,7 @@ namespace interpreter {
   /* Record Replay */                                                          \
   V(RecordReplayIncExecutionProgressCounter, AccumulatorUse::kNone)            \
   V(RecordReplayInstrumentation, AccumulatorUse::kNone, OperandType::kIdx)     \
-  V(RecordReplayAssertValue, AccumulatorUse::kReadWrite)                       \
+  V(RecordReplayAssertValue, AccumulatorUse::kReadWrite, OperandType::kIdx)    \
                                                                                \
   /* Execution Abort (internal error) */                                       \
   V(Abort, AccumulatorUse::kNone, OperandType::kIdx)                           \
