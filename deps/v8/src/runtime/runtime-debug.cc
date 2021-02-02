@@ -920,6 +920,52 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
+std::string GetStackLocation(Isolate* isolate) {
+  char location[1024];
+  strcpy(location, "<no frame>");
+  for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
+    StackFrame* frame = it.frame();
+    if (frame->type() != StackFrame::OPTIMIZED && frame->type() != StackFrame::INTERPRETED) {
+      continue;
+    }
+    std::vector<FrameSummary> frames;
+    StandardFrame::cast(frame)->Summarize(&frames);
+    auto& summary = frames.back();
+    CHECK(summary.IsJavaScript());
+    auto const& js = summary.AsJavaScript();
+
+    Handle<SharedFunctionInfo> shared(js.function()->shared(), isolate);
+
+    // Sometimes the SharedFunctionInfo has what appears to be a bogus
+    // script for an unknown reason. We check the positions of the function
+    // to watch for this.
+    if (!shared->StartPosition() && !shared->EndPosition()) {
+      continue;
+    }
+
+    Handle<Script> script(Script::cast(shared->script()), isolate);
+
+    if (script->id() == 0) {
+      continue;
+    }
+
+    int source_position = js.SourcePosition();
+    Script::PositionInfo info;
+    Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
+
+    if (script->name().IsUndefined()) {
+      snprintf(location, sizeof(location), "<none>:%d:%d", info.line + 1, info.column);
+    } else {
+      std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+      snprintf(location, sizeof(location), "%s:%d:%d", name.get(), info.line + 1, info.column);
+    }
+    location[sizeof(location) - 1] = 0;
+    break;
+  }
+
+  return std::string(location);
+}
+
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
   CHECK(ShouldEmitRecordReplayAssertValue());
 
@@ -931,8 +977,6 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
     return *value;
   }
 
-  char location[1024];
-  strcpy(location, "<no frame>");
   for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
     StackFrame* frame = it.frame();
     if (frame->type() != StackFrame::OPTIMIZED && frame->type() != StackFrame::INTERPRETED) {
@@ -950,20 +994,10 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
     if (RecordReplayIgnoreScript(script)) {
       return *value;
     }
-
-    int source_position = js.SourcePosition();
-    Script::PositionInfo info;
-    Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
-
-    if (script->name().IsUndefined()) {
-      snprintf(location, sizeof(location), "<none>:%d:%d", info.line + 1, info.column);
-    } else {
-      std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
-      snprintf(location, sizeof(location), "%s:%d:%d", name.get(), info.line + 1, info.column);
-    }
-    location[sizeof(location) - 1] = 0;
-    break;
   }
+
+  std::string locationStr = GetStackLocation(isolate);
+  const char* location = locationStr.c_str();
 
   if (value->IsNumber()) {
     double num = value->Number();
