@@ -2944,6 +2944,8 @@ Isolate::Isolate(std::unique_ptr<i::IsolateAllocator> isolate_allocator)
   TRACE_ISOLATE(constructor);
   CheckIsolateLayout();
 
+  owning_thread_ = pthread_self();
+
   // ThreadManager is initialized early to support locking an isolate
   // before it is entered.
   thread_manager_ = new ThreadManager(this);
