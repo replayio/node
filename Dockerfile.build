@@ -5,4 +5,8 @@ WORKDIR /node
 # Build with debugging symbols and no optimization.
 # CMD ./configure && make CFLAGS="-g -O0" CPPFLAGS="-g -O0" -j1 -C out BUILDTYPE=Release
 
+# Build with debug checks.
+# CMD ./configure && make CFLAGS="-DDEBUG=1" CPPFLAGS="-DDEBUG=1" -j4 -C out BUILDTYPE=Release
+
+# Default optimized build.
 CMD ./configure && make -j4 -C out BUILDTYPE=Release
