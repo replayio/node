@@ -61,7 +61,13 @@ bool RandomBytesTraits::DeriveBits(
     const RandomBytesConfig& params,
     ByteSource* unused) {
   CheckEntropy();  // Ensure that OpenSSL's PRNG is properly seeded.
-  return RAND_bytes(params.buffer, params.size) != 0;
+  bool rv = RAND_bytes(params.buffer, params.size) != 0;
+
+  // FIXME ensure that RAND_bytes produces consistent bytes when replaying.
+  v8::recordreplay::RecordReplayBytes("RandomBytesTraits::DeriveBits",
+                                      params.buffer, params.size);
+
+  return rv;
 }
 
 namespace Random {
