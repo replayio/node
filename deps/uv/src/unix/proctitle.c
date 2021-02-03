@@ -100,6 +100,11 @@ int uv_set_process_title(const char* title) {
   struct uv__process_title* pt;
   size_t len;
 
+  // FIXME disabling for now. When replaying the arguments are not adjacent
+  // and the logic in uv_setup_args behaves incorrectly and corrupts most
+  // of the process memory.
+  return 0;
+
   /* If uv_setup_args wasn't called or failed, we can't continue. */
   if (args_mem == NULL)
     return UV_ENOBUFS;

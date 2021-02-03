@@ -1017,8 +1017,10 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
   } else if (value->IsNull()) {
     recordreplay::Assert("%s Value Null", location);
   } else if (value->IsString()) {
-    std::unique_ptr<char[]> contents = String::cast(*value).ToCString();
-    recordreplay::Assert("%s Value String %s", location, contents.get());
+    //std::unique_ptr<char[]> contents = String::cast(*value).ToCString();
+    //recordreplay::Assert("%s Value String %s", location, contents.get());
+    recordreplay::Assert("%s Value String %d", location,
+                         String::cast(*value).length());
   } else if (value->IsJSObject()) {
     InstanceType type = JSObject::cast(*value).map().instance_type();
     const char* typeStr;
