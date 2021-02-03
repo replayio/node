@@ -3003,6 +3003,69 @@ static bool RecordReplayIgnoreScriptById(Isolate* isolate, int script_id) {
   return RecordReplayIgnoreScript(script);
 }
 
+static std::string StringPrintf(const char* format, ...) {
+  char buf[4096];
+  buf[sizeof(buf) - 1] = 0;
+  va_list ap;
+  va_start(ap, format);
+  vsnprintf(buf, sizeof(buf) - 1, format, ap);
+  va_end(ap);
+  return std::string(buf);
+}
+
+// Get a string describing a value which can be used in assertions.
+// Only basic information about the value is obtained, to keep things fast.
+std::string RecordReplayBasicValueContents(Handle<Object> value) {
+  if (value->IsNumber()) {
+    double num = value->Number();
+    if (std::isnan(num)) {
+      return "NaN";
+    }
+    // It would be nice to use full precision here like we do in gecko.
+    return StringPrintf("Number %.2f", num);
+  }
+
+  if (value->IsBoolean()) {
+    return StringPrintf("Boolean %d", value->IsTrue());
+  }
+
+  if (value->IsUndefined()) {
+    return "Undefined";
+  }
+
+  if (value->IsNull()) {
+    return "Null";
+  }
+
+  if (value->IsString()) {
+    return StringPrintf("String %d", String::cast(*value).length());
+  }
+
+  if (value->IsJSObject()) {
+    InstanceType type = JSObject::cast(*value).map().instance_type();
+    const char* typeStr;
+    switch (type) {
+#define STRINGIFY_TYPE(TYPE) case TYPE: typeStr = #TYPE; break;
+    INSTANCE_TYPE_LIST(STRINGIFY_TYPE)
+#undef STRINGIFY_TYPE
+    default:
+      typeStr = "<unknown>";
+    }
+    if (!strcmp(typeStr, "JS_DATE_TYPE")) {
+      JSDate date = JSDate::cast(*value);
+      double time = date.value().Number();
+      return StringPrintf("Date %.2f", time);
+    }
+    return StringPrintf("Object %s", typeStr);
+  }
+
+  if (value->IsJSProxy()) {
+    return "Proxy";
+  }
+
+  return "Unknown";
+}
+
 }  // namespace internal
 
 namespace i = internal;
@@ -3053,6 +3116,30 @@ void FunctionCallbackRecordReplayIgnoreScript(const FunctionCallbackInfo<Value>&
 
   Local<Boolean> rv = Boolean::New(isolate, ignore);
   callArgs.GetReturnValue().Set(rv);
+}
+
+void FunctionCallbackRecordReplayAssert(const FunctionCallbackInfo<Value>& callArgs) {
+  if (!recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
+  Isolate* isolate = callArgs.GetIsolate();
+  i::Handle<i::Object> value = Utils::OpenHandle(*callArgs[0]);
+
+  // This is used when a script explicitly asserts the contents of a value, so we can do
+  // more thorough checking.
+  if (value->IsString()) {
+    std::unique_ptr<char[]> contents = i::String::cast(*value).ToCString();
+    size_t len = strlen(contents.get());
+    if (len < 2000) {
+      recordreplay::Assert("AssertValue StringContents %s", contents.get());
+    } else {
+      recordreplay::AssertBytes("AssertValue StringBytes", contents.get(), len);
+    }
+  } else {
+    std::string contents = i::RecordReplayBasicValueContents(value);
+    recordreplay::Assert("AssertValue %s", contents.c_str());
+  }
 }
 
 }  // namespace v8
