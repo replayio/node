@@ -976,6 +976,8 @@ int RegisterAssertValueSite() {
   return index;
 }
 
+extern std::string RecordReplayBasicValueContents(Handle<Object> value);
+
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
   CHECK(ShouldEmitRecordReplayAssertValue());
 
@@ -995,54 +997,15 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
   }
 
   CHECK(index < gAssertionSites.size());
-  std::string& locationStr = gAssertionSites[index];
+  std::string& location = gAssertionSites[index];
 
-  if (!locationStr.length()) {
-    locationStr = GetStackLocation(isolate);
+  if (!location.length()) {
+    location = GetStackLocation(isolate);
   }
 
-  const char* location = locationStr.c_str();
+  std::string contents = RecordReplayBasicValueContents(value);
 
-  if (value->IsNumber()) {
-    double num = value->Number();
-    if (std::isnan(num)) {
-      recordreplay::Assert("%s Value NaN", location);
-    } else {
-      recordreplay::Assert("%s Value Number %.2f", location, num);
-    }
-  } else if (value->IsBoolean()) {
-    recordreplay::Assert("%s Value Boolean %d", location, value->IsTrue());
-  } else if (value->IsUndefined()) {
-    recordreplay::Assert("%s Value Undefined", location);
-  } else if (value->IsNull()) {
-    recordreplay::Assert("%s Value Null", location);
-  } else if (value->IsString()) {
-    //std::unique_ptr<char[]> contents = String::cast(*value).ToCString();
-    //recordreplay::Assert("%s Value String %s", location, contents.get());
-    recordreplay::Assert("%s Value String %d", location,
-                         String::cast(*value).length());
-  } else if (value->IsJSObject()) {
-    InstanceType type = JSObject::cast(*value).map().instance_type();
-    const char* typeStr;
-    switch (type) {
-#define STRINGIFY_TYPE(TYPE) case TYPE: typeStr = #TYPE; break;
-    INSTANCE_TYPE_LIST(STRINGIFY_TYPE)
-#undef STRINGIFY_TYPE
-    default:
-      typeStr = "<unknown>";
-    }
-    if (!strcmp(typeStr, "JS_DATE_TYPE")) {
-      JSDate date = JSDate::cast(*value);
-      double time = date.value().Number();
-      recordreplay::Assert("%s Value Date %.2f", location, time);
-    } else {
-      recordreplay::Assert("%s Value Object %s", location, typeStr);
-    }
-  } else if (value->IsJSProxy()) {
-    recordreplay::Assert("%s Value Proxy", location);
-  } else {
-    recordreplay::Assert("%s Value Unknown", location);
-  }
+  recordreplay::Assert("%s Value %s", location.c_str(), contents.c_str());
 
   return *value;
 }
