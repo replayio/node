@@ -996,7 +996,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
     return *value;
   }
 
-  CHECK(index < gAssertionSites.size());
+  CHECK(index < (int)gAssertionSites.size());
   std::string& location = gAssertionSites[index];
 
   if (!location.length()) {

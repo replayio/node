@@ -2978,7 +2978,18 @@ static bool RecordReplayIgnoreScriptRaw(Handle<Script> script) {
   if (gRecordReplayInstrumentNodeInternals) {
     // When exposing node internals, we still ignore the record/replay specific
     // scripts, as these will have on stack frames when processing commands.
-    return strstr(name.get(), "node:internal/recordreplay");
+    if (strstr(name.get(), "node:internal/recordreplay")) {
+      return true;
+    }
+
+    // This causes problems with stack size mismatches where the main module
+    // has been entered but the frame does not appear on stack. The underlying
+    // cause is unknown.
+    if (strstr(name.get(), "node:internal/main/run_main_module")) {
+      return true;
+    }
+
+    return false;
   }
 
   // Normally we ignore node internal scripts entirely.
@@ -3123,7 +3134,6 @@ void FunctionCallbackRecordReplayAssert(const FunctionCallbackInfo<Value>& callA
     return;
   }
 
-  Isolate* isolate = callArgs.GetIsolate();
   i::Handle<i::Object> value = Utils::OpenHandle(*callArgs[0]);
 
   // This is used when a script explicitly asserts the contents of a value, so we can do
