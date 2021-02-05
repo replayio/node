@@ -190,6 +190,12 @@ void CallbackInfo::OnBackingStoreFree() {
   // be gone at this point, so don’t attempt to call SetImmediateThreadsafe().
   if (callback_ == nullptr) return;
 
+  // When recording/replaying the data is freed at a non-deterministic point,
+  // and we don't yet support posting immediates in such a case.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
   env_->SetImmediateThreadsafe([self = std::move(self)](Environment* env) {
     CHECK_EQ(self->env_, env);  // Consistency check.
 

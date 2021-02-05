@@ -11471,6 +11471,11 @@ void SetRecordingOrReplaying(void* handle) {
 
   internal::gRecordReplayInstrumentNodeInternals = !!getenv("RECORD_REPLAY_INSTRUMENT_NODE");
   internal::gRecordReplayAssertValues = !!getenv("RECORD_REPLAY_JS_ASSERTS");
+
+  // Set flags to disable non-deterministic posting of tasks to other threads.
+  // We don't support this yet when recording/replaying.
+  internal::FLAG_concurrent_array_buffer_sweeping = false;
+  internal::FLAG_concurrent_sweeping = false;
 }
 
 } // namespace recordreplay

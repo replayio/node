@@ -149,7 +149,7 @@ class MessagePortData : public TransferData {
   // This mutex protects the sibling_ field and is shared between two entangled
   // MessagePorts. If both mutexes are acquired, this one needs to be
   // acquired first.
-  std::shared_ptr<Mutex> sibling_mutex_ = std::make_shared<Mutex>();
+  std::shared_ptr<Mutex> sibling_mutex_ = std::make_shared<Mutex>(/* ordered */ true);
   MessagePortData* sibling_ = nullptr;
 
   friend class MessagePort;

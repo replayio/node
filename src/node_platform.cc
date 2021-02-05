@@ -569,7 +569,7 @@ Platform::StackTracePrinter NodePlatform::GetStackTracePrinter() {
 
 template <class T>
 TaskQueue<T>::TaskQueue()
-    : lock_(), tasks_available_(), tasks_drained_(),
+    : lock_(/* ordered */ true), tasks_available_(), tasks_drained_(),
       outstanding_tasks_(0), stopped_(false), task_queue_() { }
 
 template <class T>

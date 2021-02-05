@@ -105,7 +105,12 @@ RUNTIME_FUNCTION(Runtime_CompileOptimized_Concurrent) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
-  return CompileOptimized(isolate, function, ConcurrencyMode::kConcurrent);
+  return CompileOptimized(isolate, function,
+                          // Only non-concurrent compilation is currently supported
+                          // when recording/replaying.
+                          recordreplay::IsRecordingOrReplaying()
+                          ? ConcurrencyMode::kNotConcurrent
+                          : ConcurrencyMode::kConcurrent);
 }
 
 RUNTIME_FUNCTION(Runtime_CompileOptimized_NotConcurrent) {
