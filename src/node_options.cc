@@ -682,6 +682,9 @@ PerProcessOptionsParser::PerProcessOptionsParser(
   AddOption(
       "--version", "print Node.js version", &PerProcessOptions::print_version);
   AddAlias("-v", "--version");
+  AddOption("--build-id",
+            "print record/replay build ID",
+            &PerProcessOptions::print_build_id);
   AddOption("--v8-options",
             "print V8 command line options",
             &PerProcessOptions::print_v8_help);

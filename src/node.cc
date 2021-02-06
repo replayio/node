@@ -1104,6 +1104,13 @@ InitializationResult InitializeOncePerProcess(int* pargc, char*** pargv) {
     return result;
   }
 
+  if (per_process::cli_options->print_build_id) {
+    printf("%s\n", gBuildId);
+    result.exit_code = 0;
+    result.early_return = true;
+    return result;
+  }
+
   if (per_process::cli_options->print_bash_completion) {
     std::string completion = options_parser::GetBashCompletion();
     printf("%s\n", completion.c_str());

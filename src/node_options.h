@@ -226,6 +226,7 @@ class PerProcessOptions : public Options {
   bool print_help = false;
   bool print_v8_help = false;
   bool print_version = false;
+  bool print_build_id = false;
 
 #ifdef NODE_HAVE_I18N_SUPPORT
   std::string icu_data_dir;
