@@ -61,10 +61,7 @@ Address MathRandom::RefillCache(Isolate* isolate, Address raw_native_context) {
     // Generate random numbers using xorshift128+.
     base::RandomNumberGenerator::XorShift128(&state.s0, &state.s1);
     double v = base::RandomNumberGenerator::ToDouble(state.s0);
-
-    // FIXME figure out why random numbers can differ when replaying.
-    recordreplay::RecordReplayBytes("MathRandom", &v, sizeof(v));
-
+    recordreplay::AssertBytes("MathRandom", &v, sizeof(v));
     cache.set(i, v);
   }
   pod.set(0, state);

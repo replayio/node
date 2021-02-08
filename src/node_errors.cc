@@ -929,6 +929,8 @@ void TriggerUncaughtException(Isolate* isolate,
   CHECK(!error.IsEmpty());
   HandleScope scope(isolate);
 
+  v8::recordreplay::Assert("TriggerUncaughtException");
+
   if (message.IsEmpty()) message = Exception::CreateMessage(isolate, error);
 
   CHECK(isolate->InContext());

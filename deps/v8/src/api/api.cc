@@ -11171,9 +11171,12 @@ void RecordReplayOnExceptionUnwind(Isolate* isolate) {
   Handle<Object> exception(isolate->pending_exception(), isolate);
   if (isolate->is_catchable_by_javascript(*exception)) {
     isolate->clear_pending_exception();
+    Handle<Object> message(isolate->pending_message(), isolate);
+    isolate->clear_pending_message();
     gRecordReplayOnExceptionUnwind();
     CHECK(!isolate->has_pending_exception());
     isolate->set_pending_exception(*exception);
+    isolate->set_pending_message(*message);
   }
 }
 

@@ -16,6 +16,22 @@
 #include "crypto/rand.h"
 #include "crypto/cryptlib.h"
 
+#include <dlfcn.h>
+
+static void (*gRecordReplayBytesFn)(const char*, const void*, size_t);
+
+static void RecordReplayBytesFromC(const char* why, const void* ptr, size_t nbytes) {
+  if (!gRecordReplayBytesFn) {
+    void* fnptr = dlsym(RTLD_DEFAULT, "RecordReplayBytes");
+    if (!fnptr) {
+      return;
+    }
+    gRecordReplayBytesFn = fnptr;
+  }
+
+  gRecordReplayBytesFn(why, ptr, nbytes);
+}
+
 /*
  * Support framework for NIST SP 800-90A DRBG
  *
@@ -645,6 +661,12 @@ int RAND_DRBG_generate(RAND_DRBG *drbg, unsigned char *out, size_t outlen,
     }
 
     drbg->reseed_gen_counter++;
+
+    // Force random bytes to be the same when replaying as when recording;
+    // some sources of entropy used (like pointer values) won't automatically
+    // have the same value when replaying, and we don't want to weaken these
+    // sources when recording/replaying.
+    RecordReplayBytesFromC("RAND_DRBG_generate", out, outlen);
 
     return 1;
 }
