@@ -876,6 +876,12 @@ void Environment::RunTimers(uv_timer_t* handle) {
 }
 
 void Environment::CheckImmediate(uv_check_t* handle) {
+  // We're near the top of the event loop, periodically create new
+  // checkpoints so that the recording can be processed more efficiently.
+  if (v8::IsMainThread()) {
+    v8::recordreplay::NewCheckpoint();
+  }
+
   Environment* env = Environment::from_immediate_check_handle(handle);
   TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
                               "CheckImmediate", env);
