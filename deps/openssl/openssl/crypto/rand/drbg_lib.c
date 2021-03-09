@@ -7,6 +7,9 @@
  * https://www.openssl.org/source/license.html
  */
 
+#define _GNU_SOURCE
+#include <dlfcn.h>
+
 #include <string.h>
 #include <openssl/crypto.h>
 #include <openssl/err.h>
@@ -15,8 +18,6 @@
 #include "internal/thread_once.h"
 #include "crypto/rand.h"
 #include "crypto/cryptlib.h"
-
-#include <dlfcn.h>
 
 static void (*gRecordReplayBytesFn)(const char*, const void*, size_t);
 

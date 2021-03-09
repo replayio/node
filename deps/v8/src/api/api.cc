@@ -11429,11 +11429,11 @@ static void RecordReplayLoadSymbol(void* handle, const char* name, T& function) 
   CastPointer(sym, &function);
 }
 
-THREAD_LOCAL bool gIsMainThread;
+static pthread_t gMainThread;
 
 void SetRecordingOrReplaying(void* handle) {
   gRecordingOrReplaying = true;
-  gIsMainThread = true;
+  gMainThread = pthread_self();
 
   RecordReplayLoadSymbol(handle, "RecordReplayOnNewSource", gRecordReplayOnNewSource);
   RecordReplayLoadSymbol(handle, "RecordReplayOnConsoleMessage", gRecordReplayOnConsoleMessage);
@@ -11484,7 +11484,7 @@ void SetRecordingOrReplaying(void* handle) {
 } // namespace recordreplay
 
 bool IsMainThread() {
-  return recordreplay::gIsMainThread;
+  return recordreplay::gMainThread == pthread_self();
 }
 
 namespace internal {
