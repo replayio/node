@@ -35,6 +35,25 @@
 # include <sys/param.h>
 #endif
 
+#include <dlfcn.h>
+
+static void (*gRecordReplayAssertFn)(const char*, va_list);
+
+static void RecordReplayAssertFromC(const char* aFormat, ...) {
+  if (!gRecordReplayAssertFn) {
+    void* fnptr = dlsym(RTLD_DEFAULT, "RecordReplayAssert");
+    if (!fnptr) {
+      return;
+    }
+    gRecordReplayAssertFn = fnptr;
+  }
+
+  va_list ap;
+  va_start(ap, aFormat);
+  gRecordReplayAssertFn(aFormat, ap);
+  va_end(ap);
+}
+
 #if defined(OPENSSL_SYS_UNIX) || defined(__DJGPP__)
 # include <sys/types.h>
 # include <sys/stat.h>
@@ -344,6 +363,8 @@ static ssize_t sysctl_random(char *buf, size_t buflen)
  */
 static ssize_t syscall_random(void *buf, size_t buflen)
 {
+    RecordReplayAssertFromC("syscall_random %lu", buflen);
+
     /*
      * Note: 'buflen' equals the size of the buffer which is used by the
      * get_entropy() callback of the RAND_DRBG. It is roughly bounded by
@@ -617,6 +638,8 @@ void rand_pool_keep_random_devices_open(int keep)
  */
 size_t rand_pool_acquire_entropy(RAND_POOL *pool)
 {
+    RecordReplayAssertFromC("rand_pool_acquire_entropy");
+
 #  if defined(OPENSSL_RAND_SEED_NONE)
     return rand_pool_entropy_available(pool);
 #  else
@@ -631,6 +654,7 @@ size_t rand_pool_acquire_entropy(RAND_POOL *pool)
         int attempts = 3;
 
         bytes_needed = rand_pool_bytes_needed(pool, 1 /*entropy_factor*/);
+        RecordReplayAssertFromC("rand_pool_acquire_entropy #1 %lu", bytes_needed);
         while (bytes_needed != 0 && attempts-- > 0) {
             buffer = rand_pool_add_begin(pool, bytes_needed);
             bytes = syscall_random(buffer, bytes_needed);
