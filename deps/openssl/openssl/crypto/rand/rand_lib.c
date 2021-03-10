@@ -7,6 +7,9 @@
  * https://www.openssl.org/source/license.html
  */
 
+#define _GNU_SOURCE
+#include <dlfcn.h>
+
 #include <stdio.h>
 #include <time.h>
 #include "internal/cryptlib.h"
@@ -16,6 +19,23 @@
 #include "internal/thread_once.h"
 #include "rand_local.h"
 #include "e_os.h"
+
+static void (*gRecordReplayAssertFn)(const char*, va_list);
+
+static void RecordReplayAssertFromC(const char* aFormat, ...) {
+  if (!gRecordReplayAssertFn) {
+    void* fnptr = dlsym(RTLD_DEFAULT, "RecordReplayAssert");
+    if (!fnptr) {
+      return;
+    }
+    gRecordReplayAssertFn = fnptr;
+  }
+
+  va_list ap;
+  va_start(ap, aFormat);
+  gRecordReplayAssertFn(aFormat, ap);
+  va_end(ap);
+}
 
 #ifndef OPENSSL_NO_ENGINE
 /* non-NULL if default_RAND_meth is ENGINE-provided */
@@ -135,6 +155,8 @@ size_t rand_drbg_get_entropy(RAND_DRBG *drbg,
     size_t entropy_available = 0;
     RAND_POOL *pool;
 
+    RecordReplayAssertFromC("rand_drbg_get_entropy %d", !!drbg->parent);
+
     if (drbg->parent != NULL && drbg->strength > drbg->parent->strength) {
         /*
          * We currently don't support the algorithm from NIST SP 800-90C
@@ -153,9 +175,13 @@ size_t rand_drbg_get_entropy(RAND_DRBG *drbg,
             return 0;
     }
 
+    RecordReplayAssertFromC("rand_drbg_get_entropy #1 %d", !!drbg->parent);
+
     if (drbg->parent != NULL) {
         size_t bytes_needed = rand_pool_bytes_needed(pool, 1 /*entropy_factor*/);
         unsigned char *buffer = rand_pool_add_begin(pool, bytes_needed);
+
+        RecordReplayAssertFromC("rand_drbg_get_entropy #2 %d", !!buffer);
 
         if (buffer != NULL) {
             size_t bytes = 0;
@@ -193,6 +219,8 @@ size_t rand_drbg_get_entropy(RAND_DRBG *drbg,
                     RAND_R_PREDICTION_RESISTANCE_NOT_SUPPORTED);
             goto err;
         }
+
+        RecordReplayAssertFromC("rand_drbg_get_entropy #3");
 
         /* Get entropy by polling system entropy sources. */
         entropy_available = rand_pool_acquire_entropy(pool);
