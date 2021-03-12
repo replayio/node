@@ -7,9 +7,6 @@
  * https://www.openssl.org/source/license.html
  */
 
-#define _GNU_SOURCE
-#include <dlfcn.h>
-
 #include <stdio.h>
 #include <time.h>
 #include "internal/cryptlib.h"
@@ -20,22 +17,7 @@
 #include "rand_local.h"
 #include "e_os.h"
 
-static void (*gRecordReplayAssertFn)(const char*, va_list);
-
-static void RecordReplayAssertFromC(const char* aFormat, ...) {
-  if (!gRecordReplayAssertFn) {
-    void* fnptr = dlsym(RTLD_DEFAULT, "RecordReplayAssert");
-    if (!fnptr) {
-      return;
-    }
-    gRecordReplayAssertFn = fnptr;
-  }
-
-  va_list ap;
-  va_start(ap, aFormat);
-  gRecordReplayAssertFn(aFormat, ap);
-  va_end(ap);
-}
+extern void RecordReplayAssertFromC(const char* aFormat, ...);
 
 #ifndef OPENSSL_NO_ENGINE
 /* non-NULL if default_RAND_meth is ENGINE-provided */

@@ -19,6 +19,8 @@
 #include "crypto/rand.h"
 #include "crypto/cryptlib.h"
 
+extern void RecordReplayAssertFromC(const char* aFormat, ...);
+
 static void (*gRecordReplayBytesFn)(const char*, const void*, size_t);
 
 static void RecordReplayBytesFromC(const char* why, const void* ptr, size_t nbytes) {
@@ -310,6 +312,8 @@ int RAND_DRBG_instantiate(RAND_DRBG *drbg,
     size_t min_entropy = drbg->strength;
     size_t min_entropylen = drbg->min_entropylen;
     size_t max_entropylen = drbg->max_entropylen;
+
+    RecordReplayAssertFromC("RAND_DRBG_instantiate %d", !!drbg->parent);
 
     if (perslen > drbg->max_perslen) {
         RANDerr(RAND_F_RAND_DRBG_INSTANTIATE,
@@ -898,6 +902,8 @@ static RAND_DRBG *drbg_setup(RAND_DRBG *parent)
 {
     RAND_DRBG *drbg;
 
+    RecordReplayAssertFromC("drbg_setup %d", !!parent);
+
     drbg = RAND_DRBG_secure_new(rand_drbg_type, rand_drbg_flags, parent);
     if (drbg == NULL)
         return NULL;
@@ -931,6 +937,8 @@ err:
  */
 DEFINE_RUN_ONCE_STATIC(do_rand_drbg_init)
 {
+    RecordReplayAssertFromC("do_rand_drbg_init");
+
     /*
      * ensure that libcrypto is initialized, otherwise the
      * DRBG locks are not cleaned up properly
@@ -1122,8 +1130,12 @@ static int drbg_status(void)
  */
 RAND_DRBG *RAND_DRBG_get0_master(void)
 {
+    RecordReplayAssertFromC("RAND_DRBG_get0_master #1");
+
     if (!RUN_ONCE(&rand_drbg_init, do_rand_drbg_init))
         return NULL;
+
+    RecordReplayAssertFromC("RAND_DRBG_get0_master #2");
 
     return master_drbg;
 }
@@ -1136,8 +1148,12 @@ RAND_DRBG *RAND_DRBG_get0_public(void)
 {
     RAND_DRBG *drbg;
 
+    RecordReplayAssertFromC("RAND_DRBG_get0_public #1");
+
     if (!RUN_ONCE(&rand_drbg_init, do_rand_drbg_init))
         return NULL;
+
+    RecordReplayAssertFromC("RAND_DRBG_get0_public #2");
 
     drbg = CRYPTO_THREAD_get_local(&public_drbg);
     if (drbg == NULL) {
@@ -1157,8 +1173,12 @@ RAND_DRBG *RAND_DRBG_get0_private(void)
 {
     RAND_DRBG *drbg;
 
+    RecordReplayAssertFromC("RAND_DRBG_get0_private #1");
+
     if (!RUN_ONCE(&rand_drbg_init, do_rand_drbg_init))
         return NULL;
+
+    RecordReplayAssertFromC("RAND_DRBG_get0_private #2");
 
     drbg = CRYPTO_THREAD_get_local(&private_drbg);
     if (drbg == NULL) {

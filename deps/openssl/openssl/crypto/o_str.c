@@ -7,31 +7,13 @@
  * https://www.openssl.org/source/license.html
  */
 
-#define _GNU_SOURCE
-#include <dlfcn.h>
-
 #include "e_os.h"
 #include <limits.h>
 #include <openssl/crypto.h>
 #include "internal/cryptlib.h"
 #include "internal/o_str.h"
 
-static void (*gRecordReplayAssertFn)(const char*, va_list);
-
-static void RecordReplayAssertFromC(const char* aFormat, ...) {
-  if (!gRecordReplayAssertFn) {
-    void* fnptr = dlsym(RTLD_DEFAULT, "RecordReplayAssert");
-    if (!fnptr) {
-      return;
-    }
-    gRecordReplayAssertFn = fnptr;
-  }
-
-  va_list ap;
-  va_start(ap, aFormat);
-  gRecordReplayAssertFn(aFormat, ap);
-  va_end(ap);
-}
+extern void RecordReplayAssertFromC(const char* aFormat, ...);
 
 int OPENSSL_memcmp(const void *v1, const void *v2, size_t n)
 {

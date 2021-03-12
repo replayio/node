@@ -39,7 +39,7 @@
 
 static void (*gRecordReplayAssertFn)(const char*, va_list);
 
-static void RecordReplayAssertFromC(const char* aFormat, ...) {
+void RecordReplayAssertFromC(const char* aFormat, ...) {
   if (!gRecordReplayAssertFn) {
     void* fnptr = dlsym(RTLD_DEFAULT, "RecordReplayAssert");
     if (!fnptr) {
