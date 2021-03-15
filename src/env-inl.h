@@ -1025,7 +1025,7 @@ inline void Environment::SetInstanceMethod(v8::Local<v8::FunctionTemplate> that,
 }
 
 void Environment::AddCleanupHook(void (*fn)(void*), void* arg) {
-  auto insertion_info = cleanup_hooks_.emplace(CleanupHookCallback {
+  /*auto insertion_info =*/ cleanup_hooks_.emplace(CleanupHookCallback {
     fn, arg, cleanup_hook_counter_++
   });
   // Make sure there was no existing element with these values.
