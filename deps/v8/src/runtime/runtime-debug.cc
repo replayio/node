@@ -966,7 +966,7 @@ static std::string GetStackLocation(Isolate* isolate) {
   return std::string(location);
 }
 
-std::string RecordReplayAssertScriptedCaller(Isolate* isolate, const char* aWhy) {
+void RecordReplayAssertScriptedCaller(Isolate* isolate, const char* aWhy) {
   if (recordreplay::IsRecordingOrReplaying()) {
     std::string location = GetStackLocation(isolate);
     recordreplay::Assert("ScriptedCaller %s %s", aWhy, location.c_str());

@@ -202,8 +202,8 @@ Object SetLocalDateValue(Isolate* isolate, Handle<JSDate> date,
 
 }  // namespace
 
-extern std::string RecordReplayAssertScriptedCaller(Isolate* isolate,
-                                                    const char* aWhy);
+extern void RecordReplayAssertScriptedCaller(Isolate* isolate,
+                                             const char* aWhy);
 
 // ES #sec-date-constructor
 BUILTIN(DateConstructor) {
