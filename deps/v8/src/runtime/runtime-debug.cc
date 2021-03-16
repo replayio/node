@@ -920,7 +920,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
-std::string GetStackLocation(Isolate* isolate) {
+static std::string GetStackLocation(Isolate* isolate) {
   char location[1024];
   strcpy(location, "<no frame>");
   for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
@@ -964,6 +964,11 @@ std::string GetStackLocation(Isolate* isolate) {
   }
 
   return std::string(location);
+}
+
+std::string RecordReplayAssertScriptedCaller(Isolate* isolate, const char* aWhy) {
+  std::string location = GetStackLocation(isolate);
+  recordreplay::Assert("ScriptedCaller %s %s", aWhy, location.c_str());
 }
 
 // Locations for each assertion site, filled in lazily.
