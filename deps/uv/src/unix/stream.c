@@ -1113,6 +1113,8 @@ static int uv__stream_recv_cmsg(uv_stream_t* stream, struct msghdr* msg) {
 # pragma clang diagnostic ignored "-Wvla-extension"
 #endif
 
+extern void V8RecordReplayAssert(const char* format, ...);
+
 static void uv__read(uv_stream_t* stream) {
   uv_buf_t buf;
   ssize_t nread;
@@ -1152,6 +1154,7 @@ static void uv__read(uv_stream_t* stream) {
 
     if (!is_ipc) {
       do {
+        V8RecordReplayAssert("uv__read read %d %lu", uv__stream_fd(stream), buf.len);
         nread = read(uv__stream_fd(stream), buf.base, buf.len);
       }
       while (nread < 0 && errno == EINTR);
