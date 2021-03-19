@@ -2634,9 +2634,9 @@ static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
 // Information about breakpoints that have been sent to the record replay driver.
 struct BreakpointInfo {
   std::string function_id_;
-  int offset_;
-  BreakpointInfo(const std::string& function_id, int offset)
-    : function_id_(function_id), offset_(offset) {}
+  int bytecode_offset_;
+  BreakpointInfo(const std::string& function_id, int bytecode_offset)
+    : function_id_(function_id), bytecode_offset_(bytecode_offset) {}
 };
 static std::unordered_map<std::string, BreakpointInfo> gBreakpoints;
 
@@ -2646,13 +2646,41 @@ static std::string BreakpointKey(int script_id, int line, int column) {
   return os.str();
 }
 
+// Inverse of gBreakpoints mapping.
+struct BreakpointPosition {
+  int line_;
+  int column_;
+  BreakpointPosition(int line, int column)
+    : line_(line), column_(column) {}
+};
+static std::unordered_map<std::string, BreakpointPosition> gBreakpointPositions;
+
+static std::string BreakpointPositionKey(std::string function_id,
+                                         int bytecode_offset) {
+  std::ostringstream os;
+  os << function_id << ":" << bytecode_offset;
+  return os.str();
+}
+
 extern const char* InstrumentationSiteKind(int index);
 extern int InstrumentationSiteSourcePosition(int index);
+extern int InstrumentationSiteBytecodeOffset(int index);
 extern std::string GetRecordReplayFunctionId(Handle<SharedFunctionInfo> shared);
+
+static void GetInstrumentationSiteLocation(Handle<Script> script, int instrumentation_index,
+                                           int* pline, int* pcolumn) {
+  int source_position = InstrumentationSiteSourcePosition(instrumentation_index);
+  Script::PositionInfo info;
+  Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
+
+  // Use 1-indexed lines instead of 0-indexed.
+  *pline = info.line + 1;
+  *pcolumn = info.column;
+}
 
 static void ForEachInstrumentationOpInRange(
   Isolate* isolate, Handle<Object> params,
-  const std::function<void(Handle<Script> script, int instrumentation_index,
+  const std::function<void(Handle<Script> script, int bytecode_offset,
                            const std::string& function_id, int line, int column)> callback) {
   int script_id = GetSourceIdProperty(isolate, params);
   Handle<Script> script = GetScript(isolate, script_id);
@@ -2669,13 +2697,8 @@ static void ForEachInstrumentationOpInRange(
       return;
     }
 
-    int source_position = InstrumentationSiteSourcePosition(instrumentation_index);
-    Script::PositionInfo info;
-    Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
-
-    // Use 1-indexed lines instead of 0-indexed.
-    int line = info.line + 1;
-    int column = info.column;
+    int line, column;
+    GetInstrumentationSiteLocation(script, instrumentation_index, &line, &column);
 
     if (line < beginLine ||
         (line == beginLine && column < beginColumn) ||
@@ -2684,8 +2707,31 @@ static void ForEachInstrumentationOpInRange(
       return;
     }
 
+    int bytecode_offset = InstrumentationSiteBytecodeOffset(instrumentation_index);
+
     std::string function_id = GetRecordReplayFunctionId(shared);
-    callback(script, instrumentation_index, function_id, line, column);
+    callback(script, bytecode_offset, function_id, line, column);
+  });
+}
+
+static void GenerateBreakpointInfo(Isolate* isolate, Handle<Script> script) {
+  ForEachInstrumentationOp(isolate, script, [&](Handle<SharedFunctionInfo> shared,
+                                                int instrumentation_index) {
+    int line, column;
+    GetInstrumentationSiteLocation(script, instrumentation_index, &line, &column);
+
+    std::string function_id = GetRecordReplayFunctionId(shared);
+    int bytecode_offset = InstrumentationSiteBytecodeOffset(instrumentation_index);
+
+    std::string key = BreakpointKey(script->id(), line, column);
+    BreakpointInfo value(function_id, bytecode_offset);
+    gBreakpoints.insert(std::pair<std::string, BreakpointInfo>
+                        (key, value));
+
+    std::string positionKey = BreakpointPositionKey(function_id, bytecode_offset);
+    BreakpointPosition position(line, column);
+    gBreakpointPositions.insert(std::pair<std::string, BreakpointPosition>
+                                (positionKey, position));
   });
 }
 
@@ -2696,7 +2742,7 @@ static Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
   size_t numLines = 0;
 
   ForEachInstrumentationOpInRange(isolate, params,
-     [&](Handle<Script> script, int instrumentation_index,
+     [&](Handle<Script> script, int bytecode_offset,
          const std::string& function_id, int line, int column) {
     while ((size_t)line >= lineColumns.size()) {
       lineColumns.emplace_back();
@@ -2705,11 +2751,6 @@ static Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
       numLines++;
     }
     lineColumns[line].push_back(column);
-
-    std::string key = BreakpointKey(script->id(), line, column);
-    BreakpointInfo value(function_id, instrumentation_index);
-    gBreakpoints.insert(std::pair<std::string, BreakpointInfo>
-                        (key, value));
   });
 
   Handle<FixedArray> lineLocations = isolate->factory()->NewFixedArray(numLines);
@@ -2751,13 +2792,19 @@ Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
   std::string key = BreakpointKey(sourceId, line, column);
   auto iter = gBreakpoints.find(key);
   if (iter == gBreakpoints.end()) {
-    recordreplay::Print("Unknown location for RecordReplayConvertLocationToFunctionOffset, crashing.");
-    V8_IMMEDIATE_CRASH();
+    Handle<Script> script = GetScript(isolate, sourceId);
+    GenerateBreakpointInfo(isolate, script);
+
+    iter = gBreakpoints.find(key);
+    if (iter == gBreakpoints.end()) {
+      recordreplay::Print("Unknown location for RecordReplayConvertLocationToFunctionOffset, crashing.");
+      V8_IMMEDIATE_CRASH();
+    }
   }
 
   Handle<JSObject> rv = NewPlainObject(isolate);
   SetProperty(isolate, rv, "functionId", iter->second.function_id_.c_str());
-  SetProperty(isolate, rv, "offset", iter->second.offset_);
+  SetProperty(isolate, rv, "offset", iter->second.bytecode_offset_);
   return rv;
 }
 
@@ -2774,33 +2821,47 @@ static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isola
                                                                   Handle<Object> params) {
   Handle<Object> function_id_raw = GetProperty(isolate, params, "functionId");
 
-  std::unique_ptr<char[]> function_id = String::cast(*function_id_raw).ToCString();
+  std::unique_ptr<char[]> function_id_chars = String::cast(*function_id_raw).ToCString();
+  std::string function_id(function_id_chars.get());
   int script_id;
   int function_source_position;
-  ParseRecordReplayFunctionId(std::string(function_id.get()),
+  ParseRecordReplayFunctionId(function_id,
                               &script_id, &function_source_position);
 
   Handle<Object> offset_raw = GetProperty(isolate, params, "offset");
 
+  Handle<Script> script = GetScript(isolate, script_id);
+
   // The offset may or may not be present. If it isn't present then we parse the
   // function ID to get the source position, otherwise use the offset as the
   // instrumentation site to get the source position.
-  int source_position;
+  int line, column;
   if (offset_raw->IsUndefined()) {
-    source_position = function_source_position;
+    Script::PositionInfo info;
+    Script::GetPositionInfo(script, function_source_position, &info, Script::WITH_OFFSET);
+
+    // Use 1-indexed lines instead of 0-indexed.
+    line = info.line + 1;
+    column = info.column;
   } else {
-    int instrumentation_index = offset_raw->Number();
-    source_position = InstrumentationSiteSourcePosition(instrumentation_index);
+    int bytecode_offset = offset_raw->Number();
+
+    std::string key = BreakpointPositionKey(function_id, bytecode_offset);
+    auto iter = gBreakpointPositions.find(key);
+    if (iter == gBreakpointPositions.end()) {
+      GenerateBreakpointInfo(isolate, script);
+
+      iter = gBreakpointPositions.find(key);
+      if (iter == gBreakpointPositions.end()) {
+        recordreplay::Print("Unknown offset %s %d for RecordReplayConvertFunctionOffsetToLocation, crashing.",
+                            function_id.c_str(), bytecode_offset);
+        V8_IMMEDIATE_CRASH();
+      }
+    }
+
+    line = iter->second.line_;
+    column = iter->second.column_;
   }
-
-  Handle<Script> script = GetScript(isolate, script_id);
-
-  Script::PositionInfo info;
-  Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
-
-  // Use 1-indexed lines instead of 0-indexed.
-  int line = info.line + 1;
-  int column = info.column;
 
   Handle<JSObject> location = NewPlainObject(isolate);
   SetProperty(isolate, location, "sourceId", GetProtocolSourceId(isolate, script));
@@ -2816,7 +2877,7 @@ static Handle<Object> RecordReplayGetFunctionsInRange(Isolate* isolate,
                                                       Handle<Object> params) {
   std::set<std::string> functions;
   ForEachInstrumentationOpInRange(isolate, params,
-     [&](Handle<Script> script, int instrumentation_index,
+     [&](Handle<Script> script, int bytecode_offset,
          const std::string& function_id, int line, int column) {
     functions.insert(function_id);
   });

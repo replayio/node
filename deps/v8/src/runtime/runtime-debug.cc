@@ -1020,6 +1020,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
 struct InstrumentationSite {
   const char* kind_ = nullptr;
   int source_position_ = 0;
+  int bytecode_offset_ = 0;
 
   // Set on the first use of the instrumentation site.
   std::string function_id_;
@@ -1028,11 +1029,13 @@ struct InstrumentationSite {
 // Main thread only.
 static std::vector<InstrumentationSite> gInstrumentationSites;
 
-int RegisterInstrumentationSite(const char* kind, int source_position) {
+int RegisterInstrumentationSite(const char* kind, int source_position,
+                                int bytecode_offset) {
   CHECK(IsMainThread());
   InstrumentationSite site;
   site.kind_ = kind;
   site.source_position_ = source_position;
+  site.bytecode_offset_ = bytecode_offset;
   gInstrumentationSites.push_back(site);
   return gInstrumentationSites.size() - 1;
 }
@@ -1049,6 +1052,13 @@ int InstrumentationSiteSourcePosition(int index) {
   DCHECK(index < (int32_t)gInstrumentationSites.size());
   InstrumentationSite& site = gInstrumentationSites[index];
   return site.source_position_;
+}
+
+int InstrumentationSiteBytecodeOffset(int index) {
+  CHECK(IsMainThread());
+  DCHECK(index < (int32_t)gInstrumentationSites.size());
+  InstrumentationSite& site = gInstrumentationSites[index];
+  return site.bytecode_offset_;
 }
 
 extern void RecordReplayInstrument(const char* kind, const char* function, int offset);
@@ -1112,7 +1122,8 @@ RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
     site.function_id_ = GetRecordReplayFunctionId(shared);
   }
 
-  RecordReplayInstrument(site.kind_, site.function_id_.c_str(), index);
+  RecordReplayInstrument(site.kind_, site.function_id_.c_str(),
+                         site.bytecode_offset_);
 
   return ReadOnlyRoots(isolate).undefined_value();
 }

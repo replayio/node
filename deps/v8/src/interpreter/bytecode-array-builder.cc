@@ -20,7 +20,8 @@ namespace v8 {
 namespace internal {
 
 extern int RegisterAssertValueSite();
-extern int RegisterInstrumentationSite(const char* kind, int source_position);
+extern int RegisterInstrumentationSite(const char* kind, int source_position,
+                                       int bytecode_offset);
 extern bool ShouldEmitRecordReplayAssertValue();
 
 namespace interpreter {
@@ -1371,7 +1372,8 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayAssertValue() {
 BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayInstrumentation(const char* kind,
                                                                         int source_position) {
   if (recordreplay::IsRecordingOrReplaying() && IsMainThread()) {
-    int index = RegisterInstrumentationSite(kind, source_position);
+    int bytecode_offset = bytecode_array_writer_.size();
+    int index = RegisterInstrumentationSite(kind, source_position, bytecode_offset);
     OutputRecordReplayInstrumentation(index);
   }
   return *this;
