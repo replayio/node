@@ -973,14 +973,24 @@ void RecordReplayAssertScriptedCaller(Isolate* isolate, const char* aWhy) {
   }
 }
 
+// Assertion and instrumentation site indexes embedded in bytecodes are offset
+// by this value. This forces the bytecode emitter to always use four bytes to
+// encode the index, so that bytecode offsets will be stable between recording
+// and replaying (or different replays) even if the indexes themselves aren't.
+static const int BytecodeSiteOffset = 1 << 16;
+
 // Locations for each assertion site, filled in lazily.
-static std::vector<std::string> gAssertionSites;
+typedef std::vector<std::string> StringVector;
+static StringVector* gAssertionSites;
 
 int RegisterAssertValueSite() {
   CHECK(IsMainThread());
-  int index = gAssertionSites.size();
-  gAssertionSites.push_back("");
-  return index;
+  if (!gAssertionSites) {
+    gAssertionSites = new StringVector();
+  }
+  int index = (int)gAssertionSites->size();
+  gAssertionSites->push_back("");
+  return index + BytecodeSiteOffset;
 }
 
 extern std::string RecordReplayBasicValueContents(Handle<Object> value);
@@ -1003,8 +1013,9 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
     return *value;
   }
 
-  CHECK(index < (int)gAssertionSites.size());
-  std::string& location = gAssertionSites[index];
+  index -= BytecodeSiteOffset;
+  CHECK(gAssertionSites && (size_t)index < gAssertionSites->size());
+  std::string& location = (*gAssertionSites)[index];
 
   if (!location.length()) {
     location = GetStackLocation(isolate);
@@ -1027,7 +1038,8 @@ struct InstrumentationSite {
 };
 
 // Main thread only.
-static std::vector<InstrumentationSite> gInstrumentationSites;
+typedef std::vector<InstrumentationSite> InstrumentationSiteVector;
+static InstrumentationSiteVector* gInstrumentationSites;
 
 int RegisterInstrumentationSite(const char* kind, int source_position,
                                 int bytecode_offset) {
@@ -1036,28 +1048,35 @@ int RegisterInstrumentationSite(const char* kind, int source_position,
   site.kind_ = kind;
   site.source_position_ = source_position;
   site.bytecode_offset_ = bytecode_offset;
-  gInstrumentationSites.push_back(site);
-  return gInstrumentationSites.size() - 1;
+  if (!gInstrumentationSites) {
+    gInstrumentationSites = new InstrumentationSiteVector();
+  }
+  int index = (int)gInstrumentationSites->size();
+  gInstrumentationSites->push_back(site);
+  return index + BytecodeSiteOffset;
 }
 
 const char* InstrumentationSiteKind(int index) {
   CHECK(IsMainThread());
-  DCHECK(index < (int32_t)gInstrumentationSites.size());
-  InstrumentationSite& site = gInstrumentationSites[index];
+  index -= BytecodeSiteOffset;
+  CHECK((size_t)index < gInstrumentationSites->size());
+  InstrumentationSite& site = (*gInstrumentationSites)[index];
   return site.kind_;
 }
 
 int InstrumentationSiteSourcePosition(int index) {
   CHECK(IsMainThread());
-  DCHECK(index < (int32_t)gInstrumentationSites.size());
-  InstrumentationSite& site = gInstrumentationSites[index];
+  index -= BytecodeSiteOffset;
+  CHECK((size_t)index < gInstrumentationSites->size());
+  InstrumentationSite& site = (*gInstrumentationSites)[index];
   return site.source_position_;
 }
 
 int InstrumentationSiteBytecodeOffset(int index) {
   CHECK(IsMainThread());
-  DCHECK(index < (int32_t)gInstrumentationSites.size());
-  InstrumentationSite& site = gInstrumentationSites[index];
+  index -= BytecodeSiteOffset;
+  CHECK((size_t)index < gInstrumentationSites->size());
+  InstrumentationSite& site = (*gInstrumentationSites)[index];
   return site.bytecode_offset_;
 }
 
@@ -1114,8 +1133,9 @@ RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
     return ReadOnlyRoots(isolate).undefined_value();
   }
 
-  DCHECK(index < (int32_t)gInstrumentationSites.size());
-  InstrumentationSite& site = gInstrumentationSites[index];
+  index -= BytecodeSiteOffset;
+  CHECK((size_t)index < gInstrumentationSites->size());
+  InstrumentationSite& site = (*gInstrumentationSites)[index];
 
   if (!site.function_id_.length()) {
     Handle<SharedFunctionInfo> shared(function->shared(), isolate);
