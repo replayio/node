@@ -138,9 +138,14 @@ RUNTIME_FUNCTION(Runtime_DebugBreakAtEntry) {
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
+extern "C" void V8RecordReplayOnDebuggerStatement();
+
 RUNTIME_FUNCTION(Runtime_HandleDebuggerStatement) {
   SealHandleScope shs(isolate);
   DCHECK_EQ(0, args.length());
+  if (recordreplay::IsRecordingOrReplaying()) {
+    V8RecordReplayOnDebuggerStatement();
+  }
   if (isolate->debug()->break_points_active()) {
     isolate->debug()->HandleDebugBreak(kIgnoreIfTopFrameBlackboxed);
   }
