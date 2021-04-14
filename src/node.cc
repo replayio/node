@@ -1034,7 +1034,7 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
 
   void* handle = dlopen(driver, RTLD_LAZY);
   if (!handle) {
-    fprintf(stderr, "Loading Record Replay driver failed.\n");
+    fprintf(stderr, "Loading Record Replay driver failed (%s).\n", dlerror());
     return;
   }
 
