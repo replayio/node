@@ -1026,10 +1026,15 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
     return;
   }
 
-  const char* dispatchAddress = getenv("RECORD_REPLAY_DISPATCH");
+  const char* dispatchAddress = getenv("RECORD_REPLAY_SERVER");
   if (!dispatchAddress) {
-    fprintf(stderr, "RECORD_REPLAY_DISPATCH not set.\n");
-    return;
+    // 4/21/2021: For backwards compatibility we also check an older env
+    // var used to indicate the dispatch server.
+    dispatchAddress = getenv("RECORD_REPLAY_DISPATCH");
+    if (!dispatchAddress) {
+      fprintf(stderr, "RECORD_REPLAY_SERVER not set.\n");
+      return;
+    }
   }
 
   void* handle = dlopen(driver, RTLD_LAZY);
