@@ -277,8 +277,10 @@ InterpreterCompilationJob::Status InterpreterCompilationJob::DoFinalizeJobImpl(
   }
 
 #ifdef DEBUG
-  CheckAndPrintBytecodeMismatch(
-      isolate, handle(Script::cast(shared_info->script()), isolate), bytecodes);
+  // Record/replay instrumentation site indexes will differ when scripts
+  // are recompiled.
+  //CheckAndPrintBytecodeMismatch(
+  //    isolate, handle(Script::cast(shared_info->script()), isolate), bytecodes);
 #endif
 
   return SUCCEEDED;

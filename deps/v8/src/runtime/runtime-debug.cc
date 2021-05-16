@@ -876,51 +876,69 @@ RUNTIME_FUNCTION(Runtime_ProfileCreateSnapshotDataBlob) {
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
-extern uint64_t* RecordReplayProgressCounter();
+extern uint64_t* gProgressCounter;
+extern bool gRecordReplayAssertValues;
 
-static inline void RecordReplayIncrementProgressCounter() {
-  // Note: The counter can be null, depending on the thread.
-  uint64_t* counter = RecordReplayProgressCounter();
-  if (counter) {
-    ++*counter;
-  }
+// Define this to check preconditions for using record/replay opcodes.
+//#define RECORD_REPLAY_CHECK_OPCODES
+
+#ifdef RECORD_REPLAY_CHECK_OPCODES
+
+extern bool RecordReplayIgnoreScript(Script script);
+
+extern "C" bool V8RecordReplayHasDivergedFromRecording();
+
+static inline bool RecordReplayBytecodeAllowed() {
+  return IsMainThread()
+      && (!recordreplay::AreEventsDisallowed() || V8RecordReplayHasDivergedFromRecording());
 }
 
-extern bool RecordReplayIgnoreScript(Handle<Script> script);
-extern bool ShouldEmitRecordReplayAssertValue();
+#else // !RECORD_REPLAY_CHECK_OPCODES
+
+static inline bool RecordReplayIgnoreScript(Script script) {
+  return false;
+}
+
+static inline bool RecordReplayBytecodeAllowed() {
+  return true;
+}
+
+#endif // !RECORD_REPLAY_CHECK_OPCODES
 
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
+  ++*gProgressCounter;
+
+  if (!gRecordReplayAssertValues) {
+    return ReadOnlyRoots(isolate).undefined_value();
+  }
+
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
 
-  if (recordreplay::AreEventsDisallowed() ||
-      !IsMainThread()) {
-    return ReadOnlyRoots(isolate).undefined_value();
-  }
-
   Handle<SharedFunctionInfo> shared(function->shared(), isolate);
   Handle<Script> script(Script::cast(shared->script()), isolate);
+  CHECK(!RecordReplayIgnoreScript(*script));
 
-  if (RecordReplayIgnoreScript(script)) {
-    return ReadOnlyRoots(isolate).undefined_value();
+  Script::PositionInfo info;
+  Script::GetPositionInfo(script, shared->StartPosition(), &info, Script::WITH_OFFSET);
+
+  std::string name;
+  if (script->name().IsUndefined()) {
+    name = "<none>";
+  } else {
+    std::unique_ptr<char[]> name_raw = String::cast(script->name()).ToCString();
+    name = name_raw.get();
   }
 
-  RecordReplayIncrementProgressCounter();
-
-  if (ShouldEmitRecordReplayAssertValue()) {
-    Script::PositionInfo info;
-    Script::GetPositionInfo(script, shared->StartPosition(), &info, Script::WITH_OFFSET);
-
-    if (script->name().IsUndefined()) {
-      recordreplay::Assert("ExecutionProgress <none>:%d:%d",
-                          info.line + 1, info.column);
-    } else {
-      std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
-      recordreplay::Assert("ExecutionProgress %s:%d:%d",
-                          name.get(), info.line + 1, info.column);
-    }
+  if (!RecordReplayBytecodeAllowed()) {
+    recordreplay::Diagnostic("RecordReplayAssertExecutionProgress not allowed %s:%d:%d",
+                             name.c_str(), info.line + 1, info.column);
   }
+  CHECK(RecordReplayBytecodeAllowed());
+
+  recordreplay::Assert("ExecutionProgress %s:%d:%d",
+                       name.c_str(), info.line + 1, info.column);
 
   return ReadOnlyRoots(isolate).undefined_value();
 }
@@ -934,7 +952,7 @@ static std::string GetStackLocation(Isolate* isolate) {
       continue;
     }
     std::vector<FrameSummary> frames;
-    StandardFrame::cast(frame)->Summarize(&frames);
+    CommonFrame::cast(frame)->Summarize(&frames);
     auto& summary = frames.back();
     CHECK(summary.IsJavaScript());
     auto const& js = summary.AsJavaScript();
@@ -985,23 +1003,29 @@ void RecordReplayAssertScriptedCaller(Isolate* isolate, const char* aWhy) {
 static const int BytecodeSiteOffset = 1 << 16;
 
 // Locations for each assertion site, filled in lazily.
-typedef std::vector<std::string> StringVector;
-static StringVector* gAssertionSites;
+struct AssertionSite {
+  std::string desc_;
+  int source_position_;
+  std::string location_;
+};
+typedef std::vector<AssertionSite> AssertionSiteVector;
+static AssertionSiteVector* gAssertionSites;
 
-int RegisterAssertValueSite() {
+int RegisterAssertValueSite(const std::string& desc, int source_position) {
   CHECK(IsMainThread());
   if (!gAssertionSites) {
-    gAssertionSites = new StringVector();
+    gAssertionSites = new AssertionSiteVector();
   }
   int index = (int)gAssertionSites->size();
-  gAssertionSites->push_back("");
+  gAssertionSites->push_back({ desc, source_position, "" });
   return index + BytecodeSiteOffset;
 }
 
 extern std::string RecordReplayBasicValueContents(Handle<Object> value);
 
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
-  CHECK(ShouldEmitRecordReplayAssertValue());
+  CHECK(gRecordReplayAssertValues);
+  CHECK(RecordReplayBytecodeAllowed());
 
   HandleScope scope(isolate);
   DCHECK_EQ(3, args.length());
@@ -1009,27 +1033,33 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
   CONVERT_NUMBER_CHECKED(int32_t, index, Int32, args[1]);
   CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
 
-  if (recordreplay::AreEventsDisallowed() || !IsMainThread()) {
-    return *value;
-  }
-
   Handle<Script> script(Script::cast(function->shared().script()), isolate);
-  if (RecordReplayIgnoreScript(script)) {
-    return *value;
-  }
+  CHECK(!RecordReplayIgnoreScript(*script));
 
   index -= BytecodeSiteOffset;
   CHECK(gAssertionSites && (size_t)index < gAssertionSites->size());
-  std::string& location = (*gAssertionSites)[index];
+  AssertionSite& site = (*gAssertionSites)[index];
 
-  if (!location.length()) {
-    location = GetStackLocation(isolate);
+  if (!site.location_.length()) {
+    Script::PositionInfo info;
+    Script::GetPositionInfo(script, site.source_position_, &info, Script::WITH_OFFSET);
+
+    char buf[1024];
+    if (script->name().IsUndefined()) {
+      snprintf(buf, sizeof(buf), "<none>:%d:%d", info.line + 1, info.column);
+    } else {
+      std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+      snprintf(buf, sizeof(buf), "%s:%d:%d", name.get(), info.line + 1, info.column);
+    }
+    buf[sizeof(buf) - 1] = 0;
+
+    site.location_ = buf;
   }
 
   std::string contents = RecordReplayBasicValueContents(value);
 
-  recordreplay::Assert("%s Value %s", location.c_str(), contents.c_str());
-
+  recordreplay::Assert("%s %s Value %s", site.location_.c_str(),
+                       site.desc_.c_str(),contents.c_str());
   return *value;
 }
 
@@ -1061,28 +1091,28 @@ int RegisterInstrumentationSite(const char* kind, int source_position,
   return index + BytecodeSiteOffset;
 }
 
-const char* InstrumentationSiteKind(int index) {
+static InstrumentationSite& GetInstrumentationSite(const char* why, int index) {
   CHECK(IsMainThread());
+  CHECK(gInstrumentationSites);
   index -= BytecodeSiteOffset;
+  if ((size_t)index >= gInstrumentationSites->size()) {
+    recordreplay::Diagnostic("BadInstrumentationSite %s %d %d",
+                             why, index, gInstrumentationSites->size());
+  }
   CHECK((size_t)index < gInstrumentationSites->size());
-  InstrumentationSite& site = (*gInstrumentationSites)[index];
-  return site.kind_;
+  return (*gInstrumentationSites)[index];
+}
+
+const char* InstrumentationSiteKind(int index) {
+  return GetInstrumentationSite("Kind", index).kind_;
 }
 
 int InstrumentationSiteSourcePosition(int index) {
-  CHECK(IsMainThread());
-  index -= BytecodeSiteOffset;
-  CHECK((size_t)index < gInstrumentationSites->size());
-  InstrumentationSite& site = (*gInstrumentationSites)[index];
-  return site.source_position_;
+  return GetInstrumentationSite("SourcePosition", index).source_position_;
 }
 
 int InstrumentationSiteBytecodeOffset(int index) {
-  CHECK(IsMainThread());
-  index -= BytecodeSiteOffset;
-  CHECK((size_t)index < gInstrumentationSites->size());
-  InstrumentationSite& site = (*gInstrumentationSites)[index];
-  return site.bytecode_offset_;
+  return GetInstrumentationSite("BytecodeOffset", index).bytecode_offset_;
 }
 
 extern void RecordReplayInstrument(const char* kind, const char* function, int offset);
@@ -1119,28 +1149,18 @@ std::string GetRecordReplayFunctionId(Handle<SharedFunctionInfo> shared) {
 void ParseRecordReplayFunctionId(const std::string& function_id,
                                  int* script_id, int* source_position) {
   const char* raw = function_id.c_str();
-  *script_id = atol(raw);
-  *source_position = atol(strchr(raw, ':') + 1);
+  *script_id = atoi(raw);
+  *source_position = atoi(strchr(raw, ':') + 1);
 }
 
-RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
-  HandleScope scope(isolate);
-  DCHECK_EQ(2, args.length());
-  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
-  CONVERT_NUMBER_CHECKED(int32_t, index, Int32, args[1]);
-
-  if (!IsMainThread()) {
-    return ReadOnlyRoots(isolate).undefined_value();
-  }
+static inline void OnInstrumentation(Isolate* isolate,
+                                     Handle<JSFunction> function, int32_t index) {
+  CHECK(RecordReplayBytecodeAllowed());
 
   Handle<Script> script(Script::cast(function->shared().script()), isolate);
-  if (RecordReplayIgnoreScript(script)) {
-    return ReadOnlyRoots(isolate).undefined_value();
-  }
+  CHECK(!RecordReplayIgnoreScript(*script));
 
-  index -= BytecodeSiteOffset;
-  CHECK((size_t)index < gInstrumentationSites->size());
-  InstrumentationSite& site = (*gInstrumentationSites)[index];
+  InstrumentationSite& site = GetInstrumentationSite("Callback", index);
 
   if (!site.function_id_.length()) {
     Handle<SharedFunctionInfo> shared(function->shared(), isolate);
@@ -1149,6 +1169,51 @@ RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
 
   RecordReplayInstrument(site.kind_, site.function_id_.c_str(),
                          site.bytecode_offset_);
+}
+
+extern bool gRecordReplayInstrumentationEnabled;
+
+RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
+  if (!gRecordReplayInstrumentationEnabled) {
+    return ReadOnlyRoots(isolate).undefined_value();
+  }
+
+  HandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+  CONVERT_NUMBER_CHECKED(int32_t, index, Int32, args[1]);
+
+  OnInstrumentation(isolate, function, index);
+
+  return ReadOnlyRoots(isolate).undefined_value();
+}
+
+extern int RecordReplayObjectId(Handle<Object> internal_object);
+
+static int gCurrentGeneratorId;
+
+int RecordReplayCurrentGeneratorIdRaw() {
+  return gCurrentGeneratorId;
+}
+
+RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentationGenerator) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(3, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+  CONVERT_NUMBER_CHECKED(int32_t, index, Int32, args[1]);
+  CONVERT_ARG_HANDLE_CHECKED(JSGeneratorObject, generator_object, 2);
+
+  // Note: RecordReplayObjectId calls have to occur in the same places when
+  // replaying as when recording (regardless of whether instrumentation is
+  // enabled) so that objects will be assigned consistent IDs.
+  CHECK(!gCurrentGeneratorId);
+  gCurrentGeneratorId = RecordReplayObjectId(generator_object);
+
+  if (gRecordReplayInstrumentationEnabled) {
+    OnInstrumentation(isolate, function, index);
+  }
+
+  gCurrentGeneratorId = 0;
 
   return ReadOnlyRoots(isolate).undefined_value();
 }

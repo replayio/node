@@ -3606,10 +3606,24 @@ void BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
 void BytecodeGraphBuilder::VisitRecordReplayInstrumentation() {
   PrepareEagerCheckpoint();
   Node* closure = GetFunctionClosure();
-  Node* index_slot = jsgraph()->Constant(bytecode_iterator().GetIndexOperand(0));
+  uint32_t index = bytecode_iterator().GetIndexOperand(0);
+  Node* index_slot = jsgraph()->Constant(index);
   const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayInstrumentation);
 
   Node* node = NewNode(op, closure, index_slot);
+  environment()->RecordAfterState(node, Environment::kAttachFrameState);
+}
+
+void BytecodeGraphBuilder::VisitRecordReplayInstrumentationGenerator() {
+  PrepareEagerCheckpoint();
+  Node* closure = GetFunctionClosure();
+  uint32_t index = bytecode_iterator().GetIndexOperand(0);
+  Node* index_slot = jsgraph()->Constant(index);
+  Node* generator = environment()->LookupRegister(
+      bytecode_iterator().GetRegisterOperand(1));
+  const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayInstrumentationGenerator);
+
+  Node* node = NewNode(op, closure, index_slot, generator);
   environment()->RecordAfterState(node, Environment::kAttachFrameState);
 }
 

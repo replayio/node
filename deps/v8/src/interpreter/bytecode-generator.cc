@@ -29,6 +29,9 @@
 
 namespace v8 {
 namespace internal {
+
+extern bool RecordReplayIgnoreScript(Script script);
+
 namespace interpreter {
 
 // Scoped class tracking context objects created by the visitor. Represents
@@ -1052,7 +1055,9 @@ BytecodeGenerator::BytecodeGenerator(
     std::vector<FunctionLiteral*>* eager_inner_literals)
     : zone_(compile_zone),
       builder_(zone(), info->num_parameters_including_this(),
-               info->scope()->num_stack_slots(), info->feedback_vector_spec(),
+               info->scope()->num_stack_slots(),
+               info->flags().record_replay_ignore(),
+               info->feedback_vector_spec(),
                info->SourcePositionRecordingMode()),
       info_(info),
       ast_string_constants_(ast_string_constants),
@@ -1113,6 +1118,10 @@ using NullContextScopeFor = typename NullContextScopeHelper<Isolate>::Type;
 template <typename LocalIsolate>
 Handle<BytecodeArray> BytecodeGenerator::FinalizeBytecode(
     LocalIsolate* isolate, Handle<Script> script) {
+  if (recordreplay::IsRecordingOrReplaying() && IsMainThread()) {
+    CHECK(info()->flags().record_replay_ignore() == RecordReplayIgnoreScript(*script));
+  }
+
   DCHECK_EQ(ThreadId::Current(), isolate->thread_id());
 #ifdef DEBUG
   // Unoptimized compilation should be context-independent. Verify that we don't
@@ -1355,10 +1364,14 @@ void BytecodeGenerator::GenerateBytecodeBody() {
     int num_parameters = closure_scope()->num_parameters();
     for (int i = 0; i < num_parameters; i++) {
       Register parameter(builder()->Parameter(i));
-      builder()->LoadAccumulatorWithRegister(parameter).RecordReplayAssertValue();
+      builder()->LoadAccumulatorWithRegister(parameter).RecordReplayAssertValue("Parameter");
     }
 
-    builder()->RecordReplayInstrumentation("main");
+    if (IsResumableFunction(literal->kind())) {
+      builder()->RecordReplayInstrumentationGenerator("generator", generator_object());
+    } else {
+      builder()->RecordReplayInstrumentation("main");
+    }
   }
 
   // Increment the function-scope block coverage counter.
@@ -1799,6 +1812,13 @@ void BytecodeGenerator::BuildTryCatch(
   }
   try_control_builder.EndTry();
 
+  // Unlike in gecko, we need to increment the progress counter at catch
+  // blocks so we can detect when exceptions are initially thrown vs. being
+  // rethrown. See Runtime_UnwindAndFindExceptionHandler.
+  builder()->RecordReplayIncExecutionProgressCounter();
+
+  builder()->RecordReplayAssertValue("BeginCatch");
+
   catch_body_func(context);
 
   try_control_builder.EndCatch();
@@ -1859,6 +1879,10 @@ void BytecodeGenerator::BuildTryFinally(
   // Pending message object is saved on entry.
   try_control_builder.BeginFinally();
   Register message = context;  // Reuse register.
+
+  // See BuildTryCatch for why we increment the progress counter here.
+  builder()->RecordReplayIncExecutionProgressCounter();
+  builder()->RecordReplayAssertValue("BeginFinally");
 
   // Clear message object as we enter the finally block.
   builder()->LoadTheHole().SetPendingMessage().StoreAccumulatorInRegister(
@@ -3221,6 +3245,8 @@ void BytecodeGenerator::BuildReturn(int source_position) {
   if (info()->flags().collect_type_profile()) {
     builder()->CollectTypeProfile(info()->literal()->return_position());
   }
+  builder()->SetStatementPosition(source_position,
+                                  /* record_replay_breakpoint */ false);
   builder()->RecordReplayInstrumentation("exit");
   builder()->SetReturnPosition(source_position, info()->literal());
   builder()->Return();
@@ -4209,7 +4235,7 @@ void BytecodeGenerator::BuildSuspendPoint(int position) {
   builder()->ResumeGenerator(generator_object(), registers);
 
   builder()->RecordReplayIncExecutionProgressCounter();
-  builder()->RecordReplayInstrumentation("entry");
+  builder()->RecordReplayInstrumentationGenerator("entry", generator_object());
 }
 
 void BytecodeGenerator::VisitYield(Yield* expr) {

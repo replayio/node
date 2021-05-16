@@ -57,6 +57,8 @@
 namespace v8 {
 namespace internal {
 
+extern bool RecordReplayIgnoreScriptByURL(const char* url);
+
 namespace {
 
 bool IsForNativeContextIndependentCachingOnly(CodeKind kind) {
@@ -2437,11 +2439,21 @@ Handle<Script> NewScript(
 }
 
 MaybeHandle<SharedFunctionInfo> CompileScriptOnMainThread(
-    const UnoptimizedCompileFlags flags, Handle<String> source,
+    UnoptimizedCompileFlags flags, Handle<String> source,
     const Compiler::ScriptDetails& script_details,
     ScriptOriginOptions origin_options, NativesFlag natives,
     v8::Extension* extension, Isolate* isolate,
     IsCompiledScope* is_compiled_scope) {
+  if (recordreplay::IsRecordingOrReplaying()) {
+    Handle<Object> script_name;
+    if (script_details.name_obj.ToHandle(&script_name)) {
+      std::unique_ptr<char[]> name_cstr = String::cast(*script_name).ToCString();
+      if (RecordReplayIgnoreScriptByURL(name_cstr.get())) {
+        flags.set_record_replay_ignore(true);
+      }
+    }
+  }
+
   UnoptimizedCompileState compile_state(isolate);
   ParseInfo parse_info(isolate, flags, &compile_state);
   parse_info.set_extension(extension);

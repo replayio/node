@@ -113,7 +113,7 @@ V8_INLINE bool IsHighResolutionTimer(clockid_t clk_id) {
   // Avoid interacting with the system when recording/replaying.
   // Testing IsRecordingOrReplaying() here leads to link errors...
   return true;
-
+  /*
   // Limit duration of timer resolution measurement to 100 ms. If we cannot
   // measure timer resoltuion within this time, we assume a low resolution
   // timer.
@@ -130,6 +130,7 @@ V8_INLINE bool IsHighResolutionTimer(clockid_t clk_id) {
     } while (delta == 0);
   } while (delta > 1 && start < end);
   return delta <= 1;
+  */
 }
 
 #elif V8_OS_WIN

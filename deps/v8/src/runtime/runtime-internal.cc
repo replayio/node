@@ -171,12 +171,27 @@ RUNTIME_FUNCTION(Runtime_ThrowInvalidTypedArrayAlignment) {
 
 extern void RecordReplayOnExceptionUnwind(Isolate* isolate);
 
+extern uint64_t* gProgressCounter;
+
+static uint64_t gLastExceptionUnwindProgress;
+
 RUNTIME_FUNCTION(Runtime_UnwindAndFindExceptionHandler) {
   SealHandleScope shs(isolate);
   DCHECK_EQ(0, args.length());
 
-  if (recordreplay::IsRecordingOrReplaying()) {
+  // The number of calls made when unwinding a given exception can vary when
+  // recording vs. replaying, presumably due to different JIT behavior.
+  // We only need to notify the record/replay driver the first time an
+  // exception is thrown, and not on subsequent frame unwinds. We detect this
+  // by looking at the progress counter, which is incremented whenever entering
+  // a script, try/catch block, or try/finally block. If the progress counter
+  // when unwinding is the same as the last time when unwinding, this is a
+  // frame unwind instead of an initial throw and we can ignore it.
+  if (recordreplay::IsRecordingOrReplaying() &&
+      IsMainThread() &&
+      *gProgressCounter != gLastExceptionUnwindProgress) {
     RecordReplayOnExceptionUnwind(isolate);
+    gLastExceptionUnwindProgress = *gProgressCounter;
   }
 
   return isolate->UnwindAndFindHandler();

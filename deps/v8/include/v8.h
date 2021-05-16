@@ -12112,33 +12112,35 @@ size_t SnapshotCreator::AddData(Local<T> object) {
 
 bool IsMainThread();
 
-namespace recordreplay {
+// Static container class for record/replay methods.
+class V8_EXPORT recordreplay {
+  public:
 
-void SetRecordingOrReplaying(void* handle);
-bool IsRecordingOrReplaying();
-bool IsRecording();
-bool IsReplaying();
+static void SetRecordingOrReplaying(void* handle);
+static bool IsRecordingOrReplaying();
+static bool IsRecording();
+static bool IsReplaying();
 
-void Print(const char* format, ...);
-void Diagnostic(const char* format, ...);
-void Assert(const char* format, ...);
-void AssertBytes(const char* why, const void* buf, size_t size);
+static void Print(const char* format, ...);
+static void Diagnostic(const char* format, ...);
+static void Assert(const char* format, ...);
+static void AssertBytes(const char* why, const void* buf, size_t size);
 
-uintptr_t RecordReplayValue(const char* why, uintptr_t v);
-void RecordReplayBytes(const char* why, void* buf, size_t size);
+static uintptr_t RecordReplayValue(const char* why, uintptr_t v);
+static void RecordReplayBytes(const char* why, void* buf, size_t size);
 
-size_t CreateOrderedLock(const char* name);
-void OrderedLock(int lock);
-void OrderedUnlock(int lock);
+static size_t CreateOrderedLock(const char* name);
+static void OrderedLock(int lock);
+static void OrderedUnlock(int lock);
 
-void InvalidateRecording(const char* why);
-void NewCheckpoint();
+static void InvalidateRecording(const char* why);
+static void NewCheckpoint();
 
-bool AreEventsDisallowed();
-void BeginPassThroughEvents();
-void EndPassThroughEvents();
-void BeginDisallowEvents();
-void EndDisallowEvents();
+static bool AreEventsDisallowed();
+static void BeginPassThroughEvents();
+static void EndPassThroughEvents();
+static void BeginDisallowEvents();
+static void EndDisallowEvents();
 
 struct AutoPassThroughEvents {
   AutoPassThroughEvents() { BeginPassThroughEvents(); }
@@ -12150,12 +12152,12 @@ struct AutoDisallowEvents {
   ~AutoDisallowEvents() { EndDisallowEvents(); }
 };
 
-void RegisterPointer(void* ptr);
-void UnregisterPointer(void* ptr);
-int PointerId(void* ptr);
-void* IdPointer(int id);
+static void RegisterPointer(void* ptr);
+static void UnregisterPointer(void* ptr);
+static int PointerId(void* ptr);
+static void* IdPointer(int id);
 
-} // namespace recordreplay
+}; // class recordreplay
 
 }  // namespace v8
 

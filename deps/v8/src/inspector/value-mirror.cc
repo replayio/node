@@ -414,9 +414,22 @@ String16 descriptionForEntry(v8::Local<v8::Context> context,
   return key.length() ? ("{" + key + " => " + value + "}") : value;
 }
 
+extern "C" bool V8RecordReplayHasDivergedFromRecording();
+
 String16 descriptionForFunction(v8::Local<v8::Context> context,
                                 v8::Local<v8::Function> value) {
   v8::Isolate* isolate = context->GetIsolate();
+
+  // When recording/replaying we might be in a situation where events are
+  // disallowed, e.g. we are constructing the call frames when replaying in
+  // a place where this didn't occur when recording. In this case we don't
+  // want to do anything that calls back into script, so use the default
+  // object description. Call ToString() in other cases to avoid perturbing
+  // the inspector's behavior for other users.
+  if (v8::recordreplay::AreEventsDisallowed() && !V8RecordReplayHasDivergedFromRecording()) {
+    return descriptionForObject(isolate, value);
+  }
+
   v8::TryCatch tryCatch(isolate);
   v8::Local<v8::String> description;
   if (!value->ToString(context).ToLocal(&description)) {
@@ -1426,8 +1439,9 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
   }
   bool shouldSkipProto = internalType == V8InternalValueType::kScopeList;
 
-  bool formatAccessorsAsProperties = false;
-  //    clientFor(context)->formatAccessorsAsProperties(object);
+  bool formatAccessorsAsProperties =
+      !V8RecordReplayHasDivergedFromRecording() &&
+      clientFor(context)->formatAccessorsAsProperties(object);
 
   if (object->IsArrayBuffer()) {
     addTypedArrayViews(context, object.As<v8::ArrayBuffer>(), accumulator);
@@ -1799,15 +1813,15 @@ std::unique_ptr<ValueMirror> ValueMirror::create(v8::Local<v8::Context> context,
   if (v8::debug::WasmValue::IsWasmValue(value)) {
     return std::make_unique<WasmValueMirror>(value.As<v8::debug::WasmValue>());
   }
-  /*
-  auto clientSubtype = (value->IsUndefined() || value->IsObject())
-                           ? clientFor(context)->valueSubtype(value)
-                           : nullptr;
-  if (clientSubtype) {
-    String16 subtype = toString16(clientSubtype->string());
-    return clientMirror(context, value, subtype);
+  if (!V8RecordReplayHasDivergedFromRecording()) {
+    auto clientSubtype = (value->IsUndefined() || value->IsObject())
+                            ? clientFor(context)->valueSubtype(value)
+                            : nullptr;
+    if (clientSubtype) {
+      String16 subtype = toString16(clientSubtype->string());
+      return clientMirror(context, value, subtype);
+    }
   }
-  */
   if (value->IsUndefined()) {
     return std::make_unique<PrimitiveValueMirror>(
         value, RemoteObject::TypeEnum::Undefined);

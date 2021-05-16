@@ -503,6 +503,10 @@ domain Debugger
     returns
       array of CallFrame callFrames
 
+  command getPendingException
+    returns
+      Runtime.RemoteObject exception
+
   # Fired when the virtual machine stopped on breakpoint or exception or any other stop criteria.
   event paused
     parameters

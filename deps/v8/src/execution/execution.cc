@@ -365,7 +365,6 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
       Address recv = params.receiver->ptr();
       Address** argv = reinterpret_cast<Address**>(params.argv);
       RuntimeCallTimerScope timer(isolate, RuntimeCallCounterId::kJS_Execution);
-
       value = Object(stub_entry.Call(isolate->isolate_data()->isolate_root(),
                                      orig_func, func, recv, params.argc, argv));
     } else {
@@ -381,7 +380,6 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
           JSEntryFunction::FromAddress(isolate, code->InstructionStart());
 
       RuntimeCallTimerScope timer(isolate, RuntimeCallCounterId::kJS_Execution);
-
       value = Object(stub_entry.Call(isolate->isolate_data()->isolate_root(),
                                      params.microtask_queue));
     }

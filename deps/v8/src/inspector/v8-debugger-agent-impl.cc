@@ -1437,6 +1437,24 @@ Response V8DebuggerAgentImpl::getCallFrames(
   return currentCallFrames(out_callFrames);
 }
 
+extern "C" void V8RecordReplayGetCurrentException(v8::MaybeLocal<v8::Value>* exception);
+
+Response V8DebuggerAgentImpl::getPendingException(
+    std::unique_ptr<RemoteObject>* out_exception) {
+  v8::MaybeLocal<v8::Value> maybe_exception;
+  V8RecordReplayGetCurrentException(&maybe_exception);
+
+  CHECK(!maybe_exception.IsEmpty());
+
+  v8::Local<v8::Context> context = m_isolate->GetCurrentContext();
+  v8::Local<v8::Value> exception = maybe_exception.ToLocalChecked();
+  std::unique_ptr<RemoteObject> obj =
+    m_session->wrapObject(context, exception, String16(), false);
+
+  *out_exception = std::move(obj);
+  return Response::Success();
+}
+
 Response V8DebuggerAgentImpl::currentCallFrames(
     std::unique_ptr<Array<CallFrame>>* result) {
   if (!isPaused()) {

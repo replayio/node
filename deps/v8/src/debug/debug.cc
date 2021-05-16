@@ -2528,18 +2528,22 @@ static Handle<JSObject> NewPlainObject(Isolate* isolate) {
 ////////////////////////////////////////////////////////////////////////////////
 
 // Map ScriptId => Script. We keep all scripts around forever when recording/replaying.
-static std::unordered_map<int, Eternal<Value>> gRecordReplayScripts;
+typedef std::unordered_map<int, Eternal<Value>> ScriptIdMap;
+static ScriptIdMap* gRecordReplayScripts;
 
 static int GetSourceIdProperty(Isolate* isolate, Handle<Object> obj) {
   Handle<Object> sourceIdStr = GetProperty(isolate, obj, "sourceId");
   std::unique_ptr<char[]> sourceIdText = String::cast(*sourceIdStr).ToCString();
-  return atol(sourceIdText.get());
+  return atoi(sourceIdText.get());
 }
 
 // Get the script from an ID.
-Handle<Script> GetScript(Isolate* isolate, int script_id) {
-  auto iter = gRecordReplayScripts.find(script_id);
-  CHECK(iter != gRecordReplayScripts.end());
+static MaybeHandle<Script> MaybeGetScript(Isolate* isolate, int script_id) {
+  CHECK(gRecordReplayScripts);
+  auto iter = gRecordReplayScripts->find(script_id);
+  if (iter == gRecordReplayScripts->end()) {
+    return MaybeHandle<Script>();
+  }
 
   Local<v8::Value> scriptValue = iter->second.Get((v8::Isolate*)isolate);
   Handle<Object> scriptObj = Utils::OpenHandle(*scriptValue);
@@ -2548,13 +2552,31 @@ Handle<Script> GetScript(Isolate* isolate, int script_id) {
   return script;
 }
 
+// Get the script from an ID.
+Handle<Script> GetScript(Isolate* isolate, int script_id) {
+  return MaybeGetScript(isolate, script_id).ToHandleChecked();
+}
+
 Handle<Object> RecordReplayGetSourceContents(Isolate* isolate, Handle<Object> params) {
   int script_id = GetSourceIdProperty(isolate, params);
   Handle<Script> script = GetScript(isolate, script_id);
 
+  Script::PositionInfo info;
+  Script::GetPositionInfo(script, 0, &info, Script::WITH_OFFSET);
+
+  // Pad the start of the source with lines to adjust for its starting position.
+  // Note that we don't pad the starting line with blank spaces so that columns
+  // match up, in order to match the spidermonkey implementation.
+  std::string padded_source;
+  for (int i = 0; i < info.line; i++) {
+    padded_source += "\n";
+  }
+
   Handle<String> source(String::cast(script->source()), isolate);
+  padded_source += source->ToCString().get();
+
   Handle<JSObject> obj = NewPlainObject(isolate);
-  SetProperty(isolate, obj, "contents", source);
+  SetProperty(isolate, obj, "contents", padded_source.c_str());
   SetProperty(isolate, obj, "contentType", "text/javascript");
   return obj;
 }
@@ -2638,7 +2660,8 @@ struct BreakpointInfo {
   BreakpointInfo(const std::string& function_id, int bytecode_offset)
     : function_id_(function_id), bytecode_offset_(bytecode_offset) {}
 };
-static std::unordered_map<std::string, BreakpointInfo> gBreakpoints;
+typedef std::unordered_map<std::string, BreakpointInfo> BreakpointInfoMap;
+static BreakpointInfoMap* gBreakpoints;
 
 static std::string BreakpointKey(int script_id, int line, int column) {
   std::ostringstream os;
@@ -2653,7 +2676,8 @@ struct BreakpointPosition {
   BreakpointPosition(int line, int column)
     : line_(line), column_(column) {}
 };
-static std::unordered_map<std::string, BreakpointPosition> gBreakpointPositions;
+typedef std::unordered_map<std::string, BreakpointPosition> BreakpointPositionMap;
+static BreakpointPositionMap* gBreakpointPositions;
 
 static std::string BreakpointPositionKey(std::string function_id,
                                          int bytecode_offset) {
@@ -2715,6 +2739,13 @@ static void ForEachInstrumentationOpInRange(
 }
 
 static void GenerateBreakpointInfo(Isolate* isolate, Handle<Script> script) {
+  if (!gBreakpoints) {
+    gBreakpoints = new BreakpointInfoMap();
+  }
+  if (!gBreakpointPositions) {
+    gBreakpointPositions = new BreakpointPositionMap();
+  }
+
   ForEachInstrumentationOp(isolate, script, [&](Handle<SharedFunctionInfo> shared,
                                                 int instrumentation_index) {
     int line, column;
@@ -2725,13 +2756,13 @@ static void GenerateBreakpointInfo(Isolate* isolate, Handle<Script> script) {
 
     std::string key = BreakpointKey(script->id(), line, column);
     BreakpointInfo value(function_id, bytecode_offset);
-    gBreakpoints.insert(std::pair<std::string, BreakpointInfo>
-                        (key, value));
+    gBreakpoints->insert(std::pair<std::string, BreakpointInfo>
+                         (key, value));
 
     std::string positionKey = BreakpointPositionKey(function_id, bytecode_offset);
     BreakpointPosition position(line, column);
-    gBreakpointPositions.insert(std::pair<std::string, BreakpointPosition>
-                                (positionKey, position));
+    gBreakpointPositions->insert(std::pair<std::string, BreakpointPosition>
+                                 (positionKey, position));
   });
 }
 
@@ -2873,6 +2904,48 @@ static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isola
   return rv;
 }
 
+bool RecordReplayIgnoreScript(Script script);
+
+static Handle<Object> RecordReplayCountStackFrames(Isolate* isolate,
+                                                   Handle<Object> params) {
+  // This is handled in C++ instead of via a protocol JS handler for efficiency.
+  // Counting the stack frames is a common operation when there are many
+  // exception unwinds and so forth.
+  size_t count = 0;
+  for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
+    StackFrame* frame = it.frame();
+    if (frame->type() != StackFrame::OPTIMIZED && frame->type() != StackFrame::INTERPRETED) {
+      continue;
+    }
+    std::vector<FrameSummary> frames;
+    CommonFrame::cast(frame)->Summarize(&frames);
+
+    // We don't strictly need to iterate the frames in reverse order, but it
+    // helps when logging the stack contents for debugging.
+    for (int i = (int)frames.size() - 1; i >= 0; i--) {
+      const auto& summary = frames[i];
+      CHECK(summary.IsJavaScript());
+      const auto& js = summary.AsJavaScript();
+
+      Handle<SharedFunctionInfo> shared(js.function()->shared(), isolate);
+
+      // See GetStackLocation.
+      if (!shared->StartPosition() && !shared->EndPosition()) {
+        continue;
+      }
+
+      Handle<Script> script(Script::cast(shared->script()), isolate);
+      if (script->id() && !RecordReplayIgnoreScript(*script)) {
+        count++;
+      }
+    }
+  }
+
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  SetProperty(isolate, rv, "count", count);
+  return rv;
+}
+
 static Handle<Object> RecordReplayGetFunctionsInRange(Isolate* isolate,
                                                       Handle<Object> params) {
   std::set<std::string> functions;
@@ -2899,6 +2972,41 @@ static Handle<Object> RecordReplayGetFunctionsInRange(Isolate* isolate,
   return rv;
 }
 
+extern int RecordReplayCurrentGeneratorIdRaw();
+
+static Handle<Object> RecordReplayCurrentGeneratorId(Isolate* isolate, Handle<Object> params) {
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  int id = RecordReplayCurrentGeneratorIdRaw();
+  if (id) {
+    SetProperty(isolate, rv, "id", id);
+  }
+  return rv;
+}
+
+extern bool gRecordReplayInstrumentNodeInternals;
+
+bool RecordReplayIgnoreScriptByURL(const char* url) {
+  if (gRecordReplayInstrumentNodeInternals) {
+    // When exposing node internals, we still ignore the record/replay specific
+    // scripts, as these will have on stack frames when processing commands.
+    if (strstr(name.get(), "node:internal/recordreplay")) {
+      return true;
+    }
+
+    // This causes problems with stack size mismatches where the main module
+    // has been entered but the frame does not appear on stack. The underlying
+    // cause is unknown.
+    if (strstr(name.get(), "node:internal/main/run_main_module")) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // Normally we ignore node internal scripts entirely.
+  return !strncmp(name.get(), "node:", 5);
+}
+
 static void RecordReplayRegisterScript(Handle<Script> script) {
   CHECK(IsMainThread());
 
@@ -2916,9 +3024,16 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
   Handle<String> idStr = GetProtocolSourceId(isolate, script);
   std::unique_ptr<char[]> id = String::cast(*idStr).ToCString();
 
+  if (script->type() == Script::TYPE_WASM) {
+    return;
+  }
+
   std::string url;
   if (!script->name().IsUndefined()) {
     std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+    if (RecordReplayIgnoreScriptByURL(name.get())) {
+      return;
+    }
     url = std::string("file://") + name.get();
   }
 
@@ -2945,7 +3060,7 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
   }
 }
 
-extern void RecordReplayOnConsoleMessage(Isolate* isolate, size_t bookmark);
+extern void RecordReplayOnConsoleMessage(size_t bookmark);
 
 // Command callbacks which we handle directly.
 struct InternalCommandCallback {
@@ -2957,16 +3072,28 @@ static InternalCommandCallback gInternalCommandCallbacks[] = {
   { "Debugger.getPossibleBreakpoints", RecordReplayGetPossibleBreakpoints },
   { "Target.convertLocationToFunctionOffset", RecordReplayConvertLocationToFunctionOffset },
   { "Target.convertFunctionOffsetToLocation", RecordReplayConvertFunctionOffsetToLocation },
+  { "Target.countStackFrames", RecordReplayCountStackFrames },
   { "Target.getFunctionsInRange", RecordReplayGetFunctionsInRange },
+  { "Target.currentGeneratorId", RecordReplayCurrentGeneratorId },
 };
 
 // Function to invoke on command callbacks which we don't have a C++ implementation for.
 static Eternal<Value>* gCommandCallback;
 
+// Make sure that the isolate has a context by switching to the default
+// context if necessary.
+static void EnsureIsolateContext(Isolate* isolate, base::Optional<SaveAndSwitchContext>& ssc) {
+  CHECK(!isolate->context().is_null());
+}
+
 char* CommandCallback(const char* command, const char* params) {
   CHECK(IsMainThread());
+  recordreplay::AutoDisallowEvents disallow;
 
   Isolate* isolate = Isolate::Current();
+  base::Optional<SaveAndSwitchContext> ssc;
+  EnsureIsolateContext(isolate, ssc);
+
   HandleScope scope(isolate);
 
   Handle<Object> undefined = isolate->factory()->undefined_value();
@@ -2975,7 +3102,7 @@ char* CommandCallback(const char* command, const char* params) {
   MaybeHandle<Object> maybeParams = JsonParser<uint8_t>::Parse(isolate, paramsStr, undefined);
   if (maybeParams.is_null()) {
     recordreplay::Print("Error: CommandCallbackWrapper Parse %s failed", params);
-    V8_IMMEDIATE_CRASH();
+    IMMEDIATE_CRASH();
   }
   Handle<Object> paramsObj = maybeParams.ToHandleChecked();
 
@@ -2987,11 +3114,6 @@ char* CommandCallback(const char* command, const char* params) {
     }
   }
   if (rv.is_null()) {
-    if (!gCommandCallback) {
-      // Handle commands sent at the start of the recording.
-      return strdup("{ \"error\": \"Command callback not installed\" }");
-    }
-
     CHECK(gCommandCallback);
     Local<v8::Value> callbackValue = gCommandCallback->Get((v8::Isolate*)isolate);
     Handle<Object> callback = Utils::OpenHandle(*callbackValue);
@@ -3013,60 +3135,57 @@ static Eternal<Value>* gClearPauseDataCallback;
 
 void ClearPauseDataCallback() {
   CHECK(IsMainThread());
+  recordreplay::AutoDisallowEvents disallow;
 
-  if (gClearPauseDataCallback) {
-    Isolate* isolate = Isolate::Current();
-    Local<v8::Value> callbackValue = gClearPauseDataCallback->Get((v8::Isolate*)isolate);
-    Handle<Object> callback = Utils::OpenHandle(*callbackValue);
-
-    Handle<Object> undefined = isolate->factory()->undefined_value();
-    MaybeHandle<Object> rv = Execution::Call(isolate, callback, undefined, 0, nullptr);
-    CHECK(!rv.is_null());
+  if (!gClearPauseDataCallback) {
+    return;
   }
+
+  Isolate* isolate = Isolate::Current();
+  base::Optional<SaveAndSwitchContext> ssc;
+  EnsureIsolateContext(isolate, ssc);
+
+  HandleScope scope(isolate);
+
+  Local<v8::Value> callbackValue = gClearPauseDataCallback->Get((v8::Isolate*)isolate);
+  Handle<Object> callback = Utils::OpenHandle(*callbackValue);
+
+  Handle<Object> undefined = isolate->factory()->undefined_value();
+  MaybeHandle<Object> rv = Execution::Call(isolate, callback, undefined, 0, nullptr);
+  CHECK(!rv.is_null());
 }
 
-extern bool gRecordReplayInstrumentNodeInternals;
+typedef std::unordered_map<int, bool> ScriptIdIgnoreMap;
+static ScriptIdIgnoreMap* gShouldIgnoreScripts;
 
-static std::unordered_map<int, bool> gShouldIgnoreScripts;
+static bool RecordReplayIgnoreScriptRaw(Script script) {
+  if (script.type() == Script::TYPE_WASM) {
+    return true;
+  }
 
-static bool RecordReplayIgnoreScriptRaw(Handle<Script> script) {
-  if (script->name().IsUndefined()) {
+  if (script.name().IsUndefined()) {
     return false;
   }
 
-  std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
-
-  if (gRecordReplayInstrumentNodeInternals) {
-    // When exposing node internals, we still ignore the record/replay specific
-    // scripts, as these will have on stack frames when processing commands.
-    if (strstr(name.get(), "node:internal/recordreplay")) {
-      return true;
-    }
-
-    // This causes problems with stack size mismatches where the main module
-    // has been entered but the frame does not appear on stack. The underlying
-    // cause is unknown.
-    if (strstr(name.get(), "node:internal/main/run_main_module")) {
-      return true;
-    }
-
-    return false;
-  }
-
-  // Normally we ignore node internal scripts entirely.
-  return !strncmp(name.get(), "node:", 5);
+  std::unique_ptr<char[]> name = String::cast(script.name()).ToCString();
+  return RecordReplayIgnoreScriptByURL(name.get());
 }
 
-bool RecordReplayIgnoreScript(Handle<Script> script) {
-  CHECK(IsMainThread());
+bool RecordReplayIgnoreScript(Script script) {
+  if (!IsMainThread()) {
+    return true;
+  }
 
-  auto iter = gShouldIgnoreScripts.find(script->id());
-  if (iter != gShouldIgnoreScripts.end()) {
+  if (!gShouldIgnoreScripts) {
+    gShouldIgnoreScripts = new ScriptIdIgnoreMap();
+  }
+  auto iter = gShouldIgnoreScripts->find(script.id());
+  if (iter != gShouldIgnoreScripts->end()) {
     return iter->second;
   }
 
   bool rv = RecordReplayIgnoreScriptRaw(script);
-  gShouldIgnoreScripts[script->id()] = rv;
+  (*gShouldIgnoreScripts)[script.id()] = rv;
   return rv;
 }
 
@@ -3083,6 +3202,65 @@ static std::string StringPrintf(const char* format, ...) {
   vsnprintf(buf, sizeof(buf) - 1, format, ap);
   va_end(ap);
   return std::string(buf);
+}
+
+// When assertions are used we assign an ID to each object that is ever
+// encountered in one, so that we can determine whether consistent objects
+// are used when replaying.
+struct ContextObjectIdMap {
+  v8::Global<v8::Context> context_;
+  v8::Global<v8::debug::WeakMap> object_ids_;
+};
+typedef std::vector<ContextObjectIdMap> ContextObjectIdMapVector;
+static ContextObjectIdMapVector* gRecordReplayObjectIds;
+
+static Local<v8::debug::WeakMap> GetObjectIdMapForContext(v8::Isolate* isolate, Local<v8::Context> cx) {
+  if (!gRecordReplayObjectIds) {
+    gRecordReplayObjectIds = new ContextObjectIdMapVector();
+  }
+
+  for (const auto& entry : *gRecordReplayObjectIds) {
+    if (entry.context_ == cx) {
+      return entry.object_ids_.Get(isolate);
+    }
+  }
+
+  ContextObjectIdMap new_entry;
+  new_entry.context_.Reset(isolate, cx);
+  new_entry.object_ids_.Reset(isolate, v8::debug::WeakMap::New(isolate));
+  gRecordReplayObjectIds->push_back(std::move(new_entry));
+  return gRecordReplayObjectIds->back().object_ids_.Get(isolate);
+}
+
+static int gNextObjectId = 1;
+
+int RecordReplayObjectId(Handle<Object> internal_object) {
+  CHECK(IsMainThread());
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+
+  v8::Local<v8::Value> object = v8::Utils::ToLocal(internal_object);
+
+  Local<v8::Context> cx = isolate->GetCurrentContext();
+  Local<v8::debug::WeakMap> object_ids = GetObjectIdMapForContext(isolate, cx);
+
+  v8::Local<v8::Value> idValue;
+  if (object_ids->Get(cx, object).ToLocal(&idValue) && idValue->IsInt32()) {
+    return idValue.As<v8::Int32>()->Value();
+  }
+
+  int id = gNextObjectId++;
+  Local<Value> id_value = v8::Integer::New(isolate, id);
+  object_ids->Set(cx, object, id_value).ToLocalChecked();
+  return id;
+}
+
+inline int HashBytes(const void* aPtr, size_t aSize) {
+  int hash = 0;
+  uint8_t* ptr = (uint8_t*)aPtr;
+  for (size_t i = 0; i < aSize; i++) {
+    hash = (((hash << 5) - hash) + ptr[i]) | 0;
+  }
+  return hash;
 }
 
 // Get a string describing a value which can be used in assertions.
@@ -3114,6 +3292,8 @@ std::string RecordReplayBasicValueContents(Handle<Object> value) {
   }
 
   if (value->IsJSObject()) {
+    int object_id = RecordReplayObjectId(value);
+
     InstanceType type = JSObject::cast(*value).map().instance_type();
     const char* typeStr;
     switch (type) {
@@ -3126,9 +3306,17 @@ std::string RecordReplayBasicValueContents(Handle<Object> value) {
     if (!strcmp(typeStr, "JS_DATE_TYPE")) {
       JSDate date = JSDate::cast(*value);
       double time = date.value().Number();
-      return StringPrintf("Date %.2f", time);
+      return StringPrintf("Date %d %.2f", object_id, time);
     }
-    return StringPrintf("Object %s", typeStr);
+    if (!strcmp(typeStr, "JS_TYPED_ARRAY_TYPE")) {
+      v8::Local<v8::Value> obj = v8::Utils::ToLocal(value);
+      v8::Local<v8::TypedArray> tarr = obj.As<v8::TypedArray>();
+      char buf[50];
+      size_t written = tarr->CopyContents(buf, sizeof(buf));
+      int hash = HashBytes(buf, written);
+      return StringPrintf("TypedArray %d %lu %d", object_id, tarr->ByteLength(), hash);
+    }
+    return StringPrintf("Object %d %s", object_id, typeStr);
   }
 
   if (value->IsJSProxy()) {
@@ -3150,9 +3338,7 @@ void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& c
 void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>& callArgs) {
   CHECK(recordreplay::IsRecordingOrReplaying());
   if (IsMainThread()) {
-    Isolate* v8isolate = callArgs.GetIsolate();
-    i::Isolate* isolate = (i::Isolate*)v8isolate;
-    i::RecordReplayOnConsoleMessage(isolate, 0);
+    i::RecordReplayOnConsoleMessage(0);
   }
 }
 

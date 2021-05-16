@@ -77,6 +77,8 @@ void MessageHandler::DefaultMessageReport(Isolate* isolate,
   }
 }
 
+extern "C" size_t V8RecordReplayNewBookmark();
+
 Handle<JSMessageObject> MessageHandler::MakeMessageObject(
     Isolate* isolate, MessageTemplate message, const MessageLocation* location,
     Handle<Object> argument, Handle<FixedArray> stack_frames) {
@@ -99,9 +101,14 @@ Handle<JSMessageObject> MessageHandler::MakeMessageObject(
       stack_frames.is_null() ? Handle<Object>::cast(factory->undefined_value())
                              : Handle<Object>::cast(stack_frames);
 
+  int record_replay_bookmark = 0;
+  if (!recordreplay::AreEventsDisallowed() && IsMainThread()) {
+    record_replay_bookmark = (int)V8RecordReplayNewBookmark();
+  }
+
   Handle<JSMessageObject> message_obj = factory->NewJSMessageObject(
       message, argument, start, end, shared_info, bytecode_offset,
-      script_handle, stack_frames_handle);
+      script_handle, stack_frames_handle, record_replay_bookmark);
 
   return message_obj;
 }
