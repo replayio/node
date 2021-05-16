@@ -167,6 +167,16 @@ void V8_Fatal(const char* format, ...) {
     gCrashReason = strdup(str);
   }
 
+  if (getenv("RECORD_REPLAY_WAIT_AT_CRASH") ||
+      getenv("RECORD_REPLAY_WAIT_AT_FATAL_ERROR")) {
+    BusyWait();
+  }
+
+  // Avoid problems getting backtraces when recording/replaying.
+  if (dlsym(RTLD_DEFAULT, "RecordReplayAttach")) {
+    *(volatile int*)0 = 0;
+  }
+
   va_list arguments;
   va_start(arguments, format);
   // Format the error message into a stack object for later retrieveal by the
@@ -190,11 +200,6 @@ void V8_Fatal(const char* format, ...) {
   if (v8::base::g_print_stack_trace) v8::base::g_print_stack_trace();
 
   fflush(stderr);
-
-  if (getenv("RECORD_REPLAY_WAIT_AT_CRASH") ||
-      getenv("RECORD_REPLAY_WAIT_AT_FATAL_ERROR")) {
-    BusyWait();
-  }
 
   v8::base::OS::Abort();
 }
