@@ -11160,10 +11160,12 @@ static void (*gRecordReplayAddOrderedPthreadMutex)(const char* name, pthread_mut
 static void (*gRecordReplayInvalidateRecording)(const char* format, ...);
 static void (*gRecordReplayNewCheckpoint)();
 static bool (*gRecordReplayIsReplaying)();
+static bool (*gRecordReplayHasDivergedFromRecording)();
 static void (*gRecordReplayRegisterPointer)(void* ptr);
 static void (*gRecordReplayUnregisterPointer)(void* ptr);
 static int (*gRecordReplayPointerId)(void* ptr);
 static void* (*gRecordReplayIdPointer)(int id);
+static size_t (*gRecordReplayNewBookmark)();
 static void (*gRecordReplayOnDebuggerStatement)();
 
 namespace internal {
@@ -11174,7 +11176,7 @@ void RecordReplayOnNewSource(Isolate* isolate, const char* id,
   gRecordReplayOnNewSource(id, kind, url);
 }
 
-void RecordReplayOnConsoleMessage(Isolate* isolate, size_t bookmark) {
+void RecordReplayOnConsoleMessage(size_t bookmark) {
   DCHECK(gRecordingOrReplaying);
   gRecordReplayOnConsoleMessage(bookmark);
 }
@@ -11408,6 +11410,13 @@ bool recordreplay::IsRecording() {
   return !IsReplaying();
 }
 
+extern "C" bool V8RecordReplayHasDivergedFromRecording() {
+  if (recordreplay::IsRecordingOrReplaying()) {
+    return gRecordReplayHasDivergedFromRecording();
+  }
+  return false;
+}
+
 void recordreplay::RegisterPointer(void* ptr) {
   if (IsRecordingOrReplaying()) {
     gRecordReplayRegisterPointer(ptr);
@@ -11444,6 +11453,13 @@ void* recordreplay::IdPointer(int id) {
   return gRecordReplayIdPointer(id);
 }
 
+extern "C" size_t V8RecordReplayNewBookmark() {
+  if (recordreplay::IsRecordingOrReplaying()) {
+    return gRecordReplayNewBookmark();
+  }
+  return 0;
+}
+
 extern "C" void V8RecordReplayOnDebuggerStatement() {
   CHECK(recordreplay::IsRecordingOrReplaying());
   gRecordReplayOnDebuggerStatement();
@@ -11467,9 +11483,11 @@ static void RecordReplayLoadSymbol(void* handle, const char* name, T& function) 
   CastPointer(sym, &function);
 }
 
+extern "C" const char* V8RecordReplayCrashReasonCallback();
+
 static pthread_t gMainThread;
 
-void SetRecordingOrReplaying(void* handle) {
+void recordreplay::SetRecordingOrReplaying(void* handle) {
   gRecordingOrReplaying = true;
   gMainThread = pthread_self();
 
@@ -11496,10 +11514,12 @@ void SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayOrderedUnlock", gRecordReplayOrderedUnlock);
   RecordReplayLoadSymbol(handle, "RecordReplayAddOrderedPthreadMutex", gRecordReplayAddOrderedPthreadMutex);
   RecordReplayLoadSymbol(handle, "RecordReplayIsReplaying", gRecordReplayIsReplaying);
+  RecordReplayLoadSymbol(handle, "RecordReplayHasDivergedFromRecording", gRecordReplayHasDivergedFromRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayRegisterPointer", gRecordReplayRegisterPointer);
   RecordReplayLoadSymbol(handle, "RecordReplayUnregisterPointer", gRecordReplayUnregisterPointer);
   RecordReplayLoadSymbol(handle, "RecordReplayPointerId", gRecordReplayPointerId);
   RecordReplayLoadSymbol(handle, "RecordReplayIdPointer", gRecordReplayIdPointer);
+  RecordReplayLoadSymbol(handle, "RecordReplayNewBookmark", gRecordReplayNewBookmark);
   RecordReplayLoadSymbol(handle, "RecordReplayOnDebuggerStatement", gRecordReplayOnDebuggerStatement);
 
   void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
@@ -11543,10 +11563,8 @@ void SetRecordingOrReplaying(void* handle) {
   internal::FLAG_never_compact = true;
 }
 
-} // namespace recordreplay
-
 bool IsMainThread() {
-  return recordreplay::gMainThread == pthread_self();
+  return gMainThread == pthread_self();
 }
 
 namespace internal {

@@ -2821,15 +2821,19 @@ Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
   int column = GetProperty(isolate, location, "column")->Number();
 
   std::string key = BreakpointKey(sourceId, line, column);
-  auto iter = gBreakpoints.find(key);
-  if (iter == gBreakpoints.end()) {
+  if (!gBreakpoints) {
+    Handle<Script> script = GetScript(isolate, sourceId);
+    GenerateBreakpointInfo(isolate, script);
+  }
+  auto iter = gBreakpoints->find(key);
+  if (iter == gBreakpoints->end()) {
     Handle<Script> script = GetScript(isolate, sourceId);
     GenerateBreakpointInfo(isolate, script);
 
-    iter = gBreakpoints.find(key);
-    if (iter == gBreakpoints.end()) {
-      recordreplay::Print("Unknown location for RecordReplayConvertLocationToFunctionOffset, crashing.");
-      V8_IMMEDIATE_CRASH();
+    iter = gBreakpoints->find(key);
+    if (iter == gBreakpoints->end()) {
+      recordreplay::Diagnostic("Unknown location for RecordReplayConvertLocationToFunctionOffset, crashing.");
+      CHECK(0);
     }
   }
 
@@ -2878,15 +2882,18 @@ static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isola
     int bytecode_offset = offset_raw->Number();
 
     std::string key = BreakpointPositionKey(function_id, bytecode_offset);
-    auto iter = gBreakpointPositions.find(key);
-    if (iter == gBreakpointPositions.end()) {
+    if (!gBreakpointPositions) {
+      GenerateBreakpointInfo(isolate, script);
+    }
+    auto iter = gBreakpointPositions->find(key);
+    if (iter == gBreakpointPositions->end()) {
       GenerateBreakpointInfo(isolate, script);
 
-      iter = gBreakpointPositions.find(key);
-      if (iter == gBreakpointPositions.end()) {
-        recordreplay::Print("Unknown offset %s %d for RecordReplayConvertFunctionOffsetToLocation, crashing.",
-                            function_id.c_str(), bytecode_offset);
-        V8_IMMEDIATE_CRASH();
+      iter = gBreakpointPositions->find(key);
+      if (iter == gBreakpointPositions->end()) {
+        recordreplay::Diagnostic("Unknown offset %s %d for RecordReplayConvertFunctionOffsetToLocation, crashing.",
+                                 function_id.c_str(), bytecode_offset);
+        CHECK(0);
       }
     }
 
@@ -2918,7 +2925,7 @@ static Handle<Object> RecordReplayCountStackFrames(Isolate* isolate,
       continue;
     }
     std::vector<FrameSummary> frames;
-    CommonFrame::cast(frame)->Summarize(&frames);
+    StandardFrame::cast(frame)->Summarize(&frames);
 
     // We don't strictly need to iterate the frames in reverse order, but it
     // helps when logging the stack contents for debugging.
@@ -2989,14 +2996,14 @@ bool RecordReplayIgnoreScriptByURL(const char* url) {
   if (gRecordReplayInstrumentNodeInternals) {
     // When exposing node internals, we still ignore the record/replay specific
     // scripts, as these will have on stack frames when processing commands.
-    if (strstr(name.get(), "node:internal/recordreplay")) {
+    if (strstr(url, "node:internal/recordreplay")) {
       return true;
     }
 
     // This causes problems with stack size mismatches where the main module
     // has been entered but the frame does not appear on stack. The underlying
     // cause is unknown.
-    if (strstr(name.get(), "node:internal/main/run_main_module")) {
+    if (strstr(url, "node:internal/main/run_main_module")) {
       return true;
     }
 
@@ -3004,21 +3011,24 @@ bool RecordReplayIgnoreScriptByURL(const char* url) {
   }
 
   // Normally we ignore node internal scripts entirely.
-  return !strncmp(name.get(), "node:", 5);
+  return !strncmp(url, "node:", 5);
 }
 
 static void RecordReplayRegisterScript(Handle<Script> script) {
   CHECK(IsMainThread());
 
-  auto iter = gRecordReplayScripts.find(script->id());
-  if (iter != gRecordReplayScripts.end()) {
+  if (!gRecordReplayScripts) {
+    gRecordReplayScripts = new ScriptIdMap();
+  }
+  auto iter = gRecordReplayScripts->find(script->id());
+  if (iter != gRecordReplayScripts->end()) {
     // Ignore duplicate registers.
     return;
   }
 
   Isolate* isolate = Isolate::Current();
 
-  gRecordReplayScripts[script->id()] =
+  (*gRecordReplayScripts)[script->id()] =
     Eternal<Value>((v8::Isolate*)isolate, v8::Utils::ToLocal(script));
 
   Handle<String> idStr = GetProtocolSourceId(isolate, script);
@@ -3042,7 +3052,7 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
   // If this is the first script we were notified about, look for other scripts
   // that were already added without a notification. It would be nice to figure
   // out how to get notified about the other scripts and remove this...
-  if (gRecordReplayScripts.size() == 1) {
+  if (gRecordReplayScripts->size() == 1) {
     std::vector<Handle<Script>> scriptHandles;
     {
       Script::Iterator iterator(isolate);
@@ -3101,8 +3111,8 @@ char* CommandCallback(const char* command, const char* params) {
 
   MaybeHandle<Object> maybeParams = JsonParser<uint8_t>::Parse(isolate, paramsStr, undefined);
   if (maybeParams.is_null()) {
-    recordreplay::Print("Error: CommandCallbackWrapper Parse %s failed", params);
-    IMMEDIATE_CRASH();
+    recordreplay::Diagnostic("Error: CommandCallbackWrapper Parse %s failed", params);
+    CHECK(0);
   }
   Handle<Object> paramsObj = maybeParams.ToHandleChecked();
 
@@ -3191,7 +3201,7 @@ bool RecordReplayIgnoreScript(Script script) {
 
 static bool RecordReplayIgnoreScriptById(Isolate* isolate, int script_id) {
   Handle<Script> script = GetScript(isolate, script_id);
-  return RecordReplayIgnoreScript(script);
+  return RecordReplayIgnoreScript(*script);
 }
 
 static std::string StringPrintf(const char* format, ...) {

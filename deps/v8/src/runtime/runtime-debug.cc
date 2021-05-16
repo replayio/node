@@ -952,7 +952,7 @@ static std::string GetStackLocation(Isolate* isolate) {
       continue;
     }
     std::vector<FrameSummary> frames;
-    CommonFrame::cast(frame)->Summarize(&frames);
+    StandardFrame::cast(frame)->Summarize(&frames);
     auto& summary = frames.back();
     CHECK(summary.IsJavaScript());
     auto const& js = summary.AsJavaScript();
