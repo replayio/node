@@ -3052,7 +3052,9 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
   // If this is the first script we were notified about, look for other scripts
   // that were already added without a notification. It would be nice to figure
   // out how to get notified about the other scripts and remove this...
-  if (gRecordReplayScripts->size() == 1) {
+  static bool first = true;
+  if (first) {
+    first = false;
     std::vector<Handle<Script>> scriptHandles;
     {
       Script::Iterator iterator(isolate);
@@ -3124,7 +3126,10 @@ char* CommandCallback(const char* command, const char* params) {
     }
   }
   if (rv.is_null()) {
-    CHECK(gCommandCallback);
+    if (!gCommandCallback) {
+      // Handle commands sent at the start of the recording.
+      return strdup("{ \"error\": \"Command callback not installed\" }");
+    }
     Local<v8::Value> callbackValue = gCommandCallback->Get((v8::Isolate*)isolate);
     Handle<Object> callback = Utils::OpenHandle(*callbackValue);
 
