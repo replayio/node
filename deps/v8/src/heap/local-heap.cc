@@ -18,9 +18,34 @@
 namespace v8 {
 namespace internal {
 
-namespace {
-thread_local LocalHeap* current_local_heap = nullptr;
-}  // namespace
+template <typename T>
+class ThreadLocal {
+  T default_value_;
+  pthread_key_t key_;
+
+ public:
+  ThreadLocal(const T& default_value) : default_value_(default_value) {
+    int rv = pthread_key_create(&key_, nullptr);
+    CHECK(rv == 0);
+  }
+
+  T& operator*() {
+    T* v = (T*)pthread_getspecific(key_);
+    if (!v) {
+      v = new T(default_value_);
+      pthread_setspecific(key_, v);
+    }
+    return *v;
+  }
+};
+
+static ThreadLocal<LocalHeap*>& CurrentLocalHeap() {
+  static ThreadLocal<LocalHeap*> instance(nullptr);
+  return instance;
+}
+
+// Workaround thread_local not supported on linux when recording/replaying.
+#define current_local_heap *CurrentLocalHeap()
 
 LocalHeap* LocalHeap::Current() { return current_local_heap; }
 

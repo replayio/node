@@ -55,6 +55,54 @@ namespace v8 {
 namespace internal {
 namespace wasm {
 
+struct AutoOrderedLock {
+  AutoOrderedLock(int id) : id_(id) { recordreplay::OrderedLock(id_); }
+  ~AutoOrderedLock() { recordreplay::OrderedUnlock(id_); }
+  int id_;
+};
+
+template <typename T>
+class OrderedAtomic {
+ public:
+  OrderedAtomic() {
+    ordered_lock_id_ = (int)recordreplay::CreateOrderedLock("atomic");
+  }
+
+  OrderedAtomic(T initial) : value_(initial) {
+    ordered_lock_id_ = (int)recordreplay::CreateOrderedLock("atomic");
+  }
+
+  T load(std::memory_order memory_order = std::memory_order_seq_cst) const {
+    AutoOrderedLock ordered(ordered_lock_id_);
+    return value_.load(memory_order);
+  }
+
+  void store(T v, std::memory_order memory_order = std::memory_order_seq_cst) {
+    AutoOrderedLock ordered(ordered_lock_id_);
+    value_.store(v, memory_order);
+  }
+
+  T fetch_add(T v, std::memory_order memory_order = std::memory_order_seq_cst) {
+    AutoOrderedLock ordered(ordered_lock_id_);
+    return value_.fetch_add(v, memory_order);
+  }
+
+  T fetch_sub(T v, std::memory_order memory_order = std::memory_order_seq_cst) {
+    AutoOrderedLock ordered(ordered_lock_id_);
+    return value_.fetch_sub(v, memory_order);
+  }
+
+  bool compare_exchange_weak(T& a, T b,
+                             std::memory_order memory_order = std::memory_order_seq_cst) {
+    AutoOrderedLock ordered(ordered_lock_id_);
+    return value_.compare_exchange_weak(a, b, memory_order);
+  }
+
+ private:
+  int ordered_lock_id_;
+  std::atomic<T> value_;
+};
+
 namespace {
 
 enum class CompileMode : uint8_t { kRegular, kTiering };
@@ -197,7 +245,7 @@ class CompilationUnitQueues {
       queues_[task_id].next_steal_task_id = next_task_id(task_id);
     }
     for (auto& atomic_counter : num_units_) {
-      std::atomic_init(&atomic_counter, size_t{0});
+      atomic_counter.store(0);
     }
 
     treated_ = std::make_unique<std::atomic<bool>[]>(num_declared_functions);
@@ -365,7 +413,7 @@ class CompilationUnitQueues {
 
   std::vector<TopTierPriorityUnitsQueue> top_tier_priority_units_queues_;
 
-  std::atomic<size_t> num_units_[kNumTiers];
+  OrderedAtomic<size_t> num_units_[kNumTiers];
   std::atomic<size_t> num_priority_units_{0};
   std::unique_ptr<std::atomic<bool>[]> treated_;
   std::atomic<int> next_queue_to_add{0};
@@ -1946,6 +1994,8 @@ void AsyncCompileJob::PrepareRuntimeObjects() {
 // This function assumes that it is executed in a HandleScope, and that a
 // context is set on the isolate.
 void AsyncCompileJob::FinishCompile(bool is_after_cache_hit) {
+  recordreplay::Assert("AsyncCompileJob::FinishCompile Start");
+
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.wasm.detailed"),
                "wasm.FinishAsyncCompile");
   bool is_after_deserialization = !module_object_.is_null();
@@ -2016,6 +2066,8 @@ void AsyncCompileJob::FinishCompile(bool is_after_cache_hit) {
   compilation_state->PublishDetectedFeatures(isolate_);
 
   FinishModule();
+
+  recordreplay::Assert("AsyncCompileJob::FinishCompile Done");
 }
 
 void AsyncCompileJob::DecodeFailed(const WasmError& error) {
@@ -2990,6 +3042,7 @@ void CompilationStateImpl::InitializeRecompilation(
 }
 
 void CompilationStateImpl::AddCallback(CompilationState::callback_t callback) {
+  recordreplay::Assert("CompilationStateImpl::AddCallback Start");
   base::MutexGuard callbacks_guard(&callbacks_mutex_);
   // Immediately trigger events that already happened.
   for (auto event : {CompilationEvent::kFinishedExportWrappers,
@@ -2997,6 +3050,7 @@ void CompilationStateImpl::AddCallback(CompilationState::callback_t callback) {
                      CompilationEvent::kFinishedTopTierCompilation,
                      CompilationEvent::kFailedCompilation}) {
     if (finished_events_.contains(event)) {
+      recordreplay::Assert("CompilationStateImpl::AddCallback #1");
       callback(event);
     }
   }
@@ -3006,6 +3060,7 @@ void CompilationStateImpl::AddCallback(CompilationState::callback_t callback) {
   if (!finished_events_.contains_any(kFinalEvents)) {
     callbacks_.emplace_back(std::move(callback));
   }
+  recordreplay::Assert("CompilationStateImpl::AddCallback Done");
 }
 
 void CompilationStateImpl::AddCompilationUnits(
@@ -3303,6 +3358,8 @@ size_t CompilationStateImpl::NumOutstandingCompilations() const {
           ? 0
           : js_to_wasm_wrapper_units_.size() - next_wrapper;
   size_t outstanding_functions = compilation_unit_queues_.GetTotalSize();
+  recordreplay::Assert("CompilationStateImpl::NumOutstandingCompilations %lu %lu",
+                       outstanding_wrappers, outstanding_functions);
   return outstanding_wrappers + outstanding_functions;
 }
 

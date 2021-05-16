@@ -76,7 +76,9 @@ inline bool IsTrapHandlerEnabled() {
   return g_is_trap_handler_enabled;
 }
 
-extern THREAD_LOCAL int g_thread_in_wasm_code;
+extern int& IsThreadInWasmCode();
+
+#define g_thread_in_wasm_code IsThreadInWasmCode()
 
 // Return the address of the thread-local {g_thread_in_wasm_code} variable. This
 // pointer can be accessed and modified as long as the thread calling this

@@ -90,9 +90,13 @@ class TimedScope {
   }
   ~TimedScope() { Stop(); }
 
-  void Start() { start_time_ = base::TimeTicks::Now(); }
+  void Start() {
+    recordreplay::AutoPassThroughEvents pt;
+    start_time_ = base::TimeTicks::Now();
+  }
 
   void Stop() {
+    recordreplay::AutoPassThroughEvents pt;
     if (start_time_.IsMin()) return;
     base::TimeDelta duration = base::TimeTicks::Now() - start_time_;
     event_->*time_ = (duration.*precision)();

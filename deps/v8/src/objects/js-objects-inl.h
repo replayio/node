@@ -483,6 +483,7 @@ SMI_ACCESSORS(JSMessageObject, start_position, kStartPositionOffset)
 SMI_ACCESSORS(JSMessageObject, end_position, kEndPositionOffset)
 SMI_ACCESSORS(JSMessageObject, error_level, kErrorLevelOffset)
 SMI_ACCESSORS(JSMessageObject, raw_type, kMessageTypeOffset)
+SMI_ACCESSORS(JSMessageObject, record_replay_bookmark, kRecordReplayBookmarkOffset)
 
 DEF_GETTER(JSObject, GetElementsKind, ElementsKind) {
   ElementsKind kind = map(isolate).elements_kind();

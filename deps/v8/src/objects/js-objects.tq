@@ -126,6 +126,7 @@ extern class JSMessageObject extends JSObject {
   start_position: Smi;
   end_position: Smi;
   error_level: Smi;
+  record_replay_bookmark: Smi;
 }
 
 @abstract

@@ -19,6 +19,8 @@
 
 #include "src/trap-handler/trap-handler-internal.h"
 
+#include "include/v8.h"
+
 namespace v8 {
 namespace internal {
 namespace trap_handler {
@@ -26,7 +28,28 @@ namespace trap_handler {
 // We declare this as int rather than bool as a workaround for a glibc bug, in
 // which the dynamic loader cannot handle executables whose TLS area is only
 // 1 byte in size; see https://sourceware.org/bugzilla/show_bug.cgi?id=14898.
-THREAD_LOCAL int g_thread_in_wasm_code;
+
+THREAD_LOCAL int g_thread_in_wasm_code2;
+
+int& IsThreadInWasmCode() {
+  if (!recordreplay::IsRecordingOrReplaying()) {
+    return g_thread_in_wasm_code2;
+  }
+
+  static pthread_key_t key;
+  if (!key) {
+    int rv = pthread_key_create(&key, nullptr);
+    CHECK(rv == 0);
+    CHECK(key);
+  }
+
+  int* v = (int*)pthread_getspecific(key);
+  if (!v) {
+    v = new int(0);
+    pthread_setspecific(key, v);
+  }
+  return *v;
+}
 
 static_assert(sizeof(g_thread_in_wasm_code) > 1,
               "sizeof(thread_local_var) must be > 1, see "

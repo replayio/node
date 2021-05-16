@@ -742,7 +742,8 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   Handle<JSMessageObject> NewJSMessageObject(
       MessageTemplate message, Handle<Object> argument, int start_position,
       int end_position, Handle<SharedFunctionInfo> shared_info,
-      int bytecode_offset, Handle<Script> script, Handle<Object> stack_frames);
+      int bytecode_offset, Handle<Script> script, Handle<Object> stack_frames,
+      int record_replay_bookmark);
 
   Handle<DebugInfo> NewDebugInfo(Handle<SharedFunctionInfo> shared);
 
