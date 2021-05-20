@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "include/libplatform/v8-tracing.h"
+#include "include/v8.h"
 
 #include "src/base/atomicops.h"
 #include "src/base/platform/mutex.h"
@@ -134,6 +135,10 @@ uint64_t TracingController::AddTraceEventWithTimestamp(
     const uint64_t* arg_values,
     std::unique_ptr<v8::ConvertableToTraceFormat>* arg_convertables,
     unsigned int flags, int64_t timestamp) {
+  // For now we don't support tracing when recording/replaying,
+  // due to non-deterministic behavior it can introduce.
+  recordreplay::InvalidateRecording("Event tracing enabled");
+
   int64_t cpu_now_us = CurrentCpuTimestampMicroseconds();
 
   uint64_t handle = 0;

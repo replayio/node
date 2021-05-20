@@ -9316,6 +9316,8 @@ String::Value::~Value() { i::DeleteArray(str_); }
     {                                                                    \
       i::HandleScope scope(isolate);                                     \
       i::Handle<i::String> message = Utils::OpenHandle(*raw_message);    \
+      std::unique_ptr<char[]> message_str = message->ToCString();        \
+      recordreplay::Assert("CreateException %s %s", #NAME, message_str.get()); \
       i::Handle<i::JSFunction> constructor = isolate->name##_function(); \
       error = *isolate->factory()->NewError(constructor, message);       \
     }                                                                    \
@@ -11235,6 +11237,8 @@ bool ShouldEmitRecordReplayAssertValue() {
   return gRecordReplayAssertValues;
 }
 
+bool gRecordReplayHasCheckpoint;
+
 } // namespace internal
 
 bool recordreplay::IsRecordingOrReplaying() {
@@ -11353,6 +11357,7 @@ void recordreplay::InvalidateRecording(const char* why) {
 
 void recordreplay::NewCheckpoint() {
   if (IsRecordingOrReplaying()) {
+    internal::gRecordReplayHasCheckpoint = true;
     gRecordReplayNewCheckpoint();
   }
 }

@@ -202,6 +202,9 @@ static void MemoryUsage(const FunctionCallbackInfo<Value>& args) {
   fields[3] = v8_heap_stats.external_memory();
   fields[4] = array_buffer_allocator == nullptr ?
       0 : array_buffer_allocator->total_mem_usage();
+
+  // Ensure memory usage measurements are consistent when replaying.
+  v8::recordreplay::RecordReplayBytes("MemoryUsage", fields, 5 * sizeof(double));
 }
 
 void RawDebug(const FunctionCallbackInfo<Value>& args) {

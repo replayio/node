@@ -267,6 +267,7 @@ Object StackGuard::HandleInterrupts() {
 
   if (TestAndClear(&interrupt_flags, TERMINATE_EXECUTION)) {
     TRACE_EVENT0("v8.execute", "V8.TerminateExecution");
+    recordreplay::InvalidateRecording("Terminate execution from execution interrupt");
     return isolate_->TerminateExecution();
   }
 

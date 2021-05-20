@@ -1065,6 +1065,11 @@ int SecureContext::TicketKeyCallback(SSL* ssl,
                                      int enc) {
   static const int kTicketPartSize = 16;
 
+  // Force the data we get from OpenSSL to match when replaying, as they can
+  // vary for an unknown reason.
+  v8::recordreplay::RecordReplayBytes("TicketKeyCallback name", name, kTicketPartSize);
+  v8::recordreplay::RecordReplayBytes("TicketKeyCallback iv", iv, kTicketPartSize);
+
   SecureContext* sc = static_cast<SecureContext*>(
       SSL_CTX_get_app_data(SSL_get_SSL_CTX(ssl)));
 

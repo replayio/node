@@ -2993,6 +2993,12 @@ static Handle<Object> RecordReplayCurrentGeneratorId(Isolate* isolate, Handle<Ob
 extern bool gRecordReplayInstrumentNodeInternals;
 
 bool RecordReplayIgnoreScriptByURL(const char* url) {
+  // Always ignore V8 internal JS.
+  if (!strcmp(url, "v8/externalize") ||
+      !strcmp(url, "v8/gc")) {
+    return true;
+  }
+
   if (gRecordReplayInstrumentNodeInternals) {
     // When exposing node internals, we still ignore the record/replay specific
     // scripts, as these will have on stack frames when processing commands.
@@ -3004,6 +3010,11 @@ bool RecordReplayIgnoreScriptByURL(const char* url) {
     // has been entered but the frame does not appear on stack. The underlying
     // cause is unknown.
     if (strstr(url, "node:internal/main/run_main_module")) {
+      return true;
+    }
+
+    // Ignore node code that can run before the first checkpoint is created.
+    if (!strcmp(url, "node:events")) {
       return true;
     }
 
@@ -3302,7 +3313,12 @@ std::string RecordReplayBasicValueContents(Handle<Object> value) {
   }
 
   if (value->IsString()) {
-    return StringPrintf("String %d", String::cast(*value).length());
+    String str = String::cast(*value);
+    if (str.length() <= 200) {
+      std::unique_ptr<char[]> name = str.ToCString();
+      return StringPrintf("String %s", name.get());
+    }
+    return StringPrintf("LongString %d", str.length());
   }
 
   if (value->IsJSObject()) {

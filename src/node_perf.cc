@@ -167,6 +167,9 @@ void PerformanceEntry::Notify(Environment* env,
   AliasedUint32Array& observers = env->performance_state()->observers;
   if (!env->performance_entry_callback().IsEmpty() &&
       type != NODE_PERFORMANCE_ENTRY_TYPE_INVALID && observers[type]) {
+    // Performance entries can be non-deterministic and are not currently
+    // supported when recording/replaying.
+    v8::recordreplay::InvalidateRecording("Performance entries observed");
     node::MakeCallback(env->isolate(),
                        object.As<Object>(),
                        env->performance_entry_callback(),

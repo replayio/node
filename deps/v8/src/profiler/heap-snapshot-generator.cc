@@ -2271,6 +2271,15 @@ void HeapSnapshotJSONSerializer::Serialize(v8::OutputStream* stream) {
 
 void HeapSnapshotJSONSerializer::SerializeImpl() {
   DCHECK_EQ(0, snapshot_->root()->index());
+
+  // Heap contents can vary when recording vs. replaying, and we don't want
+  // these variances to affect behavior when replaying. We could record/replay
+  // the snapshot itself, but it is simpler to just disable this functionality.
+  if (recordreplay::IsRecordingOrReplaying()) {
+    writer_->AddString("{}");
+    return;
+  }
+
   writer_->AddCharacter('{');
   writer_->AddString("\"snapshot\":{");
   SerializeSnapshot();

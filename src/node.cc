@@ -957,6 +957,7 @@ static void (*gRecordReplayFinishRecording)();
 static void (*gBeginCallbackRegion)();
 static void (*gEndCallbackRegion)();
 static const char* (*gRecordReplayGetRecordingId)();
+static char* (*gGetUnusableRecordingReason)();
 
 namespace recordreplay {
 
@@ -988,6 +989,13 @@ void RecordReplayFinishRecording() {
     // If specified via the environment, append the recording ID to a file.
     const char* env = getenv("RECORD_REPLAY_RECORDING_ID_FILE");
     if (env) {
+      // Don't add the recording ID when the recording is unusable.
+      char* reason = gGetUnusableRecordingReason();
+      if (reason) {
+        free(reason);
+        return;
+      }
+
       FILE* file = fopen(env, "a");
       if (file) {
         const char* recordingId = gRecordReplayGetRecordingId();
@@ -1048,6 +1056,7 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
                          gRecordReplayRecordCommandLineArguments);
   RecordReplayLoadSymbol(handle, "RecordReplayFinishRecording", gRecordReplayFinishRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayGetRecordingId", gRecordReplayGetRecordingId);
+  RecordReplayLoadSymbol(handle, "RecordReplayGetUnusableRecordingReason", gGetUnusableRecordingReason);
   RecordReplayLoadSymbol(handle, "RecordReplayBeginCallbackRegion", gBeginCallbackRegion);
   RecordReplayLoadSymbol(handle, "RecordReplayEndCallbackRegion", gEndCallbackRegion);
 

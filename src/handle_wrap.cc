@@ -86,6 +86,12 @@ void HandleWrap::Close(Local<Value> close_callback) {
 
 
 void HandleWrap::OnGCCollect() {
+  // Leak the handle when recording/replaying to avoid non-deterministic
+  // behavior.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
   Close();
 }
 
