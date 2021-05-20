@@ -3286,8 +3286,7 @@ std::string RecordReplayBasicValueContents(Handle<Object> value) {
     if (std::isnan(num)) {
       return "NaN";
     }
-    // It would be nice to use full precision here like we do in gecko.
-    return StringPrintf("Number %.2f", num);
+    return StringPrintf("Number %d %llu", (int)num, *(uint64_t*)&num);
   }
 
   if (value->IsBoolean()) {
