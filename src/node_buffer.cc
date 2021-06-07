@@ -193,6 +193,7 @@ void CallbackInfo::OnBackingStoreFree() {
   // When recording/replaying the data is freed at a non-deterministic point,
   // and we don't yet support posting immediates in such a case.
   if (v8::recordreplay::IsRecordingOrReplaying()) {
+    self.release();
     return;
   }
 
