@@ -639,6 +639,7 @@
         'src/node_process_events.cc',
         'src/node_process_methods.cc',
         'src/node_process_object.cc',
+        'src/node_record_replay_driver.cc',
         'src/node_report.cc',
         'src/node_report_module.cc',
         'src/node_report_utils.cc',

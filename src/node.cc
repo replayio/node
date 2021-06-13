@@ -1027,13 +1027,10 @@ static void RecordReplayLoadSymbol(void* handle, const char* name, T& function) 
 }
 
 extern char gBuildId[];
+extern char gRecordReplayDriver[];
+extern int gRecordReplayDriverSize;
 
 static void InitializeRecordReplay(int* pargc, char*** pargv) {
-  const char* driver = getenv("RECORD_REPLAY_DRIVER");
-  if (!driver) {
-    return;
-  }
-
   const char* dispatchAddress = getenv("RECORD_REPLAY_SERVER");
   if (!dispatchAddress) {
     // 4/21/2021: For backwards compatibility we also check an older env
@@ -1045,7 +1042,41 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
     }
   }
 
+  const char* driver = getenv("RECORD_REPLAY_DRIVER");
+  bool temporaryDriver = false;
+
+  if (!driver) {
+    const char* tmpdir = getenv("TMPDIR");
+    if (!tmpdir) {
+      fprintf(stderr, "TMPDIR not set, can't create driver.\n");
+      return;
+    }
+
+    char filename[1024];
+    snprintf(filename, sizeof(filename), "%s/recordreplay.so-XXXXXX", tmpdir);
+    int fd = mkstemp(filename);
+    if (fd < 0) {
+      fprintf(stderr, "mkstemp failed, can't create driver.\n");
+      return;
+    }
+
+    int nbytes = write(fd, gRecordReplayDriver, gRecordReplayDriverSize);
+    if (nbytes != gRecordReplayDriverSize) {
+      fprintf(stderr, "write to driver temporary file failed, can't create driver.\n");
+      return;
+    }
+
+    temporaryDriver = true;
+    driver = strdup(filename);
+    close(fd);
+  }
+
   void* handle = dlopen(driver, RTLD_LAZY);
+
+  if (temporaryDriver) {
+    unlink(driver);
+  }
+
   if (!handle) {
     fprintf(stderr, "Loading Record Replay driver failed (%s).\n", dlerror());
     return;

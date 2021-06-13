@@ -11,6 +11,27 @@ fs.writeFileSync(
   `namespace node { char gBuildId[] = "${buildId}"; }`
 );
 
+// Download the latest record/replay driver.
+const driverFile = `${currentPlatform()}-recordreplay.so`;
+spawnChecked("wget", [`https://replay.io/downloads/${driverFile}`], { stdio: "inherit" });
+
+// Embed the driver in the source.
+const driverContents = fs.readFileSync(driverFile);
+fs.unlinkSync(driverFile);
+let driverString = "";
+for (let i = 0; i < driverContents.length; i++) {
+  driverString += `\\${driverContents[i].toString(8)}`;
+}
+fs.writeFileSync(
+  `${node}/src/node_record_replay_driver.cc`,
+  `
+namespace node {
+  char gRecordReplayDriver[] = "${driverString}";
+  int gRecordReplayDriverSize = ${driverContents.length};
+}
+`
+);
+
 const numCPUs = os.cpus().length;
 
 if (process.platform == "linux") {
