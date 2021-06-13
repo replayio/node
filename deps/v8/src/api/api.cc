@@ -133,6 +133,7 @@
 #endif  // V8_OS_WIN
 
 #include <dlfcn.h>
+#include <unistd.h>
 
 #define TRACE_BS(...)                                     \
   do {                                                    \
