@@ -3,6 +3,9 @@ const os = require("os");
 const { spawnSync } = require("child_process");
 const node = __dirname;
 
+// Disable recording when node runs as part of its compilation process.
+process.env.RECORD_REPLAY_DRIVER = "0";
+
 // Generate a new build ID.
 const buildId = `${currentPlatform()}-node-${makeDate()}-${makeRandomId()}`;
 
