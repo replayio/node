@@ -953,11 +953,18 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
 
 static void (*gRecordReplayAttach)(const char* dispatchAddress, const char* buildId);
 static void (*gRecordReplayRecordCommandLineArguments)(int*, char***);
+static void (*gRecordReplaySaveRecording)(const char* dir);
+static void (*gRecordReplayAddMetadata)(const char* metadata);
 static void (*gRecordReplayFinishRecording)();
 static void (*gBeginCallbackRegion)();
 static void (*gEndCallbackRegion)();
 static const char* (*gRecordReplayGetRecordingId)();
 static char* (*gGetUnusableRecordingReason)();
+static void* (*gJSONCreateString)(const char*);
+static void* (*gJSONCreateArray)(size_t, void**);
+static void* (*gJSONCreateObject)(size_t, const char**, void**);
+static char* (*gJSONToString)(void*);
+static void (*gJSONFree)(void*);
 
 namespace recordreplay {
 
@@ -1030,18 +1037,43 @@ extern char gBuildId[];
 extern char gRecordReplayDriver[];
 extern int gRecordReplayDriverSize;
 
-static void InitializeRecordReplay(int* pargc, char*** pargv) {
-  const char* dispatchAddress = getenv("RECORD_REPLAY_SERVER");
-  if (!dispatchAddress) {
-    // 4/21/2021: For backwards compatibility we also check an older env
-    // var used to indicate the dispatch server.
-    dispatchAddress = getenv("RECORD_REPLAY_DISPATCH");
-    if (!dispatchAddress) {
-      fprintf(stderr, "RECORD_REPLAY_SERVER not set.\n");
-      return;
-    }
+// Get the directory to save information about the recording.
+static std::string GetRecordingDirectory() {
+  char dir[1024];
+  const char* recordingDir = getenv("RECORD_REPLAY_RECORDING_DIR");
+  if (recordingDir) {
+    strncpy(dir, recordingDir, sizeof(dir));
+  } else {
+    const char* homeDir = getenv("HOME");
+    snprintf(dir, sizeof(dir), "%s/.replay-recordings", homeDir ? homeDir : "");
+  }
+  dir[sizeof(dir) - 1] = 0;
+  return dir;
+}
+
+static std::string GetRecordingMetadata(int argc, char** argv) {
+  std::vector<void*> handles;
+  for (int i = 1; i < argc; i++) {
+    handles.push_back(gJSONCreateString(argv[i]));
+  }
+  void* array = gJSONCreateArray(handles.size(), &handles[0]);
+  const char* property = "argv";
+
+  void* object = gJSONCreateObject(1, &property, &array);
+  char* objectStr = gJSONToString(object);
+  std::string rv = objectStr;
+
+  free(objectStr);
+  gJSONFree(object);
+  gJSONFree(array);
+  for (void* handle : handles) {
+    gJSONFree(handle);
   }
 
+  return rv;
+}
+
+static void* OpenDriverHandle() {
   const char* driver = getenv("RECORD_REPLAY_DRIVER");
   bool temporaryDriver = false;
 
@@ -1049,7 +1081,7 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
     const char* tmpdir = getenv("TMPDIR");
     if (!tmpdir) {
       fprintf(stderr, "TMPDIR not set, can't create driver.\n");
-      return;
+      return nullptr;
     }
 
     char filename[1024];
@@ -1057,13 +1089,13 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
     int fd = mkstemp(filename);
     if (fd < 0) {
       fprintf(stderr, "mkstemp failed, can't create driver.\n");
-      return;
+      return nullptr;
     }
 
     int nbytes = write(fd, gRecordReplayDriver, gRecordReplayDriverSize);
     if (nbytes != gRecordReplayDriverSize) {
       fprintf(stderr, "write to driver temporary file failed, can't create driver.\n");
-      return;
+      return nullptr;
     }
 
     temporaryDriver = true;
@@ -1077,6 +1109,19 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
     unlink(driver);
   }
 
+  return handle;
+}
+
+static void InitializeRecordReplay(int* pargc, char*** pargv) {
+  const char* dispatchAddress = getenv("RECORD_REPLAY_SERVER");
+  if (!dispatchAddress) {
+    // 4/21/2021: For backwards compatibility we also check an older env
+    // var used to indicate the dispatch server.
+    dispatchAddress = getenv("RECORD_REPLAY_DISPATCH");
+  }
+
+  void* handle = OpenDriverHandle();
+
   if (!handle) {
     fprintf(stderr, "Loading Record Replay driver failed (%s).\n", dlerror());
     return;
@@ -1085,16 +1130,33 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   RecordReplayLoadSymbol(handle, "RecordReplayAttach", gRecordReplayAttach);
   RecordReplayLoadSymbol(handle, "RecordReplayRecordCommandLineArguments",
                          gRecordReplayRecordCommandLineArguments);
+  RecordReplayLoadSymbol(handle, "RecordReplaySaveRecording", gRecordReplaySaveRecording);
+  RecordReplayLoadSymbol(handle, "RecordReplayAddMetadata", gRecordReplayAddMetadata);
   RecordReplayLoadSymbol(handle, "RecordReplayFinishRecording", gRecordReplayFinishRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayGetRecordingId", gRecordReplayGetRecordingId);
   RecordReplayLoadSymbol(handle, "RecordReplayGetUnusableRecordingReason", gGetUnusableRecordingReason);
   RecordReplayLoadSymbol(handle, "RecordReplayBeginCallbackRegion", gBeginCallbackRegion);
   RecordReplayLoadSymbol(handle, "RecordReplayEndCallbackRegion", gEndCallbackRegion);
+  RecordReplayLoadSymbol(handle, "RecordReplayJSONCreateString", gJSONCreateString);
+  RecordReplayLoadSymbol(handle, "RecordReplayJSONCreateArray", gJSONCreateArray);
+  RecordReplayLoadSymbol(handle, "RecordReplayJSONCreateObject", gJSONCreateObject);
+  RecordReplayLoadSymbol(handle, "RecordReplayJSONToString", gJSONToString);
+  RecordReplayLoadSymbol(handle, "RecordReplayJSONFree", gJSONFree);
 
   if (gRecordReplayAttach && gRecordReplayFinishRecording) {
     gRecordReplayAttach(dispatchAddress, gBuildId);
     gRecordReplayRecordCommandLineArguments(pargc, pargv);
     v8::recordreplay::SetRecordingOrReplaying(handle);
+
+    if (gRecordReplaySaveRecording) {
+      std::string dir = GetRecordingDirectory();
+      gRecordReplaySaveRecording(dir.c_str());
+    }
+
+    if (gRecordReplayAddMetadata) {
+      std::string metadata = GetRecordingMetadata(*pargc, *pargv);
+      gRecordReplayAddMetadata(metadata.c_str());
+    }
   }
 }
 
