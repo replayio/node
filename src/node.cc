@@ -1045,7 +1045,7 @@ static std::string GetRecordingDirectory() {
     strncpy(dir, recordingDir, sizeof(dir));
   } else {
     const char* homeDir = getenv("HOME");
-    snprintf(dir, sizeof(dir), "%s/.replay-recordings", homeDir ? homeDir : "");
+    snprintf(dir, sizeof(dir), "%s/.replay", homeDir ? homeDir : "");
   }
   dir[sizeof(dir) - 1] = 0;
   return dir;
@@ -1080,8 +1080,7 @@ static void* OpenDriverHandle() {
   if (!driver) {
     const char* tmpdir = getenv("TMPDIR");
     if (!tmpdir) {
-      fprintf(stderr, "TMPDIR not set, can't create driver.\n");
-      return nullptr;
+      tmpdir = "/tmp";
     }
 
     char filename[1024];
