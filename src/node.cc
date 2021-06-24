@@ -1037,20 +1037,6 @@ extern char gBuildId[];
 extern char gRecordReplayDriver[];
 extern int gRecordReplayDriverSize;
 
-// Get the directory to save information about the recording.
-static std::string GetRecordingDirectory() {
-  char dir[1024];
-  const char* recordingDir = getenv("RECORD_REPLAY_RECORDING_DIR");
-  if (recordingDir) {
-    strncpy(dir, recordingDir, sizeof(dir));
-  } else {
-    const char* homeDir = getenv("HOME");
-    snprintf(dir, sizeof(dir), "%s/.replay", homeDir ? homeDir : "");
-  }
-  dir[sizeof(dir) - 1] = 0;
-  return dir;
-}
-
 static std::string GetRecordingMetadata(int argc, char** argv) {
   std::vector<void*> handles;
   for (int i = 1; i < argc; i++) {
@@ -1148,8 +1134,7 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
     v8::recordreplay::SetRecordingOrReplaying(handle);
 
     if (gRecordReplaySaveRecording) {
-      std::string dir = GetRecordingDirectory();
-      gRecordReplaySaveRecording(dir.c_str());
+      gRecordReplaySaveRecording(nullptr);
     }
 
     if (gRecordReplayAddMetadata) {
