@@ -2832,8 +2832,7 @@ Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
 
     iter = gBreakpoints->find(key);
     if (iter == gBreakpoints->end()) {
-      recordreplay::Diagnostic("Unknown location for RecordReplayConvertLocationToFunctionOffset, crashing.");
-      CHECK(0);
+      return NewPlainObject(isolate);
     }
   }
 
