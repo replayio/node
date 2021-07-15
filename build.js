@@ -3,9 +3,6 @@ const os = require("os");
 const { spawnSync } = require("child_process");
 const node = __dirname;
 
-// Disable recording when node runs as part of its compilation process.
-process.env.RECORD_REPLAY_DRIVER = "0";
-
 // Generate a new build ID.
 const buildId = `${currentPlatform()}-node-${makeDate()}-${makeRandomId()}`;
 
@@ -47,9 +44,11 @@ if (process.platform == "linux") {
       { stdio: "inherit" }
     );
   }
-  spawnChecked("docker", ["run", "-v", `${node}:/node`, "node-build"], {
-    stdio: "inherit",
-  });
+  spawnChecked(
+    "docker",
+    ["run", "-v", `${node}:/node`, "-e", "RECORD_REPLAY_DRIVER=0", "node-build"],
+    { stdio: "inherit" }
+  );
 } else {
   if (process.env.CONFIGURE_NODE) {
     spawnChecked(`${node}/configure`, [], { cwd: node, stdio: "inherit" });
@@ -57,6 +56,11 @@ if (process.platform == "linux") {
   spawnChecked("make", [`-j${numCPUs}`, "-C", "out", "BUILDTYPE=Release"], {
     cwd: node,
     stdio: "inherit",
+    env: {
+      ...process.env,
+      // Disable recording when node runs as part of its compilation process.
+      RECORD_REPLAY_DRIVER: "0",
+    },
   });
 }
 
