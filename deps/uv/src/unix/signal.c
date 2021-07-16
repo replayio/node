@@ -32,6 +32,8 @@
 # define SA_RESTART 0
 #endif
 
+extern void V8RecordReplayDiagnostic(const char* format, ...);
+
 typedef struct {
   uv_signal_t* handle;
   int signum;
@@ -118,7 +120,9 @@ static int uv__signal_lock(void) {
   char data;
 
   do {
+    V8RecordReplayDiagnostic("uv__signal_lock read pipe start");
     r = read(uv__signal_lock_pipefd[0], &data, sizeof data);
+    V8RecordReplayDiagnostic("uv__signal_lock read pipe done %d %d", r, errno);
   } while (r < 0 && errno == EINTR);
 
   return (r < 0) ? -1 : 0;
@@ -181,6 +185,8 @@ static uv_signal_t* uv__signal_first_handle(int signum) {
 
 
 static void uv__signal_handler(int signum) {
+  V8RecordReplayDiagnostic("uv__signal_handler %d", signum);
+
   uv__signal_msg_t msg;
   uv_signal_t* handle;
   int saved_errno;
@@ -426,7 +432,9 @@ static void uv__signal_event(uv_loop_t* loop,
   end = 0;
 
   do {
+    V8RecordReplayDiagnostic("uv__signal_event read pipe start");
     r = read(loop->signal_pipefd[0], buf + bytes, sizeof(buf) - bytes);
+    V8RecordReplayDiagnostic("uv__signal_event read pipe done %d %d", r, errno);
 
     if (r == -1 && errno == EINTR)
       continue;

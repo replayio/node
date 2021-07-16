@@ -11273,6 +11273,15 @@ void recordreplay::Diagnostic(const char* format, ...) {
   }
 }
 
+extern "C" void V8RecordReplayDiagnostic(const char* format, ...) {
+  if (recordreplay::IsRecordingOrReplaying()) {
+    va_list args;
+    va_start(args, format);
+    gRecordReplayDiagnostic(format, args);
+    va_end(args);
+  }
+}
+
 void recordreplay::Assert(const char* format, ...) {
   if (IsRecordingOrReplaying()) {
     va_list ap;
