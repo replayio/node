@@ -11164,9 +11164,9 @@ static void (*gRecordReplayInvalidateRecording)(const char* format, ...);
 static void (*gRecordReplayNewCheckpoint)();
 static bool (*gRecordReplayIsReplaying)();
 static bool (*gRecordReplayHasDivergedFromRecording)();
-static void (*gRecordReplayRegisterPointer)(void* ptr);
-static void (*gRecordReplayUnregisterPointer)(void* ptr);
-static int (*gRecordReplayPointerId)(void* ptr);
+static void (*gRecordReplayRegisterPointer)(const void* ptr);
+static void (*gRecordReplayUnregisterPointer)(const void* ptr);
+static int (*gRecordReplayPointerId)(const void* ptr);
 static void* (*gRecordReplayIdPointer)(int id);
 static size_t (*gRecordReplayNewBookmark)();
 static void (*gRecordReplayOnDebuggerStatement)();
@@ -11432,34 +11432,34 @@ extern "C" bool V8RecordReplayHasDivergedFromRecording() {
   return false;
 }
 
-void recordreplay::RegisterPointer(void* ptr) {
+void recordreplay::RegisterPointer(const void* ptr) {
   if (IsRecordingOrReplaying()) {
     gRecordReplayRegisterPointer(ptr);
   }
 }
 
-extern "C" void V8RecordReplayRegisterPointer(void* ptr) {
+extern "C" void V8RecordReplayRegisterPointer(const void* ptr) {
   recordreplay::RegisterPointer(ptr);
 }
 
-void recordreplay::UnregisterPointer(void* ptr) {
+void recordreplay::UnregisterPointer(const void* ptr) {
   if (IsRecordingOrReplaying()) {
     gRecordReplayUnregisterPointer(ptr);
   }
 }
 
-extern "C" void V8RecordReplayUnregisterPointer(void* ptr) {
+extern "C" void V8RecordReplayUnregisterPointer(const void* ptr) {
   recordreplay::UnregisterPointer(ptr);
 }
 
-int recordreplay::PointerId(void* ptr) {
+int recordreplay::PointerId(const void* ptr) {
   if (IsRecordingOrReplaying()) {
     return gRecordReplayPointerId(ptr);
   }
   return 0;
 }
 
-extern "C" int V8RecordReplayPointerId(void* ptr) {
+extern "C" int V8RecordReplayPointerId(const void* ptr) {
   return recordreplay::PointerId(ptr);
 }
 

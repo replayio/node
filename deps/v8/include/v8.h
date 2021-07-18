@@ -12152,9 +12152,9 @@ struct AutoDisallowEvents {
   ~AutoDisallowEvents() { EndDisallowEvents(); }
 };
 
-static void RegisterPointer(void* ptr);
-static void UnregisterPointer(void* ptr);
-static int PointerId(void* ptr);
+static void RegisterPointer(const void* ptr);
+static void UnregisterPointer(const void* ptr);
+static int PointerId(const void* ptr);
 static void* IdPointer(int id);
 
 }; // class recordreplay
