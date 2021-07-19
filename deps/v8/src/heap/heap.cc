@@ -1880,6 +1880,8 @@ static void VerifyStringTable(Isolate* isolate) {
 #endif  // VERIFY_HEAP
 
 bool Heap::ReserveSpace(Reservation* reservations, std::vector<Address>* maps) {
+  recordreplay::Diagnostic("Heap::ReserveSpace Start");
+
   bool gc_performed = true;
   int counter = 0;
   static const int kThreshold = 20;
@@ -1922,6 +1924,7 @@ bool Heap::ReserveSpace(Reservation* reservations, std::vector<Address>* maps) {
                                  ClearRecordedSlots::kNo);
             maps->push_back(free_space_address);
           } else {
+            recordreplay::Diagnostic("Heap::ReserveSpace PerformGC #1");
             perform_gc = true;
             break;
           }
@@ -1932,6 +1935,9 @@ bool Heap::ReserveSpace(Reservation* reservations, std::vector<Address>* maps) {
         int reserved_size = 0;
         for (const Chunk& c : *reservation) reserved_size += c.size;
         perform_gc = !CanExpandOldGeneration(reserved_size);
+        if (perform_gc) {
+          recordreplay::Diagnostic("Heap::ReserveSpace PerformGC #2");
+        }
       } else {
         for (auto& chunk : *reservation) {
           AllocationResult allocation;
@@ -1969,6 +1975,7 @@ bool Heap::ReserveSpace(Reservation* reservations, std::vector<Address>* maps) {
             chunk.start = free_space_address;
             chunk.end = free_space_address + size;
           } else {
+            recordreplay::Diagnostic("Heap::ReserveSpace PerformGC #3");
             perform_gc = true;
             break;
           }
@@ -1994,6 +2001,7 @@ bool Heap::ReserveSpace(Reservation* reservations, std::vector<Address>* maps) {
     }
   }
 
+  recordreplay::Diagnostic("Heap::ReserveSpace Done %d", gc_performed);
   return !gc_performed;
 }
 
