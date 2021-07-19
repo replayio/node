@@ -1975,7 +1975,7 @@ bool Heap::ReserveSpace(Reservation* reservations, std::vector<Address>* maps) {
             chunk.start = free_space_address;
             chunk.end = free_space_address + size;
           } else {
-            recordreplay::Diagnostic("Heap::ReserveSpace PerformGC #3");
+            recordreplay::Diagnostic("Heap::ReserveSpace PerformGC #3 %d %d", space, size);
             perform_gc = true;
             break;
           }
