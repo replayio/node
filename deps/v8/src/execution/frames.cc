@@ -1654,6 +1654,7 @@ DeoptimizationData OptimizedFrame::GetDeoptimizationData(
     *deopt_index = safepoint_entry.deoptimization_index();
     return DeoptimizationData::cast(code.deoptimization_data());
   }
+  recordreplay::Diagnostic("OptimizedFrame::GetDeoptimizationData NoIndex");
   *deopt_index = Safepoint::kNoDeoptimizationIndex;
   return DeoptimizationData();
 }
@@ -1690,8 +1691,8 @@ void OptimizedFrame::GetFunctions(
   DisallowHeapAllocation no_gc;
   int deopt_index = Safepoint::kNoDeoptimizationIndex;
   DeoptimizationData const data = GetDeoptimizationData(&deopt_index);
-  DCHECK(!data.is_null());
-  DCHECK_NE(Safepoint::kNoDeoptimizationIndex, deopt_index);
+  CHECK(!data.is_null());
+  CHECK_NE(Safepoint::kNoDeoptimizationIndex, deopt_index);
   FixedArray const literal_array = data.LiteralArray();
 
   TranslationIterator it(data.TranslationByteArray(),

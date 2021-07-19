@@ -58,6 +58,7 @@ SafepointEntry SafepointTable::FindEntry(Address pc) const {
     if (GetPcOffset(i) == pc_offset ||
         (has_deopt_ &&
          GetTrampolinePcOffset(i) == static_cast<int>(pc_offset))) {
+      recordreplay::Diagnostic("SafepointTable::FindEntry %u %u", pc_offset, i);
       return GetEntry(i);
     }
   }
