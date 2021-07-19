@@ -922,6 +922,8 @@ void DecorateErrorStack(Environment* env,
       env->context(), env->decorated_private_symbol(), True(env->isolate()));
 }
 
+extern "C" void V8RecordReplayOnErrorEvent(Local<Message> message);
+
 void TriggerUncaughtException(Isolate* isolate,
                               Local<Value> error,
                               Local<Message> message,
@@ -1000,6 +1002,8 @@ void TriggerUncaughtException(Isolate* isolate,
   if (!handled.ToLocalChecked()->IsFalse()) {
     return;
   }
+
+  V8RecordReplayOnErrorEvent(message);
 
   // Now we are certain that the exception is fatal.
   ReportFatalException(env, error, message, EnhanceFatalException::kEnhance);

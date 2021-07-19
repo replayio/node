@@ -3428,4 +3428,47 @@ void FunctionCallbackRecordReplayAssert(const FunctionCallbackInfo<Value>& callA
   }
 }
 
+static i::Handle<i::JSMessageObject>* gCurrentErrorEvent;
+
+extern "C" void V8RecordReplayOnErrorEvent(v8::Local<v8::Message> message) {
+  if (!recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
+  auto self = Utils::OpenHandle(*message);
+
+  gCurrentErrorEvent = &self;
+  i::RecordReplayOnConsoleMessage(self->record_replay_bookmark());
+  gCurrentErrorEvent = nullptr;
+}
+
+void FunctionCallbackRecordReplayGetCurrentError(const FunctionCallbackInfo<Value>& args) {
+  if (!gCurrentErrorEvent) {
+    return;
+  }
+
+  i::Isolate* isolate = (i::Isolate*) args.GetIsolate();
+  i::Handle<i::Object> rv = i::NewPlainObject(isolate);
+
+  auto msg = *gCurrentErrorEvent;
+  i::Handle<i::String> message = i::MessageHandler::GetMessage(isolate, msg);
+  i::Handle<i::Script> script(msg->script(), isolate);
+
+  std::string url;
+  if (!script->name().IsUndefined()) {
+    std::unique_ptr<char[]> name = i::String::cast(script->name()).ToCString();
+    url = std::string("file://") + name.get();
+  }
+
+  i::JSMessageObject::EnsureSourcePositionsAvailable(isolate, msg);
+
+  i::SetProperty(isolate, rv, "message", message);
+  i::SetProperty(isolate, rv, "filename", url.c_str());
+  i::SetProperty(isolate, rv, "line", msg->GetLineNumber());
+  i::SetProperty(isolate, rv, "column", msg->GetColumnNumber());
+  i::SetProperty(isolate, rv, "scriptId", GetProtocolSourceId(isolate, script));
+
+  args.GetReturnValue().Set(Utils::ToLocal(rv));
+}
+
 }  // namespace v8
