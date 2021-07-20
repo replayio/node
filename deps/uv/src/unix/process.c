@@ -44,6 +44,7 @@ extern char **environ;
 # include <grp.h>
 #endif
 
+extern void V8RecordReplayDiagnostic(const char* format, ...);
 
 static void uv__chld(uv_signal_t* handle, int signum) {
   uv_process_t* process;
@@ -423,6 +424,12 @@ int uv_spawn(uv_loop_t* loop,
   int i;
   int status;
 
+  V8RecordReplayDiagnostic("uv_spawn start");
+  char** nargs;
+  for (nargs = options->args; *nargs; nargs++) {
+    V8RecordReplayDiagnostic("uv_spawn arg %s", *nargs);
+  }
+
   assert(options->file != NULL);
   assert(!(options->flags & ~(UV_PROCESS_DETACHED |
                               UV_PROCESS_SETGID |
@@ -507,9 +514,11 @@ int uv_spawn(uv_loop_t* loop,
 
   process->status = 0;
   exec_errorno = 0;
-  do
+  do {
+    V8RecordReplayDiagnostic("uv_spawn read pipe start");
     r = read(signal_pipe[0], &exec_errorno, sizeof(exec_errorno));
-  while (r == -1 && errno == EINTR);
+    V8RecordReplayDiagnostic("uv_spawn read pipe done %d %d", r, errno);
+  } while (r == -1 && errno == EINTR);
 
   if (r == 0)
     ; /* okay, EOF */
