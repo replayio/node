@@ -922,7 +922,12 @@ bool PagedSpace::RawRefillLabMain(int size_in_bytes, AllocationOrigin origin) {
       }
       return rv;
     }
-    recordreplay::Diagnostic("PagedSpace::RawRefillLabMain #4 %d", size_in_bytes);
+    recordreplay::Diagnostic("PagedSpace::RawRefillLabMain #4 %d %d %d %zu %zu",
+                             size_in_bytes,
+                             heap()->ShouldExpandOldGenerationOnSlowAllocation(),
+                             heap()->CanExpandOldGeneration(AreaSize()),
+                             heap()->OldGenerationCapacity(),
+                             heap()->max_old_generation_size());
     return false;
   }
 }
