@@ -893,14 +893,21 @@ bool PagedSpace::RawRefillLabMain(int size_in_bytes, AllocationOrigin origin) {
       }
       DCHECK((CountTotalPages() > 1) ||
              (static_cast<size_t>(size_in_bytes) <= free_list_->Available()));
-      return TryAllocationFromFreeListMain(static_cast<size_t>(size_in_bytes),
-                                           origin);
+      bool rv = TryAllocationFromFreeListMain(static_cast<size_t>(size_in_bytes),
+                                              origin);
+      if (!rv) {
+        recordreplay::Diagnostic("PagedSpace::RawRefillLabMain #1 %d", size_in_bytes);
+      }
+      return rv;
     }
   }
 
   if (is_compaction_space()) {
-    return ContributeToSweepingMain(0, 0, size_in_bytes, origin);
-
+    bool rv = ContributeToSweepingMain(0, 0, size_in_bytes, origin);
+    if (!rv) {
+      recordreplay::Diagnostic("PagedSpace::RawRefillLabMain #2 %d", size_in_bytes);
+    }
+    return rv;
   } else {
     DCHECK(!is_local_space());
     if (collector->sweeping_in_progress()) {
@@ -909,8 +916,13 @@ bool PagedSpace::RawRefillLabMain(int size_in_bytes, AllocationOrigin origin) {
       RefillFreeList();
 
       // Last try to acquire memory from free list.
-      return TryAllocationFromFreeListMain(size_in_bytes, origin);
+      bool rv = TryAllocationFromFreeListMain(size_in_bytes, origin);
+      if (!rv) {
+        recordreplay::Diagnostic("PagedSpace::RawRefillLabMain #3 %d", size_in_bytes);
+      }
+      return rv;
     }
+    recordreplay::Diagnostic("PagedSpace::RawRefillLabMain #4 %d", size_in_bytes);
     return false;
   }
 }
