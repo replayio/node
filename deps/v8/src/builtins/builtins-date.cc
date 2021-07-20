@@ -202,12 +202,8 @@ Object SetLocalDateValue(Isolate* isolate, Handle<JSDate> date,
 
 }  // namespace
 
-extern void RecordReplayAssertScriptedCaller(Isolate* isolate,
-                                             const char* aWhy);
-
 // ES #sec-date-constructor
 BUILTIN(DateConstructor) {
-  RecordReplayAssertScriptedCaller(isolate, "DateConstructor");
   HandleScope scope(isolate);
   if (args.new_target()->IsUndefined(isolate)) {
     double const time_val = JSDate::CurrentTimeValue(isolate);
@@ -296,7 +292,6 @@ BUILTIN(DateConstructor) {
 
 // ES6 section 20.3.3.1 Date.now ( )
 BUILTIN(DateNow) {
-  RecordReplayAssertScriptedCaller(isolate, "DateNow");
   HandleScope scope(isolate);
   return *isolate->factory()->NewNumber(JSDate::CurrentTimeValue(isolate));
 }
