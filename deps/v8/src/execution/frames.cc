@@ -1544,7 +1544,7 @@ void OptimizedFrame::Summarize(std::vector<FrameSummary>* frames) const {
   }
 
   int deopt_index = Safepoint::kNoDeoptimizationIndex;
-  DeoptimizationData const data = GetDeoptimizationData(&deopt_index);
+  DeoptimizationData const data = GetDeoptimizationData(&deopt_index, /* ensureDeoptimization */ true);
   if (deopt_index == Safepoint::kNoDeoptimizationIndex) {
     CHECK(data.is_null());
     FATAL("Missing deoptimization information for OptimizedFrame::Summarize.");
@@ -1634,7 +1634,7 @@ int OptimizedFrame::LookupExceptionHandlerInTable(
 }
 
 DeoptimizationData OptimizedFrame::GetDeoptimizationData(
-    int* deopt_index) const {
+    int* deopt_index, bool ensureDeoptimization) const {
   DCHECK(is_optimized());
 
   JSFunction opt_function = function();
@@ -1649,7 +1649,7 @@ DeoptimizationData OptimizedFrame::GetDeoptimizationData(
   DCHECK(!code.is_null());
   DCHECK(CodeKindCanDeoptimize(code.kind()));
 
-  SafepointEntry safepoint_entry = code.GetSafepointEntry(pc());
+  SafepointEntry safepoint_entry = code.GetSafepointEntry(pc(), ensureDeoptimization);
   if (safepoint_entry.has_deoptimization_index()) {
     *deopt_index = safepoint_entry.deoptimization_index();
     return DeoptimizationData::cast(code.deoptimization_data());
