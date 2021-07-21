@@ -463,6 +463,7 @@ class V8_EXPORT_PRIVATE StackTraceIterator {
 
   virtual bool Done() const = 0;
   virtual void Advance() = 0;
+  virtual bool IsValid() const = 0;
 
   virtual int GetContextId() const = 0;
   virtual v8::MaybeLocal<v8::Value> GetReceiver() const = 0;

@@ -604,7 +604,7 @@ class StandardFrame : public StackFrame {
   // Build a list with summaries for this frame including all inlined frames.
   // The functions are ordered bottom-to-top (i.e. summaries.last() is the
   // top-most activation; caller comes before callee).
-  virtual void Summarize(std::vector<FrameSummary>* frames) const;
+  virtual void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const;
 
   static StandardFrame* cast(StackFrame* frame) {
     DCHECK(frame->is_standard());
@@ -655,7 +655,7 @@ class JavaScriptFrame : public StandardFrame {
  public:
   Type type() const override = 0;
 
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const override;
 
   // Accessors.
   virtual JSFunction function() const;
@@ -780,7 +780,7 @@ class OptimizedFrame : public JavaScriptFrame {
   // is the top-most activation)
   void GetFunctions(std::vector<SharedFunctionInfo>* functions) const override;
 
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const override;
 
   // Lookup exception handler for current {pc}, returns -1 if none found.
   int LookupExceptionHandlerInTable(
@@ -836,7 +836,7 @@ class InterpretedFrame : public JavaScriptFrame {
   void WriteInterpreterRegister(int register_index, Object value);
 
   // Build a list with summaries for this frame including all inlined frames.
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const override;
 
   static int GetBytecodeOffset(Address fp);
 
@@ -934,7 +934,7 @@ class WasmFrame : public StandardFrame {
   int byte_offset() const;
   bool is_inspectable() const;
 
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const override;
 
   static WasmFrame* cast(StackFrame* frame) {
     DCHECK(frame->is_wasm());

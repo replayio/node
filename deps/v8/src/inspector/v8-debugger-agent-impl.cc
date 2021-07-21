@@ -1466,6 +1466,18 @@ Response V8DebuggerAgentImpl::currentCallFrames(
   auto iterator = v8::debug::StackTraceIterator::Create(m_isolate);
   int frameOrdinal = 0;
   for (; !iterator->Done(); iterator->Advance(), frameOrdinal++) {
+    // When recording/replaying we can get into situations where the current
+    // stack cannot be read, e.g. when an exception is being thrown and frame
+    // data is not available for an optimized frame on the stack. For now we
+    // workaround this by detecting such cases and returning an empty array of
+    // frames to avoid crashing.
+    if (!iterator->IsValid()) {
+      v8::recordreplay::Print("V8DebuggerAgentImpl::currentCallFrames CantAdvance");
+      v8::recordreplay::Diagnostic("V8DebuggerAgentImpl::currentCallFrames CantAdvance");
+      *result = std::make_unique<Array<CallFrame>>();
+      return Response::Success();
+    }
+
     int contextId = iterator->GetContextId();
     InjectedScript* injectedScript = nullptr;
     if (contextId) m_session->findInjectedScript(contextId, injectedScript);

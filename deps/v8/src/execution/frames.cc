@@ -918,7 +918,7 @@ void StandardFrame::ComputeCallerState(State* state) const {
 
 bool StandardFrame::IsConstructor() const { return false; }
 
-void StandardFrame::Summarize(std::vector<FrameSummary>* functions) const {
+void StandardFrame::Summarize(std::vector<FrameSummary>* functions, bool allow_invalid) const {
   // This should only be called on frames which override this method.
   UNREACHABLE();
 }
@@ -1159,7 +1159,7 @@ void JavaScriptFrame::GetFunctions(
   }
 }
 
-void JavaScriptFrame::Summarize(std::vector<FrameSummary>* functions) const {
+void JavaScriptFrame::Summarize(std::vector<FrameSummary>* functions, bool allow_invalid) const {
   DCHECK(functions->empty());
   Code code = LookupCode();
   int offset = static_cast<int>(pc() - code.InstructionStart());
@@ -1532,7 +1532,7 @@ FRAME_SUMMARY_DISPATCH(Handle<Context>, native_context)
 
 #undef FRAME_SUMMARY_DISPATCH
 
-void OptimizedFrame::Summarize(std::vector<FrameSummary>* frames) const {
+void OptimizedFrame::Summarize(std::vector<FrameSummary>* frames, bool allow_invalid) const {
   DCHECK(frames->empty());
   DCHECK(is_optimized());
 
@@ -1547,6 +1547,9 @@ void OptimizedFrame::Summarize(std::vector<FrameSummary>* frames) const {
   DeoptimizationData const data = GetDeoptimizationData(&deopt_index);
   if (deopt_index == Safepoint::kNoDeoptimizationIndex) {
     CHECK(data.is_null());
+    if (allow_invalid) {
+      return;
+    }
     FATAL("Missing deoptimization information for OptimizedFrame::Summarize.");
   }
 
@@ -1810,7 +1813,7 @@ void InterpretedFrame::WriteInterpreterRegister(int register_index,
   return SetExpression(index + register_index, value);
 }
 
-void InterpretedFrame::Summarize(std::vector<FrameSummary>* functions) const {
+void InterpretedFrame::Summarize(std::vector<FrameSummary>* functions, bool allow_invalid) const {
   DCHECK(functions->empty());
   Handle<AbstractCode> abstract_code(AbstractCode::cast(GetBytecodeArray()),
                                      isolate());
@@ -1929,7 +1932,7 @@ bool WasmFrame::is_inspectable() const {
 
 Object WasmFrame::context() const { return wasm_instance().native_context(); }
 
-void WasmFrame::Summarize(std::vector<FrameSummary>* functions) const {
+void WasmFrame::Summarize(std::vector<FrameSummary>* functions, bool allow_invalid) const {
   DCHECK(functions->empty());
   // The {WasmCode*} escapes this scope via the {FrameSummary}, which is fine,
   // since this code object is part of our stack.
