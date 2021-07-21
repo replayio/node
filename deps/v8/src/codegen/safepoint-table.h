@@ -99,7 +99,7 @@ class SafepointTable {
   }
 
   // Returns the entry for the given pc.
-  SafepointEntry FindEntry(Address pc, bool ensureDeoptimization = false) const;
+  SafepointEntry FindEntry(Address pc) const;
 
   void PrintEntry(unsigned index, std::ostream& os) const;  // NOLINT
 

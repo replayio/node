@@ -136,9 +136,9 @@ void Code::CopyFromNoFlush(Heap* heap, const CodeDesc& desc) {
   }
 }
 
-SafepointEntry Code::GetSafepointEntry(Address pc, bool ensureDeoptimization) {
+SafepointEntry Code::GetSafepointEntry(Address pc) {
   SafepointTable table(*this);
-  return table.FindEntry(pc, ensureDeoptimization);
+  return table.FindEntry(pc);
 }
 
 int Code::OffHeapInstructionSize() const {

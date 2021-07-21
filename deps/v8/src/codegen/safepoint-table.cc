@@ -45,7 +45,7 @@ unsigned SafepointTable::find_return_pc(unsigned pc_offset) {
   UNREACHABLE();
 }
 
-SafepointEntry SafepointTable::FindEntry(Address pc, bool ensureDeoptimization) const {
+SafepointEntry SafepointTable::FindEntry(Address pc) const {
   unsigned pc_offset = static_cast<unsigned>(pc - instruction_start_);
   // We use kMaxUInt32 as sentinel value, so check that we don't hit that.
   DCHECK_NE(kMaxUInt32, pc_offset);
@@ -58,21 +58,8 @@ SafepointEntry SafepointTable::FindEntry(Address pc, bool ensureDeoptimization) 
     if (GetPcOffset(i) == pc_offset ||
         (has_deopt_ &&
          GetTrampolinePcOffset(i) == static_cast<int>(pc_offset))) {
-      // Deoptimization data might be missing at some exception sites, causing
-      // crashes when replaying if the stack is fetched while paused at the site.
-      // For now we workaround this by ensuring there is deoptimization data, even
-      // if it is for a nearby safepoint.
-      SafepointEntry entry = GetEntry(i);
-      if (ensureDeoptimization && !entry.has_deoptimization_index()) {
-        recordreplay::Diagnostic("SafepointTable::FindEntry MissingDeoptimizationInfo");
-        for (int j = i - 1; j >= 0; j--) {
-          entry = GetEntry(j);
-          if (entry.has_deoptimization_index()) {
-            break;
-          }
-        }
-      }
-      return entry;
+      recordreplay::Diagnostic("SafepointTable::FindEntry %u %u", pc_offset, i);
+      return GetEntry(i);
     }
   }
   UNREACHABLE();

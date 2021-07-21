@@ -245,7 +245,7 @@ class Code : public HeapObject {
   inline Address constant_pool() const;
 
   // Get the safepoint entry for the given pc.
-  SafepointEntry GetSafepointEntry(Address pc, bool ensureDeoptimization = false);
+  SafepointEntry GetSafepointEntry(Address pc);
 
   // The entire code object including its header is copied verbatim to the
   // snapshot so that it can be written in one, fast, memcpy during

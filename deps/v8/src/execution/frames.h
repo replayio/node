@@ -786,8 +786,7 @@ class OptimizedFrame : public JavaScriptFrame {
   int LookupExceptionHandlerInTable(
       int* data, HandlerTable::CatchPrediction* prediction) override;
 
-  DeoptimizationData GetDeoptimizationData(
-      int* deopt_index, bool ensureDeoptimization = false) const;
+  DeoptimizationData GetDeoptimizationData(int* deopt_index) const;
 
 #ifndef V8_REVERSE_JSARGS
   // When the arguments are reversed in the stack, receiver() is
