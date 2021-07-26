@@ -4948,25 +4948,19 @@ bool Heap::ShouldExpandOldGenerationOnSlowAllocation(LocalHeap* local_heap) {
   // Ensure that retry of allocation on background thread succeeds
   if (IsRetryOfFailedAllocation(local_heap)) return true;
 
-  if (ShouldOptimizeForMemoryUsage()) {
-    recordreplay::Diagnostic("Heap::ShouldExpandOldGenerationOnSlowAllocation #1");
-    return false;
-  }
+  if (ShouldOptimizeForMemoryUsage()) return false;
 
   if (ShouldOptimizeForLoadTime()) return true;
 
   if (incremental_marking()->NeedsFinalization()) {
-    bool rv = !AllocationLimitOvershotByLargeMargin();
-    if (!rv) {
-      recordreplay::Diagnostic("Heap::ShouldExpandOldGenerationOnSlowAllocation #2");
-    }
-    return rv;
+    return !AllocationLimitOvershotByLargeMargin();
   }
 
   if (incremental_marking()->IsStopped() &&
-      IncrementalMarkingLimitReached() == IncrementalMarkingLimit::kNoLimit) {
+      IncrementalMarkingLimitReached() == IncrementalMarkingLimit::kNoLimit &&
+      // Incremental marking is disabled when recording/replaying.
+      !recordreplay::IsRecordingOrReplaying()) {
     // We cannot start incremental marking.
-    recordreplay::Diagnostic("Heap::ShouldExpandOldGenerationOnSlowAllocation #3");
     return false;
   }
   return true;
