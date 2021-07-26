@@ -269,6 +269,8 @@ static void uv__process_child_init(const uv_process_options_t* options,
                                    int stdio_count,
                                    int (*pipes)[2],
                                    int error_fd) {
+  V8RecordReplayDiagnostic("uv__process_child_init start");
+
   sigset_t set;
   int close_fd;
   int use_fd;
@@ -399,7 +401,12 @@ static void uv__process_child_init(const uv_process_options_t* options,
     _exit(127);
   }
 
+  V8RecordReplayDiagnostic("uv__process_child_init done");
+
   execvp(options->file, options->args);
+
+  V8RecordReplayDiagnostic("uv__process_child_init after exec");
+
   uv__write_int(error_fd, UV__ERR(errno));
   _exit(127);
 }
@@ -494,6 +501,8 @@ int uv_spawn(uv_loop_t* loop,
   /* Acquire write lock to prevent opening new fds in worker threads */
   uv_rwlock_wrlock(&loop->cloexec_lock);
   pid = fork();
+
+  V8RecordReplayDiagnostic("uv_spawn forked %d", pid);
 
   if (pid == -1) {
     err = UV__ERR(errno);
