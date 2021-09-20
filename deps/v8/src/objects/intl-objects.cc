@@ -1988,6 +1988,7 @@ class ICUTimezoneCache : public base::TimezoneCache {
 
  private:
   icu::TimeZone* GetTimeZone();
+  const char* GetTimeZoneName(bool is_dst);
 
   bool GetOffsets(double time_ms, bool is_utc, int32_t* raw_offset,
                   int32_t* dst_offset);
@@ -2000,6 +2001,10 @@ class ICUTimezoneCache : public base::TimezoneCache {
 
 const char* ICUTimezoneCache::LocalTimezone(double time_ms) {
   bool is_dst = DaylightSavingsOffset(time_ms) != 0;
+  return GetTimeZoneName(is_dst);
+}
+
+const char* ICUTimezoneCache::GetTimeZoneName(bool is_dst) {
   std::string* name = is_dst ? &dst_timezone_name_ : &timezone_name_;
   if (name->empty()) {
     icu::UnicodeString result;
@@ -2064,6 +2069,14 @@ void ICUTimezoneCache::Clear(TimeZoneDetection time_zone_detection) {
   dst_timezone_name_.clear();
   if (time_zone_detection == TimeZoneDetection::kRedetect) {
     icu::TimeZone::adoptDefault(icu::TimeZone::detectHostTimeZone());
+  }
+
+  // When recording/replaying, eagerly load the time zone and its name
+  // so that we won't have to do this when we are possibly diverged from the
+  // recording and don't know what time zone the recording was originally made in.
+  if (recordreplay::IsRecordingOrReplaying()) {
+    GetTimeZoneName(true);
+    GetTimeZoneName(false);
   }
 }
 
