@@ -2989,6 +2989,52 @@ static Handle<Object> RecordReplayCurrentGeneratorId(Isolate* isolate, Handle<Ob
   return rv;
 }
 
+static Handle<Object> RecordReplayGetStackFunctionIds(Isolate* isolate, Handle<Object> params) {
+  std::vector<std::string> functions;
+  for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
+    StackFrame* frame = it.frame();
+    if (frame->type() != StackFrame::OPTIMIZED && frame->type() != StackFrame::INTERPRETED) {
+      continue;
+    }
+    std::vector<FrameSummary> frames;
+    StandardFrame::cast(frame)->Summarize(&frames);
+
+    for (int i = (int)frames.size() - 1; i >= 0; i--) {
+      const auto& summary = frames[i];
+      CHECK(summary.IsJavaScript());
+      const auto& js = summary.AsJavaScript();
+
+      Handle<SharedFunctionInfo> shared(js.function()->shared(), isolate);
+
+      // See GetStackLocation.
+      if (!shared->StartPosition() && !shared->EndPosition()) {
+        continue;
+      }
+
+      Handle<Script> script(Script::cast(shared->script()), isolate);
+      if (script->id() && !RecordReplayIgnoreScript(*script)) {
+        functions.push_back(GetRecordReplayFunctionId(shared));
+      }
+    }
+  }
+
+  Handle<FixedArray> functionsArray = isolate->factory()->NewFixedArray(functions.size());
+
+  size_t index = 0;
+  for (const std::string& function_id : functions) {
+    Handle<String> str = CStringToHandle(isolate, function_id.c_str());
+    functionsArray->set(index++, *str);
+  }
+  CHECK(index == functions.size());
+
+  Handle<JSArray> functionsJSArray =
+    isolate->factory()->NewJSArrayWithElements(functionsArray);
+
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  SetProperty(isolate, rv, "frameFunctions", functionsJSArray);
+  return rv;
+}
+
 extern bool gRecordReplayInstrumentNodeInternals;
 
 bool RecordReplayIgnoreScriptByURL(const char* url) {
@@ -3097,6 +3143,7 @@ static InternalCommandCallback gInternalCommandCallbacks[] = {
   { "Target.countStackFrames", RecordReplayCountStackFrames },
   { "Target.getFunctionsInRange", RecordReplayGetFunctionsInRange },
   { "Target.currentGeneratorId", RecordReplayCurrentGeneratorId },
+  { "Target.getStackFunctionIDs", RecordReplayGetStackFunctionIds },
 };
 
 // Function to invoke on command callbacks which we don't have a C++ implementation for.
