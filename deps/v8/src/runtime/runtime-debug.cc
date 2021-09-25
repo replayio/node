@@ -877,6 +877,7 @@ RUNTIME_FUNCTION(Runtime_ProfileCreateSnapshotDataBlob) {
 }
 
 extern uint64_t* gProgressCounter;
+extern uint64_t gTargetProgress;
 extern bool gRecordReplayAssertValues;
 
 // Define this to check preconditions for using record/replay opcodes.
@@ -907,8 +908,12 @@ static inline bool RecordReplayBytecodeAllowed() {
 
 extern bool gRecordReplayHasCheckpoint;
 
+extern void RecordReplayOnTargetProgressReached();
+
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
-  ++*gProgressCounter;
+  if (++*gProgressCounter == gTargetProgress) {
+    RecordReplayOnTargetProgressReached();
+  }
 
   if (!gRecordReplayAssertValues) {
     return ReadOnlyRoots(isolate).undefined_value();

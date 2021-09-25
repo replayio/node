@@ -28,6 +28,9 @@
 
 namespace v8 {
 namespace internal {
+
+extern bool gRecordReplayInstrumentationEnabled;
+
 namespace compiler {
 
 class BytecodeGraphBuilder {
@@ -3604,6 +3607,13 @@ void BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
 }
 
 void BytecodeGraphBuilder::VisitRecordReplayInstrumentation() {
+  // If instrumentation is disabled then calls can be skipped entirely.
+  // The optimized code will be discarded if instrumentation is enabled/disabled,
+  // see RecordReplayChangeInstrument.
+  if (!gRecordReplayInstrumentationEnabled) {
+    return;
+  }
+
   PrepareEagerCheckpoint();
   Node* closure = GetFunctionClosure();
   uint32_t index = bytecode_iterator().GetIndexOperand(0);
@@ -3615,6 +3625,8 @@ void BytecodeGraphBuilder::VisitRecordReplayInstrumentation() {
 }
 
 void BytecodeGraphBuilder::VisitRecordReplayInstrumentationGenerator() {
+  // Note: we always need to call the InstrumentationGenerator function,
+  // see Runtime_RecordReplayInstrumentationGenerator.
   PrepareEagerCheckpoint();
   Node* closure = GetFunctionClosure();
   uint32_t index = bytecode_iterator().GetIndexOperand(0);
