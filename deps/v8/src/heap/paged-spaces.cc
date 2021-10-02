@@ -905,7 +905,9 @@ bool PagedSpace::RawRefillLabMain(int size_in_bytes, AllocationOrigin origin) {
   if (is_compaction_space()) {
     bool rv = ContributeToSweepingMain(0, 0, size_in_bytes, origin);
     if (!rv) {
-      recordreplay::Diagnostic("PagedSpace::RawRefillLabMain #2 %d", size_in_bytes);
+      recordreplay::Diagnostic("PagedSpace::RawRefillLabMain #2 %d %d %d", size_in_bytes,
+                               heap()->ShouldExpandOldGenerationOnSlowAllocation(),
+                               heap()->CanExpandOldGeneration(AreaSize()));
     }
     return rv;
   } else {

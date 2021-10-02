@@ -132,6 +132,7 @@ AllocationResult PagedSpace::AllocateFastAligned(
 AllocationResult PagedSpace::AllocateRawUnaligned(int size_in_bytes,
                                                   AllocationOrigin origin) {
   if (!EnsureLabMain(size_in_bytes, origin)) {
+    recordreplay::Diagnostic("PagedSpace::AllocateRawUnaligned EnsureLabMain failed");
     return AllocationResult::Retry(identity());
   }
 
