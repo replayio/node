@@ -334,6 +334,7 @@ DLib::DLib(const char* filename, int flags)
 #ifdef __POSIX__
 bool DLib::Open() {
   handle_ = dlopen(filename_.c_str(), flags_);
+  v8::recordreplay::Assert("DLib::Open %s %d", filename_.c_str(), !!handle_);
   if (handle_ != nullptr) return true;
   errmsg_ = dlerror();
   return false;
