@@ -3,21 +3,19 @@ const os = require("os");
 const { spawnSync } = require("child_process");
 const node = __dirname;
 
-// Generate a new build ID.
-const buildId = `${currentPlatform()}-node-${makeDate()}-${makeRandomId()}`;
-
-fs.writeFileSync(
-  `${node}/src/node_build_id.cc`,
-  `namespace node { char gBuildId[] = "${buildId}"; }`
-);
-
 // Download the latest record/replay driver.
-const driverFile = `${currentPlatform()}-recordreplay.so`;
-spawnChecked("curl", [`https://static.replay.io/downloads/${driverFile}`, "-o", driverFile], { stdio: "inherit" });
+const driverArchive = `${currentPlatform()}-recordreplay.tgz`;
+const driverFile = `${currentPlatform()}-recordreplay.${driverExtension()}`;
+const driverJSON = `${currentPlatform()}-recordreplay.json`;
+spawnChecked("curl", [`https://static.replay.io/downloads/${driverArchive}`, "-o", driverArchive], { stdio: "inherit" });
+spawnChecked("tar", ["xf", driverArchive]);
+fs.unlinkSync(driverArchive);
 
 // Embed the driver in the source.
 const driverContents = fs.readFileSync(driverFile);
+const { revision: driverRevision, date: driverDate } = JSON.parse(fs.readFileSync(driverJSON, "utf8"));
 fs.unlinkSync(driverFile);
+fs.unlinkSync(driverJSON);
 let driverString = "";
 for (let i = 0; i < driverContents.length; i++) {
   driverString += `\\${driverContents[i].toString(8)}`;
@@ -28,6 +26,7 @@ fs.writeFileSync(
 namespace node {
   char gRecordReplayDriver[] = "${driverString}";
   int gRecordReplayDriverSize = ${driverContents.length};
+  char gBuildId[] = "${computeBuildId()}";
 }
 `
 );
@@ -89,14 +88,25 @@ function currentPlatform() {
   }
 }
 
-function makeDate() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = (now.getMonth() + 1).toString().padStart(2, "0");
-  const date = now.getDate().toString().padStart(2, "0");
-  return `${year}${month}${date}`;
+function driverExtension() {
+  return currentPlatform() == "windows" ? "dll" : "so";
 }
 
-function makeRandomId() {
-  return Math.round(Math.random() * 1e9).toString();
+function computeBuildId() {
+  const nodeRevision = spawnChecked("git", ["rev-parse", "--short", "HEAD"]).stdout.toString().trim();
+  const nodeDate = spawnChecked("git", [
+    "show",
+    "HEAD",
+    "--pretty=%cd",
+    "--date=short",
+    "--no-patch",
+  ])
+    .stdout.toString()
+    .trim()
+    .replace(/-/g, "-");
+
+  // Use the later of the two dates in the build ID.
+  const date = +nodeDate >= +driverDate ? nodeDate : driverDate;
+
+  return `${currentPlatform()}-node-${date}-${nodeRevision}-${driverRevision}`;
 }

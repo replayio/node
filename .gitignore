@@ -146,5 +146,4 @@ __pycache__
 .DS_Store
 *~
 
-/src/node_build_id.cc
 /src/node_record_replay_driver.cc

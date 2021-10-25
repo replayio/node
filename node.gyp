@@ -613,7 +613,6 @@
         'src/node_api.cc',
         'src/node_binding.cc',
         'src/node_buffer.cc',
-        'src/node_build_id.cc',
         'src/node_config.cc',
         'src/node_constants.cc',
         'src/node_contextify.cc',
