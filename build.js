@@ -93,7 +93,7 @@ function driverExtension() {
 }
 
 function computeBuildId() {
-  const nodeRevision = spawnChecked("git", ["rev-parse", "--short", "HEAD"]).stdout.toString().trim();
+  const nodeRevision = spawnChecked("git", ["rev-parse", "--short=12", "HEAD"]).stdout.toString().trim();
   const nodeDate = spawnChecked("git", [
     "show",
     "HEAD",
