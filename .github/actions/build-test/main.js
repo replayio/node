@@ -2,7 +2,6 @@
 const {
   getLatestRevision,
   sendBuildTestRequest,
-  spawnChecked,
   newTask,
 } = require("../utils");
 
@@ -25,8 +24,17 @@ function platformTasks(platform) {
       revision,
     },
     platform
-  )
+  );
 
-  // FIXME we need a test suite to run as well.
-  return [buildTask];
+  const testTask = newTask(
+    `Test Node ${platform}`,
+    {
+      kind: "RunTestSuite",
+      runtime: "node",
+      revision,
+    },
+    platform
+  );
+
+  return [buildTask, testTask];
 }

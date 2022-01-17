@@ -1,0 +1,26 @@
+{
+  "name": "replay-test",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@recordreplay/protocol": "^0.17.0",
+    "@recordreplay/recordings-cli": "^0.4.1",
+    "bufferutil": "^4.0.6",
+    "sharp": "^0.27.2",
+    "typescript": "^4.5.4",
+    "utf-8-validate": "^5.0.8",
+    "ws": "^8.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^17.0.8"
+  }
+}
