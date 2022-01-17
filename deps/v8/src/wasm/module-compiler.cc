@@ -136,9 +136,11 @@ class BackgroundCompileToken {
  public:
   explicit BackgroundCompileToken(
       const std::shared_ptr<NativeModule>& native_module)
-      : native_module_(native_module) {}
+      : compilation_scope_mutex_ordered_lock_id_((int)recordreplay::CreateOrderedLock("compilation_scope_mutex")),
+        native_module_(native_module) {}
 
   void Cancel() {
+    AutoOrderedLock ordered(compilation_scope_mutex_ordered_lock_id_);
     base::SharedMutexGuard<base::kExclusive> mutex_guard(
         &compilation_scope_mutex_);
     native_module_.reset();
@@ -148,6 +150,7 @@ class BackgroundCompileToken {
   friend class BackgroundCompileScope;
 
   std::shared_ptr<NativeModule> StartScope() {
+    AutoOrderedLock ordered(compilation_scope_mutex_ordered_lock_id_);
     compilation_scope_mutex_.LockShared();
     return native_module_.lock();
   }
@@ -186,6 +189,7 @@ class BackgroundCompileToken {
 
   // {compilation_scope_mutex_} protects {native_module_}.
   base::SharedMutex compilation_scope_mutex_;
+  int compilation_scope_mutex_ordered_lock_id_;
   std::weak_ptr<NativeModule> native_module_;
 
   // {publish_mutex_} protects {publish_queue_} and {publisher_running_}.
