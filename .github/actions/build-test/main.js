@@ -33,7 +33,8 @@ function platformTasks(platform) {
       runtime: "node",
       revision,
     },
-    platform
+    platform,
+    [buildTask]
   );
 
   return [buildTask, testTask];
