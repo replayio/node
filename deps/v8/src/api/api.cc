@@ -11169,6 +11169,8 @@ static void (*gRecordReplayRegisterPointer)(const void* ptr);
 static void (*gRecordReplayUnregisterPointer)(const void* ptr);
 static int (*gRecordReplayPointerId)(const void* ptr);
 static void* (*gRecordReplayIdPointer)(int id);
+static bool (*gHasDivergedFromRecording)();
+static bool (*gIsUnhandledDivergenceAllowed)();
 static size_t (*gRecordReplayNewBookmark)();
 static void (*gRecordReplayOnDebuggerStatement)();
 
@@ -11485,6 +11487,20 @@ void* recordreplay::IdPointer(int id) {
   return gRecordReplayIdPointer(id);
 }
 
+bool recordreplay::HasDivergedFromRecording() {
+  if (IsRecordingOrReplaying()) {
+    return gHasDivergedFromRecording();
+  }
+  return false;
+}
+
+bool recordreplay::IsUnhandledDivergenceAllowed() {
+  if (IsRecordingOrReplaying()) {
+    return gIsUnhandledDivergenceAllowed();
+  }
+  return true;
+}
+
 extern "C" size_t V8RecordReplayNewBookmark() {
   if (recordreplay::IsRecordingOrReplaying()) {
     return gRecordReplayNewBookmark();
@@ -11552,6 +11568,8 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayUnregisterPointer", gRecordReplayUnregisterPointer);
   RecordReplayLoadSymbol(handle, "RecordReplayPointerId", gRecordReplayPointerId);
   RecordReplayLoadSymbol(handle, "RecordReplayIdPointer", gRecordReplayIdPointer);
+  RecordReplayLoadSymbol(handle, "RecordReplayHasDivergedFromRecording", gHasDivergedFromRecording);
+  RecordReplayLoadSymbol(handle, "RecordReplayIsUnhandledDivergenceAllowed", gIsUnhandledDivergenceAllowed);
   RecordReplayLoadSymbol(handle, "RecordReplayNewBookmark", gRecordReplayNewBookmark);
   RecordReplayLoadSymbol(handle, "RecordReplayOnDebuggerStatement", gRecordReplayOnDebuggerStatement);
 

@@ -12157,6 +12157,9 @@ static void UnregisterPointer(const void* ptr);
 static int PointerId(const void* ptr);
 static void* IdPointer(int id);
 
+static bool HasDivergedFromRecording();
+static bool IsUnhandledDivergenceAllowed();
+
 }; // class recordreplay
 
 }  // namespace v8
