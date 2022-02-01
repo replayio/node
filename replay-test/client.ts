@@ -29,7 +29,7 @@ export default class ProtocolClient {
   nextMessageId = 1;
 
   constructor(address: string, callbacks: ClientCallbacks) {
-    this.socket = new WebSocket(address);
+    this.socket = new (WebSocket.default || WebSocket)(address);
     this.callbacks = callbacks;
 
     this.socket.on("open", this.openWaiter.resolve);
