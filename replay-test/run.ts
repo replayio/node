@@ -2,6 +2,7 @@
 
 // Using require() here to workaround typescript errors.
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import { spawn } from "child_process";
 import { TestManifest, NodeTestIgnoreList } from "./manifest";
@@ -73,7 +74,7 @@ if (!gRunSuite && !gRunRandomTests && !gRunPattern) {
   bailout("No tests specified");
 }
 
-const gRecordingDirectory = path.join(__dirname, `recordings-${(Math.random() * 1e9) | 0}`);
+const gRecordingDirectory = path.join(os.tmpdir(), `recordings-${(Math.random() * 1e9) | 0}`);
 
 let gNumFailures = 0;
 
@@ -224,9 +225,13 @@ async function runSingleTest(path: string, allowRecordingError: boolean) {
 
     logMessage(`Found recording ID ${recordingId}`);
 
-    const passed = await replayRecording(recordingId);
-    if (!passed) {
-      logMessage(`TestFailed: Replaying recording failed`);
+    const replayErrorWaiter: Deferred<string> = defer();
+    replayRecording(recordingId).then(error => replayErrorWaiter.resolve(error));
+    setTimeout(() => replayErrorWaiter.resolve("Timed out"), 120_000);
+
+    const replayError = await replayErrorWaiter.promise;
+    if (replayError) {
+      logMessage(`TestFailed: Replaying recording failed: ${replayError}`);
       gNumFailures++;
       return;
     }
@@ -262,19 +267,18 @@ async function uploadTestRecording(testPath: string): Promise<string | null> {
   return null;
 }
 
-async function replayRecording(recordingId: string): Promise<boolean> {
+async function replayRecording(recordingId: string): Promise<string | null> {
   const client = new ProtocolClient(gDispatchAddress, {
     onError: e => logMessage(`Socket error ${e}`),
     onClose: (code, reason) => logMessage(`Socket closed ${code} ${reason}`),
   });
   await client.waitUntilOpen();
 
-  let testPassed = true;
+  const testErrorWaiter: Deferred<string | null> = defer();
 
   client.addEventListener("Session.unprocessedRegions", () => {});
   client.addEventListener("Recording.sessionError", e => {
-    logMessage(`Session error ${JSON.stringify(e)}`);
-    testPassed = false;
+    testErrorWaiter.resolve(`Session error ${JSON.stringify(e)}`);
   });
 
   try {
@@ -285,14 +289,15 @@ async function replayRecording(recordingId: string): Promise<boolean> {
     const { sessionId } = result;
     logMessage(`Created session ${sessionId}`);
 
-    await client.sendCommand(
+    client.sendCommand(
       "Session.ensureProcessed",
       { level: "executionIndexed" },
       sessionId
-    );
+    ).then(() => testErrorWaiter.resolve(null));
+
+    const error = await testErrorWaiter.promise;
+    return error;
   } finally {
     client.close();
   }
-
-  return testPassed;
 }
