@@ -3,9 +3,10 @@
 // Using require() here to workaround typescript errors.
 import * as fs from "fs";
 import * as path from "path";
-import { spawnSync, SpawnSyncReturns } from "child_process";
+import { spawn } from "child_process";
 import { TestManifest, NodeTestIgnoreList } from "./manifest";
 import { listAllRecordings, uploadRecording } from "@recordreplay/recordings-cli";
+import { defer, Deferred } from "./utils";
 import ProtocolClient from "./client";
 
 const Usage = `
@@ -79,19 +80,21 @@ let gNumFailures = 0;
 async function main() {
   fs.mkdirSync(gRecordingDirectory);
 
-  if (gRunSuite) {
-    await runTestSuite();
-  }
+  try {
+    if (gRunSuite) {
+      await runTestSuite();
+    }
 
-  if (gRunRandomTests) {
-    await runRandomTests(gRunRandomTests);
-  }
+    if (gRunRandomTests) {
+      await runRandomTests(gRunRandomTests);
+    }
 
-  if (gRunPattern) {
-    await runTestsMatchingPattern(gRunPattern);
+    if (gRunPattern) {
+      await runTestsMatchingPattern(gRunPattern);
+    }
+  } finally {
+    fs.rmSync(gRecordingDirectory, { force: true, recursive: true });
   }
-
-  fs.rmSync(gRecordingDirectory, { force: true, recursive: true });
 
   if (gNumFailures) {
     console.error(`Had ${gNumFailures} test failures`);
@@ -166,11 +169,12 @@ function logMessage(message: string) {
 }
 
 function recordingFailed(
-  rv: SpawnSyncReturns<Buffer>,
+  code: number,
+  status: string,
   allowRecordingError: boolean,
   testPath: string
 ) {
-  if ((rv.status != 0 || rv.error) && !allowRecordingError) {
+  if ((code != 0 || status) && !allowRecordingError) {
     return true;
   }
   // If the recording is unusable or crashed, the test failed.
@@ -185,7 +189,7 @@ async function runSingleTest(path: string, allowRecordingError: boolean) {
   logMessage(`StartingTest ${path}`);
 
   try {
-    const rv = spawnSync(
+    const child = spawn(
       gNodePath,
       [path],
       {
@@ -198,8 +202,15 @@ async function runSingleTest(path: string, allowRecordingError: boolean) {
       }
     );
 
-    if (recordingFailed(rv, allowRecordingError, path)) {
-      logMessage(`TestFailed: Error while recording ${rv.status} ${rv.error}`);
+    const exitWaiter: Deferred<{ code: number, status: string }> = defer();
+
+    child.on("close", (code, status) => exitWaiter.resolve({ code, status }));
+    setTimeout(() => exitWaiter.resolve({ code: 1, status: "Timed out" }), 120_000);
+
+    const { code, status } = await exitWaiter.promise;
+
+    if (recordingFailed(code, status, allowRecordingError, path)) {
+      logMessage(`TestFailed: Error while recording ${code} ${status}`);
       gNumFailures++;
       return;
     }
