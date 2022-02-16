@@ -3,11 +3,16 @@ const os = require("os");
 const { spawnSync } = require("child_process");
 const node = __dirname;
 
-// Download the latest record/replay driver.
-const driverArchive = `${currentPlatform()}-recordreplay.tgz`;
+// Download the record/replay driver archive, using the latest version unless
+//it was overridden via the environment.
+let driverArchive = `${currentPlatform()}-recordreplay.tgz`;
+let downloadArchive = driverArchive;
+if (process.env.DRIVER_REVISION) {
+  downloadArchive = `${currentPlatform()}-recordreplay-${process.env.DRIVER_REVISION}.tgz`;
+}
 const driverFile = `${currentPlatform()}-recordreplay.${driverExtension()}`;
 const driverJSON = `${currentPlatform()}-recordreplay.json`;
-spawnChecked("curl", [`https://static.replay.io/downloads/${driverArchive}`, "-o", driverArchive], { stdio: "inherit" });
+spawnChecked("curl", [`https://static.replay.io/downloads/${downloadArchive}`, "-o", driverArchive], { stdio: "inherit" });
 spawnChecked("tar", ["xf", driverArchive]);
 fs.unlinkSync(driverArchive);
 
