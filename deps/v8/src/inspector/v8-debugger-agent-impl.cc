@@ -1437,6 +1437,39 @@ Response V8DebuggerAgentImpl::getCallFrames(
   return currentCallFrames(out_callFrames);
 }
 
+Response V8DebuggerAgentImpl::getFrameLocations(
+    Maybe<double> maxFrames,
+    std::unique_ptr<Array<protocol::Debugger::Location>>* result) {
+  if (!isPaused()) {
+    *result = std::make_unique<Array<protocol::Debugger::Location>>();
+    return Response::Success();
+  }
+  v8::HandleScope handles(m_isolate);
+  *result = std::make_unique<Array<protocol::Debugger::Location>>();
+  auto iterator = v8::debug::StackTraceIterator::Create(m_isolate);
+  int frameOrdinal = 0;
+  for (; !iterator->Done(); iterator->Advance(), frameOrdinal++) {
+    if (!iterator->IsValid()) {
+      *result = std::make_unique<Array<protocol::Debugger::Location>>();
+      return Response::Success();
+    }
+    v8::debug::Location loc = iterator->GetSourceLocation();
+
+    v8::Local<v8::debug::Script> script = iterator->GetScript();
+    std::unique_ptr<protocol::Debugger::Location> location =
+        protocol::Debugger::Location::create()
+            .setScriptId(String16::fromInteger(script->Id()))
+            .setLineNumber(loc.GetLineNumber())
+            .setColumnNumber(loc.GetColumnNumber())
+            .build();
+    (*result)->emplace_back(std::move(location));
+    if ((*result)->size() >= maxFrames.fromMaybe(std::numeric_limits<double>::max())) {
+      break;
+    }
+  }
+  return Response::Success();
+}
+
 extern "C" void V8RecordReplayGetCurrentException(v8::MaybeLocal<v8::Value>* exception);
 
 Response V8DebuggerAgentImpl::getPendingException(
