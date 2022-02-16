@@ -136,6 +136,9 @@ class V8DebuggerAgentImpl : public protocol::Debugger::Backend {
           positions) override;
   Response getCallFrames(
       std::unique_ptr<protocol::Array<protocol::Debugger::CallFrame>>* out_callFrames) override;
+  Response getFrameLocations(
+      Maybe<double> maxFrames,
+      std::unique_ptr<protocol::Array<protocol::Debugger::Location>>* out_frameLocations) override;
   Response getPendingException(
       std::unique_ptr<protocol::Runtime::RemoteObject>* out_exception) override;
 

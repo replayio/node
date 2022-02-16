@@ -503,6 +503,13 @@ domain Debugger
     returns
       array of CallFrame callFrames
 
+  command getFrameLocations
+    parameters
+      # Maximum number of frame locations to return
+      optional number maxFrames
+    returns
+      array of Location frameLocations
+
   command getPendingException
     returns
       Runtime.RemoteObject exception
