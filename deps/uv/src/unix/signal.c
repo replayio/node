@@ -32,6 +32,7 @@
 # define SA_RESTART 0
 #endif
 
+extern void V8RecordReplayAssert(const char* format, ...);
 extern void V8RecordReplayDiagnostic(const char* format, ...);
 
 typedef struct {
@@ -121,6 +122,7 @@ static int uv__signal_lock(void) {
 
   do {
     V8RecordReplayDiagnostic("uv__signal_lock read pipe start");
+    V8RecordReplayAssert("uv__signal_lock read pipe start");
     r = read(uv__signal_lock_pipefd[0], &data, sizeof data);
     V8RecordReplayDiagnostic("uv__signal_lock read pipe done %d %d", r, errno);
   } while (r < 0 && errno == EINTR);
@@ -185,6 +187,7 @@ static uv_signal_t* uv__signal_first_handle(int signum) {
 
 
 static void uv__signal_handler(int signum) {
+  V8RecordReplayAssert("uv__signal_handler %d", signum);
   V8RecordReplayDiagnostic("uv__signal_handler %d", signum);
 
   uv__signal_msg_t msg;
@@ -532,6 +535,8 @@ static void uv__signal_stop(uv_signal_t* handle) {
   int rem_oneshot;
   int first_oneshot;
   int ret;
+
+  V8RecordReplayAssert("uv__signal_stop start");
 
   /* If the watcher wasn't started, this is a no-op. */
   if (handle->signum == 0)

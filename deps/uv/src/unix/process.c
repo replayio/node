@@ -44,6 +44,7 @@ extern char **environ;
 # include <grp.h>
 #endif
 
+extern void V8RecordReplayAssert(const char* format, ...);
 extern void V8RecordReplayDiagnostic(const char* format, ...);
 
 static void uv__chld(uv_signal_t* handle, int signum) {
@@ -56,6 +57,8 @@ static void uv__chld(uv_signal_t* handle, int signum) {
   QUEUE pending;
   QUEUE* q;
   QUEUE* h;
+
+  V8RecordReplayAssert("uv__chld start");
 
   assert(signum == SIGCHLD);
 
