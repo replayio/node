@@ -32,8 +32,14 @@
 # define SA_RESTART 0
 #endif
 
+extern int V8RecordReplayIsRecording(void);
+extern int V8RecordReplayIsReplaying(void);
 extern void V8RecordReplayAssert(const char* format, ...);
 extern void V8RecordReplayDiagnostic(const char* format, ...);
+extern uintptr_t V8RecordReplayValue(const char* why, uintptr_t value);
+extern void V8RecordReplayRegisterPointer(const void* ptr);
+extern int V8RecordReplayPointerId(const void* ptr);
+extern void* V8RecordReplayIdPointer(int id);
 
 typedef struct {
   uv_signal_t* handle;
@@ -121,10 +127,7 @@ static int uv__signal_lock(void) {
   char data;
 
   do {
-    V8RecordReplayDiagnostic("uv__signal_lock read pipe start");
-    V8RecordReplayAssert("uv__signal_lock read pipe start");
     r = read(uv__signal_lock_pipefd[0], &data, sizeof data);
-    V8RecordReplayDiagnostic("uv__signal_lock read pipe done %d %d", r, errno);
   } while (r < 0 && errno == EINTR);
 
   return (r < 0) ? -1 : 0;
@@ -187,9 +190,6 @@ static uv_signal_t* uv__signal_first_handle(int signum) {
 
 
 static void uv__signal_handler(int signum) {
-  V8RecordReplayAssert("uv__signal_handler %d", signum);
-  V8RecordReplayDiagnostic("uv__signal_handler %d", signum);
-
   uv__signal_msg_t msg;
   uv_signal_t* handle;
   int saved_errno;
@@ -413,6 +413,10 @@ static int uv__signal_start(uv_signal_t* handle,
 
   RB_INSERT(uv__signal_tree_s, &uv__signal_tree, handle);
 
+  // Note: Handles added to the tree are not unregistered, which is a minor
+  // memory leak but is otherwise fine.
+  V8RecordReplayRegisterPointer(handle);
+
   uv__signal_unlock_and_unblock(&saved_sigmask);
 
   handle->signal_cb = signal_cb;
@@ -435,9 +439,7 @@ static void uv__signal_event(uv_loop_t* loop,
   end = 0;
 
   do {
-    V8RecordReplayDiagnostic("uv__signal_event read pipe start");
     r = read(loop->signal_pipefd[0], buf + bytes, sizeof(buf) - bytes);
-    V8RecordReplayDiagnostic("uv__signal_event read pipe done %d %d", r, errno);
 
     if (r == -1 && errno == EINTR)
       continue;
@@ -466,6 +468,27 @@ static void uv__signal_event(uv_loop_t* loop,
     for (i = 0; i < end; i += sizeof(uv__signal_msg_t)) {
       msg = (uv__signal_msg_t*) (buf + i);
       handle = msg->handle;
+
+      /* When recording/replaying, the data we read from the pipe will be the
+       * data which was originally read from the pipe while recording, because
+       * the write to the pipe happened inside the signal handler and is not
+       * replayed.
+       *
+       * Because of this the handle pointer we have here is invalid when
+       * replaying, and we need to save/restore the actual pointer we can use
+       * in this process.
+       */
+      if (V8RecordReplayIsRecording()) {
+        int id = V8RecordReplayPointerId(handle);
+        if (!id) {
+          fprintf(stderr, "uv__signal_event: Missing pointer ID for message handle\n");
+          abort();
+        }
+        V8RecordReplayValue("uv__signal_event handle", id);
+      } else if (V8RecordReplayIsReplaying()) {
+        int id = V8RecordReplayValue("uv__signal_event handle", 0);
+        handle = V8RecordReplayIdPointer(id);
+      }
 
       if (msg->signum == handle->signum) {
         assert(!(handle->flags & UV_HANDLE_CLOSING));
@@ -535,8 +558,6 @@ static void uv__signal_stop(uv_signal_t* handle) {
   int rem_oneshot;
   int first_oneshot;
   int ret;
-
-  V8RecordReplayAssert("uv__signal_stop start");
 
   /* If the watcher wasn't started, this is a no-op. */
   if (handle->signum == 0)

@@ -11441,7 +11441,11 @@ extern "C" int V8RecordReplayIsReplaying() {
 }
 
 bool recordreplay::IsRecording() {
-  return !IsReplaying();
+  return IsRecordingOrReplaying() && !IsReplaying();
+}
+
+extern "C" int V8RecordReplayIsRecording() {
+  return recordreplay::IsRecording();
 }
 
 extern "C" bool V8RecordReplayHasDivergedFromRecording() {
@@ -11485,6 +11489,10 @@ extern "C" int V8RecordReplayPointerId(const void* ptr) {
 void* recordreplay::IdPointer(int id) {
   CHECK(IsRecordingOrReplaying());
   return gRecordReplayIdPointer(id);
+}
+
+extern "C" void* V8RecordReplayIdPointer(int id) {
+  return recordreplay::IdPointer(id);
 }
 
 bool recordreplay::HasDivergedFromRecording() {
