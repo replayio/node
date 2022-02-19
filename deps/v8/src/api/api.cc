@@ -11624,6 +11624,11 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   // be supported for now it's not worth the bother.
   internal::FLAG_incremental_marking = false;
   internal::FLAG_never_compact = true;
+
+  // Disable wasm background compilation. The wasm module compiler is extremely
+  // complicated and getting this it to behave consistently when replaying in
+  // the presence of multiple threads isn't worth the hassle.
+  internal::FLAG_wasm_num_compilation_tasks = 1;
 }
 
 bool IsMainThread() {
