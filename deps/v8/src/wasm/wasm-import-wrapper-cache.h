@@ -72,6 +72,8 @@ class WasmImportWrapperCache {
                                   const FunctionSig* sig,
                                   int expected_arity) const;
 
+  WasmImportWrapperCache();
+
   ~WasmImportWrapperCache();
 
  private:

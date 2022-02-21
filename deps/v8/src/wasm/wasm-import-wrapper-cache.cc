@@ -10,6 +10,9 @@
 #include "src/wasm/wasm-code-manager.h"
 
 namespace v8 {
+
+extern void RecordReplayAddOrderedMutex(const char* name, base::Mutex* mutex);
+
 namespace internal {
 namespace wasm {
 
@@ -31,6 +34,10 @@ WasmCode* WasmImportWrapperCache::Get(compiler::WasmImportCallKind kind,
   auto it = entry_map_.find({kind, sig, expected_arity});
   DCHECK(it != entry_map_.end());
   return it->second;
+}
+
+WasmImportWrapperCache::WasmImportWrapperCache() {
+  RecordReplayAddOrderedMutex("WasmImportWrapperCache::mutex_", &mutex_);
 }
 
 WasmImportWrapperCache::~WasmImportWrapperCache() {
