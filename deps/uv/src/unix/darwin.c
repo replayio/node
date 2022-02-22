@@ -37,6 +37,11 @@
 #include "darwin-stub.h"
 #endif
 
+extern int V8RecordReplayIsReplaying(void);
+extern uintptr_t V8RecordReplayValue(const char* why, uintptr_t value);
+extern void V8RecordReplayBeginPassThroughEvents(void);
+extern void V8RecordReplayEndPassThroughEvents(void);
+
 static uv_once_t once = UV_ONCE_INIT;
 static uint64_t (*time_func)(void);
 static mach_timebase_info_data_t timebase;
@@ -335,7 +340,20 @@ int uv_cpu_info(uv_cpu_info_t** cpu_infos, int* count) {
     return UV__ERR(errno);
   }
 
-  err = uv__get_cpu_speed(&cpuspeed);
+  // Some of the system interactions in uv__get_cpu_speed are not supported
+  // while recording, so we pass through events and manually record/replay
+  // the values we get from this call.
+  if (!V8RecordReplayIsReplaying()) {
+    V8RecordReplayBeginPassThroughEvents();
+    err = uv__get_cpu_speed(&cpuspeed);
+    V8RecordReplayEndPassThroughEvents();
+    V8RecordReplayValue("uv__get_cpu_speed err", err);
+    V8RecordReplayValue("uv__get_cpu_speed cpuspeed", cpuspeed);
+  } else {
+    err = V8RecordReplayValue("uv__get_cpu_speed err", 0);
+    cpuspeed = V8RecordReplayValue("uv__get_cpu_speed cpuspeed", 0);
+  }
+
   if (err < 0)
     return err;
 

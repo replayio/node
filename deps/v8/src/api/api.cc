@@ -11360,10 +11360,18 @@ void recordreplay::BeginPassThroughEvents() {
   }
 }
 
+extern "C" void V8RecordReplayBeginPassThroughEvents() {
+  recordreplay::BeginPassThroughEvents();
+}
+
 void recordreplay::EndPassThroughEvents() {
   if (IsRecordingOrReplaying()) {
     gRecordReplayEndPassThroughEvents();
   }
+}
+
+extern "C" void V8RecordReplayEndPassThroughEvents() {
+  recordreplay::EndPassThroughEvents();
 }
 
 void recordreplay::BeginDisallowEvents() {
