@@ -11437,6 +11437,10 @@ extern "C" void V8RecordReplayAddOrderedPthreadMutex(const char* name,
   }
 }
 
+void RecordReplayAddOrderedMutex(const char* name, base::Mutex* mutex) {
+  V8RecordReplayAddOrderedPthreadMutex(name, &mutex->native_handle());
+}
+
 bool recordreplay::IsReplaying() {
   if (IsRecordingOrReplaying()) {
     return gRecordReplayIsReplaying();
