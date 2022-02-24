@@ -11617,6 +11617,10 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplaySetProgressCallback", setProgressCallback);
   setProgressCallback(internal::RecordReplaySetTargetProgress);
 
+  void (*enableProgressCheckpoints)();
+  RecordReplayLoadSymbol(handle, "RecordReplayEnableProgressCheckpoints", enableProgressCheckpoints);
+  enableProgressCheckpoints();
+
   internal::gRecordReplayInstrumentNodeInternals = !!getenv("RECORD_REPLAY_INSTRUMENT_NODE");
   internal::gRecordReplayAssertValues = !!getenv("RECORD_REPLAY_JS_ASSERTS");
 
