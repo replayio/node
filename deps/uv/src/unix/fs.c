@@ -1556,6 +1556,9 @@ static ssize_t uv__fs_write_all(uv_fs_t* req) {
   ssize_t total;
   ssize_t result;
 
+  // https://github.com/RecordReplay/backend/issues/4792
+  V8RecordReplayAssert("uv__fs_write_all start");
+
   iovmax = uv__getiovmax();
   nbufs = req->nbufs;
   bufs = req->bufs;
@@ -1566,9 +1569,12 @@ static ssize_t uv__fs_write_all(uv_fs_t* req) {
     if (req->nbufs > iovmax)
       req->nbufs = iovmax;
 
-    do
+    do {
       result = uv__fs_write(req);
-    while (result < 0 && errno == EINTR);
+
+      // https://github.com/RecordReplay/backend/issues/4792
+      V8RecordReplayAssert("uv__fs_write_all #1 %d", (int)result);
+    } while (result < 0 && errno == EINTR);
 
     if (result <= 0) {
       if (total == 0)
@@ -1590,6 +1596,9 @@ static ssize_t uv__fs_write_all(uv_fs_t* req) {
 
   req->bufs = NULL;
   req->nbufs = 0;
+
+  // https://github.com/RecordReplay/backend/issues/4792
+  V8RecordReplayAssert("uv__fs_write_all done %d", (int)total);
 
   return total;
 }
