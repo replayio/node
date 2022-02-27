@@ -11257,6 +11257,37 @@ bool ShouldEmitRecordReplayAssertValue() {
   return gRecordReplayAssertValues;
 }
 
+static std::vector<std::string> gRecordReplayAssertFilters;
+
+// The assertion filters are a comma separated list of patterns for sources where
+// record/replay asserts should be added.
+static void ProcessRecordReplayAssertFilters(const char* value) {
+  if (!value) {
+    return;
+  }
+  while (true) {
+    const char* comma = strchr(value, ',');
+    std::string filter(value, comma ? comma - value : strlen(value));
+    gRecordReplayAssertFilters.push_back(filter);
+    if (!comma) {
+      break;
+    }
+    value = comma + 1;
+  }
+}
+
+bool RecordReplayShouldAssertForSource(const char* source) {
+  if (!gRecordReplayAssertFilters.size()) {
+    return true;
+  }
+  for (const std::string& filter : gRecordReplayAssertFilters) {
+    if (strstr(source, filter.c_str())) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool gRecordReplayHasCheckpoint;
 
 } // namespace internal
@@ -11619,6 +11650,7 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
 
   internal::gRecordReplayInstrumentNodeInternals = !!getenv("RECORD_REPLAY_INSTRUMENT_NODE");
   internal::gRecordReplayAssertValues = !!getenv("RECORD_REPLAY_JS_ASSERTS");
+  internal::ProcessRecordReplayAssertFilters(getenv("RECORD_REPLAY_JS_ASSERT_FILTERS"));
 
   // Set flags to disable non-deterministic posting of tasks to other threads.
   // We don't support this yet when recording/replaying.
