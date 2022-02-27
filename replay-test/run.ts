@@ -7,7 +7,7 @@ import * as path from "path";
 import { spawn } from "child_process";
 import { TestManifest, NodeTestIgnoreList } from "./manifest";
 import { listAllRecordings, uploadRecording } from "@recordreplay/recordings-cli";
-import { defer, Deferred } from "./utils";
+import { defer, Deferred, killTransitiveSubprocesses } from "./utils";
 import ProtocolClient from "./client";
 
 const Usage = `
@@ -21,9 +21,14 @@ Options:
   --server <address>: Set server to connect to (default wss://dispatch.replay.io).
 `;
 
-function bailout(message) {
+function doExit(code: number) {
+  // Kill any lingering subprocesses before exiting.
+  killTransitiveSubprocesses();
+}
+
+function bailout(message: string) {
   console.log(message);
-  process.exit(1);
+  doExit(1);
 }
 
 if (process.argv.length == 2) {
@@ -99,11 +104,11 @@ async function main() {
 
   if (gNumFailures) {
     console.error(`Had ${gNumFailures} test failures`);
-    process.exit(1);
+    doExit(1);
   }
 
   console.log("All tests passed, exiting");
-  process.exit(0);
+  doExit(0);
 }
 
 main();
