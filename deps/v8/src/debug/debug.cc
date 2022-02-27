@@ -3404,6 +3404,8 @@ std::string RecordReplayBasicValueContents(Handle<Object> value) {
 
 }  // namespace internal
 
+extern void RecordReplayAssertScriptedCaller(Isolate* isolate, const char* aWhy);
+
 namespace i = internal;
 
 void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& callArgs) {
@@ -3413,6 +3415,7 @@ void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& c
 
 void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>& callArgs) {
   CHECK(recordreplay::IsRecordingOrReplaying());
+  RecordReplayAssertScriptedCaller(callArgs.GetIsolate(), "FunctionCallbackRecordReplayOnConsoleAPI");
   if (IsMainThread()) {
     i::RecordReplayOnConsoleMessage(0);
   }
