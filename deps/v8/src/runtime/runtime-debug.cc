@@ -880,6 +880,8 @@ extern uint64_t* gProgressCounter;
 extern uint64_t gTargetProgress;
 extern bool gRecordReplayAssertValues;
 
+extern bool RecordReplayShouldAssertForSource(const char* source);
+
 // Define this to check preconditions for using record/replay opcodes.
 //#define RECORD_REPLAY_CHECK_OPCODES
 
@@ -910,6 +912,15 @@ extern bool gRecordReplayHasCheckpoint;
 
 extern void RecordReplayOnTargetProgressReached();
 
+static std::string ScriptNameToString(Handle<Script> script) {
+  std::string name;
+  if (script->name().IsUndefined()) {
+    return std::string("<none>");
+  }
+  std::unique_ptr<char[]> name_raw = String::cast(script->name()).ToCString();
+  return std::string(name_raw.get());
+}
+
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   if (++*gProgressCounter == gTargetProgress) {
     RecordReplayOnTargetProgressReached();
@@ -930,12 +941,10 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   Script::PositionInfo info;
   Script::GetPositionInfo(script, shared->StartPosition(), &info, Script::WITH_OFFSET);
 
-  std::string name;
-  if (script->name().IsUndefined()) {
-    name = "<none>";
-  } else {
-    std::unique_ptr<char[]> name_raw = String::cast(script->name()).ToCString();
-    name = name_raw.get();
+  std::string name = ScriptNameToString(script);
+
+  if (!RecordReplayShouldAssertForSource(name.c_str())) {
+    return ReadOnlyRoots(isolate).undefined_value();
   }
 
   if (!RecordReplayBytecodeAllowed()) {
@@ -979,13 +988,10 @@ static std::string FrameSummaryToString(Isolate* isolate, const FrameSummary& su
   Script::PositionInfo info;
   Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
 
+  std::string name = ScriptNameToString(script);
+
   char location[1024];
-  if (script->name().IsUndefined()) {
-    snprintf(location, sizeof(location), "<none>:%d:%d", info.line + 1, info.column);
-  } else {
-    std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
-    snprintf(location, sizeof(location), "%s:%d:%d", name.get(), info.line + 1, info.column);
-  }
+  snprintf(location, sizeof(location), "%s:%d:%d", name.c_str(), info.line + 1, info.column);
   location[sizeof(location) - 1] = 0;
 
   return std::string(location);
@@ -1065,16 +1071,17 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
     Script::PositionInfo info;
     Script::GetPositionInfo(script, site.source_position_, &info, Script::WITH_OFFSET);
 
+    std::string name = ScriptNameToString(script);
+
     char buf[1024];
-    if (script->name().IsUndefined()) {
-      snprintf(buf, sizeof(buf), "<none>:%d:%d", info.line + 1, info.column);
-    } else {
-      std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
-      snprintf(buf, sizeof(buf), "%s:%d:%d", name.get(), info.line + 1, info.column);
-    }
+    snprintf(buf, sizeof(buf), "%s:%d:%d", name.c_str(), info.line + 1, info.column);
     buf[sizeof(buf) - 1] = 0;
 
     site.location_ = buf;
+  }
+
+  if (!RecordReplayShouldAssertForSource(site.location_.c_str())) {
+    return *value;
   }
 
   std::string contents = RecordReplayBasicValueContents(value);
