@@ -46,10 +46,6 @@
 
 #include <memory>
 
-namespace v8 {
-extern void RecordReplayAssertScriptedCaller(Isolate* isolate, const char* aWhy);
-}
-
 namespace node {
 
 namespace fs {
@@ -846,9 +842,6 @@ void Access(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   Isolate* isolate = env->isolate();
   HandleScope scope(isolate);
-
-  // https://github.com/RecordReplay/backend/issues/4791
-  v8::RecordReplayAssertScriptedCaller(isolate, "fs::Access Start");
 
   const int argc = args.Length();
   CHECK_GE(argc, 2);
