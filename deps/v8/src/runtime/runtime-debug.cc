@@ -956,9 +956,45 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
-static std::string GetStackLocation(Isolate* isolate) {
+static std::string FrameSummaryToString(Isolate* isolate, const FrameSummary& summary) {
+  CHECK(summary.IsJavaScript());
+  auto const& js = summary.AsJavaScript();
+
+  Handle<SharedFunctionInfo> shared(js.function()->shared(), isolate);
+
+  // Sometimes the SharedFunctionInfo has what appears to be a bogus
+  // script for an unknown reason. We check the positions of the function
+  // to watch for this.
+  if (!shared->StartPosition() && !shared->EndPosition()) {
+    return "";
+  }
+
+  Handle<Script> script(Script::cast(shared->script()), isolate);
+
+  if (script->id() == 0) {
+    return "";
+  }
+
+  int source_position = js.SourcePosition();
+  Script::PositionInfo info;
+  Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
+
   char location[1024];
-  strcpy(location, "<no frame>");
+  if (script->name().IsUndefined()) {
+    snprintf(location, sizeof(location), "<none>:%d:%d", info.line + 1, info.column);
+  } else {
+    std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+    snprintf(location, sizeof(location), "%s:%d:%d", name.get(), info.line + 1, info.column);
+  }
+  location[sizeof(location) - 1] = 0;
+
+  return std::string(location);
+}
+
+static std::string GetStackContents(Isolate* isolate, size_t max_frames) {
+  size_t num_frames = 0;
+
+  std::string contents;
   for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
     StackFrame* frame = it.frame();
     if (frame->type() != StackFrame::OPTIMIZED && frame->type() != StackFrame::INTERPRETED) {
@@ -966,40 +1002,19 @@ static std::string GetStackLocation(Isolate* isolate) {
     }
     std::vector<FrameSummary> frames;
     StandardFrame::cast(frame)->Summarize(&frames);
-    auto& summary = frames.back();
-    CHECK(summary.IsJavaScript());
-    auto const& js = summary.AsJavaScript();
-
-    Handle<SharedFunctionInfo> shared(js.function()->shared(), isolate);
-
-    // Sometimes the SharedFunctionInfo has what appears to be a bogus
-    // script for an unknown reason. We check the positions of the function
-    // to watch for this.
-    if (!shared->StartPosition() && !shared->EndPosition()) {
-      continue;
+    for (int i = frames.size() - 1; i >= 0; i--) {
+      auto& summary = frames[i];
+      std::string rv = FrameSummaryToString(isolate, summary);
+      if (rv.length()) {
+        contents += "< " + rv;
+        if (++num_frames >= max_frames) {
+          return contents;
+        }
+      }
     }
-
-    Handle<Script> script(Script::cast(shared->script()), isolate);
-
-    if (script->id() == 0) {
-      continue;
-    }
-
-    int source_position = js.SourcePosition();
-    Script::PositionInfo info;
-    Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
-
-    if (script->name().IsUndefined()) {
-      snprintf(location, sizeof(location), "<none>:%d:%d", info.line + 1, info.column);
-    } else {
-      std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
-      snprintf(location, sizeof(location), "%s:%d:%d", name.get(), info.line + 1, info.column);
-    }
-    location[sizeof(location) - 1] = 0;
-    break;
   }
 
-  return std::string(location);
+  return contents.length() ? contents : std::string("<no frame>");
 }
 
 // Assertion and instrumentation site indexes embedded in bytecodes are offset
@@ -1228,7 +1243,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentationGenerator) {
 
 void RecordReplayAssertScriptedCaller(Isolate* isolate, const char* aWhy) {
   if (recordreplay::IsRecordingOrReplaying()) {
-    std::string location = GetStackLocation((internal::Isolate*)isolate);
+    std::string location = GetStackContents((internal::Isolate*)isolate, 20);
     recordreplay::Assert("ScriptedCaller %s %s", aWhy, location.c_str());
   }
 }
