@@ -843,6 +843,9 @@ void Access(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = env->isolate();
   HandleScope scope(isolate);
 
+  // https://github.com/RecordReplay/backend/issues/4791
+  v8::recordreplay::Assert("fs::Access Start");
+
   const int argc = args.Length();
   CHECK_GE(argc, 2);
 
