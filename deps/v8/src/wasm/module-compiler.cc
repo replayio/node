@@ -3277,6 +3277,9 @@ void CompilationStateImpl::TriggerCallbacks(
     if (!triggered_events.contains(event.first)) continue;
     TRACE_EVENT0("v8.wasm", event.second);
     for (auto& callback : callbacks_) {
+      // https://github.com/RecordReplay/backend/issues/4886
+      recordreplay::Assert("CompilationStateImpl::TriggerCallbacks InvokeCallback");
+
       callback(event.first);
     }
   }

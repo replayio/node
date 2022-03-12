@@ -920,6 +920,9 @@ void Environment::ToggleImmediateRef(bool ref) {
 }
 
 Local<Value> Environment::GetNow() {
+  // https://github.com/RecordReplay/backend/issues/4886
+  v8::recordreplay::Assert("Environment::GetNow");
+
   uv_update_time(event_loop());
   uint64_t now = uv_now(event_loop());
   CHECK_GE(now, timer_base());

@@ -495,6 +495,9 @@ Handle<WasmModuleObject> WasmEngine::FinalizeTranslatedAsmJs(
 MaybeHandle<WasmModuleObject> WasmEngine::SyncCompile(
     Isolate* isolate, const WasmFeatures& enabled, ErrorThrower* thrower,
     const ModuleWireBytes& bytes) {
+  // https://github.com/RecordReplay/backend/issues/4886
+  recordreplay::Assert("WasmEngine::SyncCompile");
+
   TRACE_EVENT0("v8.wasm", "wasm.SyncCompile");
   ModuleResult result = DecodeWasmModule(
       enabled, bytes.start(), bytes.end(), false, kWasmOrigin,
