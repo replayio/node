@@ -1116,6 +1116,11 @@ static ssize_t uv__fs_write(uv_fs_t* req) {
     abort();
 #endif
 
+  // https://github.com/RecordReplay/backend/issues/4792
+  V8RecordReplayAssert("uv__fs_write start %d %d %d %d",
+                       req->file, (int)req->off, (int)req->nbufs,
+                       req->nbufs ? (int)req->bufs[0].len : -1);
+
   if (req->off < 0) {
     if (req->nbufs == 1)
       r = write(req->file, req->bufs[0].base, req->bufs[0].len);
