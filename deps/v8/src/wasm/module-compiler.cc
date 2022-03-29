@@ -3345,13 +3345,19 @@ void CompilationStateImpl::ScheduleCompileJobForNewUnits(int new_units) {
       std::make_unique<BackgroundCompileJob>(
           background_compile_token_, async_counters_,
           scheduled_units_approximation_, max_compile_concurrency_);
-  // TODO(wasm): Lower priority for TurboFan-only jobs.
-  std::shared_ptr<JobHandle> handle = V8::GetCurrentPlatform()->PostJob(
-      has_priority_ ? TaskPriority::kUserBlocking : TaskPriority::kUserVisible,
-      std::move(new_compile_job));
-  native_module_->engine()->ShepherdCompileJobHandle(handle);
-  current_compile_job_ =
-      std::make_unique<ThreadSafeJobHandle>(std::move(handle));
+
+  if (recordreplay::IsRecordingOrReplaying()) {
+    // Never run compile jobs async when recording/replaying.
+    new_compile_job->Run(nullptr);
+  } else {
+    // TODO(wasm): Lower priority for TurboFan-only jobs.
+    std::shared_ptr<JobHandle> handle = V8::GetCurrentPlatform()->PostJob(
+        has_priority_ ? TaskPriority::kUserBlocking : TaskPriority::kUserVisible,
+        std::move(new_compile_job));
+    native_module_->engine()->ShepherdCompileJobHandle(handle);
+    current_compile_job_ =
+        std::make_unique<ThreadSafeJobHandle>(std::move(handle));
+  }
 
   // Reset the priority. Later uses of the compilation state, e.g. for
   // debugging, should compile with the default priority again.
