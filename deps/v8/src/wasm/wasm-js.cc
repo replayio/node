@@ -35,6 +35,8 @@ using v8::internal::wasm::ScheduledErrorThrower;
 
 namespace v8 {
 
+extern void RecordReplayAssertScriptedCaller(Isolate* isolate, const char* aWhy);
+
 class WasmStreaming::WasmStreamingImpl {
  public:
   WasmStreamingImpl(
@@ -648,18 +650,26 @@ void WebAssemblyValidate(const v8::FunctionCallbackInfo<v8::Value>& args) {
 // new WebAssembly.Module(bytes) -> WebAssembly.Module
 void WebAssemblyModule(const v8::FunctionCallbackInfo<v8::Value>& args) {
   v8::Isolate* isolate = args.GetIsolate();
+
+  RecordReplayAssertScriptedCaller(isolate, "WebAssemblyModule");
+
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  if (i_isolate->wasm_module_callback()(args)) return;
+  if (i_isolate->wasm_module_callback()(args)) {
+    recordreplay::Assert("WebAssemblyModule #1");
+    return;
+  }
 
   HandleScope scope(isolate);
   ScheduledErrorThrower thrower(i_isolate, "WebAssembly.Module()");
 
   if (!args.IsConstructCall()) {
     thrower.TypeError("WebAssembly.Module must be invoked with 'new'");
+    recordreplay::Assert("WebAssemblyModule #2");
     return;
   }
   if (!i::wasm::IsWasmCodegenAllowed(i_isolate, i_isolate->native_context())) {
     thrower.CompileError("Wasm code generation disallowed by embedder");
+    recordreplay::Assert("WebAssemblyModule #3");
     return;
   }
 
@@ -667,6 +677,7 @@ void WebAssemblyModule(const v8::FunctionCallbackInfo<v8::Value>& args) {
   auto bytes = GetFirstArgumentAsBytes(args, &thrower, &is_shared);
 
   if (thrower.error()) {
+    recordreplay::Assert("WebAssemblyModule #4");
     return;
   }
   auto enabled_features = i::wasm::WasmFeatures::FromIsolate(i_isolate);
@@ -685,10 +696,15 @@ void WebAssemblyModule(const v8::FunctionCallbackInfo<v8::Value>& args) {
         i_isolate, enabled_features, &thrower, bytes);
   }
 
-  if (module_obj.is_null()) return;
+  if (module_obj.is_null()) {
+    recordreplay::Assert("WebAssemblyModule #5");
+    return;
+  }
 
   v8::ReturnValue<v8::Value> return_value = args.GetReturnValue();
   return_value.Set(Utils::ToLocal(module_obj.ToHandleChecked()));
+
+  recordreplay::Assert("WebAssemblyModule Done");
 }
 
 // WebAssembly.Module.imports(module) -> Array<Import>
@@ -779,16 +795,23 @@ MaybeLocal<Value> WebAssemblyInstantiateImpl(Isolate* isolate,
 // new WebAssembly.Instance(module, imports) -> WebAssembly.Instance
 void WebAssemblyInstance(const v8::FunctionCallbackInfo<v8::Value>& args) {
   Isolate* isolate = args.GetIsolate();
+
+  RecordReplayAssertScriptedCaller(isolate, "WebAssemblyInstance");
+
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   i_isolate->CountUsage(
       v8::Isolate::UseCounterFeature::kWebAssemblyInstantiation);
 
   HandleScope scope(args.GetIsolate());
-  if (i_isolate->wasm_instance_callback()(args)) return;
+  if (i_isolate->wasm_instance_callback()(args)) {
+    recordreplay::Assert("WebAssemblyInstance #1");
+    return;
+  }
 
   ScheduledErrorThrower thrower(i_isolate, "WebAssembly.Instance()");
   if (!args.IsConstructCall()) {
     thrower.TypeError("WebAssembly.Instance must be invoked with 'new'");
+    recordreplay::Assert("WebAssemblyInstance #2");
     return;
   }
 
@@ -803,6 +826,8 @@ void WebAssemblyInstance(const v8::FunctionCallbackInfo<v8::Value>& args) {
   if (WebAssemblyInstantiateImpl(isolate, args[0], data).ToLocal(&instance)) {
     args.GetReturnValue().Set(instance);
   }
+
+  recordreplay::Assert("WebAssemblyInstance Done");
 }
 
 // WebAssembly.instantiateStreaming(Response | Promise<Response> [, imports])
