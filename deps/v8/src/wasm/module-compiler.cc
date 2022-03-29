@@ -3348,7 +3348,9 @@ void CompilationStateImpl::ScheduleCompileJobForNewUnits(int new_units) {
 
   if (recordreplay::IsRecordingOrReplaying()) {
     // Never run compile jobs async when recording/replaying.
+    mutex_.Unlock();
     new_compile_job->Run(nullptr);
+    mutex_.Lock();
   } else {
     // TODO(wasm): Lower priority for TurboFan-only jobs.
     std::shared_ptr<JobHandle> handle = V8::GetCurrentPlatform()->PostJob(
