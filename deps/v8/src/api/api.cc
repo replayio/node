@@ -11199,6 +11199,11 @@ extern "C" void V8RecordReplayGetCurrentException(MaybeLocal<Value>* exception) 
 void RecordReplayOnExceptionUnwind(Isolate* isolate) {
   CHECK(gRecordingOrReplaying);
   CHECK(IsMainThread());
+
+  if (recordreplay::HasDivergedFromRecording()) {
+    return;
+  }
+
   CHECK(!gCurrentException);
 
   HandleScope scope(isolate);
