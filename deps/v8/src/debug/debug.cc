@@ -3518,4 +3518,32 @@ void FunctionCallbackRecordReplayGetCurrentError(const FunctionCallbackInfo<Valu
   args.GetReturnValue().Set(Utils::ToLocal(rv));
 }
 
+extern std::string RecordReplayGetRecordingId();
+
+void FunctionCallbackRecordReplayGetRecordingId(const FunctionCallbackInfo<Value>& args) {
+  if (!recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
+  i::Isolate* isolate = (i::Isolate*) args.GetIsolate();
+
+  std::string recordingId = RecordReplayGetRecordingId();
+  i::Handle<i::String> rv = CStringToHandle(isolate, recordingId.c_str());
+  args.GetReturnValue().Set(Utils::ToLocal(rv));
+}
+
+extern std::string RecordReplayGetCurrentExecutionPoint();
+
+void FunctionCallbackRecordReplayCurrentExecutionPoint(const FunctionCallbackInfo<Value>& args) {
+  if (!recordreplay::IsRecordingOrReplaying() || !IsMainThread()) {
+    return;
+  }
+
+  i::Isolate* isolate = (i::Isolate*) args.GetIsolate();
+
+  std::string point = RecordReplayGetCurrentExecutionPoint();
+  i::Handle<i::String> rv = CStringToHandle(isolate, point.c_str());
+  args.GetReturnValue().Set(Utils::ToLocal(rv));
+}
+
 }  // namespace v8

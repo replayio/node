@@ -42,6 +42,8 @@ extern void FunctionCallbackRecordReplaySetClearPauseDataCallback(const Function
 extern void FunctionCallbackRecordReplayIgnoreScript(const FunctionCallbackInfo<Value>& args);
 extern void FunctionCallbackRecordReplayAssert(const FunctionCallbackInfo<Value>& args);
 extern void FunctionCallbackRecordReplayGetCurrentError(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplayGetRecordingId(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplayCurrentExecutionPoint(const FunctionCallbackInfo<Value>& args);
 
 }
 
@@ -649,6 +651,10 @@ static void InitializeProcessMethods(Local<Object> target,
                  RecordReplaySetCDPMessageCallback);
   env->SetMethod(target, "recordReplaySendCDPMessage",
                  RecordReplaySendCDPMessage);
+  env->SetMethod(target, "recordReplayRecordingId",
+                 v8::FunctionCallbackRecordReplayGetRecordingId);
+  env->SetMethod(target, "recordReplayCurrentExecutionPoint",
+                 v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
 }
 
 void RegisterProcessMethodsExternalReferences(
@@ -686,6 +692,8 @@ void RegisterProcessMethodsExternalReferences(
   registry->Register(v8::FunctionCallbackRecordReplayGetCurrentError);
   registry->Register(RecordReplaySetCDPMessageCallback);
   registry->Register(RecordReplaySendCDPMessage);
+  registry->Register(v8::FunctionCallbackRecordReplayGetRecordingId);
+  registry->Register(v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
 }
 
 }  // namespace node
