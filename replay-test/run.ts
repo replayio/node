@@ -115,8 +115,11 @@ async function main() {
 main();
 
 async function runTestSuite() {
-  for (const { name, allowRecordingError } of TestManifest) {
-    await runSingleTest(path.join(__dirname, "examples", name), allowRecordingError);
+  for (const { name, allowRecordingError, allowUnusable } of TestManifest) {
+    await runSingleTest(
+      path.join(__dirname, "examples", name),
+      { allowRecordingError, allowUnusable }
+    );
   }
 }
 
@@ -125,7 +128,7 @@ async function runRandomTests(count: number) {
   for (let i = 0; i < count; i++) {
     const testPath = pickRandomTest();
     if (testPath) {
-      await runSingleTest(testPath, true);
+      await runSingleTest(testPath, { allowRecordingError: true, allowUnusable: true });
     }
   }
 
@@ -140,17 +143,17 @@ async function runRandomTests(count: number) {
 }
 
 async function runTestsMatchingPattern(pattern: string) {
-  for (const { name, allowRecordingError } of TestManifest) {
+  for (const { name, allowRecordingError, allowUnusable } of TestManifest) {
     const testPath = path.join(__dirname, "examples", name);
     if (testPath.includes(pattern)) {
-      await runSingleTest(testPath, allowRecordingError);
+      await runSingleTest(testPath, { allowRecordingError, allowUnusable });
     }
   }
 
   const testList = readTests(path.join(__dirname, "..", "test"));
   for (const testPath of testList) {
     if (testPath.includes(pattern)) {
-      await runSingleTest(testPath, true);
+      await runSingleTest(testPath, { allowRecordingError: true, allowUnusable: true });
     }
   }
 }
@@ -175,24 +178,35 @@ function logMessage(message: string) {
   console.log((new Date).toISOString(), message);
 }
 
+// Spec describing allowed results from a recording process.
+interface FailureSpec {
+  // Whether the recording process is allowed to exit with an abnormal code.
+  allowRecordingError?: boolean;
+
+  // Whether the recording is allowed to be unusable.
+  allowUnusable?: boolean;
+}
+
 function recordingFailed(
   code: number,
   status: string,
-  allowRecordingError: boolean,
+  failureSpec: FailureSpec,
   testPath: string
 ) {
-  if ((code != 0 || status) && !allowRecordingError) {
+  if ((code != 0 || status) && !failureSpec.allowRecordingError) {
     return true;
   }
-  // If the recording is unusable or crashed, the test failed.
   const recording = lastMatchingRecording(testPath);
-  if (!recording || recording.unusableReason || recording.status == "crashed") {
+  if (!recording || recording.status == "crashed") {
+    return true;
+  }
+  if (recording.unusableReason && !failureSpec.allowUnusable) {
     return true;
   }
   return false;
 }
 
-async function runSingleTest(path: string, allowRecordingError: boolean) {
+async function runSingleTest(path: string, failureSpec: FailureSpec) {
   logMessage(`StartingTest ${path}`);
 
   try {
@@ -216,7 +230,7 @@ async function runSingleTest(path: string, allowRecordingError: boolean) {
 
     const { code, status } = await exitWaiter.promise;
 
-    if (recordingFailed(code, status, allowRecordingError, path)) {
+    if (recordingFailed(code, status, failureSpec, path)) {
       logMessage(`TestFailed: Error while recording ${code} ${status}`);
       gNumFailures++;
       return;
