@@ -11255,37 +11255,65 @@ void RecordReplayInstrument(const char* kind, const char* function, int offset) 
 extern char* CommandCallback(const char* command, const char* params);
 extern void ClearPauseDataCallback();
 
-bool gRecordReplayInstrumentNodeInternals;
-bool gRecordReplayAssertValues;
+// Whether execution within node internal scripts should advance the progress counter.
+static bool gRecordReplayInstrumentNodeInternals;
 
-bool ShouldEmitRecordReplayAssertValue() {
-  return gRecordReplayAssertValues;
-}
+// Whether JS assertions for execution and/or values are enabled.
+// This is not static so that it can be tested directly, for efficiency.
+bool gRecordReplayJSAsserts;
 
-static std::vector<std::string> gRecordReplayAssertFilters;
+// If non-zero, only execution asserts are enabled and only this frequency of
+// execution is asserted.
+static size_t gRecordRelayJSAssertFrequency;
 
-// The assertion filters are a comma separated list of patterns for sources where
-// record/replay asserts should be added.
-static void ProcessRecordReplayAssertFilters(const char* value) {
-  if (!value) {
+// Any source filters where JS asserts should be added.
+static std::vector<std::string> gRecordReplayJSAssertFilters;
+
+static void InitializeRecordReplayAsserts() {
+  gRecordReplayJSAsserts = !!getenv("RECORD_REPLAY_JS_ASSERTS");
+  if (!gRecordReplayJSAsserts) {
     return;
   }
-  while (true) {
-    const char* comma = strchr(value, ',');
-    std::string filter(value, comma ? comma - value : strlen(value));
-    gRecordReplayAssertFilters.push_back(filter);
-    if (!comma) {
-      break;
-    }
-    value = comma + 1;
+
+  const char* frequency = getenv("RECORD_REPLAY_JS_ASSERT_FREQUENCY");
+  if (frequency) {
+    gRecordRelayJSAssertFrequency = atoi(frequency);
   }
+
+  // The assertion filters are a comma separated list of patterns for sources where
+  // record/replay asserts should be added.
+  const char* filters = getenv("RECORD_REPLAY_JS_ASSERT_FILTERS");
+  if (filters) {
+    while (true) {
+      const char* comma = strchr(filters, ',');
+      std::string filter(filters, comma ? comma - filters : strlen(filters));
+      gRecordReplayJSAssertFilters.push_back(filter);
+      if (!comma) {
+        break;
+      }
+      filters = comma + 1;
+    }
+  }
+}
+
+bool RecordReplayInstrumentNodeInternals() {
+  return gRecordReplayInstrumentNodeInternals;
+}
+
+// Whether to assert values seen during JS execution.
+bool RecordReplayAssertJSValues() {
+  return gRecordReplayJSAsserts && !gRecordRelayJSAssertFrequency;
+}
+
+bool RecordReplayShouldAssertForProgress(uint64_t progress) {
+  return !gRecordRelayJSAssertFrequency || !(progress % gRecordRelayJSAssertFrequency);
 }
 
 bool RecordReplayShouldAssertForSource(const char* source) {
-  if (!gRecordReplayAssertFilters.size()) {
+  if (!gRecordReplayJSAssertFilters.size()) {
     return true;
   }
-  for (const std::string& filter : gRecordReplayAssertFilters) {
+  for (const std::string& filter : gRecordReplayJSAssertFilters) {
     if (strstr(source, filter.c_str())) {
       return true;
     }
@@ -11658,8 +11686,7 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   enableProgressCheckpoints();
 
   internal::gRecordReplayInstrumentNodeInternals = !!getenv("RECORD_REPLAY_INSTRUMENT_NODE");
-  internal::gRecordReplayAssertValues = !!getenv("RECORD_REPLAY_JS_ASSERTS");
-  internal::ProcessRecordReplayAssertFilters(getenv("RECORD_REPLAY_JS_ASSERT_FILTERS"));
+  internal::InitializeRecordReplayAsserts();
 
   // Set flags to disable non-deterministic posting of tasks to other threads.
   // We don't support this yet when recording/replaying.
