@@ -1,5 +1,11 @@
+interface TestSpec {
+  name: string;
+  allowRecordingError?: boolean;
+  allowUnusable?: boolean;
+}
+
 // Tests to run during the replay test suite.
-export const TestManifest = [
+export const TestManifest: TestSpec[] = [
   { name: "async.js" },
   { name: "basic.js" },
   { name: "control_flow.js" },
