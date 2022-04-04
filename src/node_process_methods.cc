@@ -44,6 +44,7 @@ extern void FunctionCallbackRecordReplayAssert(const FunctionCallbackInfo<Value>
 extern void FunctionCallbackRecordReplayGetCurrentError(const FunctionCallbackInfo<Value>& args);
 extern void FunctionCallbackRecordReplayGetRecordingId(const FunctionCallbackInfo<Value>& args);
 extern void FunctionCallbackRecordReplayCurrentExecutionPoint(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplayElapsedTimeMs(const FunctionCallbackInfo<Value>& args);
 
 }
 
@@ -655,6 +656,8 @@ static void InitializeProcessMethods(Local<Object> target,
                  v8::FunctionCallbackRecordReplayGetRecordingId);
   env->SetMethod(target, "recordReplayCurrentExecutionPoint",
                  v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
+  env->SetMethod(target, "recordReplayElapsedTimeMs",
+                 v8::FunctionCallbackRecordReplayElapsedTimeMs);
 }
 
 void RegisterProcessMethodsExternalReferences(
@@ -694,6 +697,7 @@ void RegisterProcessMethodsExternalReferences(
   registry->Register(RecordReplaySendCDPMessage);
   registry->Register(v8::FunctionCallbackRecordReplayGetRecordingId);
   registry->Register(v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
+  registry->Register(v8::FunctionCallbackRecordReplayElapsedTimeMs);
 }
 
 }  // namespace node

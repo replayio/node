@@ -11176,6 +11176,7 @@ static void (*gRecordReplayOnDebuggerStatement)();
 static const char* (*gRecordReplayGetRecordingId)();
 static char* (*gRecordReplayCurrentExecutionPoint)();
 static void (*gRecordReplayFree)(void*);
+static size_t (*gRecordReplayElapsedTimeMs)();
 
 namespace internal {
 
@@ -11587,6 +11588,11 @@ std::string RecordReplayGetCurrentExecutionPoint() {
   return rv;
 }
 
+size_t RecordReplayElapsedTimeMs() {
+  CHECK(recordreplay::IsRecordingOrReplaying());
+  return gRecordReplayElapsedTimeMs();
+}
+
 template <typename Src, typename Dst>
 static inline void CastPointer(const Src src, Dst* dst) {
   static_assert(sizeof(Src) == sizeof(uintptr_t), "bad size");
@@ -11649,6 +11655,7 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayGetRecordingId", gRecordReplayGetRecordingId);
   RecordReplayLoadSymbol(handle, "RecordReplayCurrentExecutionPoint", gRecordReplayCurrentExecutionPoint);
   RecordReplayLoadSymbol(handle, "RecordReplayFree", gRecordReplayFree);
+  RecordReplayLoadSymbol(handle, "RecordReplayElapsedTimeMs", gRecordReplayElapsedTimeMs);
 
   void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
   RecordReplayLoadSymbol(handle, "RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);

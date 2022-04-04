@@ -3546,4 +3546,18 @@ void FunctionCallbackRecordReplayCurrentExecutionPoint(const FunctionCallbackInf
   args.GetReturnValue().Set(Utils::ToLocal(rv));
 }
 
+extern size_t RecordReplayElapsedTimeMs();
+
+void FunctionCallbackRecordReplayElapsedTimeMs(const FunctionCallbackInfo<Value>& args) {
+  if (!recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
+  Isolate* isolate = args.GetIsolate();
+
+  size_t elapsed = RecordReplayElapsedTimeMs();
+  Local<Value> elapsed_value = v8::Integer::New(isolate, elapsed);
+  args.GetReturnValue().Set(elapsed_value);
+}
+
 }  // namespace v8
