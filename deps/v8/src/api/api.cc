@@ -11173,6 +11173,10 @@ static bool (*gHasDivergedFromRecording)();
 static bool (*gIsUnhandledDivergenceAllowed)();
 static size_t (*gRecordReplayNewBookmark)();
 static void (*gRecordReplayOnDebuggerStatement)();
+static const char* (*gRecordReplayGetRecordingId)();
+static char* (*gRecordReplayCurrentExecutionPoint)();
+static void (*gRecordReplayFree)(void*);
+static size_t (*gRecordReplayElapsedTimeMs)();
 
 namespace internal {
 
@@ -11569,6 +11573,26 @@ extern "C" void V8RecordReplayOnDebuggerStatement() {
   gRecordReplayOnDebuggerStatement();
 }
 
+std::string RecordReplayGetRecordingId() {
+  CHECK(recordreplay::IsRecordingOrReplaying());
+  return gRecordReplayGetRecordingId();
+}
+
+std::string RecordReplayGetCurrentExecutionPoint() {
+  CHECK(recordreplay::IsRecordingOrReplaying());
+  CHECK(IsMainThread());
+
+  char* point = gRecordReplayCurrentExecutionPoint();
+  std::string rv = point;
+  gRecordReplayFree(point);
+  return rv;
+}
+
+size_t RecordReplayElapsedTimeMs() {
+  CHECK(recordreplay::IsRecordingOrReplaying());
+  return gRecordReplayElapsedTimeMs();
+}
+
 template <typename Src, typename Dst>
 static inline void CastPointer(const Src src, Dst* dst) {
   static_assert(sizeof(Src) == sizeof(uintptr_t), "bad size");
@@ -11628,6 +11652,10 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayIsUnhandledDivergenceAllowed", gIsUnhandledDivergenceAllowed);
   RecordReplayLoadSymbol(handle, "RecordReplayNewBookmark", gRecordReplayNewBookmark);
   RecordReplayLoadSymbol(handle, "RecordReplayOnDebuggerStatement", gRecordReplayOnDebuggerStatement);
+  RecordReplayLoadSymbol(handle, "RecordReplayGetRecordingId", gRecordReplayGetRecordingId);
+  RecordReplayLoadSymbol(handle, "RecordReplayCurrentExecutionPoint", gRecordReplayCurrentExecutionPoint);
+  RecordReplayLoadSymbol(handle, "RecordReplayFree", gRecordReplayFree);
+  RecordReplayLoadSymbol(handle, "RecordReplayElapsedTimeMs", gRecordReplayElapsedTimeMs);
 
   void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
   RecordReplayLoadSymbol(handle, "RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);
