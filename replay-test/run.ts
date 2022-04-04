@@ -24,6 +24,7 @@ Options:
 function doExit(code: number) {
   // Kill any lingering subprocesses before exiting.
   killTransitiveSubprocesses();
+  process.exit(code);
 }
 
 function bailout(message: string) {
