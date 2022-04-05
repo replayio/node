@@ -964,7 +964,8 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
     CHECK(gRecordReplayHasCheckpoint);
   }
 
-  recordreplay::Assert("ExecutionProgress %s:%d:%d",
+  recordreplay::Assert("ExecutionProgress %zu %s:%d:%d",
+                       (size_t)*gProgressCounter,
                        name.c_str(), info.line + 1, info.column);
 
   return ReadOnlyRoots(isolate).undefined_value();
@@ -1091,7 +1092,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
   std::string contents = RecordReplayBasicValueContents(value);
 
   recordreplay::Assert("%s %s Value %s", site.location_.c_str(),
-                       site.desc_.c_str(),contents.c_str());
+                       site.desc_.c_str(), contents.c_str());
   return *value;
 }
 
