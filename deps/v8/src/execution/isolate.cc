@@ -618,6 +618,33 @@ static std::string ToStdString(Handle<Object> obj) {
   return std::string("<object>");
 }
 
+// Some internal frames appear non-deterministically in stack traces. Normally
+// these aren't visible to content scripts, but they can still be observed by
+// overriding Error.prepareStackTrace. Filter these out so that scripts which
+// observe the stack this way still behave deterministically.
+static bool RecordReplayIgnoreStackFrame(Handle<StackTraceFrame> frame) {
+  if (!recordreplay::IsRecordingOrReplaying()) {
+    return false;
+  }
+
+  static std::pair<const char*, const char*> ignoredFrames[] = {
+    { "<object>", "runMicrotasks" },
+    { "<object>", "all" },
+    { "node:internal/process/task_queues", "processTicksAndRejections" },
+  };
+
+  std::string fileName = ToStdString(StackTraceFrame::GetFileName(frame));
+  std::string functionName = ToStdString(StackTraceFrame::GetFunctionName(frame));
+
+  for (const auto& ignored : ignoredFrames) {
+    if (fileName == ignored.first && functionName == ignored.second) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 class FrameArrayBuilder {
  public:
   enum FrameFilterMode { ALL, CURRENT_SECURITY_CONTEXT };
@@ -788,14 +815,23 @@ class FrameArrayBuilder {
   Handle<FixedArray> GetElementsAsStackTraceFrameArray() {
     elements_->ShrinkToFit(isolate_);
     const int frame_count = elements_->FrameCount();
-    Handle<FixedArray> stack_trace =
-        isolate_->factory()->NewFixedArray(frame_count);
 
+    std::vector<Handle<StackTraceFrame>> stack_trace_vector;
     for (int i = 0; i < frame_count; ++i) {
       Handle<StackTraceFrame> frame =
           isolate_->factory()->NewStackTraceFrame(elements_, i);
-      stack_trace->set(i, *frame);
+      if (RecordReplayIgnoreStackFrame(frame)) {
+        continue;
+      }
+      stack_trace_vector.push_back(frame);
     }
+
+    Handle<FixedArray> stack_trace =
+        isolate_->factory()->NewFixedArray(stack_trace_vector.size());
+    for (size_t i = 0; i < stack_trace_vector.size(); i++) {
+      stack_trace->set(i, *stack_trace_vector[i]);
+    }
+
     return stack_trace;
   }
 
@@ -806,6 +842,9 @@ class FrameArrayBuilder {
     for (int i = 0; i < frame_count; ++i) {
       Handle<StackTraceFrame> frame =
           isolate_->factory()->NewStackTraceFrame(elements_, i);
+      if (RecordReplayIgnoreStackFrame(frame)) {
+        continue;
+      }
       rv += " "
           + ToStdString(StackTraceFrame::GetFileName(frame))
           + ":"
