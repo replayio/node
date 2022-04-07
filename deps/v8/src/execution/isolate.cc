@@ -604,6 +604,20 @@ StackTraceFailureMessage::StackTraceFailureMessage(Isolate* isolate, void* ptr1,
   }
 }
 
+static std::string ToStdString(int n) {
+  char buf[20];
+  snprintf(buf, sizeof(buf), "%d", n);
+  return std::string(buf);
+}
+
+static std::string ToStdString(Handle<Object> obj) {
+  if (obj->IsString()) {
+    std::unique_ptr<char[]> contents = String::cast(*obj).ToCString();
+    return std::string(contents.get());
+  }
+  return std::string("<object>");
+}
+
 class FrameArrayBuilder {
  public:
   enum FrameFilterMode { ALL, CURRENT_SECURITY_CONTEXT };
@@ -783,6 +797,26 @@ class FrameArrayBuilder {
       stack_trace->set(i, *frame);
     }
     return stack_trace;
+  }
+
+  std::string DescribeContents() {
+    std::string rv;
+
+    const int frame_count = elements_->FrameCount();
+    for (int i = 0; i < frame_count; ++i) {
+      Handle<StackTraceFrame> frame =
+          isolate_->factory()->NewStackTraceFrame(elements_, i);
+      rv += " "
+          + ToStdString(StackTraceFrame::GetFileName(frame))
+          + ":"
+          + ToStdString(StackTraceFrame::GetLineNumber(frame))
+          + ":"
+          + ToStdString(StackTraceFrame::GetColumnNumber(frame))
+          + ":"
+          + ToStdString(StackTraceFrame::GetFunctionName(frame));
+    }
+
+    return rv;
   }
 
  private:
@@ -1140,6 +1174,9 @@ Handle<Object> CaptureStackTrace(Isolate* isolate, Handle<Object> caller,
       }
     }
   }
+
+  std::string contents = builder.DescribeContents();
+  recordreplay::Assert("CaptureStackTrace %s", contents.c_str());
 
   return builder.GetElementsAsStackTraceFrameArray();
 }
