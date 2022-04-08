@@ -631,6 +631,7 @@ static bool RecordReplayIgnoreStackFrame(Handle<StackTraceFrame> frame) {
     { "<object>", "runMicrotasks" },
     { "<object>", "all" },
     { "node:internal/process/task_queues", "processTicksAndRejections" },
+    { "node:internal/timers", "listOnTimeout" },
   };
 
   std::string fileName = ToStdString(StackTraceFrame::GetFileName(frame));
