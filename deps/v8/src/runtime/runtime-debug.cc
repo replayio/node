@@ -924,12 +924,8 @@ static std::string ScriptNameToString(Handle<Script> script) {
 
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   if (++*gProgressCounter == gTargetProgress) {
-    recordreplay::Diagnostic("CallOnTargetProgressReached %zu", (size_t)*gProgressCounter);
     RecordReplayOnTargetProgressReached();
   }
-
-  recordreplay::Diagnostic("AssertExecutionProgress %zu %zu",
-                           (size_t)*gProgressCounter, (size_t)gTargetProgress);
 
   if (!gRecordReplayJSAsserts) {
     return ReadOnlyRoots(isolate).undefined_value();
