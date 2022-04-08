@@ -204,10 +204,8 @@ void StackTraceFrame::InitializeFrameInfo(Handle<StackTraceFrame> frame) {
 
   // After initializing, we no longer need to keep a reference
   // to the frame_array.
-  // Disabled because RecordReplayIgnoreStackFrame() can initialize the
-  // frame info while the frame array/index are still live.
-  //frame->set_frame_array(ReadOnlyRoots(isolate).undefined_value());
-  //frame->set_frame_index(-1);
+  frame->set_frame_array(ReadOnlyRoots(isolate).undefined_value());
+  frame->set_frame_index(-1);
 }
 
 Handle<FrameArray> GetFrameArrayFromStackTrace(Isolate* isolate,
