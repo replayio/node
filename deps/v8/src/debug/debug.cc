@@ -3035,7 +3035,7 @@ static Handle<Object> RecordReplayGetStackFunctionIds(Isolate* isolate, Handle<O
   return rv;
 }
 
-extern bool gRecordReplayInstrumentNodeInternals;
+extern bool RecordReplayInstrumentNodeInternals();
 
 bool RecordReplayIgnoreScriptByURL(const char* url) {
   // Always ignore V8 internal JS.
@@ -3044,7 +3044,7 @@ bool RecordReplayIgnoreScriptByURL(const char* url) {
     return true;
   }
 
-  if (gRecordReplayInstrumentNodeInternals) {
+  if (RecordReplayInstrumentNodeInternals()) {
     // When exposing node internals, we still ignore the record/replay specific
     // scripts, as these will have on stack frames when processing commands.
     if (strstr(url, "node:internal/recordreplay")) {

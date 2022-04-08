@@ -878,8 +878,9 @@ RUNTIME_FUNCTION(Runtime_ProfileCreateSnapshotDataBlob) {
 
 extern uint64_t* gProgressCounter;
 extern uint64_t gTargetProgress;
-extern bool gRecordReplayAssertValues;
+extern bool gRecordReplayJSAsserts;
 
+extern bool RecordReplayShouldAssertForProgress(uint64_t progress);
 extern bool RecordReplayShouldAssertForSource(const char* source);
 
 // Define this to check preconditions for using record/replay opcodes.
@@ -926,7 +927,11 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
     RecordReplayOnTargetProgressReached();
   }
 
-  if (!gRecordReplayAssertValues) {
+  if (!gRecordReplayJSAsserts) {
+    return ReadOnlyRoots(isolate).undefined_value();
+  }
+
+  if (!RecordReplayShouldAssertForProgress(*gProgressCounter)) {
     return ReadOnlyRoots(isolate).undefined_value();
   }
 
@@ -959,7 +964,8 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
     CHECK(gRecordReplayHasCheckpoint);
   }
 
-  recordreplay::Assert("ExecutionProgress %s:%d:%d",
+  recordreplay::Assert("ExecutionProgress %zu %s:%d:%d",
+                       (size_t)*gProgressCounter,
                        name.c_str(), info.line + 1, info.column);
 
   return ReadOnlyRoots(isolate).undefined_value();
@@ -1051,7 +1057,6 @@ int RegisterAssertValueSite(const std::string& desc, int source_position) {
 extern std::string RecordReplayBasicValueContents(Handle<Object> value);
 
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
-  CHECK(gRecordReplayAssertValues);
   CHECK(RecordReplayBytecodeAllowed());
 
   HandleScope scope(isolate);
@@ -1087,7 +1092,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
   std::string contents = RecordReplayBasicValueContents(value);
 
   recordreplay::Assert("%s %s Value %s", site.location_.c_str(),
-                       site.desc_.c_str(),contents.c_str());
+                       site.desc_.c_str(), contents.c_str());
   return *value;
 }
 
