@@ -43,6 +43,7 @@
 #include "src/objects/js-promise-inl.h"
 #include "src/objects/slots.h"
 #include "src/snapshot/snapshot.h"
+#include "src/tasks/task-utils.h"
 #include "src/wasm/wasm-debug.h"
 #include "src/wasm/wasm-objects-inl.h"
 
@@ -3533,6 +3534,16 @@ void FunctionCallbackRecordReplayGetRecordingId(const FunctionCallbackInfo<Value
 }
 
 extern std::string RecordReplayGetCurrentExecutionPoint();
+extern void RecordReplayNewCheckpointFlushed();
+
+// When CurrentExecutionPoint has been used there isn't a guarantee that the point
+// can be visited until we call NewCheckpointFlushed(). Ensure there is a timer
+// running that makes sure this will be called soon if this API has been used.
+static bool gHasNewCheckpointFlushedTask = false;
+
+// How long to wait before ensuring the recording is flushed after getting the
+// current execution point.
+static double NewCheckpointFlushedDelaySeconds = 5.0;
 
 void FunctionCallbackRecordReplayCurrentExecutionPoint(const FunctionCallbackInfo<Value>& args) {
   if (!recordreplay::IsRecordingOrReplaying() || !IsMainThread()) {
@@ -3544,6 +3555,17 @@ void FunctionCallbackRecordReplayCurrentExecutionPoint(const FunctionCallbackInf
   std::string point = RecordReplayGetCurrentExecutionPoint();
   i::Handle<i::String> rv = CStringToHandle(isolate, point.c_str());
   args.GetReturnValue().Set(Utils::ToLocal(rv));
+
+  if (!gHasNewCheckpointFlushedTask) {
+    gHasNewCheckpointFlushedTask = true;
+
+    auto task_runner = i::V8::GetCurrentPlatform()->GetForegroundTaskRunner(args.GetIsolate());
+    auto task = i::MakeCancelableTask(isolate, []() {
+      RecordReplayNewCheckpointFlushed();
+      gHasNewCheckpointFlushedTask = false;
+    });
+    task_runner->PostDelayedTask(std::move(task), NewCheckpointFlushedDelaySeconds);
+  }
 }
 
 extern size_t RecordReplayElapsedTimeMs();

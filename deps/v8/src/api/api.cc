@@ -11163,6 +11163,7 @@ static void (*gRecordReplayOrderedUnlock)(int lock);
 static void (*gRecordReplayAddOrderedPthreadMutex)(const char* name, pthread_mutex_t* mutex);
 static void (*gRecordReplayInvalidateRecording)(const char* format, ...);
 static void (*gRecordReplayNewCheckpoint)();
+static void (*gRecordReplayNewCheckpointFlushed)();
 static bool (*gRecordReplayIsReplaying)();
 static bool (*gRecordReplayHasDivergedFromRecording)();
 static void (*gRecordReplayRegisterPointer)(const void* ptr);
@@ -11467,6 +11468,13 @@ void recordreplay::NewCheckpoint() {
   }
 }
 
+void RecordReplayNewCheckpointFlushed() {
+  if (recordreplay::IsRecordingOrReplaying()) {
+    internal::gRecordReplayHasCheckpoint = true;
+    gRecordReplayNewCheckpointFlushed();
+  }
+}
+
 size_t recordreplay::CreateOrderedLock(const char* name) {
   if (IsRecordingOrReplaying()) {
     return gRecordReplayCreateOrderedLock(name);
@@ -11666,6 +11674,7 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayEndDisallowEvents", gRecordReplayEndDisallowEvents);
   RecordReplayLoadSymbol(handle, "RecordReplayInvalidateRecording", gRecordReplayInvalidateRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayNewCheckpoint", gRecordReplayNewCheckpoint);
+  RecordReplayLoadSymbol(handle, "RecordReplayNewCheckpointFlushed", gRecordReplayNewCheckpointFlushed);
   RecordReplayLoadSymbol(handle, "RecordReplayCreateOrderedLock", gRecordReplayCreateOrderedLock);
   RecordReplayLoadSymbol(handle, "RecordReplayOrderedLock", gRecordReplayOrderedLock);
   RecordReplayLoadSymbol(handle, "RecordReplayOrderedUnlock", gRecordReplayOrderedUnlock);
