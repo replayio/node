@@ -12125,6 +12125,7 @@ static void Print(const char* format, ...);
 static void Diagnostic(const char* format, ...);
 static void Assert(const char* format, ...);
 static void AssertBytes(const char* why, const void* buf, size_t size);
+static void AssertScriptedCaller(Isolate* isolate, const char* why);
 
 static uintptr_t RecordReplayValue(const char* why, uintptr_t v);
 static void RecordReplayBytes(const char* why, void* buf, size_t size);

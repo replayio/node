@@ -1253,10 +1253,10 @@ RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentationGenerator) {
 
 }  // namespace internal
 
-void RecordReplayAssertScriptedCaller(Isolate* isolate, const char* aWhy) {
+void recordreplay::AssertScriptedCaller(Isolate* isolate, const char* why) {
   if (recordreplay::IsRecordingOrReplaying()) {
     std::string location = GetStackContents((internal::Isolate*)isolate, 20);
-    recordreplay::Assert("ScriptedCaller %s %s", aWhy, location.c_str());
+    recordreplay::Assert("ScriptedCaller %s %s", why, location.c_str());
   }
 }
 

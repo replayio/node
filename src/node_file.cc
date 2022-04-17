@@ -1843,6 +1843,11 @@ static void WriteBuffer(const FunctionCallbackInfo<Value>& args) {
   char* buf = buffer_data + off;
   uv_buf_t uvbuf = uv_buf_init(buf, len);
 
+  // https://github.com/RecordReplay/backend/issues/4792
+  v8::recordreplay::AssertScriptedCaller(args.GetIsolate(), "fs::WriteBuffer");
+  v8::recordreplay::Assert("fs::WriteBuffer %d %zu %zu %zu",
+                           fd, off, len, (size_t)pos);
+
   FSReqBase* req_wrap_async = GetReqWrap(args, 5);
   if (req_wrap_async != nullptr) {  // write(fd, buffer, off, len, pos, req)
     AsyncCall(env, req_wrap_async, args, "write", UTF8, AfterInteger,
