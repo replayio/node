@@ -80,6 +80,10 @@ if (!gRunSuite && !gRunRandomTests && !gRunPattern) {
   bailout("No tests specified");
 }
 
+process.on("unhandledRejection", error => {
+  console.error("ErrorUnhandledRejection", error);
+});
+
 const gRecordingDirectory = path.join(os.tmpdir(), `recordings-${(Math.random() * 1e9) | 0}`);
 
 let gNumFailures = 0;
@@ -311,7 +315,7 @@ async function replayRecording(recordingId: string): Promise<string | null> {
 
     client.sendCommand(
       "Session.ensureProcessed",
-      { level: "executionIndexed" },
+      { level: "basic" },
       sessionId
     ).then(() => testErrorWaiter.resolve(null));
 
