@@ -11747,6 +11747,10 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   // the presence of multiple threads isn't worth the hassle.
   internal::FLAG_wasm_num_compilation_tasks = 1;
   internal::FLAG_wasm_async_compilation = false;
+
+  // Async stack traces can vary when recording vs. replaying, apparently depending
+  // on how the code has been compiled.
+  internal::FLAG_async_stack_traces = false;
 }
 
 bool IsMainThread() {
