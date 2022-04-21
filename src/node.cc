@@ -1100,6 +1100,10 @@ static void* OpenDriverHandle() {
 }
 
 static void InitializeRecordReplay(int* pargc, char*** pargv) {
+  if (getenv("RECORD_REPLAY_DONT_RECORD")) {
+    return;
+  }
+
   const char* dispatchAddress = getenv("RECORD_REPLAY_SERVER");
   if (!dispatchAddress) {
     // 4/21/2021: For backwards compatibility we also check an older env
