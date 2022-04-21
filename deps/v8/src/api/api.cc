@@ -11420,7 +11420,10 @@ extern "C" void V8RecordReplayBytes(const char* why, void* buf, size_t size) {
 }
 
 bool recordreplay::AreEventsDisallowed() {
-  return gRecordReplayAreEventsDisallowed();
+  if (IsRecordingOrReplaying()) {
+    return gRecordReplayAreEventsDisallowed();
+  }
+  return false;
 }
 
 void recordreplay::BeginPassThroughEvents() {

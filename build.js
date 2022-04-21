@@ -63,7 +63,7 @@ if (process.platform == "linux") {
     env: {
       ...process.env,
       // Disable recording when node runs as part of its compilation process.
-      RECORD_REPLAY_DRIVER: "0",
+      RECORD_REPLAY_DONT_RECORD: "1",
     },
   });
 }
