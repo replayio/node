@@ -11205,7 +11205,7 @@ void RecordReplayOnExceptionUnwind(Isolate* isolate) {
   CHECK(gRecordingOrReplaying);
   CHECK(IsMainThread());
 
-  if (recordreplay::HasDivergedFromRecording()) {
+  if (recordreplay::AreEventsDisallowed() || recordreplay::HasDivergedFromRecording()) {
     return;
   }
 

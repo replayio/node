@@ -1215,8 +1215,10 @@ Handle<Object> CaptureStackTrace(Isolate* isolate, Handle<Object> caller,
     }
   }
 
-  std::string contents = builder.DescribeContents();
-  recordreplay::Assert("CaptureStackTrace %s", contents.c_str());
+  if (!recordreplay::AreEventsDisallowed()) {
+    std::string contents = builder.DescribeContents();
+    recordreplay::Assert("CaptureStackTrace %s", contents.c_str());
+  }
 
   return builder.GetElementsAsStackTraceFrameArray();
 }
