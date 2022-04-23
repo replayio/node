@@ -2769,7 +2769,6 @@ static void GenerateBreakpointInfo(Isolate* isolate, Handle<Script> script) {
 
 static Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
                                                          Handle<Object> params) {
-
   std::vector<std::vector<int>> lineColumns;
   size_t numLines = 0;
 
@@ -2811,6 +2810,62 @@ static Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
 
   Handle<JSObject> rv = NewPlainObject(isolate);
   SetProperty(isolate, rv, "lineLocations", lineLocationsArray);
+  return rv;
+}
+
+static Handle<Object> RecordReplayGetPossibleBreakpointsAndFunctionOffsets(Isolate* isolate,
+                                                                           Handle<Object> params) {
+  Handle<Object> sourceIds = GetProperty(isolate, params, "sourceIds");
+
+  int numSourceIds = GetProperty(isolate, sourceIds, "length")->Number();
+  Handle<FixedArray> possibleBreakpoints = isolate->factory()->NewFixedArray(numSourceIds);
+
+  for (int i = 0; i < numSourceIds; i++) {
+    Handle<Object> sourceIdProperty = Object::GetElement(isolate, sourceIds, i).ToHandleChecked();
+    std::unique_ptr<char[]> sourceIdText = String::cast(*sourceIdStr).ToCString();
+    int sourceId = atoi(sourceIdText.get());
+    Handle<Script> script = GetScript(isolate, sourceId);
+
+    std::vector<int> lines, columns, offsets;
+    std::vector<std::string> functionIds;
+
+    ForEachInstrumentationOp(isolate, script, [&](Handle<SharedFunctionInfo> shared,
+                                                  int instrumentation_index) {
+      if (strcmp(InstrumentationSiteKind(instrumentation_index), "breakpoint")) {
+        return;
+      }
+
+      int line, column;
+      GetInstrumentationSiteLocation(script, instrumentation_index, &line, &column);
+
+      lines.push_back(line);
+      columns.push_back(column);
+      functionIds.push_back(GetRecordReplayFunctionId(shared));
+      offsets.push_back(InstrumentationSiteBytecodeOffset(instrumentation_index));
+    });
+
+    Handle<FixedArray> encodedBreakpoints = isolate->factory()->NewFixedArray(lines.size() * 4);
+    for (size_t j = 0; j < lines.size(); j++) {
+      encodedBreakpoints->set(j * 4, Smi::FromInt(lines[j]));
+      encodedBreakpoints->set(j * 4 + 1, Smi::FromInt(columns[j]));
+      encodedBreakpoints->set(j * 4 + 2, CStringToHandle(isolate, functionIds[j].get()));
+      encodedBreakpoints->set(j * 4 + 3, Smi::FromInt(offsets[j]));
+    }
+
+    Handle<JSArray> encodedBreakpointsArray =
+      isolate->factory()->NewJSArrayWithElements(encodedBreakpoints);
+
+    Handle<JSObject> entry = NewPlainObject(isolate);
+    SetProperty(isolate, entry, "sourceId", sourceIdProperty);
+    SetProperty(isolate, entry, "encodedBreakpoints", encodedBreakpointsArray);
+    possibleBreakpoints->set(i, entry);
+  }
+
+  Handle<JSArray> possibleBreakpointsArray =
+    isolate->factory()->NewJSArrayWithElements(possibleBreakpoints);
+
+  Handle<JSObject> rv = NewPlainObject(isolate);
+  SetProperty(isolate, rv, "possibleBreakpoints", possibleBreakpointsArray);
   return rv;
 }
 
@@ -3139,6 +3194,7 @@ struct InternalCommandCallback {
 static InternalCommandCallback gInternalCommandCallbacks[] = {
   { "Debugger.getSourceContents", RecordReplayGetSourceContents },
   { "Debugger.getPossibleBreakpoints", RecordReplayGetPossibleBreakpoints },
+  { "Target.getPossibleBreakpointsAndFunctionOffsets": RecordReplayGetPossibleBreakpointsAndFunctionOffsets },
   { "Target.convertLocationToFunctionOffset", RecordReplayConvertLocationToFunctionOffset },
   { "Target.convertFunctionOffsetToLocation", RecordReplayConvertFunctionOffsetToLocation },
   { "Target.countStackFrames", RecordReplayCountStackFrames },
