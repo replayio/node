@@ -11655,7 +11655,9 @@ extern "C" const char* V8RecordReplayCrashReasonCallback();
 static pthread_t gMainThread;
 
 void recordreplay::SetRecordingOrReplaying(void* handle) {
-  gRecordingOrReplaying = true;
+  if (!getenv("RECORD_REPLAY_PRETEND_NOT_RECORDING")) {
+    gRecordingOrReplaying = true;
+  }
   gMainThread = pthread_self();
 
   RecordReplayLoadSymbol(handle, "RecordReplayOnNewSource", gRecordReplayOnNewSource);
