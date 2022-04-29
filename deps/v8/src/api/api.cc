@@ -11147,6 +11147,7 @@ static void (*gRecordReplaySetCommandCallback)(const char* method, CommandCallba
 static void (*gRecordReplayPrint)(const char* format, va_list args);
 static void (*gRecordReplayDiagnostic)(const char* format, va_list args);
 static void (*gRecordReplayOnInstrument)(const char* kind, const char* function, int offset);
+static void (*gRecordReplayAddPossibleBreakpoint)(int line, int column, const char* function, int offset);
 static void (*gRecordReplayAssert)(const char*, va_list);
 static void (*gRecordReplayAssertBytes)(const char* why, const void* ptr, size_t nbytes);
 static void (*gRecordReplayBytes)(const char* why, void* buf, size_t size);
@@ -11259,6 +11260,8 @@ void RecordReplayInstrument(const char* kind, const char* function, int offset) 
 
 extern char* CommandCallback(const char* command, const char* params);
 extern void ClearPauseDataCallback();
+
+extern void PossibleBreakpointsCallback(const char* source_id);
 
 // Whether execution within node internal scripts should advance the progress counter.
 static bool gRecordReplayInstrumentNodeInternals;
@@ -11632,6 +11635,14 @@ size_t RecordReplayElapsedTimeMs() {
   return gRecordReplayElapsedTimeMs();
 }
 
+namespace internal {
+
+void RecordReplayAddPossibleBreakpoint(int line, int column, const char* function, int offset) {
+  gRecordReplayAddPossibleBreakpoint(line, column, function, offset);
+}
+
+} // namespace internal
+
 template <typename Src, typename Dst>
 static inline void CastPointer(const Src src, Dst* dst) {
   static_assert(sizeof(Src) == sizeof(uintptr_t), "bad size");
@@ -11669,6 +11680,7 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayBytes", gRecordReplayBytes);
   RecordReplayLoadSymbol(handle, "RecordReplayValue", gRecordReplayValue);
   RecordReplayLoadSymbol(handle, "RecordReplayOnInstrument", gRecordReplayOnInstrument);
+  RecordReplayLoadSymbol(handle, "RecordReplayAddPossibleBreakpoint", gRecordReplayAddPossibleBreakpoint);
   RecordReplayLoadSymbol(handle, "RecordReplayAreEventsDisallowed", gRecordReplayAreEventsDisallowed);
   RecordReplayLoadSymbol(handle, "RecordReplayProgressReached", gRecordReplayProgressReached);
   RecordReplayLoadSymbol(handle, "RecordReplayBeginPassThroughEvents", gRecordReplayBeginPassThroughEvents);
@@ -11700,6 +11712,10 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
   RecordReplayLoadSymbol(handle, "RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);
   setDefaultCommandCallback(i::CommandCallback);
+
+  void (*setPossibleBreakpointsCallback)(void (*callback)(const char* source_id));
+  RecordReplayLoadSymbol(handle, "RecordReplaySetPossibleBreakpointsCallback", setPossibleBreakpointsCallback);
+  setPossibleBreakpointsCallback(i::PossibleBreakpointsCallback);
 
   void (*setClearPauseDataCallback)(void (*callback)());
   RecordReplayLoadSymbol(handle, "RecordReplaySetClearPauseDataCallback", setClearPauseDataCallback);

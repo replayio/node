@@ -2598,7 +2598,7 @@ static void DecodeLocationProperty(Isolate* isolate, Handle<Object> params,
 
 static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
                                      std::function<void(Handle<SharedFunctionInfo>,
-                                                        int)> aCallback) {
+                                                        int, bool)> aCallback) {
   // Based on Debug::GetPossibleBreakpoints.
   while (true) {
     HandleScope scope(isolate);
@@ -2641,12 +2641,14 @@ static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
       }
       Handle<BytecodeArray> bytecode(candidate->GetBytecodeArray(), isolate);
 
+      bool first = true;
       for (interpreter::BytecodeArrayIterator it(bytecode); !it.done();
            it.Advance()) {
         interpreter::Bytecode bytecode = it.current_bytecode();
         if (bytecode == interpreter::Bytecode::kRecordReplayInstrumentation) {
           int index = it.GetIndexOperand(0);
-          aCallback(candidate, index);
+          aCallback(candidate, index, first);
+          first = false;
         }
       }
     }
@@ -2717,7 +2719,7 @@ static void ForEachInstrumentationOpInRange(
   DecodeLocationProperty(isolate, params, "end", &endLine, &endColumn);
 
   ForEachInstrumentationOp(isolate, script, [&](Handle<SharedFunctionInfo> shared,
-                                                int instrumentation_index) {
+                                                int instrumentation_index, bool first) {
     if (strcmp(InstrumentationSiteKind(instrumentation_index), "breakpoint")) {
       return;
     }
@@ -2748,7 +2750,7 @@ static void GenerateBreakpointInfo(Isolate* isolate, Handle<Script> script) {
   }
 
   ForEachInstrumentationOp(isolate, script, [&](Handle<SharedFunctionInfo> shared,
-                                                int instrumentation_index) {
+                                                int instrumentation_index, bool first) {
     int line, column;
     GetInstrumentationSiteLocation(script, instrumentation_index, &line, &column);
 
@@ -2769,7 +2771,6 @@ static void GenerateBreakpointInfo(Isolate* isolate, Handle<Script> script) {
 
 static Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
                                                          Handle<Object> params) {
-
   std::vector<std::vector<int>> lineColumns;
   size_t numLines = 0;
 
@@ -2812,6 +2813,47 @@ static Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
   Handle<JSObject> rv = NewPlainObject(isolate);
   SetProperty(isolate, rv, "lineLocations", lineLocationsArray);
   return rv;
+}
+
+// Make sure that the isolate has a context by switching to the default
+// context if necessary.
+static void EnsureIsolateContext(Isolate* isolate, base::Optional<SaveAndSwitchContext>& ssc) {
+  CHECK(!isolate->context().is_null());
+}
+
+extern void RecordReplayAddPossibleBreakpoint(int line, int column, const char* function, int offset);
+
+void PossibleBreakpointsCallback(const char* source_id) {
+  CHECK(IsMainThread());
+  recordreplay::AutoDisallowEvents disallow;
+
+  Isolate* isolate = Isolate::Current();
+
+  base::Optional<SaveAndSwitchContext> ssc;
+  EnsureIsolateContext(isolate, ssc);
+
+  HandleScope scope(isolate);
+
+  Handle<Script> script = GetScript(isolate, atoi(source_id));
+
+  std::string currentFunctionId;
+
+  ForEachInstrumentationOp(isolate, script, [&](Handle<SharedFunctionInfo> shared,
+                                                int instrumentation_index, bool first) {
+    if (first) {
+      currentFunctionId = GetRecordReplayFunctionId(shared);
+    }
+
+    if (strcmp(InstrumentationSiteKind(instrumentation_index), "breakpoint")) {
+      return;
+    }
+
+    int line, column;
+    GetInstrumentationSiteLocation(script, instrumentation_index, &line, &column);
+
+    int offset = InstrumentationSiteBytecodeOffset(instrumentation_index);
+    RecordReplayAddPossibleBreakpoint(line, column, currentFunctionId.c_str(), offset);
+  });
 }
 
 Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
@@ -3149,12 +3191,6 @@ static InternalCommandCallback gInternalCommandCallbacks[] = {
 
 // Function to invoke on command callbacks which we don't have a C++ implementation for.
 static Eternal<Value>* gCommandCallback;
-
-// Make sure that the isolate has a context by switching to the default
-// context if necessary.
-static void EnsureIsolateContext(Isolate* isolate, base::Optional<SaveAndSwitchContext>& ssc) {
-  CHECK(!isolate->context().is_null());
-}
 
 char* CommandCallback(const char* command, const char* params) {
   CHECK(IsMainThread());
