@@ -21,9 +21,14 @@
 
 #include "include/v8.h"
 
+#include <pthread.h>
+
 namespace v8 {
 namespace internal {
 namespace trap_handler {
+
+// Using thread_local runs into problems when recording/replaying for an unknown reason.
+#if 0
 
 // We declare this as int rather than bool as a workaround for a glibc bug, in
 // which the dynamic loader cannot handle executables whose TLS area is only
@@ -33,6 +38,28 @@ thread_local int g_thread_in_wasm_code;
 static_assert(sizeof(g_thread_in_wasm_code) > 1,
               "sizeof(thread_local_var) must be > 1, see "
               "https://sourceware.org/bugzilla/show_bug.cgi?id=14898");
+
+#endif // 0
+
+thread_local int g_thread_in_wasm_code2;
+
+int& IsThreadInWasmCode() {
+  if (!recordreplay::IsRecordingOrReplaying()) {
+    return g_thread_in_wasm_code2;
+  }
+
+  static pthread_key_t key;
+  if (!key) {
+    pthread_key_create(&key, nullptr);
+  }
+
+  int* v = (int*)pthread_getspecific(key);
+  if (!v) {
+    v = new int(0);
+    pthread_setspecific(key, v);
+  }
+  return *v;
+}
 
 size_t gNumCodeObjects = 0;
 CodeProtectionInfoListEntry* gCodeObjects = nullptr;
