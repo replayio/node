@@ -38,35 +38,18 @@ namespace node {
 
 const numCPUs = os.cpus().length;
 
-if (process.platform == "linux") {
-  // Do the build inside a container, to ensure a consistent result
-  // with the right glibc dependencies and so forth.
-  if (process.env.BUILD_NODE_CONTAINER) {
-    spawnChecked(
-      "docker",
-      ["build", ".", "-f", `${node}/Dockerfile.build`, "-t", "node-build"],
-      { stdio: "inherit" }
-    );
-  }
-  spawnChecked(
-    "docker",
-    ["run", "-v", `${node}:/node`, "-e", "RECORD_REPLAY_DRIVER=0", "node-build"],
-    { stdio: "inherit" }
-  );
-} else {
-  if (process.env.CONFIGURE_NODE) {
-    spawnChecked(`${node}/configure`, [], { cwd: node, stdio: "inherit" });
-  }
-  spawnChecked("make", [`-j${numCPUs}`, "-C", "out", "BUILDTYPE=Release"], {
-    cwd: node,
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      // Disable recording when node runs as part of its compilation process.
-      RECORD_REPLAY_DONT_RECORD: "1",
-    },
-  });
+if (process.env.CONFIGURE_NODE) {
+  spawnChecked(`${node}/configure`, [], { cwd: node, stdio: "inherit" });
 }
+spawnChecked("make", [`-j${numCPUs}`, "-C", "out", "BUILDTYPE=Release"], {
+  cwd: node,
+  stdio: "inherit",
+  env: {
+    ...process.env,
+    // Disable recording when node runs as part of its compilation process.
+    RECORD_REPLAY_DONT_RECORD: "1",
+  },
+});
 
 function spawnChecked(cmd, args, options) {
   const prettyCmd = [cmd].concat(args).join(" ");
