@@ -162,12 +162,8 @@ install_manifest.txt
 __pycache__
 .DS_Store
 *~
-<<<<<<< HEAD
 
 /src/node_record_replay_driver.cc
-||||||| 2365115868
-=======
 
 # === Rules for C++ development ===
 compile_commands.json
->>>>>>> upstream/v16.x

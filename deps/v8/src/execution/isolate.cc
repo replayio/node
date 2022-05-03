@@ -622,7 +622,6 @@ StackTraceFailureMessage::StackTraceFailureMessage(Isolate* isolate, void* ptr1,
   }
 }
 
-<<<<<<< HEAD
 static std::string ToStdString(int n) {
   char buf[20];
   snprintf(buf, sizeof(buf), "%d", n);
@@ -665,12 +664,7 @@ static bool RecordReplayIgnoreStackFrame(Handle<StackTraceFrame> frame) {
   return false;
 }
 
-class FrameArrayBuilder {
-||||||| 2365115868
-class FrameArrayBuilder {
-=======
 class StackTraceBuilder {
->>>>>>> upstream/v16.x
  public:
   enum FrameFilterMode { ALL, CURRENT_SECURITY_CONTEXT };
 
@@ -805,57 +799,8 @@ class StackTraceBuilder {
 
   bool Full() { return index_ >= limit_; }
 
-<<<<<<< HEAD
-  Handle<FrameArray> GetElements() {
-    elements_->ShrinkToFit(isolate_);
-    return elements_;
-  }
-
-  // Creates a StackTraceFrame object for each frame in the FrameArray.
-  Handle<FixedArray> GetElementsAsStackTraceFrameArray() {
-    elements_->ShrinkToFit(isolate_);
-    const int frame_count = elements_->FrameCount();
-
-    std::vector<Handle<StackTraceFrame>> stack_trace_vector;
-    for (int i = 0; i < frame_count; ++i) {
-      Handle<StackTraceFrame> frame =
-          isolate_->factory()->NewStackTraceFrame(elements_, i);
-      if (RecordReplayIgnoreStackFrame(frame)) {
-        continue;
-      }
-      stack_trace_vector.push_back(frame);
-    }
-
-    Handle<FixedArray> stack_trace =
-        isolate_->factory()->NewFixedArray(stack_trace_vector.size());
-    for (size_t i = 0; i < stack_trace_vector.size(); i++) {
-      stack_trace->set(i, *stack_trace_vector[i]);
-    }
-
-    return stack_trace;
-||||||| 2365115868
-  Handle<FrameArray> GetElements() {
-    elements_->ShrinkToFit(isolate_);
-    return elements_;
-  }
-
-  // Creates a StackTraceFrame object for each frame in the FrameArray.
-  Handle<FixedArray> GetElementsAsStackTraceFrameArray() {
-    elements_->ShrinkToFit(isolate_);
-    const int frame_count = elements_->FrameCount();
-    Handle<FixedArray> stack_trace =
-        isolate_->factory()->NewFixedArray(frame_count);
-
-    for (int i = 0; i < frame_count; ++i) {
-      Handle<StackTraceFrame> frame =
-          isolate_->factory()->NewStackTraceFrame(elements_, i);
-      stack_trace->set(i, *frame);
-    }
-    return stack_trace;
-=======
   Handle<FixedArray> Build() {
     return FixedArray::ShrinkOrEmpty(isolate_, elements_, index_);
->>>>>>> upstream/v16.x
   }
 
   std::string DescribeContents() {
@@ -1258,21 +1203,15 @@ Handle<FixedArray> CaptureStackTrace(Isolate* isolate, Handle<Object> caller,
     }
   }
 
-<<<<<<< HEAD
   if (!recordreplay::AreEventsDisallowed()) {
     std::string contents = builder.DescribeContents();
     recordreplay::Assert("CaptureStackTrace %s", contents.c_str());
   }
 
-  return builder.GetElementsAsStackTraceFrameArray();
-||||||| 2365115868
-  return builder.GetElementsAsStackTraceFrameArray();
-=======
   Handle<FixedArray> stack_trace = builder.Build();
   TRACE_EVENT_END1(TRACE_DISABLED_BY_DEFAULT("v8.stack_trace"),
                    "CaptureStackTrace", "frameCount", stack_trace->length());
   return stack_trace;
->>>>>>> upstream/v16.x
 }
 
 }  // namespace
@@ -1523,11 +1462,8 @@ bool Isolate::MayAccess(Handle<Context> accessing_context,
 }
 
 Object Isolate::StackOverflow() {
-<<<<<<< HEAD
   recordreplay::InvalidateRecording("Stack overflow");
 
-||||||| 2365115868
-=======
   // Whoever calls this method should not have overflown the stack limit by too
   // much. Otherwise we risk actually running out of stack space.
   // We allow for up to 8kB overflow, because we typically allow up to 4KB
@@ -1543,7 +1479,6 @@ Object Isolate::StackOverflow() {
   DCHECK_GE(GetCurrentStackPosition(), stack_guard()->real_climit() - 8 * KB);
 #endif
 
->>>>>>> upstream/v16.x
   if (FLAG_correctness_fuzzer_suppressions) {
     FATAL("Aborting on stack overflow");
   }

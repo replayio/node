@@ -2843,24 +2843,6 @@ V8_EXPORT_PRIVATE extern void _v8_internal_Print_Object(void* object) {
   GetObjectFromRaw(object).Print();
 }
 
-<<<<<<< HEAD
-V8_EXPORT_PRIVATE extern void _v8_internal_Print_HeapObject(void* object) {
-#ifdef OBJECT_PRINT
-  v8::internal::StdoutStream os;
-  v8::internal::HeapObject::cast(*(v8::internal::Object*)object).HeapObjectPrint(os);
-  os << std::flush;
-#endif
-}
-
-V8_EXPORT_PRIVATE extern void _v8_internal_Print_String(void* str) {
-  v8::Local<v8::String> value = *(v8::Local<v8::String>*)str;
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::String::Utf8Value utf8(isolate, value);
-  fprintf(stderr, "%s\n", *utf8);
-}
-
-||||||| 2365115868
-=======
 V8_EXPORT_PRIVATE extern void _v8_internal_Print_LoadHandler(void* object) {
 #ifdef OBJECT_PRINT
   i::StdoutStream os;
@@ -2877,7 +2859,6 @@ V8_EXPORT_PRIVATE extern void _v8_internal_Print_StoreHandler(void* object) {
 #endif
 }
 
->>>>>>> upstream/v16.x
 V8_EXPORT_PRIVATE extern void _v8_internal_Print_Code(void* object) {
   i::Address address = reinterpret_cast<i::Address>(object);
   i::Isolate* isolate = i::Isolate::Current();

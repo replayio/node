@@ -929,17 +929,7 @@ void CommonFrame::ComputeCallerState(State* state) const {
       reinterpret_cast<Address*>(ComputeConstantPoolAddress(fp()));
 }
 
-<<<<<<< HEAD
-bool StandardFrame::IsConstructor() const { return false; }
-
-void StandardFrame::Summarize(std::vector<FrameSummary>* functions, bool allow_invalid) const {
-||||||| 2365115868
-bool StandardFrame::IsConstructor() const { return false; }
-
-void StandardFrame::Summarize(std::vector<FrameSummary>* functions) const {
-=======
-void CommonFrame::Summarize(std::vector<FrameSummary>* functions) const {
->>>>>>> upstream/v16.x
+void CommonFrame::Summarize(std::vector<FrameSummary>* functions, bool allow_invalid) const {
   // This should only be called on frames which override this method.
   UNREACHABLE();
 }
@@ -1197,18 +1187,12 @@ void JavaScriptFrame::GetFunctions(
   }
 }
 
-<<<<<<< HEAD
-void JavaScriptFrame::Summarize(std::vector<FrameSummary>* functions, bool allow_invalid) const {
-||||||| 2365115868
-void JavaScriptFrame::Summarize(std::vector<FrameSummary>* functions) const {
-=======
 bool CommonFrameWithJSLinkage::IsConstructor() const {
   return IsConstructFrame(caller_fp());
 }
 
 void CommonFrameWithJSLinkage::Summarize(
-    std::vector<FrameSummary>* functions) const {
->>>>>>> upstream/v16.x
+    std::vector<FrameSummary>* functions, bool allow_invalid) const {
   DCHECK(functions->empty());
   Code code = LookupCode();
   int offset = code.GetOffsetFromInstructionStart(isolate(), pc());
@@ -1857,31 +1841,9 @@ intptr_t BaselineFrame::GetPCForBytecodeOffset(int bytecode_offset) const {
                                                           GetBytecodeArray());
 }
 
-<<<<<<< HEAD
-void InterpretedFrame::Summarize(std::vector<FrameSummary>* functions, bool allow_invalid) const {
-  DCHECK(functions->empty());
-  Handle<AbstractCode> abstract_code(AbstractCode::cast(GetBytecodeArray()),
-                                     isolate());
-  Handle<FixedArray> params = GetParameters();
-  FrameSummary::JavaScriptFrameSummary summary(
-      isolate(), receiver(), function(), *abstract_code, GetBytecodeOffset(),
-      IsConstructor(), *params);
-  functions->push_back(summary);
-||||||| 2365115868
-void InterpretedFrame::Summarize(std::vector<FrameSummary>* functions) const {
-  DCHECK(functions->empty());
-  Handle<AbstractCode> abstract_code(AbstractCode::cast(GetBytecodeArray()),
-                                     isolate());
-  Handle<FixedArray> params = GetParameters();
-  FrameSummary::JavaScriptFrameSummary summary(
-      isolate(), receiver(), function(), *abstract_code, GetBytecodeOffset(),
-      IsConstructor(), *params);
-  functions->push_back(summary);
-=======
 void BaselineFrame::PatchContext(Context value) {
   base::Memory<Address>(fp() + BaselineFrameConstants::kContextOffset) =
       value.ptr();
->>>>>>> upstream/v16.x
 }
 
 JSFunction BuiltinFrame::function() const {

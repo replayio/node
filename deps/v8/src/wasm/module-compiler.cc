@@ -125,148 +125,6 @@ enum class CompileStrategy : uint8_t {
   kDefault = kEager,
 };
 
-<<<<<<< HEAD
-// Background compile jobs hold a shared pointer to this token. The token is
-// used to notify them that they should stop. As soon as they see this (after
-// finishing their current compilation unit), they will stop.
-// This allows to already remove the NativeModule without having to synchronize
-// on background compile jobs.
-class BackgroundCompileToken {
- public:
-  explicit BackgroundCompileToken(
-      const std::shared_ptr<NativeModule>& native_module)
-      : compilation_scope_mutex_ordered_lock_id_((int)recordreplay::CreateOrderedLock("compilation_scope_mutex")),
-        native_module_(native_module) {}
-
-  void Cancel() {
-    AutoOrderedLock ordered(compilation_scope_mutex_ordered_lock_id_);
-    base::SharedMutexGuard<base::kExclusive> mutex_guard(
-        &compilation_scope_mutex_);
-    native_module_.reset();
-  }
-
- private:
-  friend class BackgroundCompileScope;
-
-  std::shared_ptr<NativeModule> StartScope() {
-    AutoOrderedLock ordered(compilation_scope_mutex_ordered_lock_id_);
-    compilation_scope_mutex_.LockShared();
-    return native_module_.lock();
-  }
-
-  // This private method can only be called via {BackgroundCompileScope}.
-  void SchedulePublishCode(NativeModule* native_module,
-                           std::vector<std::unique_ptr<WasmCode>> codes) {
-    {
-      base::MutexGuard guard(&publish_mutex_);
-      if (publisher_running_) {
-        // Add new code to the queue and return.
-        publish_queue_.reserve(publish_queue_.size() + codes.size());
-        for (auto& c : codes) publish_queue_.emplace_back(std::move(c));
-        return;
-      }
-      publisher_running_ = true;
-    }
-    while (true) {
-      PublishCode(native_module, VectorOf(codes));
-      codes.clear();
-
-      // Keep publishing new code that came in.
-      base::MutexGuard guard(&publish_mutex_);
-      DCHECK(publisher_running_);
-      if (publish_queue_.empty()) {
-        publisher_running_ = false;
-        return;
-      }
-      codes.swap(publish_queue_);
-    }
-  }
-
-  void PublishCode(NativeModule*, Vector<std::unique_ptr<WasmCode>>);
-
-  void ExitScope() { compilation_scope_mutex_.UnlockShared(); }
-
-  // {compilation_scope_mutex_} protects {native_module_}.
-  base::SharedMutex compilation_scope_mutex_;
-  int compilation_scope_mutex_ordered_lock_id_;
-  std::weak_ptr<NativeModule> native_module_;
-
-  // {publish_mutex_} protects {publish_queue_} and {publisher_running_}.
-  base::Mutex publish_mutex_;
-  std::vector<std::unique_ptr<WasmCode>> publish_queue_;
-  bool publisher_running_ = false;
-};
-
-||||||| 2365115868
-// Background compile jobs hold a shared pointer to this token. The token is
-// used to notify them that they should stop. As soon as they see this (after
-// finishing their current compilation unit), they will stop.
-// This allows to already remove the NativeModule without having to synchronize
-// on background compile jobs.
-class BackgroundCompileToken {
- public:
-  explicit BackgroundCompileToken(
-      const std::shared_ptr<NativeModule>& native_module)
-      : native_module_(native_module) {}
-
-  void Cancel() {
-    base::SharedMutexGuard<base::kExclusive> mutex_guard(
-        &compilation_scope_mutex_);
-    native_module_.reset();
-  }
-
- private:
-  friend class BackgroundCompileScope;
-
-  std::shared_ptr<NativeModule> StartScope() {
-    compilation_scope_mutex_.LockShared();
-    return native_module_.lock();
-  }
-
-  // This private method can only be called via {BackgroundCompileScope}.
-  void SchedulePublishCode(NativeModule* native_module,
-                           std::vector<std::unique_ptr<WasmCode>> codes) {
-    {
-      base::MutexGuard guard(&publish_mutex_);
-      if (publisher_running_) {
-        // Add new code to the queue and return.
-        publish_queue_.reserve(publish_queue_.size() + codes.size());
-        for (auto& c : codes) publish_queue_.emplace_back(std::move(c));
-        return;
-      }
-      publisher_running_ = true;
-    }
-    while (true) {
-      PublishCode(native_module, VectorOf(codes));
-      codes.clear();
-
-      // Keep publishing new code that came in.
-      base::MutexGuard guard(&publish_mutex_);
-      DCHECK(publisher_running_);
-      if (publish_queue_.empty()) {
-        publisher_running_ = false;
-        return;
-      }
-      codes.swap(publish_queue_);
-    }
-  }
-
-  void PublishCode(NativeModule*, Vector<std::unique_ptr<WasmCode>>);
-
-  void ExitScope() { compilation_scope_mutex_.UnlockShared(); }
-
-  // {compilation_scope_mutex_} protects {native_module_}.
-  base::SharedMutex compilation_scope_mutex_;
-  std::weak_ptr<NativeModule> native_module_;
-
-  // {publish_mutex_} protects {publish_queue_} and {publisher_running_}.
-  base::Mutex publish_mutex_;
-  std::vector<std::unique_ptr<WasmCode>> publish_queue_;
-  bool publisher_running_ = false;
-};
-
-=======
->>>>>>> upstream/v16.x
 class CompilationStateImpl;
 class CompilationUnitBuilder;
 
@@ -516,33 +374,7 @@ class CompilationUnitQueues {
     int next_steal_task_id;
   };
 
-<<<<<<< HEAD
-  std::vector<Queue> queues_;
-  BigUnitsQueue big_units_queue_;
-
-  std::vector<TopTierPriorityUnitsQueue> top_tier_priority_units_queues_;
-
-  OrderedAtomic<size_t> num_units_[kNumTiers];
-  std::atomic<size_t> num_priority_units_{0};
-  std::unique_ptr<std::atomic<bool>[]> treated_;
-  std::atomic<int> next_queue_to_add{0};
-
-  int next_task_id(int task_id) const {
-||||||| 2365115868
-  std::vector<Queue> queues_;
-  BigUnitsQueue big_units_queue_;
-
-  std::vector<TopTierPriorityUnitsQueue> top_tier_priority_units_queues_;
-
-  std::atomic<size_t> num_units_[kNumTiers];
-  std::atomic<size_t> num_priority_units_{0};
-  std::unique_ptr<std::atomic<bool>[]> treated_;
-  std::atomic<int> next_queue_to_add{0};
-
-  int next_task_id(int task_id) const {
-=======
   int next_task_id(int task_id, size_t num_queues) const {
->>>>>>> upstream/v16.x
     int next = task_id + 1;
     return next == static_cast<int>(num_queues) ? 0 : next;
   }
@@ -3676,39 +3508,6 @@ void CompilationStateImpl::PublishCompilationResults(
   PublishCode(base::VectorOf(unpublished_code));
 }
 
-<<<<<<< HEAD
-  std::unique_ptr<JobTask> new_compile_job =
-      std::make_unique<BackgroundCompileJob>(
-          background_compile_token_, async_counters_,
-          scheduled_units_approximation_, max_compile_concurrency_);
-
-  if (recordreplay::IsRecordingOrReplaying()) {
-    // Never run compile jobs async when recording/replaying.
-    mutex_.Unlock();
-    new_compile_job->Run(nullptr);
-    mutex_.Lock();
-  } else {
-    // TODO(wasm): Lower priority for TurboFan-only jobs.
-    std::shared_ptr<JobHandle> handle = V8::GetCurrentPlatform()->PostJob(
-        has_priority_ ? TaskPriority::kUserBlocking : TaskPriority::kUserVisible,
-        std::move(new_compile_job));
-    native_module_->engine()->ShepherdCompileJobHandle(handle);
-    current_compile_job_ =
-        std::make_unique<ThreadSafeJobHandle>(std::move(handle));
-  }
-||||||| 2365115868
-  std::unique_ptr<JobTask> new_compile_job =
-      std::make_unique<BackgroundCompileJob>(
-          background_compile_token_, async_counters_,
-          scheduled_units_approximation_, max_compile_concurrency_);
-  // TODO(wasm): Lower priority for TurboFan-only jobs.
-  std::shared_ptr<JobHandle> handle = V8::GetCurrentPlatform()->PostJob(
-      has_priority_ ? TaskPriority::kUserBlocking : TaskPriority::kUserVisible,
-      std::move(new_compile_job));
-  native_module_->engine()->ShepherdCompileJobHandle(handle);
-  current_compile_job_ =
-      std::make_unique<ThreadSafeJobHandle>(std::move(handle));
-=======
 void CompilationStateImpl::PublishCode(
     base::Vector<std::unique_ptr<WasmCode>> code) {
   WasmCodeRefScope code_ref_scope;
@@ -3718,7 +3517,6 @@ void CompilationStateImpl::PublishCode(
   if (native_module_->HasWireBytes()) {
     GetWasmEngine()->LogCode(base::VectorOf(published_code));
   }
->>>>>>> upstream/v16.x
 
   OnFinishedUnits(base::VectorOf(std::move(published_code)));
 }

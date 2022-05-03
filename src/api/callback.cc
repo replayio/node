@@ -157,15 +157,9 @@ void InternalCallbackScope::Close() {
   // to initializes the tick callback during bootstrap.
   CHECK(!tick_callback.IsEmpty());
 
-<<<<<<< HEAD
   v8::recordreplay::Assert("InternalCallbackScope::Close CallTickCallback");
 
-  if (tick_callback->Call(env_->context(), process, 0, nullptr).IsEmpty()) {
-||||||| 2365115868
-  if (tick_callback->Call(env_->context(), process, 0, nullptr).IsEmpty()) {
-=======
   if (tick_callback->Call(context, process, 0, nullptr).IsEmpty()) {
->>>>>>> upstream/v16.x
     failed_ = true;
   }
   perform_stopping_check();

@@ -147,16 +147,12 @@
 #endif
 #endif  // V8_OS_WIN
 
-<<<<<<< HEAD
-#include <dlfcn.h>
-#include <unistd.h>
-
-||||||| 2365115868
-=======
 // Has to be the last include (doesn't have include guards):
 #include "src/api/api-macros.h"
 
->>>>>>> upstream/v16.x
+#include <dlfcn.h>
+#include <unistd.h>
+
 #define TRACE_BS(...)                                     \
   do {                                                    \
     if (i::FLAG_trace_backing_store) PrintF(__VA_ARGS__); \
@@ -10376,7 +10372,6 @@ CFunctionInfo::CFunctionInfo(const CTypeInfo& return_info,
   }
 }
 
-<<<<<<< HEAD
 static bool gRecordingOrReplaying;
 static void (*gRecordReplayOnNewSource)(const char* id, const char* kind,
                                         const char* url);
@@ -11020,8 +11015,6 @@ bool IsMainThread() {
   return gMainThread == pthread_self();
 }
 
-||||||| 2365115868
-=======
 const CTypeInfo& CFunctionInfo::ArgumentInfo(unsigned int index) const {
   DCHECK_LT(index, ArgumentCount());
   return arg_info_[index];
@@ -11091,7 +11084,6 @@ std::shared_ptr<WasmStreaming> WasmStreaming::Unpack(Isolate* isolate,
 }
 #endif  // !V8_ENABLE_WEBASSEMBLY
 
->>>>>>> upstream/v16.x
 namespace internal {
 
 const size_t HandleScopeImplementer::kEnteredContextsOffset =

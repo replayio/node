@@ -124,7 +124,7 @@ class SiblingGroup final : public std::enable_shared_from_this<SiblingGroup> {
   static std::shared_ptr<SiblingGroup> Get(const std::string& name);
 
   // Anonymous SiblingGroup, Used for one-to-one MessagePort pairs.
-  SiblingGroup() = default;
+  SiblingGroup() : groups_mutex_(/* ordered */ true) {}
   explicit SiblingGroup(const std::string& name);
   ~SiblingGroup();
 
@@ -210,23 +210,7 @@ class MessagePortData : public TransferData {
   // overhead that is only necessary for BroadcastChannel.
   std::deque<std::shared_ptr<Message>> incoming_messages_;
   MessagePort* owner_ = nullptr;
-<<<<<<< HEAD
-  // This mutex protects the sibling_ field and is shared between two entangled
-  // MessagePorts. If both mutexes are acquired, this one needs to be
-  // acquired first.
-  std::shared_ptr<Mutex> sibling_mutex_ = std::make_shared<Mutex>(/* ordered */ true);
-  MessagePortData* sibling_ = nullptr;
-
-||||||| 2365115868
-  // This mutex protects the sibling_ field and is shared between two entangled
-  // MessagePorts. If both mutexes are acquired, this one needs to be
-  // acquired first.
-  std::shared_ptr<Mutex> sibling_mutex_ = std::make_shared<Mutex>();
-  MessagePortData* sibling_ = nullptr;
-
-=======
   std::shared_ptr<SiblingGroup> group_;
->>>>>>> upstream/v16.x
   friend class MessagePort;
   friend class SiblingGroup;
 };

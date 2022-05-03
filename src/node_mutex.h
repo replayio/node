@@ -186,13 +186,10 @@ struct LibuvMutexTraits {
   static inline void mutex_unlock(MutexT* mutex) {
     uv_mutex_unlock(mutex);
   }
-<<<<<<< HEAD
 
   static inline void mutex_mark_ordered(MutexT* mutex) {
     uv_mutex_mark_ordered(mutex);
   }
-||||||| 2365115868
-=======
 
   static inline void mutex_rdlock(MutexT* mutex) {
     uv_mutex_lock(mutex);
@@ -229,7 +226,6 @@ struct LibuvRwlockTraits {
   static inline void mutex_rdunlock(MutexT* mutex) {
     uv_rwlock_rdunlock(mutex);
   }
->>>>>>> upstream/v16.x
 };
 
 template <typename Traits>

@@ -914,87 +914,14 @@ bool PagedSpace::RawRefillLabMain(int size_in_bytes, AllocationOrigin origin) {
 
   if (heap()->ShouldExpandOldGenerationOnSlowAllocation() &&
       heap()->CanExpandOldGeneration(AreaSize())) {
-<<<<<<< HEAD
-    Page* page = Expand();
-    if (page) {
-      if (!is_compaction_space()) {
-        heap()->NotifyOldGenerationExpansion(identity(), page);
-      }
-      DCHECK((CountTotalPages() > 1) ||
-             (static_cast<size_t>(size_in_bytes) <= free_list_->Available()));
-      bool rv = TryAllocationFromFreeListMain(static_cast<size_t>(size_in_bytes),
-                                              origin);
-      if (!rv) {
-        recordreplay::Diagnostic("PagedSpace::RawRefillLabMain #1 %d", size_in_bytes);
-      }
-      return rv;
-||||||| 2365115868
-    Page* page = Expand();
-    if (page) {
-      if (!is_compaction_space()) {
-        heap()->NotifyOldGenerationExpansion(identity(), page);
-      }
-      DCHECK((CountTotalPages() > 1) ||
-             (static_cast<size_t>(size_in_bytes) <= free_list_->Available()));
-      return TryAllocationFromFreeListMain(static_cast<size_t>(size_in_bytes),
-                                           origin);
-=======
     if (TryExpand(size_in_bytes, origin)) {
       return true;
->>>>>>> upstream/v16.x
     }
   }
 
-<<<<<<< HEAD
-  if (is_compaction_space()) {
-    bool rv = ContributeToSweepingMain(0, 0, size_in_bytes, origin);
-    if (!rv) {
-      recordreplay::Diagnostic("PagedSpace::RawRefillLabMain #2 %d %d %d", size_in_bytes,
-                               heap()->ShouldExpandOldGenerationOnSlowAllocation(),
-                               heap()->CanExpandOldGeneration(AreaSize()));
-    }
-    return rv;
-  } else {
-    DCHECK(!is_local_space());
-    if (collector->sweeping_in_progress()) {
-      // Complete sweeping for this space.
-      collector->DrainSweepingWorklistForSpace(identity());
-      RefillFreeList();
-
-      // Last try to acquire memory from free list.
-      bool rv = TryAllocationFromFreeListMain(size_in_bytes, origin);
-      if (!rv) {
-        recordreplay::Diagnostic("PagedSpace::RawRefillLabMain #3 %d", size_in_bytes);
-      }
-      return rv;
-    }
-    recordreplay::Diagnostic("PagedSpace::RawRefillLabMain #4 %d %d %d %zu %zu",
-                             size_in_bytes,
-                             heap()->ShouldExpandOldGenerationOnSlowAllocation(),
-                             heap()->CanExpandOldGeneration(AreaSize()),
-                             heap()->OldGenerationCapacity(),
-                             heap()->max_old_generation_size());
-    return false;
-||||||| 2365115868
-  if (is_compaction_space()) {
-    return ContributeToSweepingMain(0, 0, size_in_bytes, origin);
-
-  } else {
-    DCHECK(!is_local_space());
-    if (collector->sweeping_in_progress()) {
-      // Complete sweeping for this space.
-      collector->DrainSweepingWorklistForSpace(identity());
-      RefillFreeList();
-
-      // Last try to acquire memory from free list.
-      return TryAllocationFromFreeListMain(size_in_bytes, origin);
-    }
-    return false;
-=======
   // Try sweeping all pages.
   if (ContributeToSweepingMain(0, 0, size_in_bytes, origin)) {
     return true;
->>>>>>> upstream/v16.x
   }
 
   if (heap()->gc_state() != Heap::NOT_IN_GC && !heap()->force_oom()) {

@@ -976,7 +976,6 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
   return 0;
 }
 
-<<<<<<< HEAD
 static void (*gRecordReplayAttach)(const char* dispatchAddress, const char* buildId);
 static void (*gRecordReplaySetApiKey)(const char* apiKey);
 static void (*gRecordReplayRecordCommandLineArguments)(int*, char***);
@@ -1202,17 +1201,6 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   }
 }
 
-InitializationResult InitializeOncePerProcess(int* pargc, char*** pargv) {
-  InitializeRecordReplay(pargc, pargv);
-
-  performance::InitPerformance();
-
-  int argc = *pargc;
-  char** argv = *pargv;
-
-||||||| 2365115868
-InitializationResult InitializeOncePerProcess(int argc, char** argv) {
-=======
 InitializationResult InitializeOncePerProcess(int argc, char** argv) {
   return InitializeOncePerProcess(argc, argv, kDefaultInitialization);
 }
@@ -1227,7 +1215,8 @@ InitializationResult InitializeOncePerProcess(
     init_flags = init_flags | kInitializeV8 | kInitOpenSSL | kRunPlatformInit;
   }
 
->>>>>>> upstream/v16.x
+  InitializeRecordReplay(&argc, &argv);
+
   // Initialized the enabled list for Debug() calls with system
   // environment variables.
   per_process::enabled_debug_list.Parse(nullptr);
@@ -1389,7 +1378,7 @@ void TearDownOncePerProcess() {
 }
 
 int Start(int argc, char** argv) {
-  InitializationResult result = InitializeOncePerProcess(&argc, &argv);
+  InitializationResult result = InitializeOncePerProcess(argc, argv);
   if (result.early_return) {
     return result.exit_code;
   }

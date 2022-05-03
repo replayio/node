@@ -538,16 +538,9 @@ void Message::MemoryInfo(MemoryTracker* tracker) const {
   tracker->TrackField("transferables", transferables_);
 }
 
-<<<<<<< HEAD
 MessagePortData::MessagePortData(MessagePort* owner)
-  : mutex_(/* ordered */ true), owner_(owner) { }
-||||||| 2365115868
-MessagePortData::MessagePortData(MessagePort* owner) : owner_(owner) { }
-=======
-MessagePortData::MessagePortData(MessagePort* owner)
-    : owner_(owner) {
+    : mutex_(/* ordered */ true), owner_(owner) {
 }
->>>>>>> upstream/v16.x
 
 MessagePortData::~MessagePortData() {
   CHECK_NULL(owner_);
@@ -731,15 +724,7 @@ MaybeLocal<Value> MessagePort::ReceiveMessage(Local<Context> context,
   return received->Deserialize(env(), context, port_list);
 }
 
-<<<<<<< HEAD
-void MessagePort::OnMessage() {
-  v8::recordreplay::Assert("MessagePort::OnMessage");
-
-||||||| 2365115868
-void MessagePort::OnMessage() {
-=======
 void MessagePort::OnMessage(MessageProcessingMode mode) {
->>>>>>> upstream/v16.x
   Debug(this, "Running MessagePort::OnMessage()");
   HandleScope handle_scope(env()->isolate());
   Local<Context> context =

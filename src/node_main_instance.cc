@@ -145,16 +145,10 @@ void NodeMainInstance::Run(int* exit_code, Environment* env) {
   if (*exit_code == 0) {
     LoadEnvironment(env, StartExecutionCallback{});
 
-<<<<<<< HEAD
-    RecordReplayFinishRecording();
-    ResetStdio();
-||||||| 2365115868
-    ResetStdio();
-=======
     *exit_code = SpinEventLoop(env).FromMaybe(1);
   }
->>>>>>> upstream/v16.x
 
+  RecordReplayFinishRecording();
   ResetStdio();
 
   // TODO(addaleax): Neither NODE_SHARED_MODE nor HAVE_INSPECTOR really

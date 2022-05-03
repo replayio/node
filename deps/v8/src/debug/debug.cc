@@ -27,16 +27,10 @@
 #include "src/handles/global-handles.h"
 #include "src/heap/heap-inl.h"  // For NextDebuggingId.
 #include "src/init/bootstrapper.h"
-<<<<<<< HEAD
 #include "src/inspector/v8-debugger-agent-impl.h"
 #include "src/inspector/v8-inspector-impl.h"
 #include "src/inspector/v8-inspector-session-impl.h"
 #include "src/inspector/v8-runtime-agent-impl.h"
-#include "src/interpreter/bytecode-array-accessor.h"
-||||||| 2365115868
-#include "src/interpreter/bytecode-array-accessor.h"
-=======
->>>>>>> upstream/v16.x
 #include "src/interpreter/bytecode-array-iterator.h"
 #include "src/interpreter/interpreter.h"
 #include "src/json/json-parser.h"
@@ -50,13 +44,9 @@
 #include "src/objects/slots.h"
 #include "src/snapshot/embedded/embedded-data.h"
 #include "src/snapshot/snapshot.h"
-<<<<<<< HEAD
 #include "src/tasks/task-utils.h"
-||||||| 2365115868
-=======
 
 #if V8_ENABLE_WEBASSEMBLY
->>>>>>> upstream/v16.x
 #include "src/wasm/wasm-debug.h"
 #include "src/wasm/wasm-objects-inl.h"
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -2261,15 +2251,11 @@ void Debug::OnAfterCompile(Handle<Script> script) {
 static void RecordReplayRegisterScript(Handle<Script> script);
 
 void Debug::ProcessCompileEvent(bool has_compile_error, Handle<Script> script) {
-<<<<<<< HEAD
   if (!has_compile_error && recordreplay::IsRecordingOrReplaying() && IsMainThread()) {
     RecordReplayRegisterScript(script);
   }
 
-||||||| 2365115868
-=======
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kDebugger);
->>>>>>> upstream/v16.x
   // Ignore temporary scripts.
   if (script->id() == Script::kTemporaryScriptId) return;
   // TODO(kozyatinskiy): teach devtools to work with liveedit scripts better
@@ -2734,7 +2720,6 @@ bool Debug::PerformSideEffectCheckForObject(Handle<Object> object) {
   isolate_->TerminateExecution();
   return false;
 }
-<<<<<<< HEAD
 
 // Record Replay handlers and associated helpers. These ought to be in their
 // own file, but it's easier to put them here.
@@ -3695,9 +3680,6 @@ std::string RecordReplayBasicValueContents(Handle<Object> value) {
   return "Unknown";
 }
 
-||||||| 2365115868
-=======
-
 void Debug::SetTemporaryObjectTrackingDisabled(bool disabled) {
   if (temporary_objects_) {
     temporary_objects_->disabled = disabled;
@@ -3711,7 +3693,6 @@ bool Debug::GetTemporaryObjectTrackingDisabled() const {
   return false;
 }
 
->>>>>>> upstream/v16.x
 }  // namespace internal
 
 namespace i = internal;

@@ -3056,20 +3056,10 @@ Handle<JSMessageObject> Factory::NewJSMessageObject(
     }
   }
 
-<<<<<<< HEAD
-  message_obj->set_stack_frames(*stack_frames);
-  message_obj->set_error_level(v8::Isolate::kMessageError);
-  message_obj->set_record_replay_bookmark(record_replay_bookmark);
-  return message_obj;
-||||||| 2365115868
-  message_obj->set_stack_frames(*stack_frames);
-  message_obj->set_error_level(v8::Isolate::kMessageError);
-  return message_obj;
-=======
   message_obj.set_stack_frames(*stack_frames, SKIP_WRITE_BARRIER);
   message_obj.set_error_level(v8::Isolate::kMessageError);
+  message_obj.set_record_replay_bookmark(record_replay_bookmark);
   return handle(message_obj, isolate());
->>>>>>> upstream/v16.x
 }
 
 Handle<SharedFunctionInfo> Factory::NewSharedFunctionInfoForApiFunction(

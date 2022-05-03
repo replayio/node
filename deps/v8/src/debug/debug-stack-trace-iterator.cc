@@ -197,28 +197,6 @@ v8::MaybeLocal<v8::Value> DebugStackTraceIterator::Evaluate(
   return Utils::ToLocal(value);
 }
 
-<<<<<<< HEAD
-v8::MaybeLocal<v8::String> DebugStackTraceIterator::EvaluateWasm(
-    internal::Vector<const internal::byte> source, int frame_index) {
-  DCHECK(!Done());
-  if (!i::FLAG_wasm_expose_debug_eval || !iterator_.is_wasm()) {
-    return v8::MaybeLocal<v8::String>();
-  }
-  Handle<String> value;
-  i::SafeForInterruptsScope safe_for_interrupt_scope(isolate_);
-
-  FrameSummary summary = FrameSummary::Get(iterator_.frame(), 0);
-  const FrameSummary::WasmFrameSummary& wasmSummary = summary.AsWasm();
-  Handle<WasmInstanceObject> instance = wasmSummary.wasm_instance();
-
-  if (!v8::internal::wasm::DebugEvaluate(source, instance, iterator_.frame())
-           .ToHandle(&value)) {
-    isolate_->OptionalRescheduleException(false);
-    return v8::MaybeLocal<v8::String>();
-  }
-  return Utils::ToLocal(value);
-}
-
 StackFrameId DebugStackTraceIterator::FrameId() {
   DCHECK(!Done());
   return iterator_.frame()->id();
@@ -229,28 +207,5 @@ int DebugStackTraceIterator::InlineFrameIndex() {
   return inlined_frame_index_;
 }
 
-||||||| 2365115868
-v8::MaybeLocal<v8::String> DebugStackTraceIterator::EvaluateWasm(
-    internal::Vector<const internal::byte> source, int frame_index) {
-  DCHECK(!Done());
-  if (!i::FLAG_wasm_expose_debug_eval || !iterator_.is_wasm()) {
-    return v8::MaybeLocal<v8::String>();
-  }
-  Handle<String> value;
-  i::SafeForInterruptsScope safe_for_interrupt_scope(isolate_);
-
-  FrameSummary summary = FrameSummary::Get(iterator_.frame(), 0);
-  const FrameSummary::WasmFrameSummary& wasmSummary = summary.AsWasm();
-  Handle<WasmInstanceObject> instance = wasmSummary.wasm_instance();
-
-  if (!v8::internal::wasm::DebugEvaluate(source, instance, iterator_.frame())
-           .ToHandle(&value)) {
-    isolate_->OptionalRescheduleException(false);
-    return v8::MaybeLocal<v8::String>();
-  }
-  return Utils::ToLocal(value);
-}
-=======
->>>>>>> upstream/v16.x
 }  // namespace internal
 }  // namespace v8

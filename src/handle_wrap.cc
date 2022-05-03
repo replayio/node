@@ -86,17 +86,12 @@ void HandleWrap::Close(Local<Value> close_callback) {
 
 
 void HandleWrap::OnGCCollect() {
-<<<<<<< HEAD
   // Leak the handle when recording/replaying to avoid non-deterministic
   // behavior.
   if (v8::recordreplay::IsRecordingOrReplaying()) {
     return;
   }
 
-  Close();
-||||||| 2365115868
-  Close();
-=======
   // When all references to a HandleWrap are lost and the object is supposed to
   // be destroyed, we first call Close() to clean up the underlying libuv
   // handle. The OnClose callback then acquires and destroys another reference
@@ -107,7 +102,6 @@ void HandleWrap::OnGCCollect() {
   } else {
     BaseObject::OnGCCollect();
   }
->>>>>>> upstream/v16.x
 }
 
 

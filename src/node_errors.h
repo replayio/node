@@ -86,44 +86,6 @@ void OnFatalError(const char* location, const char* message);
   V(ERR_WORKER_INIT_FAILED, Error)                                             \
   V(ERR_PROTO_ACCESS, Error)
 
-<<<<<<< HEAD
-#define V(code, type)                                                         \
-  inline v8::Local<v8::Value> code(v8::Isolate* isolate,                      \
-                                   const char* message)       {               \
-    v8::Local<v8::String> js_code = OneByteString(isolate, #code);            \
-    v8::Local<v8::String> js_msg = OneByteString(isolate, message);           \
-    v8::Local<v8::Object> e =                                                 \
-        v8::Exception::type(js_msg)->ToObject(                                \
-            isolate->GetCurrentContext()).ToLocalChecked();                   \
-    e->Set(isolate->GetCurrentContext(), OneByteString(isolate, "code"),      \
-           js_code).Check();                                                  \
-    return e;                                                                 \
-  }                                                                           \
-  inline void THROW_ ## code(v8::Isolate* isolate, const char* message) {     \
-    v8::recordreplay::Assert("ThrowException %s", message);                   \
-    isolate->ThrowException(code(isolate, message));                          \
-  }                                                                           \
-  inline void THROW_ ## code(Environment* env, const char* message) {         \
-    THROW_ ## code(env->isolate(), message);                                  \
-||||||| 2365115868
-#define V(code, type)                                                         \
-  inline v8::Local<v8::Value> code(v8::Isolate* isolate,                      \
-                                   const char* message)       {               \
-    v8::Local<v8::String> js_code = OneByteString(isolate, #code);            \
-    v8::Local<v8::String> js_msg = OneByteString(isolate, message);           \
-    v8::Local<v8::Object> e =                                                 \
-        v8::Exception::type(js_msg)->ToObject(                                \
-            isolate->GetCurrentContext()).ToLocalChecked();                   \
-    e->Set(isolate->GetCurrentContext(), OneByteString(isolate, "code"),      \
-           js_code).Check();                                                  \
-    return e;                                                                 \
-  }                                                                           \
-  inline void THROW_ ## code(v8::Isolate* isolate, const char* message) {     \
-    isolate->ThrowException(code(isolate, message));                          \
-  }                                                                           \
-  inline void THROW_ ## code(Environment* env, const char* message) {         \
-    THROW_ ## code(env->isolate(), message);                                  \
-=======
 #define V(code, type)                                                          \
   template <typename... Args>                                                  \
   inline v8::Local<v8::Value> code(                                            \
@@ -144,6 +106,7 @@ void OnFatalError(const char* location, const char* message);
   template <typename... Args>                                                  \
   inline void THROW_##code(                                                    \
       v8::Isolate* isolate, const char* format, Args&&... args) {              \
+    v8::recordreplay::Assert("ThrowException %s", format);                     \
     isolate->ThrowException(                                                   \
         code(isolate, format, std::forward<Args>(args)...));                   \
   }                                                                            \
@@ -151,7 +114,6 @@ void OnFatalError(const char* location, const char* message);
   inline void THROW_##code(                                                    \
       Environment* env, const char* format, Args&&... args) {                  \
     THROW_##code(env->isolate(), format, std::forward<Args>(args)...);         \
->>>>>>> upstream/v16.x
   }
 ERRORS_WITH_CODE(V)
 #undef V

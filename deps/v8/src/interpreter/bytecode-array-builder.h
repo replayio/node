@@ -503,7 +503,6 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
   void InitializeReturnPosition(FunctionLiteral* literal);
 
   void SetStatementPosition(Statement* stmt) {
-<<<<<<< HEAD
     SetStatementPosition(stmt->position());
   }
 
@@ -514,17 +513,6 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
     if (record_replay_breakpoint) {
       RecordReplayInstrumentation("breakpoint", position);
     }
-||||||| 2365115868
-    if (stmt->position() == kNoSourcePosition) return;
-    latest_source_info_.MakeStatementPosition(stmt->position());
-=======
-    SetStatementPosition(stmt->position());
-  }
-
-  void SetStatementPosition(int position) {
-    if (position == kNoSourcePosition) return;
-    latest_source_info_.MakeStatementPosition(position);
->>>>>>> upstream/v16.x
   }
 
   void SetExpressionPosition(Expression* expr) {
@@ -648,16 +636,8 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
   BytecodeRegisterOptimizer* register_optimizer_;
   BytecodeSourceInfo latest_source_info_;
   BytecodeSourceInfo deferred_source_info_;
-<<<<<<< HEAD
   int most_recent_source_position_ = -1;
   bool emit_record_replay_opcodes_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(BytecodeArrayBuilder);
-||||||| 2365115868
-
-  DISALLOW_COPY_AND_ASSIGN(BytecodeArrayBuilder);
-=======
->>>>>>> upstream/v16.x
 };
 
 V8_EXPORT_PRIVATE std::ostream& operator<<(

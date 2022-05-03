@@ -159,31 +159,19 @@ static void GetCPUInfo(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetFreeMemory(const FunctionCallbackInfo<Value>& args) {
-<<<<<<< HEAD
   if (MaybeMarkUnavailable(args)) {
     return;
   }
-  double amount = uv_get_free_memory();
-||||||| 2365115868
-  double amount = uv_get_free_memory();
-=======
   double amount = static_cast<double>(uv_get_free_memory());
->>>>>>> upstream/v16.x
   args.GetReturnValue().Set(amount);
 }
 
 
 static void GetTotalMemory(const FunctionCallbackInfo<Value>& args) {
-<<<<<<< HEAD
   if (MaybeMarkUnavailable(args)) {
     return;
   }
-  double amount = uv_get_total_memory();
-||||||| 2365115868
-  double amount = uv_get_total_memory();
-=======
   double amount = static_cast<double>(uv_get_total_memory());
->>>>>>> upstream/v16.x
   args.GetReturnValue().Set(amount);
 }
 

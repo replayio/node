@@ -740,24 +740,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   inline void set_pending_message(Object message_obj);
 
   THREAD_LOCAL_TOP_ADDRESS(Object, scheduled_exception)
-<<<<<<< HEAD
 
-  inline Object pending_message();
-  inline void set_pending_message(Object message_obj);
-  inline void clear_pending_message();
-  Address pending_message_obj_address() {
-    return reinterpret_cast<Address>(&thread_local_top()->pending_message_obj_);
-  }
-
-||||||| 2365115868
-
-  inline void clear_pending_message();
-  Address pending_message_obj_address() {
-    return reinterpret_cast<Address>(&thread_local_top()->pending_message_obj_);
-  }
-
-=======
->>>>>>> upstream/v16.x
   inline Object scheduled_exception();
   inline bool has_scheduled_exception();
   inline void clear_scheduled_exception();

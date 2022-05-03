@@ -118,13 +118,6 @@ inline bool IsTrapHandlerEnabled() {
   return g_is_trap_handler_enabled;
 }
 
-<<<<<<< HEAD
-extern int& IsThreadInWasmCode();
-
-#define g_thread_in_wasm_code IsThreadInWasmCode()
-||||||| 2365115868
-extern THREAD_LOCAL int g_thread_in_wasm_code;
-=======
 #if defined(V8_OS_AIX)
 // `thread_local` does not link on AIX:
 // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=100641
@@ -132,7 +125,6 @@ extern __thread int g_thread_in_wasm_code;
 #else
 extern thread_local int g_thread_in_wasm_code;
 #endif
->>>>>>> upstream/v16.x
 
 // Return the address of the thread-local {g_thread_in_wasm_code} variable. This
 // pointer can be accessed and modified as long as the thread calling this

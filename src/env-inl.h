@@ -1143,13 +1143,6 @@ inline void Environment::SetInstanceMethod(v8::Local<v8::FunctionTemplate> that,
   t->SetClassName(name_string);
 }
 
-<<<<<<< HEAD
-void Environment::AddCleanupHook(void (*fn)(void*), void* arg) {
-  /*auto insertion_info =*/ cleanup_hooks_.emplace(CleanupHookCallback {
-||||||| 2365115868
-void Environment::AddCleanupHook(void (*fn)(void*), void* arg) {
-  auto insertion_info = cleanup_hooks_.emplace(CleanupHookCallback {
-=======
 inline void Environment::SetConstructorFunction(
     v8::Local<v8::Object> that,
     const char* name,
@@ -1173,13 +1166,10 @@ inline void Environment::SetConstructorFunction(
 
 void Environment::AddCleanupHook(CleanupCallback fn, void* arg) {
   auto insertion_info = cleanup_hooks_.emplace(CleanupHookCallback {
->>>>>>> upstream/v16.x
     fn, arg, cleanup_hook_counter_++
   });
   // Make sure there was no existing element with these values.
-  // This assertion fails sometimes when recording, possibly because GC
-  // doesn't completely work when recording/replaying.
-  //CHECK_EQ(insertion_info.second, true);
+  CHECK_EQ(insertion_info.second, true);
 }
 
 void Environment::RemoveCleanupHook(CleanupCallback fn, void* arg) {

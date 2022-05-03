@@ -207,24 +207,6 @@ static void MemoryUsage(const FunctionCallbackInfo<Value>& args) {
   Local<ArrayBuffer> ab = get_fields_array_buffer(args, 0, 5);
   double* fields = static_cast<double*>(ab->GetBackingStore()->Data());
 
-<<<<<<< HEAD
-  fields[0] = rss;
-  fields[1] = v8_heap_stats.total_heap_size();
-  fields[2] = v8_heap_stats.used_heap_size();
-  fields[3] = v8_heap_stats.external_memory();
-  fields[4] = array_buffer_allocator == nullptr ?
-      0 : array_buffer_allocator->total_mem_usage();
-
-  // Ensure memory usage measurements are consistent when replaying.
-  v8::recordreplay::RecordReplayBytes("MemoryUsage", fields, 5 * sizeof(double));
-||||||| 2365115868
-  fields[0] = rss;
-  fields[1] = v8_heap_stats.total_heap_size();
-  fields[2] = v8_heap_stats.used_heap_size();
-  fields[3] = v8_heap_stats.external_memory();
-  fields[4] = array_buffer_allocator == nullptr ?
-      0 : array_buffer_allocator->total_mem_usage();
-=======
   size_t rss;
   int err = uv_resident_set_memory(&rss);
   if (err)
@@ -238,7 +220,9 @@ static void MemoryUsage(const FunctionCallbackInfo<Value>& args) {
       array_buffer_allocator == nullptr
           ? 0
           : static_cast<double>(array_buffer_allocator->total_mem_usage());
->>>>>>> upstream/v16.x
+
+  // Ensure memory usage measurements are consistent when replaying.
+  v8::recordreplay::RecordReplayBytes("MemoryUsage", fields, 5 * sizeof(double));
 }
 
 void RawDebug(const FunctionCallbackInfo<Value>& args) {
@@ -497,7 +481,6 @@ BindingData::BindingData(Environment* env, v8::Local<v8::Object> object)
   backing_store_ = ab->GetBackingStore();
 }
 
-<<<<<<< HEAD
 static void RecordReplayLog(const FunctionCallbackInfo<Value>& args) {
   CHECK(args.Length() == 1 && args[0]->IsString() &&
         "must be called with a single string");
@@ -563,16 +546,6 @@ static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) 
   gRecordReplayInspectorSession->Dispatch(messageView);
 }
 
-static void InitializeProcessMethods(Local<Object> target,
-                                     Local<Value> unused,
-                                     Local<Context> context,
-                                     void* priv) {
-||||||| 2365115868
-static void InitializeProcessMethods(Local<Object> target,
-                                     Local<Value> unused,
-                                     Local<Context> context,
-                                     void* priv) {
-=======
 v8::CFunction BindingData::fast_number_(v8::CFunction::Make(FastNumber));
 v8::CFunction BindingData::fast_bigint_(v8::CFunction::Make(FastBigInt));
 
@@ -655,7 +628,6 @@ void BindingData::Deserialize(Local<Context> context,
                               InternalFieldInfo* info) {
   DCHECK_EQ(index, BaseObject::kSlot);
   v8::HandleScope scope(context->GetIsolate());
->>>>>>> upstream/v16.x
   Environment* env = Environment::GetCurrent(context);
   // Recreate the buffer in the constructor.
   BindingData* binding = env->AddBindingData<BindingData>(context, holder);
@@ -699,8 +671,6 @@ static void Initialize(Local<Object> target,
   env->SetMethod(target, "reallyExit", ReallyExit);
   env->SetMethodNoSideEffect(target, "uptime", Uptime);
   env->SetMethod(target, "patchProcessObject", PatchProcessObject);
-<<<<<<< HEAD
-  env->SetMethod(target, "getFastAPIs", GetFastAPIs);
 
   env->SetMethod(target, "isRecordingOrReplaying",
                  v8::FunctionCallbackIsRecordingOrReplaying);
@@ -727,10 +697,6 @@ static void Initialize(Local<Object> target,
                  v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
   env->SetMethod(target, "recordReplayElapsedTimeMs",
                  v8::FunctionCallbackRecordReplayElapsedTimeMs);
-||||||| 2365115868
-  env->SetMethod(target, "getFastAPIs", GetFastAPIs);
-=======
->>>>>>> upstream/v16.x
 }
 
 void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
@@ -760,8 +726,6 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(ReallyExit);
   registry->Register(Uptime);
   registry->Register(PatchProcessObject);
-<<<<<<< HEAD
-  registry->Register(GetFastAPIs);
 
   registry->Register(v8::FunctionCallbackIsRecordingOrReplaying);
   registry->Register(RecordReplayLog);
@@ -776,10 +740,6 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(v8::FunctionCallbackRecordReplayGetRecordingId);
   registry->Register(v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
   registry->Register(v8::FunctionCallbackRecordReplayElapsedTimeMs);
-||||||| 2365115868
-  registry->Register(GetFastAPIs);
-=======
->>>>>>> upstream/v16.x
 }
 
 }  // namespace process

@@ -523,17 +523,8 @@ Handle<WasmModuleObject> WasmEngine::FinalizeTranslatedAsmJs(
 MaybeHandle<WasmModuleObject> WasmEngine::SyncCompile(
     Isolate* isolate, const WasmFeatures& enabled, ErrorThrower* thrower,
     const ModuleWireBytes& bytes) {
-<<<<<<< HEAD
-  // https://github.com/RecordReplay/backend/issues/4886
-  recordreplay::Assert("WasmEngine::SyncCompile");
-
-  TRACE_EVENT0("v8.wasm", "wasm.SyncCompile");
-||||||| 2365115868
-  TRACE_EVENT0("v8.wasm", "wasm.SyncCompile");
-=======
   int compilation_id = next_compilation_id_.fetch_add(1);
   TRACE_EVENT1("v8.wasm", "wasm.SyncCompile", "id", compilation_id);
->>>>>>> upstream/v16.x
   ModuleResult result = DecodeWasmModule(
       enabled, bytes.start(), bytes.end(), false, kWasmOrigin,
       isolate->counters(), isolate->metrics_recorder(),

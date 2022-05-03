@@ -857,25 +857,6 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadNamedPropertyFromSuper(
   return *this;
 }
 
-<<<<<<< HEAD
-BytecodeArrayBuilder& BytecodeArrayBuilder::LoadNamedPropertyNoFeedback(
-    Register object, const AstRawString* name) {
-  size_t name_index = GetConstantPoolEntry(name);
-  OutputLdaNamedPropertyNoFeedback(object, name_index);
-  RecordReplayAssertValue(std::string("LoadNamedPropertyNoFeedback ") + name->to_string());
-  return *this;
-}
-
-||||||| 2365115868
-BytecodeArrayBuilder& BytecodeArrayBuilder::LoadNamedPropertyNoFeedback(
-    Register object, const AstRawString* name) {
-  size_t name_index = GetConstantPoolEntry(name);
-  OutputLdaNamedPropertyNoFeedback(object, name_index);
-  return *this;
-}
-
-=======
->>>>>>> upstream/v16.x
 BytecodeArrayBuilder& BytecodeArrayBuilder::LoadKeyedProperty(
     Register object, int feedback_slot) {
   OutputLdaKeyedProperty(object, feedback_slot);
@@ -934,27 +915,6 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::StoreNamedProperty(
   return StoreNamedProperty(object, name_index, feedback_slot, language_mode);
 }
 
-<<<<<<< HEAD
-BytecodeArrayBuilder& BytecodeArrayBuilder::StoreNamedPropertyNoFeedback(
-    Register object, const AstRawString* name, LanguageMode language_mode) {
-  RecordReplayAssertValue(std::string("StoreNamedPropertyNoFeedback " + name->to_string()));
-  size_t name_index = GetConstantPoolEntry(name);
-  OutputStaNamedPropertyNoFeedback(object, name_index,
-                                   static_cast<uint8_t>(language_mode));
-  return *this;
-}
-
-||||||| 2365115868
-BytecodeArrayBuilder& BytecodeArrayBuilder::StoreNamedPropertyNoFeedback(
-    Register object, const AstRawString* name, LanguageMode language_mode) {
-  size_t name_index = GetConstantPoolEntry(name);
-  OutputStaNamedPropertyNoFeedback(object, name_index,
-                                   static_cast<uint8_t>(language_mode));
-  return *this;
-}
-
-=======
->>>>>>> upstream/v16.x
 BytecodeArrayBuilder& BytecodeArrayBuilder::StoreNamedOwnProperty(
     Register object, const AstRawString* name, int feedback_slot) {
   RecordReplayAssertValue(std::string("StoreNamedOwnProperty " + name->to_string()));
@@ -1535,23 +1495,6 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::CallAnyReceiver(Register callable,
   return *this;
 }
 
-<<<<<<< HEAD
-BytecodeArrayBuilder& BytecodeArrayBuilder::CallNoFeedback(Register callable,
-                                                           RegisterList args) {
-  OutputCallNoFeedback(callable, args, args.register_count());
-  RecordReplayAssertValue("CallNoFeedback");
-  return *this;
-}
-
-||||||| 2365115868
-BytecodeArrayBuilder& BytecodeArrayBuilder::CallNoFeedback(Register callable,
-                                                           RegisterList args) {
-  OutputCallNoFeedback(callable, args, args.register_count());
-  return *this;
-}
-
-=======
->>>>>>> upstream/v16.x
 BytecodeArrayBuilder& BytecodeArrayBuilder::CallWithSpread(Register callable,
                                                            RegisterList args,
                                                            int feedback_slot) {

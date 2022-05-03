@@ -619,15 +619,10 @@ void napi_module_register_by_symbol(v8::Local<v8::Object> exports,
   }
 
   // Create a new napi_env for this specific module.
-<<<<<<< HEAD
-  napi_env env = v8impl::NewEnv(context);
+  napi_env env = v8impl::NewEnv(context, module_filename);
+
   v8::recordreplay::RegisterPointer(env);
   v8::recordreplay::RegisterPointer(v8impl::JsValueFromV8LocalValue(exports));
-||||||| 2365115868
-  napi_env env = v8impl::NewEnv(context);
-=======
-  napi_env env = v8impl::NewEnv(context, module_filename);
->>>>>>> upstream/v16.x
 
   napi_value _exports;
   env->CallIntoModule([&](napi_env env) {

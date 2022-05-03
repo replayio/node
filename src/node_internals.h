@@ -311,11 +311,6 @@ struct InitializationResult {
   std::vector<std::string> exec_args;
   bool early_return = false;
 };
-<<<<<<< HEAD
-InitializationResult InitializeOncePerProcess(int* pargc, char*** pargv);
-||||||| 2365115868
-InitializationResult InitializeOncePerProcess(int argc, char** argv);
-=======
 
 enum InitializationSettingsFlags : uint64_t {
   kDefaultInitialization = 1 << 0,
@@ -331,7 +326,6 @@ InitializationResult InitializeOncePerProcess(
   char** argv,
   InitializationSettingsFlags flags,
   ProcessFlags::Flags process_flags = ProcessFlags::kNoFlags);
->>>>>>> upstream/v16.x
 void TearDownOncePerProcess();
 void SetIsolateErrorHandlers(v8::Isolate* isolate, const IsolateSettings& s);
 void SetIsolateMiscHandlers(v8::Isolate* isolate, const IsolateSettings& s);

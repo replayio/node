@@ -1796,16 +1796,9 @@ bool Compiler::Compile(Isolate* isolate, Handle<SharedFunctionInfo> shared_info,
   // We should never reach here if the function is already compiled.
   DCHECK(!shared_info->is_compiled());
   DCHECK(!is_compiled_scope->is_compiled());
-<<<<<<< HEAD
 
   recordreplay::AutoDisallowEvents disallow;
 
-  Isolate* isolate = shared_info->GetIsolate();
-||||||| 2365115868
-
-  Isolate* isolate = shared_info->GetIsolate();
-=======
->>>>>>> upstream/v16.x
   DCHECK(AllowCompilation::IsAllowed(isolate));
   DCHECK_EQ(ThreadId::Current(), isolate->thread_id());
   DCHECK(!isolate->has_pending_exception());
@@ -2675,18 +2668,8 @@ static void SetRecordReplayIgnoreByURL(UnoptimizedCompileFlags& flags,
 }
 
 MaybeHandle<SharedFunctionInfo> CompileScriptOnMainThread(
-<<<<<<< HEAD
     UnoptimizedCompileFlags flags, Handle<String> source,
-    const Compiler::ScriptDetails& script_details,
-    ScriptOriginOptions origin_options, NativesFlag natives,
-||||||| 2365115868
-    const UnoptimizedCompileFlags flags, Handle<String> source,
-    const Compiler::ScriptDetails& script_details,
-    ScriptOriginOptions origin_options, NativesFlag natives,
-=======
-    const UnoptimizedCompileFlags flags, Handle<String> source,
     const ScriptDetails& script_details, NativesFlag natives,
->>>>>>> upstream/v16.x
     v8::Extension* extension, Isolate* isolate,
     IsCompiledScope* is_compiled_scope) {
   SetRecordReplayIgnoreByURL(flags, script_details);

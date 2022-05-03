@@ -36,13 +36,10 @@ WasmCode* WasmImportWrapperCache::Get(compiler::WasmImportCallKind kind,
   return it->second;
 }
 
-<<<<<<< HEAD
 WasmImportWrapperCache::WasmImportWrapperCache() {
   RecordReplayAddOrderedMutex("WasmImportWrapperCache::mutex_", &mutex_);
 }
 
-||||||| 2365115868
-=======
 WasmCode* WasmImportWrapperCache::MaybeGet(compiler::WasmImportCallKind kind,
                                            const FunctionSig* sig,
                                            int expected_arity) const {
@@ -53,7 +50,6 @@ WasmCode* WasmImportWrapperCache::MaybeGet(compiler::WasmImportCallKind kind,
   return it->second;
 }
 
->>>>>>> upstream/v16.x
 WasmImportWrapperCache::~WasmImportWrapperCache() {
   std::vector<WasmCode*> ptrs;
   ptrs.reserve(entry_map_.size());

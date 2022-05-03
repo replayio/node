@@ -423,18 +423,12 @@ size_t Heap::Available() {
 }
 
 bool Heap::CanExpandOldGeneration(size_t size) {
-<<<<<<< HEAD
   if (recordreplay::IsReplaying()) {
     // Always allow expanding the heap when replaying, as memory usage can be
     // larger when replaying than recording.
     return true;
   }
-  if (force_oom_) return false;
-||||||| 2365115868
-  if (force_oom_) return false;
-=======
   if (force_oom_ || force_gc_on_next_allocation_) return false;
->>>>>>> upstream/v16.x
   if (OldGenerationCapacity() + size > max_old_generation_size()) return false;
   // The OldGenerationCapacity does not account compaction spaces used
   // during evacuation. Ensure that expanding the old generation does push
@@ -1684,10 +1678,7 @@ Heap::DevToolsTraceEventScope::~DevToolsTraceEventScope() {
 bool Heap::CollectGarbage(AllocationSpace space,
                           GarbageCollectionReason gc_reason,
                           const v8::GCCallbackFlags gc_callback_flags) {
-<<<<<<< HEAD
   recordreplay::AutoDisallowEvents disallow;
-||||||| 2365115868
-=======
   if (V8_UNLIKELY(!deserialization_complete_)) {
     // During isolate initialization heap always grows. GC is only requested
     // if a new page allocation fails. In such a case we should crash with
@@ -1696,7 +1687,6 @@ bool Heap::CollectGarbage(AllocationSpace space,
     CHECK(always_allocate());
     FatalProcessOutOfMemory("GC during deserialization");
   }
->>>>>>> upstream/v16.x
   const char* collector_reason = nullptr;
   GarbageCollector collector = SelectGarbageCollector(space, &collector_reason);
   is_current_gc_forced_ = gc_callback_flags & v8::kGCCallbackFlagForced ||
@@ -2120,256 +2110,6 @@ static void VerifyStringTable(Isolate* isolate) {
 }
 #endif  // VERIFY_HEAP
 
-<<<<<<< HEAD
-bool Heap::ReserveSpace(Reservation* reservations, std::vector<Address>* maps) {
-  recordreplay::Diagnostic("Heap::ReserveSpace Start");
-
-  bool gc_performed = true;
-  int counter = 0;
-  static const int kThreshold = 20;
-  while (gc_performed && counter++ < kThreshold) {
-    gc_performed = false;
-    for (int space = FIRST_SPACE;
-         space < static_cast<int>(SnapshotSpace::kNumberOfHeapSpaces);
-         space++) {
-      DCHECK_NE(space, NEW_SPACE);
-      DCHECK_NE(space, NEW_LO_SPACE);
-      Reservation* reservation = &reservations[space];
-      DCHECK_LE(1, reservation->size());
-      if (reservation->at(0).size == 0) {
-        DCHECK_EQ(1, reservation->size());
-        continue;
-      }
-      bool perform_gc = false;
-      if (space == MAP_SPACE) {
-        // We allocate each map individually to avoid fragmentation.
-        maps->clear();
-        DCHECK_LE(reservation->size(), 2);
-        int reserved_size = 0;
-        for (const Chunk& c : *reservation) reserved_size += c.size;
-        DCHECK_EQ(0, reserved_size % Map::kSize);
-        int num_maps = reserved_size / Map::kSize;
-        for (int i = 0; i < num_maps; i++) {
-          AllocationResult allocation;
-#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
-          allocation = AllocateRaw(Map::kSize, AllocationType::kMap,
-                                   AllocationOrigin::kRuntime, kWordAligned);
-#else
-          allocation = map_space()->AllocateRawUnaligned(Map::kSize);
-#endif
-          HeapObject free_space;
-          if (allocation.To(&free_space)) {
-            // Mark with a free list node, in case we have a GC before
-            // deserializing.
-            Address free_space_address = free_space.address();
-            CreateFillerObjectAt(free_space_address, Map::kSize,
-                                 ClearRecordedSlots::kNo);
-            maps->push_back(free_space_address);
-          } else {
-            recordreplay::Diagnostic("Heap::ReserveSpace PerformGC #1");
-            perform_gc = true;
-            break;
-          }
-        }
-      } else if (space == LO_SPACE) {
-        // Just check that we can allocate during deserialization.
-        DCHECK_LE(reservation->size(), 2);
-        int reserved_size = 0;
-        for (const Chunk& c : *reservation) reserved_size += c.size;
-        perform_gc = !CanExpandOldGeneration(reserved_size);
-        if (perform_gc) {
-          recordreplay::Diagnostic("Heap::ReserveSpace PerformGC #2");
-        }
-      } else {
-        for (auto& chunk : *reservation) {
-          AllocationResult allocation;
-          int size = chunk.size;
-          DCHECK_LE(static_cast<size_t>(size),
-                    MemoryChunkLayout::AllocatableMemoryInMemoryChunk(
-                        static_cast<AllocationSpace>(space)));
-#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
-          AllocationType type = (space == CODE_SPACE)
-                                    ? AllocationType::kCode
-                                    : (space == RO_SPACE)
-                                          ? AllocationType::kReadOnly
-                                          : AllocationType::kYoung;
-          AllocationAlignment align =
-              (space == CODE_SPACE) ? kCodeAligned : kWordAligned;
-          allocation =
-              AllocateRaw(size, type, AllocationOrigin::kRuntime, align);
-#else
-          if (space == RO_SPACE) {
-            allocation = read_only_space()->AllocateRaw(
-                size, AllocationAlignment::kWordAligned);
-          } else {
-            // The deserializer will update the skip list.
-            allocation = paged_space(space)->AllocateRawUnaligned(size);
-          }
-#endif
-          HeapObject free_space;
-          if (allocation.To(&free_space)) {
-            // Mark with a free list node, in case we have a GC before
-            // deserializing.
-            Address free_space_address = free_space.address();
-            CreateFillerObjectAt(free_space_address, size,
-                                 ClearRecordedSlots::kNo);
-            DCHECK(IsPreAllocatedSpace(static_cast<SnapshotSpace>(space)));
-            chunk.start = free_space_address;
-            chunk.end = free_space_address + size;
-          } else {
-            recordreplay::Diagnostic("Heap::ReserveSpace PerformGC #3 %d %d", space, size);
-            perform_gc = true;
-            break;
-          }
-        }
-      }
-      if (perform_gc) {
-        // We cannot perfom a GC with an uninitialized isolate. This check
-        // fails for example if the max old space size is chosen unwisely,
-        // so that we cannot allocate space to deserialize the initial heap.
-        if (!deserialization_complete_) {
-          V8::FatalProcessOutOfMemory(
-              isolate(), "insufficient memory to create an Isolate");
-        }
-        if (counter > 1) {
-          CollectAllGarbage(kReduceMemoryFootprintMask,
-                            GarbageCollectionReason::kDeserializer);
-        } else {
-          CollectAllGarbage(kNoGCFlags, GarbageCollectionReason::kDeserializer);
-        }
-        gc_performed = true;
-        break;  // Abort for-loop over spaces and retry.
-      }
-    }
-  }
-
-  recordreplay::Diagnostic("Heap::ReserveSpace Done %d", gc_performed);
-  return !gc_performed;
-}
-
-
-||||||| 2365115868
-bool Heap::ReserveSpace(Reservation* reservations, std::vector<Address>* maps) {
-  bool gc_performed = true;
-  int counter = 0;
-  static const int kThreshold = 20;
-  while (gc_performed && counter++ < kThreshold) {
-    gc_performed = false;
-    for (int space = FIRST_SPACE;
-         space < static_cast<int>(SnapshotSpace::kNumberOfHeapSpaces);
-         space++) {
-      DCHECK_NE(space, NEW_SPACE);
-      DCHECK_NE(space, NEW_LO_SPACE);
-      Reservation* reservation = &reservations[space];
-      DCHECK_LE(1, reservation->size());
-      if (reservation->at(0).size == 0) {
-        DCHECK_EQ(1, reservation->size());
-        continue;
-      }
-      bool perform_gc = false;
-      if (space == MAP_SPACE) {
-        // We allocate each map individually to avoid fragmentation.
-        maps->clear();
-        DCHECK_LE(reservation->size(), 2);
-        int reserved_size = 0;
-        for (const Chunk& c : *reservation) reserved_size += c.size;
-        DCHECK_EQ(0, reserved_size % Map::kSize);
-        int num_maps = reserved_size / Map::kSize;
-        for (int i = 0; i < num_maps; i++) {
-          AllocationResult allocation;
-#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
-          allocation = AllocateRaw(Map::kSize, AllocationType::kMap,
-                                   AllocationOrigin::kRuntime, kWordAligned);
-#else
-          allocation = map_space()->AllocateRawUnaligned(Map::kSize);
-#endif
-          HeapObject free_space;
-          if (allocation.To(&free_space)) {
-            // Mark with a free list node, in case we have a GC before
-            // deserializing.
-            Address free_space_address = free_space.address();
-            CreateFillerObjectAt(free_space_address, Map::kSize,
-                                 ClearRecordedSlots::kNo);
-            maps->push_back(free_space_address);
-          } else {
-            perform_gc = true;
-            break;
-          }
-        }
-      } else if (space == LO_SPACE) {
-        // Just check that we can allocate during deserialization.
-        DCHECK_LE(reservation->size(), 2);
-        int reserved_size = 0;
-        for (const Chunk& c : *reservation) reserved_size += c.size;
-        perform_gc = !CanExpandOldGeneration(reserved_size);
-      } else {
-        for (auto& chunk : *reservation) {
-          AllocationResult allocation;
-          int size = chunk.size;
-          DCHECK_LE(static_cast<size_t>(size),
-                    MemoryChunkLayout::AllocatableMemoryInMemoryChunk(
-                        static_cast<AllocationSpace>(space)));
-#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
-          AllocationType type = (space == CODE_SPACE)
-                                    ? AllocationType::kCode
-                                    : (space == RO_SPACE)
-                                          ? AllocationType::kReadOnly
-                                          : AllocationType::kYoung;
-          AllocationAlignment align =
-              (space == CODE_SPACE) ? kCodeAligned : kWordAligned;
-          allocation =
-              AllocateRaw(size, type, AllocationOrigin::kRuntime, align);
-#else
-          if (space == RO_SPACE) {
-            allocation = read_only_space()->AllocateRaw(
-                size, AllocationAlignment::kWordAligned);
-          } else {
-            // The deserializer will update the skip list.
-            allocation = paged_space(space)->AllocateRawUnaligned(size);
-          }
-#endif
-          HeapObject free_space;
-          if (allocation.To(&free_space)) {
-            // Mark with a free list node, in case we have a GC before
-            // deserializing.
-            Address free_space_address = free_space.address();
-            CreateFillerObjectAt(free_space_address, size,
-                                 ClearRecordedSlots::kNo);
-            DCHECK(IsPreAllocatedSpace(static_cast<SnapshotSpace>(space)));
-            chunk.start = free_space_address;
-            chunk.end = free_space_address + size;
-          } else {
-            perform_gc = true;
-            break;
-          }
-        }
-      }
-      if (perform_gc) {
-        // We cannot perfom a GC with an uninitialized isolate. This check
-        // fails for example if the max old space size is chosen unwisely,
-        // so that we cannot allocate space to deserialize the initial heap.
-        if (!deserialization_complete_) {
-          V8::FatalProcessOutOfMemory(
-              isolate(), "insufficient memory to create an Isolate");
-        }
-        if (counter > 1) {
-          CollectAllGarbage(kReduceMemoryFootprintMask,
-                            GarbageCollectionReason::kDeserializer);
-        } else {
-          CollectAllGarbage(kNoGCFlags, GarbageCollectionReason::kDeserializer);
-        }
-        gc_performed = true;
-        break;  // Abort for-loop over spaces and retry.
-      }
-    }
-  }
-
-  return !gc_performed;
-}
-
-
-=======
->>>>>>> upstream/v16.x
 void Heap::EnsureFromSpaceIsCommitted() {
   if (!new_space_) return;
   if (new_space_->CommitFromSpaceIfNeeded()) return;

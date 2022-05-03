@@ -128,15 +128,11 @@ class Sweeper::IncrementalSweeperTask final : public CancelableTask {
 
   ~IncrementalSweeperTask() override = default;
 
-<<<<<<< HEAD
-  bool IsRecordReplayNonDeterministic() const override { return true; }
-
-||||||| 2365115868
-=======
   IncrementalSweeperTask(const IncrementalSweeperTask&) = delete;
   IncrementalSweeperTask& operator=(const IncrementalSweeperTask&) = delete;
 
->>>>>>> upstream/v16.x
+  bool IsRecordReplayNonDeterministic() const override { return true; }
+
  private:
   void RunInternal() final {
     VMState<GC> state(isolate_);

@@ -7,13 +7,6 @@
 #include <string.h>
 
 #include "include/libplatform/v8-tracing.h"
-<<<<<<< HEAD
-#include "include/v8.h"
-
-||||||| 2365115868
-
-=======
->>>>>>> upstream/v16.x
 #include "src/base/atomicops.h"
 #include "src/base/platform/mutex.h"
 #include "src/base/platform/time.h"

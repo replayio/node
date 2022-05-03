@@ -174,20 +174,16 @@ class V8DebuggerAgentImpl : public protocol::Debugger::Backend {
 
   v8::Isolate* isolate() { return m_isolate; }
 
-<<<<<<< HEAD
   Response currentCallFrames(
       std::unique_ptr<protocol::Array<protocol::Debugger::CallFrame>>*);
   std::unique_ptr<protocol::Runtime::RemoteObject> wrapObject(int contextId,
                                                               v8::Local<v8::Value> val);
 
-||||||| 2365115868
-=======
   // Returns the intersection of `ids` and the current instrumentation
   // breakpoint ids.
   std::vector<v8::debug::BreakpointId> instrumentationBreakpointIdsMatching(
       const std::vector<v8::debug::BreakpointId>& ids);
 
->>>>>>> upstream/v16.x
  private:
   void enableImpl();
 

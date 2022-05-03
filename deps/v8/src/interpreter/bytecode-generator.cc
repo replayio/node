@@ -1199,17 +1199,11 @@ using NullContextScopeFor = typename NullContextScopeHelper<Isolate>::Type;
 
 template <typename IsolateT>
 Handle<BytecodeArray> BytecodeGenerator::FinalizeBytecode(
-<<<<<<< HEAD
-    LocalIsolate* isolate, Handle<Script> script) {
+    IsolateT* isolate, Handle<Script> script) {
   if (recordreplay::IsRecordingOrReplaying() && IsMainThread()) {
     CHECK(info()->flags().record_replay_ignore() == RecordReplayIgnoreScript(*script));
   }
 
-||||||| 2365115868
-    LocalIsolate* isolate, Handle<Script> script) {
-=======
-    IsolateT* isolate, Handle<Script> script) {
->>>>>>> upstream/v16.x
   DCHECK_EQ(ThreadId::Current(), isolate->thread_id());
 #ifdef DEBUG
   // Unoptimized compilation should be context-independent. Verify that we don't

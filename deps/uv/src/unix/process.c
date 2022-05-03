@@ -45,16 +45,12 @@ extern char **environ;
 # include <grp.h>
 #endif
 
-<<<<<<< HEAD
-extern void V8RecordReplayAssert(const char* format, ...);
-extern void V8RecordReplayDiagnostic(const char* format, ...);
-||||||| 2365115868
-=======
 #if defined(__MVS__)
 # include "zos-base.h"
 #endif
 
->>>>>>> upstream/v16.x
+extern void V8RecordReplayAssert(const char* format, ...);
+extern void V8RecordReplayDiagnostic(const char* format, ...);
 
 static void uv__chld(uv_signal_t* handle, int signum) {
   uv_process_t* process;
@@ -225,15 +221,9 @@ static void uv__process_child_init(const uv_process_options_t* options,
                                    int stdio_count,
                                    int (*pipes)[2],
                                    int error_fd) {
-<<<<<<< HEAD
   V8RecordReplayDiagnostic("uv__process_child_init start");
 
-  sigset_t set;
-||||||| 2365115868
-  sigset_t set;
-=======
   sigset_t signewset;
->>>>>>> upstream/v16.x
   int close_fd;
   int use_fd;
   int fd;
@@ -351,55 +341,8 @@ static void uv__process_child_init(const uv_process_options_t* options,
   execvp(options->file, options->args);
 #endif
 
-<<<<<<< HEAD
-    if (SIG_ERR != signal(n, SIG_DFL))
-      continue;
-
-    uv__write_int(error_fd, UV__ERR(errno));
-    _exit(127);
-  }
-
-  /* Reset signal mask. */
-  sigemptyset(&set);
-  err = pthread_sigmask(SIG_SETMASK, &set, NULL);
-
-  if (err != 0) {
-    uv__write_int(error_fd, UV__ERR(err));
-    _exit(127);
-  }
-
-  V8RecordReplayDiagnostic("uv__process_child_init done");
-
-  execvp(options->file, options->args);
-
-  V8RecordReplayDiagnostic("uv__process_child_init after exec");
-
-  uv__write_int(error_fd, UV__ERR(errno));
-  _exit(127);
-||||||| 2365115868
-    if (SIG_ERR != signal(n, SIG_DFL))
-      continue;
-
-    uv__write_int(error_fd, UV__ERR(errno));
-    _exit(127);
-  }
-
-  /* Reset signal mask. */
-  sigemptyset(&set);
-  err = pthread_sigmask(SIG_SETMASK, &set, NULL);
-
-  if (err != 0) {
-    uv__write_int(error_fd, UV__ERR(err));
-    _exit(127);
-  }
-
-  execvp(options->file, options->args);
-  uv__write_int(error_fd, UV__ERR(errno));
-  _exit(127);
-=======
   uv__write_errno(error_fd);
   abort();
->>>>>>> upstream/v16.x
 }
 #endif
 
@@ -494,31 +437,6 @@ int uv_spawn(uv_loop_t* loop,
   /* Acquire write lock to prevent opening new fds in worker threads */
   uv_rwlock_wrlock(&loop->cloexec_lock);
 
-<<<<<<< HEAD
-  V8RecordReplayDiagnostic("uv_spawn forked %d", pid);
-
-  if (pid == -1) {
-    err = UV__ERR(errno);
-    uv_rwlock_wrunlock(&loop->cloexec_lock);
-    uv__close(signal_pipe[0]);
-    uv__close(signal_pipe[1]);
-    goto error;
-  }
-
-  if (pid == 0) {
-    uv__process_child_init(options, stdio_count, pipes, signal_pipe[1]);
-||||||| 2365115868
-  if (pid == -1) {
-    err = UV__ERR(errno);
-    uv_rwlock_wrunlock(&loop->cloexec_lock);
-    uv__close(signal_pipe[0]);
-    uv__close(signal_pipe[1]);
-    goto error;
-  }
-
-  if (pid == 0) {
-    uv__process_child_init(options, stdio_count, pipes, signal_pipe[1]);
-=======
   /* Start the child with most signals blocked, to avoid any issues before we
    * can reset them, but allow program failures to exit (and not hang). */
   sigfillset(&signewset);
@@ -541,7 +459,6 @@ int uv_spawn(uv_loop_t* loop,
     uv__process_child_init(options, stdio_count, pipes, signal_pipe[1]);
 
   if (pthread_sigmask(SIG_SETMASK, &sigoldset, NULL) != 0)
->>>>>>> upstream/v16.x
     abort();
 
   /* Release lock in parent process */
