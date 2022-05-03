@@ -29,6 +29,8 @@ class V8ProfilerAgentImpl : public protocol::Profiler::Backend {
   V8ProfilerAgentImpl(V8InspectorSessionImpl*, protocol::FrontendChannel*,
                       protocol::DictionaryValue* state);
   ~V8ProfilerAgentImpl() override;
+  V8ProfilerAgentImpl(const V8ProfilerAgentImpl&) = delete;
+  V8ProfilerAgentImpl& operator=(const V8ProfilerAgentImpl&) = delete;
 
   bool enabled() const { return m_enabled; }
   void restore();
@@ -73,7 +75,7 @@ class V8ProfilerAgentImpl : public protocol::Profiler::Backend {
   void consoleProfile(const String16& title);
   void consoleProfileEnd(const String16& title);
 
-  void triggerPreciseCoverageDeltaUpdate(const String16& occassion);
+  void triggerPreciseCoverageDeltaUpdate(const String16& occasion);
 
  private:
   String16 nextProfileId();
@@ -95,8 +97,6 @@ class V8ProfilerAgentImpl : public protocol::Profiler::Backend {
   int m_startedProfilesCount = 0;
   std::shared_ptr<V8Inspector::Counters> m_counters;
   bool m_runtime_call_stats_enabled = false;
-
-  DISALLOW_COPY_AND_ASSIGN(V8ProfilerAgentImpl);
 };
 
 }  // namespace v8_inspector

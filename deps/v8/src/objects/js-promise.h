@@ -15,6 +15,8 @@
 namespace v8 {
 namespace internal {
 
+#include "torque-generated/src/objects/js-promise-tq.inc"
+
 // Representation of promise objects in the specification. Our layout of
 // JSPromise differs a bit from the layout in the specification, for example
 // there's only a single list of PromiseReaction objects, instead of separate
@@ -39,6 +41,10 @@ class JSPromise : public TorqueGeneratedJSPromise<JSPromise, JSObject> {
   // [handled_hint]: Whether this promise will be handled by a catch
   // block in an async function.
   DECL_BOOLEAN_ACCESSORS(handled_hint)
+
+  // [is_silent]: Whether this promise should cause the debugger to pause when
+  // rejected.
+  DECL_BOOLEAN_ACCESSORS(is_silent)
 
   int async_task_id() const;
   void set_async_task_id(int id);

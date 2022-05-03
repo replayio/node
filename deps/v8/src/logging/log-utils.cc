@@ -9,11 +9,11 @@
 
 #include "src/base/platform/mutex.h"
 #include "src/base/platform/platform.h"
+#include "src/base/strings.h"
+#include "src/base/vector.h"
 #include "src/common/assert-scope.h"
 #include "src/objects/objects-inl.h"
 #include "src/strings/string-stream.h"
-#include "src/utils/utils.h"
-#include "src/utils/vector.h"
 #include "src/utils/version.h"
 
 namespace v8 {
@@ -25,7 +25,7 @@ const char* const Log::kLogToConsole = "-";
 // static
 FILE* Log::CreateOutputHandle(std::string file_name) {
   // If we're logging anything, we need to open the log file.
-  if (!Log::InitLogAtStart()) {
+  if (!FLAG_log) {
     return nullptr;
   } else if (Log::IsLoggingToConsole(file_name)) {
     return stdout;
@@ -66,6 +66,8 @@ void Log::WriteLogHeader() {
   }
   msg << kNext << Version::IsCandidate();
   msg.WriteToLogFile();
+  msg << "v8-platform" << kNext << V8_OS_STRING << kNext << V8_TARGET_OS_STRING;
+  msg.WriteToLogFile();
 }
 
 std::unique_ptr<Log::MessageBuilder> Log::NewMessageBuilder() {
@@ -105,7 +107,7 @@ void Log::MessageBuilder::AppendString(String str,
                                        base::Optional<int> length_limit) {
   if (str.is_null()) return;
 
-  DisallowHeapAllocation no_gc;  // Ensure string stays valid.
+  DisallowGarbageCollection no_gc;  // Ensure string stays valid.
   int length = str.length();
   if (length_limit) length = std::min(length, *length_limit);
   for (int i = 0; i < length; i++) {
@@ -119,7 +121,7 @@ void Log::MessageBuilder::AppendString(String str,
   }
 }
 
-void Log::MessageBuilder::AppendString(Vector<const char> str) {
+void Log::MessageBuilder::AppendString(base::Vector<const char> str) {
   for (auto i = str.begin(); i < str.end(); i++) AppendCharacter(*i);
 }
 
@@ -192,14 +194,14 @@ void Log::MessageBuilder::AppendSymbolName(Symbol symbol) {
     AppendSymbolNameDetails(String::cast(symbol.description()), false);
     os << "\" ";
   }
-  os << "hash " << std::hex << symbol.Hash() << std::dec << ")";
+  os << "hash " << std::hex << symbol.hash() << std::dec << ")";
 }
 
 void Log::MessageBuilder::AppendSymbolNameDetails(String str,
                                                   bool show_impl_info) {
   if (str.is_null()) return;
 
-  DisallowHeapAllocation no_gc;  // Ensure string stays valid.
+  DisallowGarbageCollection no_gc;  // Ensure string stays valid.
   OFStream& os = log_->os_;
   int limit = str.length();
   if (limit > 0x1000) limit = 0x1000;
@@ -214,8 +216,8 @@ void Log::MessageBuilder::AppendSymbolNameDetails(String str,
 
 int Log::MessageBuilder::FormatStringIntoBuffer(const char* format,
                                                 va_list args) {
-  Vector<char> buf(log_->format_buffer_.get(), Log::kMessageBufferSize);
-  int length = v8::internal::VSNPrintF(buf, format, args);
+  base::Vector<char> buf(log_->format_buffer_.get(), Log::kMessageBufferSize);
+  int length = base::VSNPrintF(buf, format, args);
   // |length| is -1 if output was truncated.
   if (length == -1) length = Log::kMessageBufferSize;
   DCHECK_LE(length, Log::kMessageBufferSize);

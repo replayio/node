@@ -28,6 +28,7 @@ namespace trap_handler {
 // We declare this as int rather than bool as a workaround for a glibc bug, in
 // which the dynamic loader cannot handle executables whose TLS area is only
 // 1 byte in size; see https://sourceware.org/bugzilla/show_bug.cgi?id=14898.
+<<<<<<< HEAD
 
 THREAD_LOCAL int g_thread_in_wasm_code2;
 
@@ -50,6 +51,11 @@ int& IsThreadInWasmCode() {
   }
   return *v;
 }
+||||||| 2365115868
+THREAD_LOCAL int g_thread_in_wasm_code;
+=======
+thread_local int g_thread_in_wasm_code;
+>>>>>>> upstream/v16.x
 
 static_assert(sizeof(g_thread_in_wasm_code) > 1,
               "sizeof(thread_local_var) must be > 1, see "

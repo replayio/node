@@ -18,11 +18,19 @@
 namespace v8 {
 namespace internal {
 
+#include "torque-generated/src/objects/js-regexp-tq-inl.inc"
+
 TQ_OBJECT_CONSTRUCTORS_IMPL(JSRegExp)
 OBJECT_CONSTRUCTORS_IMPL_CHECK_SUPER(JSRegExpResult, JSArray)
 OBJECT_CONSTRUCTORS_IMPL_CHECK_SUPER(JSRegExpResultIndices, JSArray)
 
+inline JSRegExpResultWithIndices::JSRegExpResultWithIndices(Address ptr)
+    : JSRegExpResult(ptr) {
+  SLOW_DCHECK(IsJSArray());
+}
+
 CAST_ACCESSOR(JSRegExpResult)
+CAST_ACCESSOR(JSRegExpResultWithIndices)
 CAST_ACCESSOR(JSRegExpResultIndices)
 
 ACCESSORS(JSRegExp, last_index, Object, kLastIndexOffset)
@@ -65,6 +73,12 @@ String JSRegExp::Pattern() {
   return pattern;
 }
 
+String JSRegExp::EscapedPattern() {
+  DCHECK(this->source().IsString());
+  String pattern = String::cast(source());
+  return pattern;
+}
+
 Object JSRegExp::CaptureNameMap() {
   DCHECK(this->data().IsFixedArray());
   DCHECK(TypeSupportsCaptures(TypeTag()));
@@ -97,9 +111,9 @@ bool JSRegExp::HasCompiledCode() const {
   if (TypeTag() != IRREGEXP) return false;
   Smi uninitialized = Smi::FromInt(kUninitializedValue);
 #ifdef DEBUG
-  DCHECK(DataAt(kIrregexpLatin1CodeIndex).IsCode() ||
+  DCHECK(DataAt(kIrregexpLatin1CodeIndex).IsCodeT() ||
          DataAt(kIrregexpLatin1CodeIndex) == uninitialized);
-  DCHECK(DataAt(kIrregexpUC16CodeIndex).IsCode() ||
+  DCHECK(DataAt(kIrregexpUC16CodeIndex).IsCodeT() ||
          DataAt(kIrregexpUC16CodeIndex) == uninitialized);
   DCHECK(DataAt(kIrregexpLatin1BytecodeIndex).IsByteArray() ||
          DataAt(kIrregexpLatin1BytecodeIndex) == uninitialized);

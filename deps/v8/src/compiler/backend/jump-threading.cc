@@ -131,8 +131,8 @@ bool JumpThreading::ComputeForwarding(Zone* local_zone,
               // Dynamic return values might use different registers at
               // different return sites and therefore cannot be shared.
               if (instr->InputAt(0)->IsImmediate()) {
-                int32_t return_size =
-                    ImmediateOperand::cast(instr->InputAt(0))->inline_value();
+                int32_t return_size = ImmediateOperand::cast(instr->InputAt(0))
+                                          ->inline_int32_value();
                 // Instructions can be shared only for blocks that share
                 // the same |must_deconstruct_frame| attribute.
                 if (block->must_deconstruct_frame()) {
@@ -206,7 +206,7 @@ void JumpThreading::ApplyForwarding(Zone* local_zone,
 
   // Skip empty blocks when the previous block doesn't fall through.
   bool prev_fallthru = true;
-  for (auto const block : code->instruction_blocks()) {
+  for (auto const block : code->ao_blocks()) {
     RpoNumber block_rpo = block->rpo_number();
     int block_num = block_rpo.ToInt();
     RpoNumber result_rpo = result[block_num];
@@ -243,13 +243,12 @@ void JumpThreading::ApplyForwarding(Zone* local_zone,
   }
 
   // Patch RPO immediates.
-  InstructionSequence::Immediates& immediates = code->immediates();
-  for (size_t i = 0; i < immediates.size(); i++) {
-    Constant constant = immediates[i];
-    if (constant.type() == Constant::kRpoNumber) {
-      RpoNumber rpo = constant.ToRpoNumber();
+  InstructionSequence::RpoImmediates& rpo_immediates = code->rpo_immediates();
+  for (size_t i = 0; i < rpo_immediates.size(); i++) {
+    RpoNumber rpo = rpo_immediates[i];
+    if (rpo.IsValid()) {
       RpoNumber fw = result[rpo.ToInt()];
-      if (!(fw == rpo)) immediates[i] = Constant(fw);
+      if (fw != rpo) rpo_immediates[i] = fw;
     }
   }
 

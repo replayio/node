@@ -7,12 +7,12 @@
 
 #include <ctype.h>
 
-#include "src/common/globals.h"
-
 #include "src/base/bits.h"
 #include "src/codegen/arm64/assembler-arm64-inl.h"
 #include "src/codegen/arm64/assembler-arm64.h"
 #include "src/codegen/macro-assembler.h"
+#include "src/common/globals.h"
+#include "src/execution/isolate-data.h"
 
 namespace v8 {
 namespace internal {
@@ -548,7 +548,7 @@ void TurboAssembler::Fcmp(const VRegister& fn, double value) {
   }
 }
 
-void MacroAssembler::Fcsel(const VRegister& fd, const VRegister& fn,
+void TurboAssembler::Fcsel(const VRegister& fd, const VRegister& fn,
                            const VRegister& fm, Condition cond) {
   DCHECK(allow_macro_instructions());
   DCHECK((cond != al) && (cond != nv));
@@ -1036,6 +1036,9 @@ void TurboAssembler::Uxtw(const Register& rd, const Register& rn) {
 void TurboAssembler::InitializeRootRegister() {
   ExternalReference isolate_root = ExternalReference::isolate_root(isolate());
   Mov(kRootRegister, Operand(isolate_root));
+#ifdef V8_COMPRESS_POINTERS_IN_SHARED_CAGE
+  LoadRootRelative(kPtrComprCageBaseRegister, IsolateData::cage_base_offset());
+#endif
 }
 
 void MacroAssembler::SmiTag(Register dst, Register src) {
@@ -1197,7 +1200,7 @@ void TurboAssembler::Poke(const CPURegister& src, const Operand& offset) {
 
   if (offset.IsImmediate()) {
     DCHECK_GE(offset.ImmediateValue(), 0);
-  } else if (emit_debug_code()) {
+  } else if (FLAG_debug_code) {
     Cmp(xzr, offset);
     Check(le, AbortReason::kStackAccessBelowStackPointer);
   }
@@ -1209,7 +1212,7 @@ template <TurboAssembler::LoadLRMode lr_mode>
 void TurboAssembler::Peek(const CPURegister& dst, const Operand& offset) {
   if (offset.IsImmediate()) {
     DCHECK_GE(offset.ImmediateValue(), 0);
-  } else if (emit_debug_code()) {
+  } else if (FLAG_debug_code) {
     Cmp(xzr, offset);
     Check(le, AbortReason::kStackAccessBelowStackPointer);
   }
@@ -1277,23 +1280,6 @@ void TurboAssembler::PopCPURegList(CPURegList registers) {
 #endif
 }
 
-void TurboAssembler::Push(Handle<HeapObject> handle) {
-  UseScratchRegisterScope temps(this);
-  Register tmp = temps.AcquireX();
-  Mov(tmp, Operand(handle));
-  // This is only used in test-heap.cc, for generating code that is not
-  // executed. Push a padding slot together with the handle here, to
-  // satisfy the alignment requirement.
-  Push(padreg, tmp);
-}
-
-void TurboAssembler::Push(Smi smi) {
-  UseScratchRegisterScope temps(this);
-  Register tmp = temps.AcquireX();
-  Mov(tmp, Operand(smi));
-  Push(tmp);
-}
-
 void TurboAssembler::Claim(int64_t count, uint64_t unit_size) {
   DCHECK_GE(count, 0);
   uint64_t size = count * unit_size;
@@ -1302,7 +1288,7 @@ void TurboAssembler::Claim(int64_t count, uint64_t unit_size) {
     return;
   }
   DCHECK_EQ(size % 16, 0);
-#if V8_OS_WIN
+#if V8_TARGET_OS_WIN
   while (size > kStackPageSize) {
     Sub(sp, sp, kStackPageSize);
     Str(xzr, MemOperand(sp));
@@ -1324,7 +1310,7 @@ void TurboAssembler::Claim(const Register& count, uint64_t unit_size) {
   }
   AssertPositiveOrZero(count);
 
-#if V8_OS_WIN
+#if V8_TARGET_OS_WIN
   // "Functions that allocate 4k or more worth of stack must ensure that each
   // page prior to the final page is touched in order." Source:
   // https://docs.microsoft.com/en-us/cpp/build/arm64-windows-abi-conventions?view=vs-2019#stack

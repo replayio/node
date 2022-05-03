@@ -41,43 +41,44 @@ class MachineGraph;
 class NodeOriginTable;
 class Schedule;
 class SourcePositionTable;
+struct WasmLoopInfo;
 
 class Pipeline : public AllStatic {
  public:
   // Returns a new compilation job for the given JavaScript function.
-  static std::unique_ptr<OptimizedCompilationJob> NewCompilationJob(
-      Isolate* isolate, Handle<JSFunction> function, CodeKind code_kind,
-      bool has_script, BailoutId osr_offset = BailoutId::None(),
-      JavaScriptFrame* osr_frame = nullptr);
+  static V8_EXPORT_PRIVATE std::unique_ptr<OptimizedCompilationJob>
+  NewCompilationJob(Isolate* isolate, Handle<JSFunction> function,
+                    CodeKind code_kind, bool has_script,
+                    BytecodeOffset osr_offset = BytecodeOffset::None(),
+                    JavaScriptFrame* osr_frame = nullptr);
 
   // Run the pipeline for the WebAssembly compilation info.
   static void GenerateCodeForWasmFunction(
-      OptimizedCompilationInfo* info, wasm::WasmEngine* wasm_engine,
-      MachineGraph* mcgraph, CallDescriptor* call_descriptor,
-      SourcePositionTable* source_positions, NodeOriginTable* node_origins,
-      wasm::FunctionBody function_body, const wasm::WasmModule* module,
-      int function_index);
+      OptimizedCompilationInfo* info, MachineGraph* mcgraph,
+      CallDescriptor* call_descriptor, SourcePositionTable* source_positions,
+      NodeOriginTable* node_origins, wasm::FunctionBody function_body,
+      const wasm::WasmModule* module, int function_index,
+      std::vector<compiler::WasmLoopInfo>* loop_infos);
 
   // Run the pipeline on a machine graph and generate code.
   static wasm::WasmCompilationResult GenerateCodeForWasmNativeStub(
-      wasm::WasmEngine* wasm_engine, CallDescriptor* call_descriptor,
-      MachineGraph* mcgraph, CodeKind kind, int wasm_kind,
-      const char* debug_name, const AssemblerOptions& assembler_options,
+      CallDescriptor* call_descriptor, MachineGraph* mcgraph, CodeKind kind,
+      int wasm_kind, const char* debug_name,
+      const AssemblerOptions& assembler_options,
       SourcePositionTable* source_positions = nullptr);
 
   // Returns a new compilation job for a wasm heap stub.
   static std::unique_ptr<OptimizedCompilationJob> NewWasmHeapStubCompilationJob(
-      Isolate* isolate, wasm::WasmEngine* wasm_engine,
-      CallDescriptor* call_descriptor, std::unique_ptr<Zone> zone, Graph* graph,
-      CodeKind kind, std::unique_ptr<char[]> debug_name,
-      const AssemblerOptions& options,
+      Isolate* isolate, CallDescriptor* call_descriptor,
+      std::unique_ptr<Zone> zone, Graph* graph, CodeKind kind,
+      std::unique_ptr<char[]> debug_name, const AssemblerOptions& options,
       SourcePositionTable* source_positions = nullptr);
 
   // Run the pipeline on a machine graph and generate code.
   static MaybeHandle<Code> GenerateCodeForCodeStub(
       Isolate* isolate, CallDescriptor* call_descriptor, Graph* graph,
       JSGraph* jsgraph, SourcePositionTable* source_positions, CodeKind kind,
-      const char* debug_name, int32_t builtin_index,
+      const char* debug_name, Builtin builtin,
       PoisoningMitigationLevel poisoning_level, const AssemblerOptions& options,
       const ProfileDataFromFile* profile_data);
 

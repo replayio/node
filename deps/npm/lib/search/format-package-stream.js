@@ -1,5 +1,3 @@
-'use strict'
-
 // XXX these output classes should not live in here forever.  it'd be good to
 // split them out, perhaps to libnpmsearch
 
@@ -33,8 +31,9 @@ class JSONOutputStream extends Minipass {
     if (!this._didFirst) {
       super.write('[\n')
       this._didFirst = true
-    } else
+    } else {
       super.write('\n,\n')
+    }
 
     try {
       return super.write(JSON.stringify(obj))
@@ -44,7 +43,8 @@ class JSONOutputStream extends Minipass {
   }
 
   end () {
-    super.write(this._didFirst ? ']\n' : '\n]\n')
+    super.write(this._didFirst ? ']\n' : '\n[]\n')
+    super.end()
   }
 }
 
@@ -94,8 +94,9 @@ function prettify (data, num, opts) {
     }
   )
   output = trimToMaxWidth(output)
-  if (opts.color)
+  if (opts.color) {
     output = highlightSearchTerms(output, opts.args)
+  }
 
   return output
 }

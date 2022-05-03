@@ -8,17 +8,20 @@
 #include <memory>
 #include <vector>
 
+#include "include/v8.h"
 #include "src/api/api-inl.h"
 #include "src/base/bits.h"
 #include "src/base/hashmap.h"
 #include "src/base/platform/platform.h"
+#include "src/base/platform/wrappers.h"
+#include "src/base/strings.h"
+#include "src/base/vector.h"
 #include "src/execution/frames-inl.h"
 #include "src/execution/frames.h"
 #include "src/handles/global-handles.h"
 #include "src/init/bootstrapper.h"
 #include "src/objects/objects.h"
 #include "src/utils/ostreams.h"
-#include "src/utils/vector.h"
 #include "src/zone/zone-chunk-list.h"
 
 namespace v8 {
@@ -47,9 +50,9 @@ class Writer {
       : debug_object_(debug_object),
         position_(0),
         capacity_(1024),
-        buffer_(reinterpret_cast<byte*>(malloc(capacity_))) {}
+        buffer_(reinterpret_cast<byte*>(base::Malloc(capacity_))) {}
 
-  ~Writer() { free(buffer_); }
+  ~Writer() { base::Free(buffer_); }
 
   uintptr_t position() const { return position_; }
 
@@ -98,7 +101,7 @@ class Writer {
   void Ensure(uintptr_t pos) {
     if (capacity_ < pos) {
       while (capacity_ < pos) capacity_ *= 2;
-      buffer_ = reinterpret_cast<byte*>(realloc(buffer_, capacity_));
+      buffer_ = reinterpret_cast<byte*>(base::Realloc(buffer_, capacity_));
     }
   }
 
@@ -1092,14 +1095,10 @@ class DebugInfoSection : public DebugSection {
       int internal_slots = Context::MIN_CONTEXT_SLOTS;
       int current_abbreviation = 4;
 
-      EmbeddedVector<char, 256> buffer;
-      StringBuilder builder(buffer.begin(), buffer.length());
-
       for (int param = 0; param < params; ++param) {
         w->WriteULEB128(current_abbreviation++);
-        builder.Reset();
-        builder.AddFormatted("param%d", param);
-        w->WriteString(builder.Finalize());
+        w->WriteString("param");
+        w->Write(std::to_string(param).c_str());
         w->Write<uint32_t>(ty_offset);
         Writer::Slot<uint32_t> block_size = w->CreateSlotHere<uint32_t>();
         uintptr_t block_start = w->position();
@@ -1123,9 +1122,8 @@ class DebugInfoSection : public DebugSection {
 
       for (int context_slot = 0; context_slot < context_slots; ++context_slot) {
         w->WriteULEB128(current_abbreviation++);
-        builder.Reset();
-        builder.AddFormatted("context_slot%d", context_slot + internal_slots);
-        w->WriteString(builder.Finalize());
+        w->WriteString("context_slot");
+        w->Write(std::to_string(context_slot + internal_slots).c_str());
       }
 
       {
@@ -1741,8 +1739,8 @@ void __gdb_print_v8_object(Object object) {
 
 static JITCodeEntry* CreateCodeEntry(Address symfile_addr,
                                      uintptr_t symfile_size) {
-  JITCodeEntry* entry =
-      static_cast<JITCodeEntry*>(malloc(sizeof(JITCodeEntry) + symfile_size));
+  JITCodeEntry* entry = static_cast<JITCodeEntry*>(
+      base::Malloc(sizeof(JITCodeEntry) + symfile_size));
 
   entry->symfile_addr_ = reinterpret_cast<Address>(entry + 1);
   entry->symfile_size_ = symfile_size;
@@ -1754,7 +1752,7 @@ static JITCodeEntry* CreateCodeEntry(Address symfile_addr,
   return entry;
 }
 
-static void DestroyCodeEntry(JITCodeEntry* entry) { free(entry); }
+static void DestroyCodeEntry(JITCodeEntry* entry) { base::Free(entry); }
 
 static void RegisterCodeEntry(JITCodeEntry* entry) {
   entry->next_ = __jit_debug_descriptor.first_entry_;
@@ -1961,8 +1959,9 @@ static void AddJITCodeEntry(CodeMap* map, const AddressRange& range,
     static const int kMaxFileNameSize = 64;
     char file_name[64];
 
-    SNPrintF(Vector<char>(file_name, kMaxFileNameSize), "/tmp/elfdump%s%d.o",
-             (name_hint != nullptr) ? name_hint : "", file_num++);
+    SNPrintF(base::Vector<char>(file_name, kMaxFileNameSize),
+             "/tmp/elfdump%s%d.o", (name_hint != nullptr) ? name_hint : "",
+             file_num++);
     WriteBytes(file_name, reinterpret_cast<byte*>(entry->symfile_addr_),
                static_cast<int>(entry->symfile_size_));
   }
@@ -1977,7 +1976,7 @@ static void AddJITCodeEntry(CodeMap* map, const AddressRange& range,
 
 static void AddCode(const char* name, Code code, SharedFunctionInfo shared,
                     LineInfo* lineinfo) {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
 
   CodeMap* code_map = GetCodeMap();
   AddressRange range;
@@ -2022,14 +2021,12 @@ void EventHandler(const v8::JitCodeEvent* event) {
       Isolate* isolate = reinterpret_cast<Isolate*>(event->isolate);
       Code code = isolate->heap()->GcSafeFindCodeForInnerPointer(addr);
       LineInfo* lineinfo = GetLineInfo(addr);
-      EmbeddedVector<char, 256> buffer;
-      StringBuilder builder(buffer.begin(), buffer.length());
-      builder.AddSubstring(event->name.str, static_cast<int>(event->name.len));
+      std::string event_name(event->name.str, event->name.len);
       // It's called UnboundScript in the API but it's a SharedFunctionInfo.
       SharedFunctionInfo shared = event->script.IsEmpty()
                                       ? SharedFunctionInfo()
                                       : *Utils::OpenHandle(*event->script);
-      AddCode(builder.Finalize(), code, shared, lineinfo);
+      AddCode(event_name.c_str(), code, shared, lineinfo);
       break;
     }
     case v8::JitCodeEvent::CODE_MOVED:

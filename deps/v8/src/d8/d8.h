@@ -16,6 +16,7 @@
 
 #include "src/base/once.h"
 #include "src/base/platform/time.h"
+#include "src/base/platform/wrappers.h"
 #include "src/d8/async-hooks-wrapper.h"
 #include "src/strings/string-hasher.h"
 #include "src/utils/allocation.h"
@@ -25,9 +26,13 @@ namespace v8 {
 
 class D8Console;
 
+enum class ModuleType { kJavaScript, kJSON, kInvalid };
+
 namespace internal {
 class CancelableTaskManager;
 }  // namespace internal
+
+struct DynamicImportData;
 
 // A single counter in a counter collection.
 class Counter {
@@ -110,7 +115,6 @@ class SourceGroup {
   base::Thread* thread_;
 
   void ExitShell(int exit_code);
-  Local<String> ReadFile(Isolate* isolate, const char* name);
 
   const char** argv_;
   int begin_offset_;
@@ -119,7 +123,9 @@ class SourceGroup {
 
 class SerializationData {
  public:
-  SerializationData() : size_(0) {}
+  SerializationData() = default;
+  SerializationData(const SerializationData&) = delete;
+  SerializationData& operator=(const SerializationData&) = delete;
 
   uint8_t* data() { return data_.get(); }
   size_t size() { return size_; }
@@ -135,19 +141,17 @@ class SerializationData {
 
  private:
   struct DataDeleter {
-    void operator()(uint8_t* p) const { free(p); }
+    void operator()(uint8_t* p) const { base::Free(p); }
   };
 
   std::unique_ptr<uint8_t, DataDeleter> data_;
-  size_t size_;
+  size_t size_ = 0;
   std::vector<std::shared_ptr<v8::BackingStore>> backing_stores_;
   std::vector<std::shared_ptr<v8::BackingStore>> sab_backing_stores_;
   std::vector<CompiledWasmModule> compiled_wasm_modules_;
 
  private:
   friend class Serializer;
-
-  DISALLOW_COPY_AND_ASSIGN(SerializationData);
 };
 
 class SerializationDataQueue {
@@ -241,13 +245,29 @@ class PerIsolateData {
     return reinterpret_cast<PerIsolateData*>(isolate->GetData(0));
   }
 
-  class RealmScope {
+  class V8_NODISCARD RealmScope {
    public:
     explicit RealmScope(PerIsolateData* data);
     ~RealmScope();
 
    private:
     PerIsolateData* data_;
+  };
+
+  // Contrary to RealmScope (which creates a new Realm), ExplicitRealmScope
+  // allows for entering an existing Realm, as specified by its index.
+  class V8_NODISCARD ExplicitRealmScope {
+   public:
+    explicit ExplicitRealmScope(PerIsolateData* data, int index);
+    ~ExplicitRealmScope();
+
+    Local<Context> context() const;
+
+   private:
+    PerIsolateData* data_;
+    Local<Context> realm_;
+    int index_;
+    int previous_index_;
   };
 
   inline void SetTimeout(Local<Function> callback, Local<Context> context);
@@ -260,6 +280,17 @@ class PerIsolateData {
   void AddUnhandledPromise(Local<Promise> promise, Local<Message> message,
                            Local<Value> exception);
   int HandleUnhandledPromiseRejections();
+
+  // Keep track of DynamicImportData so we can properly free it on shutdown
+  // when LEAK_SANITIZER is active.
+  void AddDynamicImportData(DynamicImportData*);
+  void DeleteDynamicImportData(DynamicImportData*);
+
+  Local<FunctionTemplate> GetTestApiObjectCtor() const;
+  void SetTestApiObjectCtor(Local<FunctionTemplate> ctor);
+
+  Local<FunctionTemplate> GetSnapshotObjectCtor() const;
+  void SetSnapshotObjectCtor(Local<FunctionTemplate> ctor);
 
  private:
   friend class Shell;
@@ -276,6 +307,11 @@ class PerIsolateData {
   std::vector<std::tuple<Global<Promise>, Global<Message>, Global<Value>>>
       unhandled_promises_;
   AsyncHooks* async_hooks_wrapper_;
+#if defined(LEAK_SANITIZER)
+  std::unordered_set<DynamicImportData*> import_data_;
+#endif
+  Global<FunctionTemplate> test_api_object_ctor_;
+  Global<FunctionTemplate> snapshot_object_ctor_;
 
   int RealmIndexOrThrow(const v8::FunctionCallbackInfo<v8::Value>& args,
                         int arg_offset);
@@ -305,7 +341,7 @@ class ShellOptions {
     DisallowReassignment(const char* name, T value)
         : name_(name), value_(value) {}
 
-    operator T() const { return value_; }  // NOLINT
+    operator T() const { return value_; }
     T get() const { return value_; }
     DisallowReassignment& operator=(T value) {
       if (check_d8_flag_contradictions) {
@@ -331,6 +367,7 @@ class ShellOptions {
     bool specified_ = false;
   };
 
+  DisallowReassignment<const char*> d8_path = {"d8-path", ""};
   DisallowReassignment<bool> fuzzilli_coverage_statistics = {
       "fuzzilli-coverage-statistics", false};
   DisallowReassignment<bool> fuzzilli_enable_builtins_coverage = {
@@ -342,9 +379,9 @@ class ShellOptions {
   DisallowReassignment<bool> omit_quit = {"omit-quit", false};
   DisallowReassignment<bool> wait_for_background_tasks = {
       "wait-for-background-tasks", true};
+  DisallowReassignment<bool> simulate_errors = {"simulate-errors", false};
   DisallowReassignment<bool> stress_opt = {"stress-opt", false};
   DisallowReassignment<int> stress_runs = {"stress-runs", 1};
-  DisallowReassignment<bool> stress_snapshot = {"stress-snapshot", false};
   DisallowReassignment<bool> interactive_shell = {"shell", false};
   bool test_shell = false;
   DisallowReassignment<bool> expected_to_throw = {"throws", false};
@@ -385,6 +422,17 @@ class ShellOptions {
   DisallowReassignment<bool> cpu_profiler_print = {"cpu-profiler-print", false};
   DisallowReassignment<bool> fuzzy_module_file_extensions = {
       "fuzzy-module-file-extensions", true};
+  DisallowReassignment<bool> enable_system_instrumentation = {
+      "enable-system-instrumentation", false};
+  DisallowReassignment<const char*> web_snapshot_config = {
+      "web-snapshot-config", nullptr};
+  DisallowReassignment<bool> d8_web_snapshot_api = {
+      "experimental-d8-web-snapshot-api", false};
+  DisallowReassignment<bool> compile_only = {"compile-only", false};
+  DisallowReassignment<int> repeat_compile = {"repeat-compile", 1};
+#if V8_ENABLE_WEBASSEMBLY
+  DisallowReassignment<bool> wasm_trap_handler = {"wasm-trap-handler", true};
+#endif  // V8_ENABLE_WEBASSEMBLY
 };
 
 class Shell : public i::AllStatic {
@@ -398,16 +446,21 @@ class Shell : public i::AllStatic {
     kProcessMessageQueue = true,
     kNoProcessMessageQueue = false
   };
+  enum class CodeType { kFileName, kString, kFunction, kInvalid, kNone };
 
   static bool ExecuteString(Isolate* isolate, Local<String> source,
                             Local<Value> name, PrintResult print_result,
                             ReportExceptions report_exceptions,
                             ProcessMessageQueue process_message_queue);
   static bool ExecuteModule(Isolate* isolate, const char* file_name);
+  static bool ExecuteWebSnapshot(Isolate* isolate, const char* file_name);
   static void ReportException(Isolate* isolate, Local<Message> message,
                               Local<Value> exception);
   static void ReportException(Isolate* isolate, TryCatch* try_catch);
-  static Local<String> ReadFile(Isolate* isolate, const char* name);
+  static Local<String> ReadFile(Isolate* isolate, const char* name,
+                                bool should_throw = true);
+  static Local<String> WasmLoadSourceMapCallback(Isolate* isolate,
+                                                 const char* name);
   static Local<Context> CreateEvaluationContext(Isolate* isolate);
   static int RunMain(Isolate* isolate, bool last_run);
   static int Main(int argc, char* argv[]);
@@ -452,8 +505,14 @@ class Shell : public i::AllStatic {
                              const PropertyCallbackInfo<Value>& info);
   static void RealmSharedSet(Local<String> property, Local<Value> value,
                              const PropertyCallbackInfo<void>& info);
+  static void RealmTakeWebSnapshot(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void RealmUseWebSnapshot(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
   static void LogGetAndStop(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void TestVerifySourcePositions(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
   static void AsyncHooksCreateHook(
       const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -462,22 +521,38 @@ class Shell : public i::AllStatic {
   static void AsyncHooksTriggerAsyncId(
       const v8::FunctionCallbackInfo<v8::Value>& args);
 
+  static void SetPromiseHooks(const v8::FunctionCallbackInfo<v8::Value>& args);
+
   static void Print(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void PrintErr(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void Write(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void WriteStdout(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void WaitUntilDone(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void NotifyDone(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void QuitOnce(v8::FunctionCallbackInfo<v8::Value>* args);
   static void Quit(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Version(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void Read(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void ReadFile(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static char* ReadChars(const char* name, int* size_out);
+  static MaybeLocal<PrimitiveArray> ReadLines(Isolate* isolate,
+                                              const char* name);
   static void ReadBuffer(const v8::FunctionCallbackInfo<v8::Value>& args);
   static Local<String> ReadFromStdin(Isolate* isolate);
   static void ReadLine(const v8::FunctionCallbackInfo<v8::Value>& args) {
     args.GetReturnValue().Set(ReadFromStdin(args.GetIsolate()));
   }
-  static void Load(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void WriteChars(const char* name, uint8_t* buffer, size_t buffer_size);
+  static void ExecuteFile(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SetTimeout(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void ReadCodeTypeAndArguments(
+      const v8::FunctionCallbackInfo<v8::Value>& args, int index,
+      CodeType* code_type, Local<Value>* arguments = nullptr);
+  static bool FunctionAndArgumentsToString(Local<Function> function,
+                                           Local<Value> arguments,
+                                           Local<String>* source,
+                                           Isolate* isolate);
+  static MaybeLocal<String> ReadSource(
+      const v8::FunctionCallbackInfo<v8::Value>& args, int index,
+      CodeType default_type);
   static void WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void WorkerPostMessage(
       const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -498,29 +573,30 @@ class Shell : public i::AllStatic {
   // milliseconds on the total running time of the program.  Exceptions are
   // thrown on timeouts or other errors or if the exit status of the program
   // indicates an error.
-  //
+  static void System(const v8::FunctionCallbackInfo<v8::Value>& args);
+
   // os.chdir(dir) changes directory to the given directory.  Throws an
   // exception/ on error.
-  //
+  static void ChangeDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
+
   // os.setenv(variable, value) sets an environment variable.  Repeated calls to
   // this method leak memory due to the API of setenv in the standard C library.
-  //
+  static void SetEnvironment(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void UnsetEnvironment(const v8::FunctionCallbackInfo<v8::Value>& args);
+
   // os.umask(alue) calls the umask system call and returns the old umask.
-  //
+  static void SetUMask(const v8::FunctionCallbackInfo<v8::Value>& args);
+
   // os.mkdirp(name, mask) creates a directory.  The mask (if present) is anded
   // with the current umask.  Intermediate directories are created if necessary.
   // An exception is not thrown if the directory already exists.  Analogous to
   // the "mkdir -p" command.
-  static void System(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void ChangeDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void SetEnvironment(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void UnsetEnvironment(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void SetUMask(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void MakeDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void RemoveDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
   static MaybeLocal<Promise> HostImportModuleDynamically(
       Local<Context> context, Local<ScriptOrModule> referrer,
-      Local<String> specifier);
+      Local<String> specifier, Local<FixedArray> import_assertions);
+
   static void ModuleResolutionSuccessCallback(
       const v8::FunctionCallbackInfo<v8::Value>& info);
   static void ModuleResolutionFailureCallback(
@@ -556,6 +632,11 @@ class Shell : public i::AllStatic {
            !options.test_shell;
   }
 
+  static void update_script_size(int size) {
+    if (size > 0) valid_fuzz_script_.store(true);
+  }
+  static bool is_valid_fuzz_script() { return valid_fuzz_script_.load(); }
+
   static void WaitForRunningWorkers();
   static void AddRunningWorker(std::shared_ptr<Worker> worker);
   static void RemoveRunningWorker(const std::shared_ptr<Worker>& worker);
@@ -564,6 +645,8 @@ class Shell : public i::AllStatic {
                          bool isOnMainThread = true);
 
   static void PromiseRejectCallback(v8::PromiseRejectMessage reject_message);
+
+  static Local<FunctionTemplate> CreateSnapshotTemplate(Isolate* isolate);
 
  private:
   static Global<Context> evaluation_context_;
@@ -583,8 +666,9 @@ class Shell : public i::AllStatic {
   static bool allow_new_workers_;
   static std::unordered_set<std::shared_ptr<Worker>> running_workers_;
 
-  // Multiple isolates may update this flag concurrently.
+  // Multiple isolates may update these flags concurrently.
   static std::atomic<bool> script_executed_;
+  static std::atomic<bool> valid_fuzz_script_;
 
   static void WriteIgnitionDispatchCountersFile(v8::Isolate* isolate);
   // Append LCOV coverage data to file.
@@ -594,6 +678,9 @@ class Shell : public i::AllStatic {
   static void RunShell(Isolate* isolate);
   static bool SetOptions(int argc, char* argv[]);
 
+  static void NodeTypeCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  static Local<FunctionTemplate> CreateNodeTemplates(Isolate* isolate);
   static Local<ObjectTemplate> CreateGlobalTemplate(Isolate* isolate);
   static Local<ObjectTemplate> CreateOSTemplate(Isolate* isolate);
   static Local<FunctionTemplate> CreateWorkerTemplate(Isolate* isolate);
@@ -602,14 +689,28 @@ class Shell : public i::AllStatic {
   static Local<ObjectTemplate> CreatePerformanceTemplate(Isolate* isolate);
   static Local<ObjectTemplate> CreateRealmTemplate(Isolate* isolate);
   static Local<ObjectTemplate> CreateD8Template(Isolate* isolate);
+  static Local<FunctionTemplate> CreateTestFastCApiTemplate(Isolate* isolate);
+  static Local<FunctionTemplate> CreateLeafInterfaceTypeTemplate(
+      Isolate* isolate);
 
   static MaybeLocal<Context> CreateRealm(
       const v8::FunctionCallbackInfo<v8::Value>& args, int index,
       v8::MaybeLocal<Value> global_object);
   static void DisposeRealm(const v8::FunctionCallbackInfo<v8::Value>& args,
                            int index);
-  static MaybeLocal<Module> FetchModuleTree(v8::Local<v8::Context> context,
-                                            const std::string& file_name);
+  static MaybeLocal<Module> FetchModuleTree(v8::Local<v8::Module> origin_module,
+                                            v8::Local<v8::Context> context,
+                                            const std::string& file_name,
+                                            ModuleType module_type);
+
+  static MaybeLocal<Value> JSONModuleEvaluationSteps(Local<Context> context,
+                                                     Local<Module> module);
+
+  template <class T>
+  static MaybeLocal<T> CompileString(Isolate* isolate, Local<Context> context,
+                                     Local<String> source,
+                                     const ScriptOrigin& origin);
+
   static ScriptCompiler::CachedData* LookupCodeCache(Isolate* isolate,
                                                      Local<Value> name);
   static void StoreInCodeCache(Isolate* isolate, Local<Value> name,
@@ -624,6 +725,20 @@ class Shell : public i::AllStatic {
   static std::map<std::string, std::unique_ptr<ScriptCompiler::CachedData>>
       cached_code_map_;
   static std::atomic<int> unhandled_promise_rejections_;
+};
+
+class FuzzerMonitor : public i::AllStatic {
+ public:
+  static void SimulateErrors();
+
+ private:
+  static void ControlFlowViolation();
+  static void DCheck();
+  static void Fatal();
+  static void ObservableDifference();
+  static void UndefinedBehavior();
+  static void UseAfterFree();
+  static void UseOfUninitializedValue();
 };
 
 }  // namespace v8

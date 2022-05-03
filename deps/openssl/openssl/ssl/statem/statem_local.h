@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2019 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2015-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -22,6 +22,8 @@
 #define SERVER_HELLO_MAX_LENGTH         20000
 #define HELLO_RETRY_REQUEST_MAX_LENGTH  20000
 #define ENCRYPTED_EXTENSIONS_MAX_LENGTH 20000
+#define SESSION_TICKET_MAX_LENGTH_TLS13 131338
+#define SESSION_TICKET_MAX_LENGTH_TLS12 65541
 #define SERVER_KEY_EXCH_MAX_LENGTH      102400
 #define SERVER_HELLO_DONE_MAX_LENGTH    0
 #define KEY_UPDATE_MAX_LENGTH           1
@@ -240,6 +242,10 @@ int tls_parse_ctos_psk(SSL *s, PACKET *pkt, unsigned int context, X509 *x,
 int tls_parse_ctos_post_handshake_auth(SSL *, PACKET *pkt, unsigned int context,
                                        X509 *x, size_t chainidx);
 #ifndef OPENSSL_NO_QUIC
+int tls_parse_ctos_quic_transport_params_draft(SSL *s, PACKET *pkt,
+                                               unsigned int context, X509 *x,
+                                               size_t chainidx);
+
 int tls_parse_ctos_quic_transport_params(SSL *s, PACKET *pkt, unsigned int context,
                                          X509 *x, size_t chainidx);
 #endif
@@ -306,6 +312,11 @@ EXT_RETURN tls_construct_stoc_cryptopro_bug(SSL *s, WPACKET *pkt,
 EXT_RETURN tls_construct_stoc_psk(SSL *s, WPACKET *pkt, unsigned int context,
                                   X509 *x, size_t chainidx);
 #ifndef OPENSSL_NO_QUIC
+EXT_RETURN tls_construct_stoc_quic_transport_params_draft(SSL *s, WPACKET *pkt,
+                                                          unsigned int context,
+                                                          X509 *x,
+                                                          size_t chainidx);
+
 EXT_RETURN tls_construct_stoc_quic_transport_params(SSL *s, WPACKET *pkt,
                                                     unsigned int context, X509 *x,
                                                     size_t chainidx);
@@ -381,6 +392,10 @@ EXT_RETURN tls_construct_ctos_psk(SSL *s, WPACKET *pkt, unsigned int context,
 EXT_RETURN tls_construct_ctos_post_handshake_auth(SSL *s, WPACKET *pkt, unsigned int context,
                                                   X509 *x, size_t chainidx);
 #ifndef OPENSSL_NO_QUIC
+EXT_RETURN tls_construct_ctos_quic_transport_params_draft(SSL *s, WPACKET *pkt,
+                                                          unsigned int context, X509 *x,
+                                                          size_t chainidx);
+
 EXT_RETURN tls_construct_ctos_quic_transport_params(SSL *s, WPACKET *pkt,
                                                     unsigned int context, X509 *x,
                                                     size_t chainidx);
@@ -431,6 +446,10 @@ int tls_parse_stoc_cookie(SSL *s, PACKET *pkt, unsigned int context, X509 *x,
 int tls_parse_stoc_psk(SSL *s, PACKET *pkt, unsigned int context, X509 *x,
                        size_t chainidx);
 #ifndef OPENSSL_NO_QUIC
+int tls_parse_stoc_quic_transport_params_draft(SSL *s, PACKET *pkt,
+                                               unsigned int context, X509 *x,
+                                               size_t chainidx);
+
 int tls_parse_stoc_quic_transport_params(SSL *s, PACKET *pkt, unsigned int context,
                                          X509 *x, size_t chainidx);
 #endif

@@ -28,6 +28,7 @@ using v8::ReadOnly;
 using v8::SideEffectType;
 using v8::Signature;
 using v8::String;
+using v8::Uint8Array;
 using v8::Value;
 
 namespace crypto {
@@ -93,9 +94,7 @@ void DiffieHellman::Initialize(Environment* env, Local<Object> target) {
         Local<FunctionTemplate>(),
         attributes);
 
-    target->Set(env->context(),
-                name,
-                t->GetFunction(env->context()).ToLocalChecked()).Check();
+    env->SetConstructorFunction(target, name, t);
   };
 
   make(FIXED_ONE_BYTE_STRING(env->isolate(), "DiffieHellman"), New);
@@ -106,6 +105,28 @@ void DiffieHellman::Initialize(Environment* env, Local<Object> target) {
   DHKeyPairGenJob::Initialize(env, target);
   DHKeyExportJob::Initialize(env, target);
   DHBitsJob::Initialize(env, target);
+}
+
+void DiffieHellman::RegisterExternalReferences(
+    ExternalReferenceRegistry* registry) {
+  registry->Register(New);
+  registry->Register(DiffieHellmanGroup);
+
+  registry->Register(GenerateKeys);
+  registry->Register(ComputeSecret);
+  registry->Register(GetPrime);
+  registry->Register(GetGenerator);
+  registry->Register(GetPublicKey);
+  registry->Register(GetPrivateKey);
+  registry->Register(SetPublicKey);
+  registry->Register(SetPrivateKey);
+
+  registry->Register(DiffieHellman::VerifyErrorGetter);
+  registry->Register(DiffieHellman::Stateless);
+
+  DHKeyPairGenJob::RegisterExternalReferences(registry);
+  DHKeyExportJob::RegisterExternalReferences(registry);
+  DHBitsJob::RegisterExternalReferences(registry);
 }
 
 bool DiffieHellman::Init(int primeLength, int g) {
@@ -122,11 +143,13 @@ void DiffieHellman::MemoryInfo(MemoryTracker* tracker) const {
 bool DiffieHellman::Init(const char* p, int p_len, int g) {
   dh_.reset(DH_new());
   if (p_len <= 0) {
-    BNerr(BN_F_BN_GENERATE_PRIME_EX, BN_R_BITS_TOO_SMALL);
+    ERR_put_error(ERR_LIB_BN, BN_F_BN_GENERATE_PRIME_EX,
+      BN_R_BITS_TOO_SMALL, __FILE__, __LINE__);
     return false;
   }
   if (g <= 1) {
-    DHerr(DH_F_DH_BUILTIN_GENPARAMS, DH_R_BAD_GENERATOR);
+    ERR_put_error(ERR_LIB_DH, DH_F_DH_BUILTIN_GENPARAMS,
+      DH_R_BAD_GENERATOR, __FILE__, __LINE__);
     return false;
   }
   BIGNUM* bn_p =
@@ -144,18 +167,21 @@ bool DiffieHellman::Init(const char* p, int p_len, int g) {
 bool DiffieHellman::Init(const char* p, int p_len, const char* g, int g_len) {
   dh_.reset(DH_new());
   if (p_len <= 0) {
-    BNerr(BN_F_BN_GENERATE_PRIME_EX, BN_R_BITS_TOO_SMALL);
+    ERR_put_error(ERR_LIB_BN, BN_F_BN_GENERATE_PRIME_EX,
+      BN_R_BITS_TOO_SMALL, __FILE__, __LINE__);
     return false;
   }
   if (g_len <= 0) {
-    DHerr(DH_F_DH_BUILTIN_GENPARAMS, DH_R_BAD_GENERATOR);
+    ERR_put_error(ERR_LIB_DH, DH_F_DH_BUILTIN_GENPARAMS,
+      DH_R_BAD_GENERATOR, __FILE__, __LINE__);
     return false;
   }
   BIGNUM* bn_g =
       BN_bin2bn(reinterpret_cast<const unsigned char*>(g), g_len, nullptr);
   if (BN_is_zero(bn_g) || BN_is_one(bn_g)) {
     BN_free(bn_g);
-    DHerr(DH_F_DH_BUILTIN_GENPARAMS, DH_R_BAD_GENERATOR);
+    ERR_put_error(ERR_LIB_DH, DH_F_DH_BUILTIN_GENPARAMS,
+      DH_R_BAD_GENERATOR, __FILE__, __LINE__);
     return false;
   }
   BIGNUM* bn_p =
@@ -536,41 +562,9 @@ WebCryptoKeyExportStatus DHKeyExportTraits::DoExport(
 }
 
 namespace {
-AllocatedBuffer StatelessDiffieHellman(
-    Environment* env,
-    ManagedEVPPKey our_key,
-    ManagedEVPPKey their_key) {
-  size_t out_size;
-
-  EVPKeyCtxPointer ctx(EVP_PKEY_CTX_new(our_key.get(), nullptr));
-  if (!ctx ||
-      EVP_PKEY_derive_init(ctx.get()) <= 0 ||
-      EVP_PKEY_derive_set_peer(ctx.get(), their_key.get()) <= 0 ||
-      EVP_PKEY_derive(ctx.get(), nullptr, &out_size) <= 0)
-    return AllocatedBuffer();
-
-  AllocatedBuffer result = AllocatedBuffer::AllocateManaged(env, out_size);
-  CHECK_NOT_NULL(result.data());
-
-  unsigned char* data = reinterpret_cast<unsigned char*>(result.data());
-  if (EVP_PKEY_derive(ctx.get(), data, &out_size) <= 0)
-    return AllocatedBuffer();
-
-  ZeroPadDiffieHellmanSecret(out_size, &result);
-  return result;
-}
-
-// The version of StatelessDiffieHellman that returns an AllocatedBuffer
-// is not threadsafe because of the AllocatedBuffer allocation of a
-// v8::BackingStore (it'll cause much crashing if we call it from a
-// libuv worker thread). This version allocates a ByteSource instead,
-// which we can convert into a v8::BackingStore later.
-// TODO(@jasnell): Eliminate the code duplication between these two
-// versions of the function.
 ByteSource StatelessDiffieHellmanThreadsafe(
-    Environment* env,
-    ManagedEVPPKey our_key,
-    ManagedEVPPKey their_key) {
+    const ManagedEVPPKey& our_key,
+    const ManagedEVPPKey& their_key) {
   size_t out_size;
 
   EVPKeyCtxPointer ctx(EVP_PKEY_CTX_new(our_key.get(), nullptr));
@@ -609,11 +603,13 @@ void DiffieHellman::Stateless(const FunctionCallbackInfo<Value>& args) {
   ManagedEVPPKey our_key = our_key_object->Data()->GetAsymmetricKey();
   ManagedEVPPKey their_key = their_key_object->Data()->GetAsymmetricKey();
 
-  AllocatedBuffer out = StatelessDiffieHellman(env, our_key, their_key);
-  if (out.size() == 0)
+  Local<Value> out = StatelessDiffieHellmanThreadsafe(our_key, their_key)
+      .ToBuffer(env).FromMaybe(Local<Uint8Array>());
+
+  if (Buffer::Length(out) == 0)
     return ThrowCryptoError(env, ERR_get_error(), "diffieHellman failed");
 
-  args.GetReturnValue().Set(out.ToBuffer().FromMaybe(Local<Value>()));
+  args.GetReturnValue().Set(out);
 }
 
 Maybe<bool> DHBitsTraits::AdditionalConfig(
@@ -658,7 +654,6 @@ bool DHBitsTraits::DeriveBits(
     const DHBitsConfig& params,
     ByteSource* out) {
   *out = StatelessDiffieHellmanThreadsafe(
-      env,
       params.private_key->GetAsymmetricKey(),
       params.public_key->GetAsymmetricKey());
   return true;

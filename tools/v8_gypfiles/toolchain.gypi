@@ -138,7 +138,7 @@
         'cflags': [ '-Werror', '-Wno-unknown-pragmas' ],
       },{
         'cflags!': [ '-Wall', '-Wextra' ],
-        'cflags': [ '-Wno-return-type', '-Wno-int-in-bool-context' ],
+        'cflags': [ '-Wno-return-type' ],
       }],
       ['v8_target_arch=="arm"', {
         'defines': [
@@ -273,6 +273,13 @@
           }],
         ],
       }],
+      ['v8_target_arch=="riscv64"', {
+        'defines': [
+          'V8_TARGET_ARCH_RISCV64',
+          '__riscv_xlen=64',
+          'CAN_USE_FPU_INSTRUCTIONS'
+        ],
+      }],
       ['v8_target_arch=="s390x"', {
         'defines': [
           'V8_TARGET_ARCH_S390',
@@ -303,6 +310,9 @@
           ['v8_target_arch=="ppc64"', {
             'defines': [
               'V8_TARGET_ARCH_PPC64',
+            ],
+            'cflags': [
+              '-ffp-contract=off',
             ],
           }],
           ['v8_host_byteorder=="little"', {
@@ -986,6 +996,36 @@
           },
         },
       }],
+      ['OS=="android"', {
+        'defines': [
+          'V8_HAVE_TARGET_OS',
+          'V8_TARGET_OS_ANDROID',
+        ]
+      }],
+      ['OS=="ios"', {
+        'defines': [
+          'V8_HAVE_TARGET_OS',
+          'V8_TARGET_OS_IOS',
+        ]
+      }],
+      ['OS=="linux"', {
+        'defines': [
+          'V8_HAVE_TARGET_OS',
+          'V8_TARGET_OS_LINUX',
+        ]
+      }],
+      ['OS=="mac"', {
+        'defines': [
+          'V8_HAVE_TARGET_OS',
+          'V8_TARGET_OS_MACOSX',
+        ]
+      }],
+      ['OS=="win"', {
+        'defines': [
+          'V8_HAVE_TARGET_OS',
+          'V8_TARGET_OS_WIN',
+        ]
+      }],
       ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
          or OS=="netbsd" or OS=="mac" or OS=="android" or OS=="qnx") and \
         v8_target_arch=="ia32"', {
@@ -1106,7 +1146,6 @@
           'ENABLE_DISASSEMBLER',
           'V8_ENABLE_CHECKS',
           'OBJECT_PRINT',
-          'VERIFY_HEAP',
           'DEBUG',
           'V8_TRACE_MAPS',
           'V8_ENABLE_ALLOCATION_TIMEOUT',
@@ -1342,12 +1381,13 @@
       4324,  # Padding structure due to alignment.
       # 4351, # [refack] Old issue with array init.
       4355,  # 'this' used in base member initializer list
+      4506,  # Benign "no definition for inline function"
       4661,  # no suitable definition provided for explicit template instantiation request
       4701,  # Potentially uninitialized local variable.
       4702,  # Unreachable code.
       4703,  # Potentially uninitialized local pointer variable.
       4709,  # Comma operator within array index expr (bugged).
-      # 4714,  # Function marked forceinline not inlined.
+      4714,  # Function marked forceinline not inlined.
       4715,  # Not all control paths return a value. (see https://crbug.com/v8/7658)
       4718,  # Recursive call has no side-effect.
       4723,  # https://crbug.com/v8/7771

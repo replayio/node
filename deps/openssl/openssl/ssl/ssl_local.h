@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
  * Copyright 2005 Nokia. All rights reserved.
  *
@@ -544,7 +544,6 @@ struct ssl_session_st {
     int not_resumable;
     /* This is the cert and type for the other end. */
     X509 *peer;
-    int peer_type;
     /* Certificate chain peer sent. */
     STACK_OF(X509) *peer_chain;
     /*
@@ -722,6 +721,7 @@ typedef enum tlsext_index_en {
     TLSEXT_IDX_cryptopro_bug,
     TLSEXT_IDX_early_data,
     TLSEXT_IDX_certificate_authorities,
+    TLSEXT_IDX_quic_transport_params_draft,
     TLSEXT_IDX_quic_transport_params,
     TLSEXT_IDX_padding,
     TLSEXT_IDX_psk,
@@ -1084,9 +1084,8 @@ typedef struct cert_pkey_st CERT_PKEY;
 struct quic_data_st {
     struct quic_data_st *next;
     OSSL_ENCRYPTION_LEVEL level;
-    size_t offset;
+    size_t start;       /* offset into quic_buf->data */
     size_t length;
-    /* char data[]; should be here but C90 VLAs not allowed here */
 };
 typedef struct quic_data_st QUIC_DATA;
 int quic_set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level);
@@ -1321,6 +1320,8 @@ struct ssl_st {
 
         /* RFC4507 session ticket expected to be received or sent */
         int ticket_expected;
+        /* TLS 1.3 tickets requested by the application. */
+        int extra_tickets_expected;
 # ifndef OPENSSL_NO_EC
         size_t ecpointformats_len;
         /* our list */
@@ -1400,6 +1401,8 @@ struct ssl_st {
 #ifndef OPENSSL_NO_QUIC
         uint8_t *quic_transport_params;
         size_t quic_transport_params_len;
+        uint8_t *peer_quic_transport_params_draft;
+        size_t peer_quic_transport_params_draft_len;
         uint8_t *peer_quic_transport_params;
         size_t peer_quic_transport_params_len;
 #endif
@@ -1408,10 +1411,19 @@ struct ssl_st {
 #ifndef OPENSSL_NO_QUIC
     OSSL_ENCRYPTION_LEVEL quic_read_level;
     OSSL_ENCRYPTION_LEVEL quic_write_level;
+    OSSL_ENCRYPTION_LEVEL quic_latest_level_received;
+    /*
+     * defaults to 0, but can be set to:
+     * - TLSEXT_TYPE_quic_transport_parameters_draft
+     * - TLSEXT_TYPE_quic_transport_parameters
+     * Client: if 0, send both
+     * Server: if 0, use same version as client sent
+     */
+    int quic_transport_version;
+    BUF_MEM *quic_buf;          /* buffer incoming handshake messages */
     QUIC_DATA *quic_input_data_head;
     QUIC_DATA *quic_input_data_tail;
-    uint8_t quic_msg_hd[SSL3_HM_HEADER_LENGTH];
-    size_t quic_msg_hd_offset;
+    size_t quic_next_record_start;
     const SSL_QUIC_METHOD *quic_method;
 #endif
     /*
@@ -2351,6 +2363,7 @@ __owur int ssl_cert_set_cert_store(CERT *c, X509_STORE *store, int chain,
 __owur int ssl_security(const SSL *s, int op, int bits, int nid, void *other);
 __owur int ssl_ctx_security(const SSL_CTX *ctx, int op, int bits, int nid,
                             void *other);
+int ssl_get_security_level_bits(const SSL *s, const SSL_CTX *ctx, int *levelp);
 
 __owur int ssl_cert_lookup_by_nid(int nid, size_t *pidx);
 __owur const SSL_CERT_LOOKUP *ssl_cert_lookup_by_pkey(const EVP_PKEY *pk,
@@ -2472,7 +2485,6 @@ __owur int dtls1_handle_timeout(SSL *s);
 void dtls1_start_timer(SSL *s);
 void dtls1_stop_timer(SSL *s);
 __owur int dtls1_is_timer_expired(SSL *s);
-void dtls1_double_timeout(SSL *s);
 __owur int dtls_raw_hello_verify_request(WPACKET *pkt, unsigned char *cookie,
                                          size_t cookie_len);
 __owur size_t dtls1_min_mtu(SSL *s);
@@ -2668,7 +2680,7 @@ __owur char ssl3_cbc_record_digest_supported(const EVP_MD_CTX *ctx);
 __owur int ssl3_cbc_digest_record(const EVP_MD_CTX *ctx,
                                   unsigned char *md_out,
                                   size_t *md_out_size,
-                                  const unsigned char header[13],
+                                  const unsigned char *header,
                                   const unsigned char *data,
                                   size_t data_plus_mac_size,
                                   size_t data_plus_mac_plus_padding_size,
@@ -2704,6 +2716,11 @@ __owur int custom_exts_copy_flags(custom_ext_methods *dst,
 void custom_exts_free(custom_ext_methods *exts);
 
 void ssl_comp_free_compression_methods_int(void);
+
+#ifndef OPENSSL_NO_QUIC
+__owur int SSL_clear_not_quic(SSL *s);
+__owur int SSL_clear_quic(SSL *s);
+#endif
 
 /* ssl_mcnf.c */
 void ssl_ctx_system_config(SSL_CTX *ctx);
