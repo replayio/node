@@ -2732,7 +2732,7 @@ extern void RecordReplayOnNewSource(Isolate* isolate, const char* id,
                                     const char* kind, const char* url);
 
 static Handle<String> CStringToHandle(Isolate* isolate, const char* str) {
-  Vector<const uint8_t> nstr((const uint8_t*) str, strlen(str));
+  base::Vector<const uint8_t> nstr((const uint8_t*) str, strlen(str));
   return isolate->factory()->NewStringFromOneByte(nstr).ToHandleChecked();
 }
 
@@ -2858,10 +2858,10 @@ static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
     for (const auto& candidate : candidates) {
       IsCompiledScope is_compiled_scope(candidate->is_compiled_scope(isolate));
       if (!is_compiled_scope.is_compiled()) {
-        if (!Compiler::Compile(candidate, Compiler::CLEAR_EXCEPTION,
+        if (!Compiler::Compile(isolate, candidate, Compiler::CLEAR_EXCEPTION,
                                &is_compiled_scope)) {
           recordreplay::Print("Compiler::Compile failed, crashing.");
-          V8_IMMEDIATE_CRASH();
+          CHECK(0);
         } else {
           was_compiled = true;
         }
@@ -2880,7 +2880,7 @@ static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
       if (!candidate->HasBytecodeArray()) {
         continue;
       }
-      Handle<BytecodeArray> bytecode(candidate->GetBytecodeArray(), isolate);
+      Handle<BytecodeArray> bytecode(candidate->GetBytecodeArray(isolate), isolate);
 
       bool first = true;
       for (interpreter::BytecodeArrayIterator it(bytecode); !it.done();
@@ -3202,13 +3202,13 @@ static Handle<Object> RecordReplayCountStackFrames(Isolate* isolate,
   // Counting the stack frames is a common operation when there are many
   // exception unwinds and so forth.
   size_t count = 0;
-  for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
-    StackFrame* frame = it.frame();
+  for (JavaScriptFrameIterator it(isolate); !it.done(); it.Advance()) {
+    JavaScriptFrame* frame = JavaScriptFrame::cast(it.frame());
     if (frame->type() != StackFrame::OPTIMIZED && frame->type() != StackFrame::INTERPRETED) {
       continue;
     }
     std::vector<FrameSummary> frames;
-    StandardFrame::cast(frame)->Summarize(&frames);
+    frame->Summarize(&frames);
 
     // We don't strictly need to iterate the frames in reverse order, but it
     // helps when logging the stack contents for debugging.
@@ -3275,13 +3275,13 @@ static Handle<Object> RecordReplayCurrentGeneratorId(Isolate* isolate, Handle<Ob
 
 static Handle<Object> RecordReplayGetStackFunctionIds(Isolate* isolate, Handle<Object> params) {
   std::vector<std::string> functions;
-  for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
-    StackFrame* frame = it.frame();
+  for (JavaScriptFrameIterator it(isolate); !it.done(); it.Advance()) {
+    JavaScriptFrame* frame = JavaScriptFrame::cast(it.frame());
     if (frame->type() != StackFrame::OPTIMIZED && frame->type() != StackFrame::INTERPRETED) {
       continue;
     }
     std::vector<FrameSummary> frames;
-    StandardFrame::cast(frame)->Summarize(&frames);
+    frame->Summarize(&frames);
 
     for (int i = (int)frames.size() - 1; i >= 0; i--) {
       const auto& summary = frames[i];

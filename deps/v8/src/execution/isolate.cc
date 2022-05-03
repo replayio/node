@@ -622,48 +622,6 @@ StackTraceFailureMessage::StackTraceFailureMessage(Isolate* isolate, void* ptr1,
   }
 }
 
-static std::string ToStdString(int n) {
-  char buf[20];
-  snprintf(buf, sizeof(buf), "%d", n);
-  return std::string(buf);
-}
-
-static std::string ToStdString(Handle<Object> obj) {
-  if (obj->IsString()) {
-    std::unique_ptr<char[]> contents = String::cast(*obj).ToCString();
-    return std::string(contents.get());
-  }
-  return std::string("<object>");
-}
-
-// Some internal frames appear non-deterministically in stack traces. Normally
-// these aren't visible to content scripts, but they can still be observed by
-// overriding Error.prepareStackTrace. Filter these out so that scripts which
-// observe the stack this way still behave deterministically.
-static bool RecordReplayIgnoreStackFrame(Handle<StackTraceFrame> frame) {
-  if (!recordreplay::IsRecordingOrReplaying()) {
-    return false;
-  }
-
-  static std::pair<const char*, const char*> ignoredFrames[] = {
-    { "<object>", "runMicrotasks" },
-    { "<object>", "all" },
-    { "node:internal/process/task_queues", "processTicksAndRejections" },
-    { "node:internal/timers", "listOnTimeout" },
-  };
-
-  std::string fileName = ToStdString(StackTraceFrame::GetFileName(frame));
-  std::string functionName = ToStdString(StackTraceFrame::GetFunctionName(frame));
-
-  for (const auto& ignored : ignoredFrames) {
-    if (fileName == ignored.first && functionName == ignored.second) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 class StackTraceBuilder {
  public:
   enum FrameFilterMode { ALL, CURRENT_SECURITY_CONTEXT };
@@ -801,29 +759,6 @@ class StackTraceBuilder {
 
   Handle<FixedArray> Build() {
     return FixedArray::ShrinkOrEmpty(isolate_, elements_, index_);
-  }
-
-  std::string DescribeContents() {
-    std::string rv;
-
-    const int frame_count = elements_->FrameCount();
-    for (int i = 0; i < frame_count; ++i) {
-      Handle<StackTraceFrame> frame =
-          isolate_->factory()->NewStackTraceFrame(elements_, i);
-      if (RecordReplayIgnoreStackFrame(frame)) {
-        continue;
-      }
-      rv += " "
-          + ToStdString(StackTraceFrame::GetFileName(frame))
-          + ":"
-          + ToStdString(StackTraceFrame::GetLineNumber(frame))
-          + ":"
-          + ToStdString(StackTraceFrame::GetColumnNumber(frame))
-          + ":"
-          + ToStdString(StackTraceFrame::GetFunctionName(frame));
-    }
-
-    return rv;
   }
 
  private:
@@ -1201,11 +1136,6 @@ Handle<FixedArray> CaptureStackTrace(Isolate* isolate, Handle<Object> caller,
         }
       }
     }
-  }
-
-  if (!recordreplay::AreEventsDisallowed()) {
-    std::string contents = builder.DescribeContents();
-    recordreplay::Assert("CaptureStackTrace %s", contents.c_str());
   }
 
   Handle<FixedArray> stack_trace = builder.Build();

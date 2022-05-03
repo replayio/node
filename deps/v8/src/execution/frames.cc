@@ -1782,7 +1782,7 @@ Object UnoptimizedFrame::ReadInterpreterRegister(int register_index) const {
   return GetExpression(index + register_index);
 }
 
-void UnoptimizedFrame::Summarize(std::vector<FrameSummary>* functions) const {
+void UnoptimizedFrame::Summarize(std::vector<FrameSummary>* functions, bool allow_invalid) const {
   DCHECK(functions->empty());
   Handle<AbstractCode> abstract_code(AbstractCode::cast(GetBytecodeArray()),
                                      isolate());

@@ -219,6 +219,11 @@ struct LibuvRwlockTraits {
     uv_rwlock_wrunlock(mutex);
   }
 
+  static inline void mutex_mark_ordered(MutexT* mutex) {
+    // Ordered rw locks are not supported.
+    CHECK(0);
+  }
+
   static inline void mutex_rdlock(MutexT* mutex) {
     uv_rwlock_rdlock(mutex);
   }

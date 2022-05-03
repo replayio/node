@@ -1201,25 +1201,10 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
     }
   }
 
-<<<<<<< HEAD
-  bool formatAccessorsAsProperties =
-      !V8RecordReplayHasDivergedFromRecording() &&
-      clientFor(context)->formatAccessorsAsProperties(object);
-
-  if (object->IsArrayBuffer()) {
-    addTypedArrayViews(context, object.As<v8::ArrayBuffer>(), accumulator);
-||||||| 2365115868
-  bool formatAccessorsAsProperties =
-      clientFor(context)->formatAccessorsAsProperties(object);
-
-  if (object->IsArrayBuffer()) {
-    addTypedArrayViews(context, object.As<v8::ArrayBuffer>(), accumulator);
-=======
   auto iterator = v8::debug::PropertyIterator::Create(context, object);
   if (!iterator) {
     CHECK(tryCatch.HasCaught());
     return false;
->>>>>>> upstream/v16.x
   }
   while (!iterator->Done()) {
     bool isOwn = iterator->is_own();
@@ -1581,11 +1566,7 @@ std::unique_ptr<ValueMirror> ValueMirror::create(v8::Local<v8::Context> context,
   if (value->IsSymbol()) {
     return std::make_unique<SymbolMirror>(value.As<v8::Symbol>());
   }
-<<<<<<< HEAD
-  if (v8::debug::WasmValue::IsWasmValue(value)) {
-    return std::make_unique<WasmValueMirror>(value.As<v8::debug::WasmValue>());
-  }
-  if (!V8RecordReplayHasDivergedFromRecording()) {
+  if (!v8::recordreplay::HasDivergedFromRecording()) {
     auto clientSubtype = (value->IsUndefined() || value->IsObject())
                             ? clientFor(context)->valueSubtype(value)
                             : nullptr;
@@ -1593,24 +1574,6 @@ std::unique_ptr<ValueMirror> ValueMirror::create(v8::Local<v8::Context> context,
       String16 subtype = toString16(clientSubtype->string());
       return clientMirror(context, value, subtype);
     }
-||||||| 2365115868
-  if (v8::debug::WasmValue::IsWasmValue(value)) {
-    return std::make_unique<WasmValueMirror>(value.As<v8::debug::WasmValue>());
-  }
-  auto clientSubtype = (value->IsUndefined() || value->IsObject())
-                           ? clientFor(context)->valueSubtype(value)
-                           : nullptr;
-  if (clientSubtype) {
-    String16 subtype = toString16(clientSubtype->string());
-    return clientMirror(context, value, subtype);
-=======
-  auto clientSubtype = (value->IsUndefined() || value->IsObject())
-                           ? clientFor(context)->valueSubtype(value)
-                           : nullptr;
-  if (clientSubtype) {
-    String16 subtype = toString16(clientSubtype->string());
-    return clientMirror(context, value, subtype);
->>>>>>> upstream/v16.x
   }
   if (value->IsUndefined()) {
     return std::make_unique<PrimitiveValueMirror>(

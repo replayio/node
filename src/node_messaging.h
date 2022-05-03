@@ -124,7 +124,7 @@ class SiblingGroup final : public std::enable_shared_from_this<SiblingGroup> {
   static std::shared_ptr<SiblingGroup> Get(const std::string& name);
 
   // Anonymous SiblingGroup, Used for one-to-one MessagePort pairs.
-  SiblingGroup() : groups_mutex_(/* ordered */ true) {}
+  SiblingGroup() = default;
   explicit SiblingGroup(const std::string& name);
   ~SiblingGroup();
 

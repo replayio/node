@@ -3597,16 +3597,9 @@ void BytecodeGenerator::BuildReturn(int source_position) {
   if (info()->flags().collect_type_profile()) {
     builder()->CollectTypeProfile(info()->literal()->return_position());
   }
-<<<<<<< HEAD
   builder()->SetStatementPosition(source_position,
                                   /* record_replay_breakpoint */ false);
   builder()->RecordReplayInstrumentation("exit");
-  builder()->SetReturnPosition(source_position, info()->literal());
-||||||| 2365115868
-  builder()->SetReturnPosition(source_position, info()->literal());
-=======
-  builder()->SetStatementPosition(source_position);
->>>>>>> upstream/v16.x
   builder()->Return();
 }
 

@@ -1046,13 +1046,13 @@ static std::string GetStackContents(Isolate* isolate, size_t max_frames) {
   size_t num_frames = 0;
 
   std::string contents;
-  for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
-    StackFrame* frame = it.frame();
+  for (JavaScriptFrameIterator it(isolate); !it.done(); it.Advance()) {
+    JavaScriptFrame* frame = JavaScriptFrame::cast(it.frame());
     if (frame->type() != StackFrame::OPTIMIZED && frame->type() != StackFrame::INTERPRETED) {
       continue;
     }
     std::vector<FrameSummary> frames;
-    StandardFrame::cast(frame)->Summarize(&frames);
+    frame->Summarize(&frames);
     for (int i = frames.size() - 1; i >= 0; i--) {
       auto& summary = frames[i];
       std::string rv = FrameSummaryToString(isolate, summary);

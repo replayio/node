@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "include/libplatform/v8-tracing.h"
+#include "include/v8.h"
 #include "src/base/atomicops.h"
 #include "src/base/platform/mutex.h"
 #include "src/base/platform/time.h"

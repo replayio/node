@@ -2655,7 +2655,7 @@ Handle<Script> NewScript(
 }
 
 static void SetRecordReplayIgnoreByURL(UnoptimizedCompileFlags& flags,
-                                       const Compiler::ScriptDetails& script_details) {
+                                       const ScriptDetails& script_details) {
   if (recordreplay::IsRecordingOrReplaying()) {
     Handle<Object> script_name;
     if (script_details.name_obj.ToHandle(&script_name)) {
