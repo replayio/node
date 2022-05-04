@@ -2224,6 +2224,10 @@ void BaselineCompiler::VisitIncBlockCounter() {
 }
 
 void BaselineCompiler::VisitRecordReplayIncExecutionProgressCounter() {
+  // Note: This call seems to cause OSR to leave arguments undefined in some
+  // cases when the opcode is at the start of a function. This doesn't happen
+  // with chromium's V8 for some reason. For now we work around this by disabling
+  // the baseline (sparkplug) compiiler when recording/replaying.
   CallRuntime(Runtime::kRecordReplayAssertExecutionProgress,
               __ FunctionOperand());
 }

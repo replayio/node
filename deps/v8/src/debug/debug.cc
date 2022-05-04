@@ -2523,6 +2523,11 @@ void Debug::StopSideEffectCheckMode() {
     DCHECK(isolate_->has_pending_exception());
     DCHECK_EQ(ReadOnlyRoots(isolate_).termination_exception(),
               isolate_->pending_exception());
+
+    // Don't report the exception below to the recording driver, we're not
+    // interested in it and trying to enter JS here when paused causes crashes.
+    recordreplay::AutoDisallowEvents disallow;
+
     // Convert the termination exception into a regular exception.
     isolate_->CancelTerminateExecution();
     isolate_->Throw(*isolate_->factory()->NewEvalError(

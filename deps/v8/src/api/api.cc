@@ -11009,6 +11009,10 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   // Async stack traces can vary when recording vs. replaying, apparently depending
   // on how the code has been compiled.
   internal::FLAG_async_stack_traces = false;
+
+  // The sparkplug compiler doesn't work right when making runtime calls from
+  // record/replay opcodes.
+  internal::FLAG_sparkplug = false;
 }
 
 bool IsMainThread() {
