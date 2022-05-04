@@ -224,6 +224,7 @@ async function runSingleTest(path: string, failureSpec: FailureSpec) {
           RECORD_REPLAY_VERBOSE: "1",
           RECORD_REPLAY_DIRECTORY: gRecordingDirectory,
           RECORD_REPLAY_JS_ASSERTS: "1",
+          RECORD_REPLAY_INSTRUMENT_NODE: "1",
         },
       }
     );
