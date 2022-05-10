@@ -64,7 +64,18 @@ function platformTasks(platform) {
     [buildTask]
   );
 
-  return [buildTask, testTask];
+  const jestTask = newTask(
+    `Run random Jest tests ${platform}`,
+    {
+      kind: "JestTests",
+      revision: nodeRevision,
+      driverRevision,
+    },
+    platform,
+    [buildTask]
+  );
+
+  return [buildTask, testTask, jestTask];
 }
 
 function getBranchName(refName) {
