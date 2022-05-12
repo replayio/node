@@ -11,11 +11,29 @@ namespace internal {
 
 namespace {
 
-thread_local int thread_id = 0;
+//thread_local int thread_id = 0;
 
 std::atomic<int> next_thread_id{1};
 
 }  // namespace
+
+// FIXME using thread_local runs into problems when replaying, possibly related to
+// process forking.
+static int& GetThreadId() {
+  static pthread_key_t key;
+  if (!key) {
+    pthread_key_create(&key, nullptr);
+  }
+
+  int* v = (int*)pthread_getspecific(key);
+  if (!v) {
+    v = new int(0);
+    pthread_setspecific(key, v);
+  }
+  return *v;
+}
+
+#define thread_id GetThreadId()
 
 // static
 ThreadId ThreadId::TryGetCurrent() {

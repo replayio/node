@@ -27,7 +27,8 @@ namespace v8 {
 namespace internal {
 namespace trap_handler {
 
-// Using thread_local runs into problems when recording/replaying for an unknown reason.
+// FIXME using thread_local runs into problems when replaying, possibly related to
+// process forking.
 #if 0
 
 // We declare this as int rather than bool as a workaround for a glibc bug, in
@@ -41,13 +42,7 @@ static_assert(sizeof(g_thread_in_wasm_code) > 1,
 
 #endif // 0
 
-thread_local int g_thread_in_wasm_code2;
-
 int& IsThreadInWasmCode() {
-  if (!recordreplay::IsRecordingOrReplaying()) {
-    return g_thread_in_wasm_code2;
-  }
-
   static pthread_key_t key;
   if (!key) {
     pthread_key_create(&key, nullptr);
