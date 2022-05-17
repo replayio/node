@@ -14,14 +14,14 @@
 namespace v8 {
 namespace internal {
 
+#include "torque-generated/src/objects/js-proxy-tq.inc"
+
 // The JSProxy describes EcmaScript Harmony proxies
 class JSProxy : public TorqueGeneratedJSProxy<JSProxy, JSReceiver> {
  public:
   V8_WARN_UNUSED_RESULT static MaybeHandle<JSProxy> New(Isolate* isolate,
                                                         Handle<Object>,
                                                         Handle<Object>);
-
-  static MaybeHandle<NativeContext> GetFunctionRealm(Handle<JSProxy> proxy);
 
   V8_INLINE bool IsRevoked() const;
   static void Revoke(Handle<JSProxy> proxy);

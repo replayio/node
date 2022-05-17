@@ -40,6 +40,16 @@ WasmImportWrapperCache::WasmImportWrapperCache() {
   RecordReplayAddOrderedMutex("WasmImportWrapperCache::mutex_", &mutex_);
 }
 
+WasmCode* WasmImportWrapperCache::MaybeGet(compiler::WasmImportCallKind kind,
+                                           const FunctionSig* sig,
+                                           int expected_arity) const {
+  base::MutexGuard lock(&mutex_);
+
+  auto it = entry_map_.find({kind, sig, expected_arity});
+  if (it == entry_map_.end()) return nullptr;
+  return it->second;
+}
+
 WasmImportWrapperCache::~WasmImportWrapperCache() {
   std::vector<WasmCode*> ptrs;
   ptrs.reserve(entry_map_.size());
@@ -48,7 +58,7 @@ WasmImportWrapperCache::~WasmImportWrapperCache() {
       ptrs.push_back(e.second);
     }
   }
-  WasmCode::DecrementRefCount(VectorOf(ptrs));
+  WasmCode::DecrementRefCount(base::VectorOf(ptrs));
 }
 
 }  // namespace wasm

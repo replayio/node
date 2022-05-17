@@ -102,7 +102,7 @@ WebCryptoCipherStatus AES_Cipher(
         // In decrypt mode, we grab the tag length here. We'll use it to
         // ensure that that allocated buffer has enough room for both the
         // final block and the auth tag. Unlike our other AES-GCM implementation
-        // in CipherBase, in WebCrypto, the auth tag is concatentated to the end
+        // in CipherBase, in WebCrypto, the auth tag is concatenated to the end
         // of the generated ciphertext and returned in the same ArrayBuffer.
         tag_len = params.length;
         break;
@@ -130,7 +130,17 @@ WebCryptoCipherStatus AES_Cipher(
   ByteSource buf = ByteSource::Allocated(data, buf_len);
   unsigned char* ptr = reinterpret_cast<unsigned char*>(data);
 
-  if (!EVP_CipherUpdate(
+  // In some outdated version of OpenSSL (e.g.
+  // ubi81_sharedlibs_openssl111fips_x64) may be used in sharedlib mode, the
+  // logic will be failed when input size is zero. The newly OpenSSL has fixed
+  // it up. But we still have to regard zero as special in Node.js code to
+  // prevent old OpenSSL failure.
+  //
+  // Refs: https://github.com/openssl/openssl/commit/420cb707b880e4fb649094241371701013eeb15f
+  // Refs: https://github.com/nodejs/node/pull/38913#issuecomment-866505244
+  if (in.size() == 0) {
+    out_len = 0;
+  } else if (!EVP_CipherUpdate(
           ctx.get(),
           ptr,
           &out_len,
@@ -591,6 +601,10 @@ void AES::Initialize(Environment* env, Local<Object> target) {
 #define V(name, _) NODE_DEFINE_CONSTANT(target, kKeyVariantAES_ ## name);
   VARIANTS(V)
 #undef V
+}
+
+void AES::RegisterExternalReferences(ExternalReferenceRegistry* registry) {
+  AESCryptoJob::RegisterExternalReferences(registry);
 }
 
 }  // namespace crypto

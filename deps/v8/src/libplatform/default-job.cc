@@ -6,6 +6,7 @@
 
 #include "src/base/bits.h"
 #include "src/base/macros.h"
+#include "v8.h"
 
 namespace v8 {
 namespace platform {
@@ -41,6 +42,10 @@ DefaultJobState::~DefaultJobState() { DCHECK_EQ(0U, active_workers_); }
 
 void DefaultJobState::NotifyConcurrencyIncrease() {
   if (is_canceled_.load(std::memory_order_relaxed)) return;
+
+  if (recordreplay::AreEventsDisallowed()) {
+    return;
+  }
 
   size_t num_tasks_to_post = 0;
   TaskPriority priority;
@@ -122,10 +127,14 @@ void DefaultJobState::CancelAndWait() {
   }
 }
 
-bool DefaultJobState::IsCompleted() {
+void DefaultJobState::CancelAndDetach() {
+  is_canceled_.store(true, std::memory_order_relaxed);
+}
+
+bool DefaultJobState::IsActive() {
   base::MutexGuard guard(&mutex_);
-  return job_task_->GetMaxConcurrency(active_workers_) == 0 &&
-         active_workers_ == 0;
+  return job_task_->GetMaxConcurrency(active_workers_) != 0 ||
+         active_workers_ != 0;
 }
 
 bool DefaultJobState::CanRunFirstTask() {
@@ -204,6 +213,11 @@ void DefaultJobState::CallOnWorkerThread(TaskPriority priority,
   }
 }
 
+void DefaultJobState::UpdatePriority(TaskPriority priority) {
+  base::MutexGuard guard(&mutex_);
+  priority_ = priority;
+}
+
 DefaultJobHandle::DefaultJobHandle(std::shared_ptr<DefaultJobState> state)
     : state_(std::move(state)) {
   state_->NotifyConcurrencyIncrease();
@@ -220,7 +234,16 @@ void DefaultJobHandle::Cancel() {
   state_ = nullptr;
 }
 
-bool DefaultJobHandle::IsCompleted() { return state_->IsCompleted(); }
+void DefaultJobHandle::CancelAndDetach() {
+  state_->CancelAndDetach();
+  state_ = nullptr;
+}
+
+bool DefaultJobHandle::IsActive() { return state_->IsActive(); }
+
+void DefaultJobHandle::UpdatePriority(TaskPriority priority) {
+  state_->UpdatePriority(priority);
+}
 
 }  // namespace platform
 }  // namespace v8

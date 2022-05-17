@@ -7,7 +7,7 @@
 
 #include "libplatform/libplatform.h"
 #include "node_internals.h"
-#include "snapshot_builder.h"
+#include "node_snapshotable.h"
 #include "util-inl.h"
 #include "v8.h"
 
@@ -43,7 +43,7 @@ int main(int argc, char* argv[]) {
       node::InitializeOncePerProcess(node_argc, node_argv);
 #else
   node::InitializationResult result =
-      node::InitializeOncePerProcess(&argc, &argv);
+      node::InitializeOncePerProcess(argc, argv);
 #endif
 
   CHECK(!result.early_return);

@@ -214,6 +214,20 @@ namespace node {
 class IsolateData;
 class Environment;
 
+namespace ProcessFlags {
+enum Flags : uint64_t {
+  kNoFlags = 0,
+  // Enable stdio inheritance, which is disabled by default.
+  kEnableStdioInheritance = 1 << 0,
+  // Disable reading the NODE_OPTIONS environment variable.
+  kDisableNodeOptionsEnv = 1 << 1,
+  // Do not parse CLI options.
+  kDisableCLIOptions = 1 << 2,
+  // Do not initialize ICU.
+  kNoICU = 1 << 3,
+};
+}  // namespace ProcessFlags
+
 // TODO(addaleax): Officially deprecate this and replace it with something
 // better suited for a public embedder API.
 NODE_EXTERN int Start(int argc, char* argv[]);
@@ -226,9 +240,16 @@ NODE_EXTERN int Stop(Environment* env);
 // from argv, fill exec_argv, and possibly add errors resulting from parsing
 // the arguments to `errors`. The return value is a suggested exit code for the
 // program; If it is 0, then initializing Node.js succeeded.
-NODE_EXTERN int InitializeNodeWithArgs(std::vector<std::string>* argv,
-                                       std::vector<std::string>* exec_argv,
-                                       std::vector<std::string>* errors);
+NODE_EXTERN int InitializeNodeWithArgs(
+    std::vector<std::string>* argv,
+    std::vector<std::string>* exec_argv,
+    std::vector<std::string>* errors);
+// TODO(zcbenz): Turn above overloaded version into below's default argument.
+NODE_EXTERN int InitializeNodeWithArgs(
+    std::vector<std::string>* argv,
+    std::vector<std::string>* exec_argv,
+    std::vector<std::string>* errors,
+    ProcessFlags::Flags flags);
 
 enum OptionEnvvarSettings {
   kAllowedInEnvironment,
@@ -316,7 +337,8 @@ class NODE_EXTERN MultiIsolatePlatform : public v8::Platform {
 enum IsolateSettingsFlags {
   MESSAGE_LISTENER_WITH_ERROR_LEVEL = 1 << 0,
   DETAILED_SOURCE_POSITIONS_FOR_PROFILING = 1 << 1,
-  SHOULD_NOT_SET_PROMISE_REJECTION_CALLBACK = 1 << 2
+  SHOULD_NOT_SET_PROMISE_REJECTION_CALLBACK = 1 << 2,
+  SHOULD_NOT_SET_PREPARE_STACK_TRACE_CALLBACK = 1 << 3
 };
 
 struct IsolateSettings {
@@ -401,7 +423,22 @@ enum Flags : uint64_t {
   kNoRegisterESMLoader = 1 << 3,
   // Set this flag to make Node.js track "raw" file descriptors, i.e. managed
   // by fs.open() and fs.close(), and close them during FreeEnvironment().
-  kTrackUnmanagedFds = 1 << 4
+  kTrackUnmanagedFds = 1 << 4,
+  // Set this flag to force hiding console windows when spawning child
+  // processes. This is usually used when embedding Node.js in GUI programs on
+  // Windows.
+  kHideConsoleWindows = 1 << 5,
+  // Set this flag to disable loading native addons via `process.dlopen`.
+  // This environment flag is especially important for worker threads
+  // so that a worker thread can't load a native addon even if `execArgv`
+  // is overwritten and `--no-addons` is not specified but was specified
+  // for this Environment instance.
+  kNoNativeAddons = 1 << 6,
+  // Set this flag to disable searching modules from global paths like
+  // $HOME/.node_modules and $NODE_PATH. This is used by standalone apps that
+  // do not expect to have their behaviors changed because of globally
+  // installed modules.
+  kNoGlobalSearchPaths = 1 << 7
 };
 }  // namespace EnvironmentFlags
 
@@ -463,6 +500,8 @@ NODE_EXTERN void DefaultProcessExitHandler(Environment* env, int exit_code);
 
 // This may return nullptr if context is not associated with a Node instance.
 NODE_EXTERN Environment* GetCurrentEnvironment(v8::Local<v8::Context> context);
+NODE_EXTERN IsolateData* GetEnvironmentIsolateData(Environment* env);
+NODE_EXTERN ArrayBufferAllocator* GetArrayBufferAllocator(IsolateData* data);
 
 NODE_EXTERN void OnFatalError(const char* location, const char* message);
 NODE_EXTERN void PromiseRejectCallback(v8::PromiseRejectMessage message);
@@ -922,12 +961,26 @@ struct ACHHandle;
 struct NODE_EXTERN DeleteACHHandle { void operator()(ACHHandle*) const; };
 typedef std::unique_ptr<ACHHandle, DeleteACHHandle> AsyncCleanupHookHandle;
 
-NODE_EXTERN AsyncCleanupHookHandle AddEnvironmentCleanupHook(
+/* This function is not intended to be used externally, it exists to aid in
+ * keeping ABI compatibility between Node and Electron. */
+NODE_EXTERN ACHHandle* AddEnvironmentCleanupHookInternal(
     v8::Isolate* isolate,
     void (*fun)(void* arg, void (*cb)(void*), void* cbarg),
     void* arg);
+inline AsyncCleanupHookHandle AddEnvironmentCleanupHook(
+    v8::Isolate* isolate,
+    void (*fun)(void* arg, void (*cb)(void*), void* cbarg),
+    void* arg) {
+  return AsyncCleanupHookHandle(AddEnvironmentCleanupHookInternal(isolate, fun,
+      arg));
+}
 
-NODE_EXTERN void RemoveEnvironmentCleanupHook(AsyncCleanupHookHandle holder);
+/* This function is not intended to be used externally, it exists to aid in
+ * keeping ABI compatibility between Node and Electron. */
+NODE_EXTERN void RemoveEnvironmentCleanupHookInternal(ACHHandle* holder);
+inline void RemoveEnvironmentCleanupHook(AsyncCleanupHookHandle holder) {
+  RemoveEnvironmentCleanupHookInternal(holder.get());
+}
 
 /* Returns the id of the current execution context. If the return value is
  * zero then no execution has been set. This will happen if the user handles
@@ -985,6 +1038,9 @@ class InternalCallbackScope;
 class NODE_EXTERN CallbackScope {
  public:
   CallbackScope(v8::Isolate* isolate,
+                v8::Local<v8::Object> resource,
+                async_context asyncContext);
+  CallbackScope(Environment* env,
                 v8::Local<v8::Object> resource,
                 async_context asyncContext);
   ~CallbackScope();

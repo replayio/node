@@ -52,8 +52,14 @@ class TypedArrayBuiltinsAssembler : public CodeStubAssembler {
   void CallCMemmove(TNode<RawPtrT> dest_ptr, TNode<RawPtrT> src_ptr,
                     TNode<UintPtrT> byte_length);
 
+  void CallCRelaxedMemmove(TNode<RawPtrT> dest_ptr, TNode<RawPtrT> src_ptr,
+                           TNode<UintPtrT> byte_length);
+
   void CallCMemcpy(TNode<RawPtrT> dest_ptr, TNode<RawPtrT> src_ptr,
                    TNode<UintPtrT> byte_length);
+
+  void CallCRelaxedMemcpy(TNode<RawPtrT> dest_ptr, TNode<RawPtrT> src_ptr,
+                          TNode<UintPtrT> byte_length);
 
   void CallCMemset(TNode<RawPtrT> dest_ptr, TNode<IntPtrT> value,
                    TNode<UintPtrT> length);
@@ -77,6 +83,7 @@ class TypedArrayBuiltinsAssembler : public CodeStubAssembler {
   void DispatchTypedArrayByElementsKind(
       TNode<Word32T> elements_kind, const TypedArraySwitchCase& case_function);
 
+  void AllocateJSTypedArrayExternalPointerEntry(TNode<JSTypedArray> holder);
   void SetJSTypedArrayOnHeapDataPtr(TNode<JSTypedArray> holder,
                                     TNode<ByteArray> base,
                                     TNode<UintPtrT> offset);
@@ -94,6 +101,11 @@ class TypedArrayBuiltinsAssembler : public CodeStubAssembler {
                                           TNode<Object> value,
                                           ElementsKind elements_kind,
                                           Label* if_detached);
+  template <typename TValue>
+  void StoreJSTypedArrayElementFromPreparedValue(
+      TNode<Context> context, TNode<JSTypedArray> typed_array,
+      TNode<UintPtrT> index_node, TNode<TValue> value,
+      ElementsKind elements_kind, Label* if_detached);
 };
 
 }  // namespace internal

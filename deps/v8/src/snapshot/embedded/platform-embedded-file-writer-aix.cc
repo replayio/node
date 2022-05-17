@@ -4,6 +4,8 @@
 
 #include "src/snapshot/embedded/platform-embedded-file-writer-aix.h"
 
+#include "src/objects/code.h"
+
 namespace v8 {
 namespace internal {
 
@@ -27,7 +29,7 @@ const char* DirectiveAsString(DataDirective directive) {
 }  // namespace
 
 void PlatformEmbeddedFileWriterAIX::SectionText() {
-  fprintf(fp_, ".csect .text[PR]\n");
+  fprintf(fp_, ".csect [GL], 5\n");
 }
 
 void PlatformEmbeddedFileWriterAIX::SectionData() {
@@ -63,10 +65,12 @@ void PlatformEmbeddedFileWriterAIX::DeclareSymbolGlobal(const char* name) {
 }
 
 void PlatformEmbeddedFileWriterAIX::AlignToCodeAlignment() {
+  STATIC_ASSERT((1 << 5) >= kCodeAlignment);
   fprintf(fp_, ".align 5\n");
 }
 
 void PlatformEmbeddedFileWriterAIX::AlignToDataAlignment() {
+  STATIC_ASSERT((1 << 3) >= Code::kMetadataAlignment);
   fprintf(fp_, ".align 3\n");
 }
 

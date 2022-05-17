@@ -21,10 +21,10 @@
 namespace v8 {
 namespace internal {
 
+class CompactionSpace;
 class Heap;
 class HeapObject;
 class Isolate;
-class LocalSpace;
 class ObjectVisitor;
 
 // -----------------------------------------------------------------------------
@@ -71,9 +71,10 @@ class V8_EXPORT_PRIVATE PagedSpace
   static const size_t kCompactionMemoryWanted = 500 * KB;
 
   // Creates a space with an id.
-  PagedSpace(Heap* heap, AllocationSpace id, Executability executable,
-             FreeList* free_list,
-             LocalSpaceKind local_space_kind = LocalSpaceKind::kNone);
+  PagedSpace(
+      Heap* heap, AllocationSpace id, Executability executable,
+      FreeList* free_list,
+      CompactionSpaceKind compaction_space_kind = CompactionSpaceKind::kNone);
 
   ~PagedSpace() override { TearDown(); }
 
@@ -175,7 +176,7 @@ class V8_EXPORT_PRIVATE PagedSpace
     return size_in_bytes - wasted;
   }
 
-  inline bool TryFreeLast(HeapObject object, int object_size);
+  inline bool TryFreeLast(Address object_address, int object_size);
 
   void ResetFreeList();
 
@@ -256,19 +257,15 @@ class V8_EXPORT_PRIVATE PagedSpace
   // Return size of allocatable area on a page in this space.
   inline int AreaSize() { return static_cast<int>(area_size_); }
 
-  bool is_local_space() { return local_space_kind_ != LocalSpaceKind::kNone; }
-
   bool is_compaction_space() {
-    return base::IsInRange(local_space_kind_,
-                           LocalSpaceKind::kFirstCompactionSpace,
-                           LocalSpaceKind::kLastCompactionSpace);
+    return compaction_space_kind_ != CompactionSpaceKind::kNone;
   }
 
-  LocalSpaceKind local_space_kind() { return local_space_kind_; }
+  CompactionSpaceKind compaction_space_kind() { return compaction_space_kind_; }
 
   // Merges {other} into the current space. Note that this modifies {other},
   // e.g., removes its bump pointer area and resets statistics.
-  void MergeLocalSpace(LocalSpace* other);
+  void MergeCompactionSpace(CompactionSpace* other);
 
   // Refills the free list from the corresponding free list filled by the
   // sweeper.
@@ -300,6 +297,21 @@ class V8_EXPORT_PRIVATE PagedSpace
 
   void SetLinearAllocationArea(Address top, Address limit);
 
+  Address original_top() { return original_top_; }
+
+  Address original_limit() { return original_limit_; }
+
+  void MoveOriginalTopForward() {
+    base::SharedMutexGuard<base::kExclusive> guard(&pending_allocation_mutex_);
+    DCHECK_GE(top(), original_top_);
+    DCHECK_LE(top(), original_limit_);
+    original_top_ = top();
+  }
+
+  base::SharedMutex* pending_allocation_mutex() {
+    return &pending_allocation_mutex_;
+  }
+
  private:
   class ConcurrentAllocationMutex {
    public:
@@ -312,15 +324,13 @@ class V8_EXPORT_PRIVATE PagedSpace
     base::Optional<base::MutexGuard> guard_;
   };
 
-  bool SupportsConcurrentAllocation() {
-    return FLAG_concurrent_allocation && !is_local_space();
-  }
+  bool SupportsConcurrentAllocation() { return !is_compaction_space(); }
 
   // Set space linear allocation area.
   void SetTopAndLimit(Address top, Address limit);
   void DecreaseLimit(Address new_limit);
   void UpdateInlineAllocationLimit(size_t min_size) override;
-  bool SupportsAllocationObserver() override { return !is_local_space(); }
+  bool SupportsAllocationObserver() override { return !is_compaction_space(); }
 
   // Slow path of allocation function
   V8_WARN_UNUSED_RESULT AllocationResult
@@ -342,7 +352,13 @@ class V8_EXPORT_PRIVATE PagedSpace
   // it cannot allocate requested number of pages from OS, or if the hard heap
   // size limit has been hit.
   virtual Page* Expand();
-  Page* ExpandBackground(LocalHeap* local_heap);
+
+  // Expands the space by a single page from a background thread and allocates
+  // a memory area of the given size in it. If successful the method returns
+  // the address and size of the area.
+  base::Optional<std::pair<Address, size_t>> ExpandBackground(
+      LocalHeap* local_heap, size_t size_in_bytes);
+
   Page* AllocatePage();
 
   // Sets up a linear allocation area that fits the given number of bytes.
@@ -386,9 +402,12 @@ class V8_EXPORT_PRIVATE PagedSpace
                                       AllocationAlignment alignment,
                                       AllocationOrigin origin);
 
+  V8_WARN_UNUSED_RESULT bool TryExpand(int size_in_bytes,
+                                       AllocationOrigin origin);
+
   Executability executable_;
 
-  LocalSpaceKind local_space_kind_;
+  CompactionSpaceKind compaction_space_kind_;
 
   size_t area_size_;
 
@@ -398,6 +417,14 @@ class V8_EXPORT_PRIVATE PagedSpace
   // Mutex guarding any concurrent access to the space.
   base::Mutex space_mutex_;
 
+  // The top and the limit at the time of setting the linear allocation area.
+  // These values are protected by pending_allocation_mutex_.
+  Address original_top_;
+  Address original_limit_;
+
+  // Protects original_top_ and original_limit_.
+  base::SharedMutex pending_allocation_mutex_;
+
   friend class IncrementalMarking;
   friend class MarkCompactCollector;
 
@@ -406,20 +433,23 @@ class V8_EXPORT_PRIVATE PagedSpace
 };
 
 // -----------------------------------------------------------------------------
-// Base class for compaction space and off-thread space.
+// Compaction space that is used temporarily during compaction.
 
-class V8_EXPORT_PRIVATE LocalSpace : public PagedSpace {
+class V8_EXPORT_PRIVATE CompactionSpace : public PagedSpace {
  public:
-  LocalSpace(Heap* heap, AllocationSpace id, Executability executable,
-             LocalSpaceKind local_space_kind)
+  CompactionSpace(Heap* heap, AllocationSpace id, Executability executable,
+                  CompactionSpaceKind compaction_space_kind)
       : PagedSpace(heap, id, executable, FreeList::CreateFreeList(),
-                   local_space_kind) {
-    DCHECK_NE(local_space_kind, LocalSpaceKind::kNone);
+                   compaction_space_kind) {
+    DCHECK(is_compaction_space());
   }
 
   const std::vector<Page*>& GetNewPages() { return new_pages_; }
 
  protected:
+  V8_WARN_UNUSED_RESULT bool RefillLabMain(int size_in_bytes,
+                                           AllocationOrigin origin) override;
+
   Page* Expand() override;
   // The space is temporary and not included in any snapshots.
   bool snapshotable() override { return false; }
@@ -428,31 +458,15 @@ class V8_EXPORT_PRIVATE LocalSpace : public PagedSpace {
   std::vector<Page*> new_pages_;
 };
 
-// -----------------------------------------------------------------------------
-// Compaction space that is used temporarily during compaction.
-
-class V8_EXPORT_PRIVATE CompactionSpace : public LocalSpace {
- public:
-  CompactionSpace(Heap* heap, AllocationSpace id, Executability executable,
-                  LocalSpaceKind local_space_kind)
-      : LocalSpace(heap, id, executable, local_space_kind) {
-    DCHECK(is_compaction_space());
-  }
-
- protected:
-  V8_WARN_UNUSED_RESULT bool RefillLabMain(int size_in_bytes,
-                                           AllocationOrigin origin) override;
-};
-
 // A collection of |CompactionSpace|s used by a single compaction task.
 class CompactionSpaceCollection : public Malloced {
  public:
   explicit CompactionSpaceCollection(Heap* heap,
-                                     LocalSpaceKind local_space_kind)
+                                     CompactionSpaceKind compaction_space_kind)
       : old_space_(heap, OLD_SPACE, Executability::NOT_EXECUTABLE,
-                   local_space_kind),
+                   compaction_space_kind),
         code_space_(heap, CODE_SPACE, Executability::EXECUTABLE,
-                    local_space_kind) {}
+                    compaction_space_kind) {}
 
   CompactionSpace* Get(AllocationSpace space) {
     switch (space) {
@@ -512,7 +526,8 @@ class MapSpace : public PagedSpace {
  public:
   // Creates a map space object.
   explicit MapSpace(Heap* heap)
-      : PagedSpace(heap, MAP_SPACE, NOT_EXECUTABLE, new FreeListMap()) {}
+      : PagedSpace(heap, MAP_SPACE, NOT_EXECUTABLE,
+                   FreeList::CreateFreeList()) {}
 
   int RoundSizeDownToObjectAlignment(int size) override {
     if (base::bits::IsPowerOfTwo(Map::kSize)) {

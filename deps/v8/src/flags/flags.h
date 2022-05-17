@@ -8,14 +8,13 @@
 #include <vector>
 
 #include "src/common/globals.h"
-#include "src/wasm/wasm-limits.h"
 
 namespace v8 {
 namespace internal {
 
 // Declare all of our flags.
 #define FLAG_MODE_DECLARE
-#include "src/flags/flag-definitions.h"  // NOLINT
+#include "src/flags/flag-definitions.h"
 
 // The global list of all flags.
 class V8_EXPORT_PRIVATE FlagList {

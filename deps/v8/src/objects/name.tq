@@ -3,9 +3,8 @@
 // found in the LICENSE file.
 
 @abstract
-@generateCppClass
 extern class Name extends PrimitiveHeapObject {
-  hash_field: NameHash;
+  raw_hash_field: NameHash;
 }
 
 bitfield struct NameHash extends uint32 {
@@ -28,7 +27,6 @@ bitfield struct SymbolFlags extends uint32 {
   is_private_brand: bool: 1 bit;
 }
 
-@generateCppClass
 extern class Symbol extends Name {
   flags: SymbolFlags;
   description: String|Undefined;

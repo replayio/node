@@ -67,12 +67,9 @@ void MarkCompactCollector::RecordSlot(HeapObject object, ObjectSlot slot,
 
 void MarkCompactCollector::RecordSlot(HeapObject object, HeapObjectSlot slot,
                                       HeapObject target) {
-  BasicMemoryChunk* target_page = BasicMemoryChunk::FromHeapObject(target);
   MemoryChunk* source_page = MemoryChunk::FromHeapObject(object);
-  if (target_page->IsEvacuationCandidate<AccessMode::ATOMIC>() &&
-      !source_page->ShouldSkipEvacuationSlotRecording<AccessMode::ATOMIC>()) {
-    RememberedSet<OLD_TO_OLD>::Insert<AccessMode::ATOMIC>(source_page,
-                                                          slot.address());
+  if (!source_page->ShouldSkipEvacuationSlotRecording<AccessMode::ATOMIC>()) {
+    RecordSlot(source_page, slot, target);
   }
 }
 
@@ -80,8 +77,14 @@ void MarkCompactCollector::RecordSlot(MemoryChunk* source_page,
                                       HeapObjectSlot slot, HeapObject target) {
   BasicMemoryChunk* target_page = BasicMemoryChunk::FromHeapObject(target);
   if (target_page->IsEvacuationCandidate<AccessMode::ATOMIC>()) {
-    RememberedSet<OLD_TO_OLD>::Insert<AccessMode::ATOMIC>(source_page,
-                                                          slot.address());
+    if (V8_EXTERNAL_CODE_SPACE_BOOL &&
+        target_page->IsFlagSet(MemoryChunk::IS_EXECUTABLE)) {
+      RememberedSet<OLD_TO_CODE>::Insert<AccessMode::ATOMIC>(source_page,
+                                                             slot.address());
+    } else {
+      RememberedSet<OLD_TO_OLD>::Insert<AccessMode::ATOMIC>(source_page,
+                                                            slot.address());
+    }
   }
 }
 
@@ -135,8 +138,8 @@ void MainMarkingVisitor<MarkingState>::MarkDescriptorArrayFromWriteBarrier(
 }
 
 template <LiveObjectIterationMode mode>
-LiveObjectRange<mode>::iterator::iterator(MemoryChunk* chunk, Bitmap* bitmap,
-                                          Address start)
+LiveObjectRange<mode>::iterator::iterator(const MemoryChunk* chunk,
+                                          Bitmap* bitmap, Address start)
     : chunk_(chunk),
       one_word_filler_map_(
           ReadOnlyRoots(chunk->heap()).one_pointer_filler_map()),
@@ -205,9 +208,10 @@ void LiveObjectRange<mode>::iterator::AdvanceToNextValidObject() {
         // make sure that we skip all set bits in the black area until the
         // object ends.
         HeapObject black_object = HeapObject::FromAddress(addr);
-        Object map_object = ObjectSlot(addr).Acquire_Load();
+        Object map_object = black_object.map(kAcquireLoad);
         CHECK(map_object.IsMap());
         map = Map::cast(map_object);
+        DCHECK(map.IsMap());
         size = black_object.SizeFromMap(map);
         CHECK_LE(addr + size, chunk_->area_end());
         Address end = addr + size - kTaggedSize;
@@ -235,10 +239,11 @@ void LiveObjectRange<mode>::iterator::AdvanceToNextValidObject() {
           object = black_object;
         }
       } else if ((mode == kGreyObjects || mode == kAllLiveObjects)) {
-        Object map_object = ObjectSlot(addr).Acquire_Load();
+        object = HeapObject::FromAddress(addr);
+        Object map_object = object.map(kAcquireLoad);
         CHECK(map_object.IsMap());
         map = Map::cast(map_object);
-        object = HeapObject::FromAddress(addr);
+        DCHECK(map.IsMap());
         size = object.SizeFromMap(map);
         CHECK_LE(addr + size, chunk_->area_end());
       }

@@ -4,7 +4,7 @@
 
 // Flags: --expose-wasm
 
-load('test/mjsunit/wasm/wasm-module-builder.js');
+d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
 function assertEq(val, expected) {
   assertSame(expected, val);
@@ -580,7 +580,7 @@ assertTrue(isConstructor(Table));
 assertThrows(
     () => Table(), TypeError, /must be invoked with 'new'/);
 assertThrows(
-    () => new Table(1), TypeError, 'WebAssembly.Module(): Argument 0 must be a table descriptor');
+    () => new Table(1), TypeError, 'WebAssembly.Table(): Argument 0 must be a table descriptor');
 assertThrows(
     () => new Table({initial: 1, element: 1}), TypeError, /must be a WebAssembly reference type/);
 assertThrows(

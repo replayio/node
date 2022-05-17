@@ -11,6 +11,7 @@
 #include "src/heap/cppgc/heap-page.h"
 #include "src/heap/cppgc/heap.h"
 #include "src/heap/cppgc/liveness-broker.h"
+#include "src/heap/cppgc/stats-collector.h"
 
 namespace cppgc {
 namespace internal {
@@ -20,7 +21,7 @@ void PreFinalizerRegistrationDispatcher::RegisterPrefinalizer(
     PreFinalizer pre_finalizer) {
   BasePage::FromPayload(pre_finalizer.object)
       ->heap()
-      ->prefinalizer_handler()
+      .prefinalizer_handler()
       ->RegisterPrefinalizer(pre_finalizer);
 }
 
@@ -29,9 +30,11 @@ bool PreFinalizerRegistrationDispatcher::PreFinalizer::operator==(
   return (object == other.object) && (callback == other.callback);
 }
 
-PreFinalizerHandler::PreFinalizerHandler()
+PreFinalizerHandler::PreFinalizerHandler(HeapBase& heap)
+    : heap_(heap)
 #ifdef DEBUG
-    : creation_thread_id_(v8::base::OS::GetCurrentThreadId())
+      ,
+      creation_thread_id_(v8::base::OS::GetCurrentThreadId())
 #endif
 {
 }
@@ -45,8 +48,12 @@ void PreFinalizerHandler::RegisterPrefinalizer(PreFinalizer pre_finalizer) {
 }
 
 void PreFinalizerHandler::InvokePreFinalizers() {
+  StatsCollector::DisabledScope stats_scope(
+      heap_.stats_collector(), StatsCollector::kSweepInvokePreFinalizers);
+
   DCHECK(CurrentThreadIsCreationThread());
   LivenessBroker liveness_broker = LivenessBrokerFactory::Create();
+  is_invoking_ = true;
   ordered_pre_finalizers_.erase(
       ordered_pre_finalizers_.begin(),
       std::remove_if(ordered_pre_finalizers_.rbegin(),
@@ -55,6 +62,7 @@ void PreFinalizerHandler::InvokePreFinalizers() {
                        return (pf.callback)(liveness_broker, pf.object);
                      })
           .base());
+  is_invoking_ = false;
   ordered_pre_finalizers_.shrink_to_fit();
 }
 

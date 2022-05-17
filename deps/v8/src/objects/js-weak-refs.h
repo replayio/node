@@ -17,6 +17,8 @@ namespace internal {
 class NativeContext;
 class WeakCell;
 
+#include "torque-generated/src/objects/js-weak-refs-tq.inc"
+
 // FinalizationRegistry object from the JS Weak Refs spec proposal:
 // https://github.com/tc39/proposal-weakrefs
 class JSFinalizationRegistry : public JSObject {
@@ -90,6 +92,9 @@ class WeakCell : public TorqueGeneratedWeakCell<WeakCell, HeapObject> {
 
   // Provide relaxed load access to target field.
   inline HeapObject relaxed_target() const;
+
+  // Provide relaxed load access to the unregister token field.
+  inline HeapObject relaxed_unregister_token() const;
 
   // Nullify is called during GC and it modifies the pointers in WeakCell and
   // JSFinalizationRegistry. Thus we need to tell the GC about the modified

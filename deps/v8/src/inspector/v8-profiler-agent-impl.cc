@@ -150,10 +150,11 @@ std::unique_ptr<protocol::Debugger::Location> currentDebugLocation(
     V8InspectorImpl* inspector) {
   std::unique_ptr<V8StackTraceImpl> callStack =
       inspector->debugger()->captureStackTrace(false /* fullStack */);
-  auto location = protocol::Debugger::Location::create()
-                      .setScriptId(toString16(callStack->topScriptId()))
-                      .setLineNumber(callStack->topLineNumber())
-                      .build();
+  auto location =
+      protocol::Debugger::Location::create()
+          .setScriptId(String16::fromInteger(callStack->topScriptId()))
+          .setLineNumber(callStack->topLineNumber())
+          .build();
   location->setColumnNumber(callStack->topColumnNumber());
   return location;
 }
@@ -448,7 +449,7 @@ Response V8ProfilerAgentImpl::takePreciseCoverage(
 }
 
 void V8ProfilerAgentImpl::triggerPreciseCoverageDeltaUpdate(
-    const String16& occassion) {
+    const String16& occasion) {
   if (!m_state->booleanProperty(ProfilerAgentState::preciseCoverageStarted,
                                 false)) {
     return;
@@ -464,7 +465,7 @@ void V8ProfilerAgentImpl::triggerPreciseCoverageDeltaUpdate(
   coverageToProtocol(m_session->inspector(), coverage, &out_result);
   double now =
       v8::base::TimeTicks::HighResolutionNow().since_origin().InSecondsF();
-  m_frontend.preciseCoverageDeltaUpdate(now, occassion, std::move(out_result));
+  m_frontend.preciseCoverageDeltaUpdate(now, occasion, std::move(out_result));
 }
 
 Response V8ProfilerAgentImpl::getBestEffortCoverage(

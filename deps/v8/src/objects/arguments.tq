@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-@generateCppClass
-extern class JSArgumentsObject extends JSObject {
-}
+extern class JSArgumentsObject extends JSObject {}
 
 type JSArgumentsObjectWithLength =
     JSSloppyArgumentsObject|JSStrictArgumentsObject;
@@ -16,12 +14,14 @@ macro IsJSArgumentsObjectWithLength(implicit context: Context)(o: Object):
 }
 
 // Just a starting shape for JSObject; properties can move after initialization.
+@doNotGenerateCppClass
 extern shape JSSloppyArgumentsObject extends JSArgumentsObject {
   length: JSAny;
   callee: JSAny;
 }
 
 // Just a starting shape for JSObject; properties can move after initialization.
+@doNotGenerateCppClass
 extern shape JSStrictArgumentsObject extends JSArgumentsObject {
   length: JSAny;
 }
@@ -80,7 +80,7 @@ extern shape JSStrictArgumentsObject extends JSArgumentsObject {
 class SloppyArgumentsElements extends FixedArrayBase {
   context: Context;
   arguments: FixedArray|NumberDictionary;
-  mapped_entries[length]: Smi|TheHole;
+  @cppRelaxedLoad mapped_entries[length]: Smi|TheHole;
 }
 
 macro NewSloppyArgumentsElements<Iterator: type>(
@@ -90,7 +90,6 @@ macro NewSloppyArgumentsElements<Iterator: type>(
   SloppyArgumentsElements{length, context, arguments, mapped_entries: ...it};
 }
 
-@generateCppClass
 @generatePrint
 extern class AliasedArgumentsEntry extends Struct {
   aliased_context_slot: Smi;
@@ -315,6 +314,21 @@ builtin NewRestArgumentsElements(
     argumentCount: Smi): FixedArray {
   return arguments::NewRestArgumentsElements(
       frame, formalParameterCount, Convert<intptr>(argumentCount));
+}
+
+builtin FastNewSloppyArguments(implicit context: Context)(f: JSFunction):
+    JSSloppyArgumentsObject {
+  return EmitFastNewSloppyArguments(f);
+}
+
+builtin FastNewStrictArguments(implicit context: Context)(f: JSFunction):
+    JSStrictArgumentsObject {
+  return EmitFastNewStrictArguments(f);
+}
+
+builtin FastNewRestArguments(implicit context: Context)(f: JSFunction):
+    JSArray {
+  return EmitFastNewRestArguments(f);
 }
 
 macro

@@ -149,8 +149,8 @@ BUILTIN(DateTimeFormatPrototypeFormatToParts) {
         isolate, NewRangeError(MessageTemplate::kInvalidTimeValue));
   }
 
-  RETURN_RESULT_OR_FAILURE(
-      isolate, JSDateTimeFormat::FormatToParts(isolate, dtf, date_value));
+  RETURN_RESULT_OR_FAILURE(isolate, JSDateTimeFormat::FormatToParts(
+                                        isolate, dtf, date_value, false));
 }
 
 // Common code for DateTimeFormatPrototypeFormtRange(|ToParts)
@@ -220,9 +220,10 @@ BUILTIN(DateTimeFormatPrototypeFormatRangeToParts) {
 }
 
 namespace {
+
 Handle<JSFunction> CreateBoundFunction(Isolate* isolate,
-                                       Handle<JSObject> object,
-                                       Builtins::Name builtin_id, int len) {
+                                       Handle<JSObject> object, Builtin builtin,
+                                       int len) {
   Handle<NativeContext> native_context(isolate->context().native_context(),
                                        isolate);
   Handle<Context> context = isolate->factory()->NewBuiltinContext(
@@ -234,15 +235,13 @@ Handle<JSFunction> CreateBoundFunction(Isolate* isolate,
 
   Handle<SharedFunctionInfo> info =
       isolate->factory()->NewSharedFunctionInfoForBuiltin(
-          isolate->factory()->empty_string(), builtin_id, kNormalFunction);
+          isolate->factory()->empty_string(), builtin, kNormalFunction);
   info->set_internal_formal_parameter_count(len);
   info->set_length(len);
 
-  Handle<Map> map = isolate->strict_function_without_prototype_map();
-
-  Handle<JSFunction> new_bound_function =
-      isolate->factory()->NewFunctionFromSharedFunctionInfo(map, info, context);
-  return new_bound_function;
+  return Factory::JSFunctionBuilder{isolate, info, context}
+      .set_map(isolate->strict_function_without_prototype_map())
+      .Build();
 }
 
 /**
@@ -281,16 +280,14 @@ Object LegacyFormatConstructor(BuiltinArguments args, Isolate* isolate,
   // 4. Let this be the this value.
   if (args.new_target()->IsUndefined(isolate)) {
     Handle<Object> receiver = args.receiver();
-
-    // 5. If NewTarget is undefined and ? InstanceofOperator(this, %<T>%)
+    // 5. If NewTarget is undefined and ? OrdinaryHasInstance(%<T>%, this)
     // is true, then Look up the intrinsic value that has been stored on
     // the context.
-    Handle<Object> is_instance_of_obj;
+    Handle<Object> ordinary_has_instance_obj;
     ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-        isolate, is_instance_of_obj,
-        Object::InstanceOf(isolate, receiver, constructor));
-
-    if (is_instance_of_obj->BooleanValue(isolate)) {
+        isolate, ordinary_has_instance_obj,
+        Object::OrdinaryHasInstance(isolate, constructor, receiver));
+    if (ordinary_has_instance_obj->BooleanValue(isolate)) {
       if (!receiver->IsJSReceiver()) {
         THROW_NEW_ERROR_RETURN_FAILURE(
             isolate,
@@ -381,6 +378,7 @@ Object CallOrConstructConstructor(BuiltinArguments args, Isolate* isolate,
   RETURN_RESULT_OR_FAILURE(isolate,
                            T::New(isolate, map, locales, options, method));
 }
+
 }  // namespace
 
 // Intl.DisplayNames
@@ -471,7 +469,7 @@ BUILTIN(NumberFormatPrototypeFormatNumber) {
   }
 
   Handle<JSFunction> new_bound_format_function = CreateBoundFunction(
-      isolate, number_format, Builtins::kNumberFormatInternalFormatNumber, 1);
+      isolate, number_format, Builtin::kNumberFormatInternalFormatNumber, 1);
 
   // 4. c. Set nf.[[BoundFormat]] to F.
   number_format->set_bound_format(*new_bound_format_function);
@@ -543,7 +541,7 @@ BUILTIN(DateTimeFormatPrototypeFormat) {
   }
 
   Handle<JSFunction> new_bound_format_function = CreateBoundFunction(
-      isolate, format, Builtins::kDateTimeFormatInternalFormat, 1);
+      isolate, format, Builtin::kDateTimeFormatInternalFormat, 1);
 
   // 4.c. Set dtf.[[BoundFormat]] to F.
   format->set_bound_format(*new_bound_format_function);
@@ -610,11 +608,12 @@ BUILTIN(LocaleConstructor) {
 
   isolate->CountUsage(v8::Isolate::UseCounterFeature::kLocale);
 
+  const char* method = "Intl.Locale";
   if (args.new_target()->IsUndefined(isolate)) {  // [[Call]]
     THROW_NEW_ERROR_RETURN_FAILURE(
-        isolate, NewTypeError(MessageTemplate::kConstructorNotFunction,
-                              isolate->factory()->NewStringFromAsciiChecked(
-                                  "Intl.Locale")));
+        isolate,
+        NewTypeError(MessageTemplate::kConstructorNotFunction,
+                     isolate->factory()->NewStringFromAsciiChecked(method)));
   }
   // [[Construct]]
   Handle<JSFunction> target = args.target();
@@ -647,16 +646,11 @@ BUILTIN(LocaleConstructor) {
                                        Object::ToString(isolate, tag));
   }
 
+  // 10. Set options to ? CoerceOptionsToObject(options).
   Handle<JSReceiver> options_object;
-  // 10. If options is undefined, then
-  if (options->IsUndefined(isolate)) {
-    // a. Let options be ! ObjectCreate(null).
-    options_object = isolate->factory()->NewJSObjectWithNullProto();
-  } else {  // 11. Else
-    // a. Let options be ? ToObject(options).
-    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, options_object,
-                                       Object::ToObject(isolate, options));
-  }
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, options_object,
+      Intl::CoerceOptionsToObject(isolate, options, method));
 
   RETURN_RESULT_OR_FAILURE(
       isolate, JSLocale::New(isolate, map, locale_string, options_object));
@@ -672,6 +666,49 @@ BUILTIN(LocalePrototypeMinimize) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.minimize");
   RETURN_RESULT_OR_FAILURE(isolate, JSLocale::Minimize(isolate, locale));
+}
+
+BUILTIN(LocalePrototypeCalendars) {
+  HandleScope scope(isolate);
+  CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.calendars");
+  RETURN_RESULT_OR_FAILURE(isolate, JSLocale::Calendars(isolate, locale));
+}
+
+BUILTIN(LocalePrototypeCollations) {
+  HandleScope scope(isolate);
+  CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.collations");
+  RETURN_RESULT_OR_FAILURE(isolate, JSLocale::Collations(isolate, locale));
+}
+
+BUILTIN(LocalePrototypeHourCycles) {
+  HandleScope scope(isolate);
+  CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.hourCycles");
+  RETURN_RESULT_OR_FAILURE(isolate, JSLocale::HourCycles(isolate, locale));
+}
+
+BUILTIN(LocalePrototypeNumberingSystems) {
+  HandleScope scope(isolate);
+  CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.numberingSystems");
+  RETURN_RESULT_OR_FAILURE(isolate,
+                           JSLocale::NumberingSystems(isolate, locale));
+}
+
+BUILTIN(LocalePrototypeTextInfo) {
+  HandleScope scope(isolate);
+  CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.textInfo");
+  RETURN_RESULT_OR_FAILURE(isolate, JSLocale::TextInfo(isolate, locale));
+}
+
+BUILTIN(LocalePrototypeTimeZones) {
+  HandleScope scope(isolate);
+  CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.timeZones");
+  RETURN_RESULT_OR_FAILURE(isolate, JSLocale::TimeZones(isolate, locale));
+}
+
+BUILTIN(LocalePrototypeWeekInfo) {
+  HandleScope scope(isolate);
+  CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.weekInfo");
+  RETURN_RESULT_OR_FAILURE(isolate, JSLocale::WeekInfo(isolate, locale));
 }
 
 BUILTIN(RelativeTimeFormatSupportedLocalesOf) {
@@ -927,7 +964,7 @@ BUILTIN(CollatorPrototypeCompare) {
   }
 
   Handle<JSFunction> new_bound_compare_function = CreateBoundFunction(
-      isolate, collator, Builtins::kCollatorInternalCompare, 2);
+      isolate, collator, Builtin::kCollatorInternalCompare, 2);
 
   // 4.c. Set collator.[[BoundCompare]] to F.
   collator->set_bound_compare(*new_bound_compare_function);
@@ -1076,7 +1113,7 @@ BUILTIN(V8BreakIteratorPrototypeAdoptText) {
   }
 
   Handle<JSFunction> new_bound_adopt_text_function = CreateBoundFunction(
-      isolate, break_iterator, Builtins::kV8BreakIteratorInternalAdoptText, 1);
+      isolate, break_iterator, Builtin::kV8BreakIteratorInternalAdoptText, 1);
   break_iterator->set_bound_adopt_text(*new_bound_adopt_text_function);
   return *new_bound_adopt_text_function;
 }
@@ -1112,7 +1149,7 @@ BUILTIN(V8BreakIteratorPrototypeFirst) {
   }
 
   Handle<JSFunction> new_bound_first_function = CreateBoundFunction(
-      isolate, break_iterator, Builtins::kV8BreakIteratorInternalFirst, 0);
+      isolate, break_iterator, Builtin::kV8BreakIteratorInternalFirst, 0);
   break_iterator->set_bound_first(*new_bound_first_function);
   return *new_bound_first_function;
 }
@@ -1142,7 +1179,7 @@ BUILTIN(V8BreakIteratorPrototypeNext) {
   }
 
   Handle<JSFunction> new_bound_next_function = CreateBoundFunction(
-      isolate, break_iterator, Builtins::kV8BreakIteratorInternalNext, 0);
+      isolate, break_iterator, Builtin::kV8BreakIteratorInternalNext, 0);
   break_iterator->set_bound_next(*new_bound_next_function);
   return *new_bound_next_function;
 }
@@ -1171,7 +1208,7 @@ BUILTIN(V8BreakIteratorPrototypeCurrent) {
   }
 
   Handle<JSFunction> new_bound_current_function = CreateBoundFunction(
-      isolate, break_iterator, Builtins::kV8BreakIteratorInternalCurrent, 0);
+      isolate, break_iterator, Builtin::kV8BreakIteratorInternalCurrent, 0);
   break_iterator->set_bound_current(*new_bound_current_function);
   return *new_bound_current_function;
 }
@@ -1200,7 +1237,7 @@ BUILTIN(V8BreakIteratorPrototypeBreakType) {
   }
 
   Handle<JSFunction> new_bound_break_type_function = CreateBoundFunction(
-      isolate, break_iterator, Builtins::kV8BreakIteratorInternalBreakType, 0);
+      isolate, break_iterator, Builtin::kV8BreakIteratorInternalBreakType, 0);
   break_iterator->set_bound_break_type(*new_bound_break_type_function);
   return *new_bound_break_type_function;
 }

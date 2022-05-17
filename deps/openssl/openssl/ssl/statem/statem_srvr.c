@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
  * Copyright 2005 Nokia. All rights reserved.
  *
@@ -437,6 +437,10 @@ static WRITE_TRAN ossl_statem_server13_write_transition(SSL *s)
             st->hand_state = TLS_ST_SW_CERT_REQ;
             return WRITE_TRAN_CONTINUE;
         }
+        if (s->ext.extra_tickets_expected > 0) {
+            st->hand_state = TLS_ST_SW_SESSION_TICKET;
+            return WRITE_TRAN_CONTINUE;
+        }
         /* Try to read from the client instead */
         return WRITE_TRAN_FINISHED;
 
@@ -527,7 +531,9 @@ static WRITE_TRAN ossl_statem_server13_write_transition(SSL *s)
          * Following an initial handshake we send the number of tickets we have
          * been configured for.
          */
-        if (s->hit || s->num_tickets <= s->sent_tickets) {
+        if (!SSL_IS_FIRST_HANDSHAKE(s) && s->ext.extra_tickets_expected > 0) {
+            return WRITE_TRAN_CONTINUE;
+        } else if (s->hit || s->num_tickets <= s->sent_tickets) {
             /* We've written enough tickets out. */
             st->hand_state = TLS_ST_OK;
         }
@@ -723,7 +729,8 @@ WORK_STATE ossl_statem_server_pre_work(SSL *s, WORK_STATE wst)
         return WORK_FINISHED_CONTINUE;
 
     case TLS_ST_SW_SESSION_TICKET:
-        if (SSL_IS_TLS13(s) && s->sent_tickets == 0) {
+        if (SSL_IS_TLS13(s) && s->sent_tickets == 0
+                && s->ext.extra_tickets_expected == 0) {
             /*
              * Actually this is the end of the handshake, but we're going
              * straight into writing the session ticket out. So we finish off
@@ -965,6 +972,16 @@ WORK_STATE ossl_statem_server_post_work(SSL *s, WORK_STATE wst)
                         SSL3_CC_APPLICATION | SSL3_CHANGE_CIPHER_SERVER_WRITE))
             /* SSLfatal() already called */
             return WORK_ERROR;
+
+#ifndef OPENSSL_NO_QUIC
+            if (SSL_IS_QUIC(s) && s->ext.early_data == SSL_EARLY_DATA_ACCEPTED) {
+                s->early_data_state = SSL_EARLY_DATA_FINISHED_READING;
+                if (!s->method->ssl3_enc->change_cipher_state(
+                        s, SSL3_CC_HANDSHAKE | SSL3_CHANGE_CIPHER_SERVER_READ))
+                    /* SSLfatal() already called */
+                    return WORK_ERROR;
+            }
+#endif
         }
         break;
 
@@ -1579,6 +1596,16 @@ MSG_PROCESS_RETURN tls_process_client_hello(SSL *s, PACKET *pkt)
                 goto err;
             }
         }
+#ifndef OPENSSL_NO_QUIC
+        if (SSL_IS_QUIC(s)) {
+            /* Any other QUIC checks on ClientHello here */
+            if (clienthello->session_id_len > 0) {
+                SSLfatal(s, SSL_AD_ILLEGAL_PARAMETER, SSL_F_TLS_PROCESS_CLIENT_HELLO,
+                         SSL_R_LENGTH_MISMATCH);
+                goto err;
+            }
+        }
+#endif
     }
 
     if (!PACKET_copy_all(&compression, clienthello->compressions,
@@ -2179,6 +2206,7 @@ int tls_handle_alpn(SSL *s)
             OPENSSL_free(s->s3->alpn_selected);
             s->s3->alpn_selected = OPENSSL_memdup(selected, selected_len);
             if (s->s3->alpn_selected == NULL) {
+                s->s3->alpn_selected_len = 0;
                 SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_F_TLS_HANDLE_ALPN,
                          ERR_R_INTERNAL_ERROR);
                 return 0;
@@ -2578,7 +2606,7 @@ int tls_construct_server_key_exchange(SSL *s, WPACKET *pkt)
 
         s->s3->tmp.pkey = ssl_generate_pkey(pkdhp);
         if (s->s3->tmp.pkey == NULL) {
-            /* SSLfatal() already called */
+            SSLfatal(s, SSL_AD_INTERNAL_ERROR, 0, ERR_R_INTERNAL_ERROR);
             goto err;
         }
 
@@ -2854,9 +2882,16 @@ int tls_construct_certificate_request(SSL *s, WPACKET *pkt)
         if (s->post_handshake_auth == SSL_PHA_REQUEST_PENDING) {
             OPENSSL_free(s->pha_context);
             s->pha_context_len = 32;
-            if ((s->pha_context = OPENSSL_malloc(s->pha_context_len)) == NULL
-                    || RAND_bytes(s->pha_context, s->pha_context_len) <= 0
-                    || !WPACKET_sub_memcpy_u8(pkt, s->pha_context, s->pha_context_len)) {
+            if ((s->pha_context = OPENSSL_malloc(s->pha_context_len)) == NULL) {
+                s->pha_context_len = 0;
+                SSLfatal(s, SSL_AD_INTERNAL_ERROR,
+                         SSL_F_TLS_CONSTRUCT_CERTIFICATE_REQUEST,
+                         ERR_R_INTERNAL_ERROR);
+                return 0;
+            }
+            if (RAND_bytes(s->pha_context, s->pha_context_len) <= 0
+                    || !WPACKET_sub_memcpy_u8(pkt, s->pha_context,
+                                              s->pha_context_len)) {
                 SSLfatal(s, SSL_AD_INTERNAL_ERROR,
                          SSL_F_TLS_CONSTRUCT_CERTIFICATE_REQUEST,
                          ERR_R_INTERNAL_ERROR);
@@ -2970,6 +3005,7 @@ static int tls_process_cke_psk_preamble(SSL *s, PACKET *pkt)
     OPENSSL_cleanse(psk, psklen);
 
     if (s->s3->tmp.psk == NULL) {
+        s->s3->tmp.psklen = 0;
         SSLfatal(s, SSL_AD_INTERNAL_ERROR,
                  SSL_F_TLS_PROCESS_CKE_PSK_PREAMBLE, ERR_R_MALLOC_FAILURE);
         return 0;
@@ -3509,6 +3545,7 @@ MSG_PROCESS_RETURN tls_process_client_key_exchange(SSL *s, PACKET *pkt)
 #ifndef OPENSSL_NO_PSK
     OPENSSL_clear_free(s->s3->tmp.psk, s->s3->tmp.psklen);
     s->s3->tmp.psk = NULL;
+    s->s3->tmp.psklen = 0;
 #endif
     return MSG_PROCESS_ERROR;
 }
@@ -3744,6 +3781,7 @@ MSG_PROCESS_RETURN tls_process_client_certificate(SSL *s, PACKET *pkt)
 
     sk_X509_pop_free(s->session->peer_chain, X509_free);
     s->session->peer_chain = sk;
+    sk = NULL;
 
     /*
      * Freeze the handshake buffer. For <TLS1.3 we do this after the CKE
@@ -3758,7 +3796,6 @@ MSG_PROCESS_RETURN tls_process_client_certificate(SSL *s, PACKET *pkt)
      * Inconsistency alert: cert_chain does *not* include the peer's own
      * certificate, while we do include it in statem_clnt.c
      */
-    sk = NULL;
 
     /* Save the current hash state for when we receive the CertificateVerify */
     if (SSL_IS_TLS13(s)) {
@@ -4118,6 +4155,7 @@ int tls_construct_new_session_ticket(SSL *s, WPACKET *pkt)
             s->session->ext.alpn_selected =
                 OPENSSL_memdup(s->s3->alpn_selected, s->s3->alpn_selected_len);
             if (s->session->ext.alpn_selected == NULL) {
+                s->session->ext.alpn_selected_len = 0;
                 SSLfatal(s, SSL_AD_INTERNAL_ERROR,
                          SSL_F_TLS_CONSTRUCT_NEW_SESSION_TICKET,
                          ERR_R_MALLOC_FAILURE);
@@ -4129,9 +4167,12 @@ int tls_construct_new_session_ticket(SSL *s, WPACKET *pkt)
     }
 
     if (tctx->generate_ticket_cb != NULL &&
-        tctx->generate_ticket_cb(s, tctx->ticket_cb_data) == 0)
+        tctx->generate_ticket_cb(s, tctx->ticket_cb_data) == 0) {
+        SSLfatal(s, SSL_AD_INTERNAL_ERROR,
+                 SSL_F_TLS_CONSTRUCT_NEW_SESSION_TICKET,
+                 ERR_R_INTERNAL_ERROR);
         goto err;
-
+    }
     /*
      * If we are using anti-replay protection then we behave as if
      * SSL_OP_NO_TICKET is set - we are caching tickets anyway so there
@@ -4161,10 +4202,13 @@ int tls_construct_new_session_ticket(SSL *s, WPACKET *pkt)
         /*
          * Increment both |sent_tickets| and |next_ticket_nonce|. |sent_tickets|
          * gets reset to 0 if we send more tickets following a post-handshake
-         * auth, but |next_ticket_nonce| does not.
+         * auth, but |next_ticket_nonce| does not.  If we're sending extra
+         * tickets, decrement the count of pending extra tickets.
          */
         s->sent_tickets++;
         s->next_ticket_nonce++;
+        if (s->ext.extra_tickets_expected > 0)
+            s->ext.extra_tickets_expected--;
         ssl_update_cache(s, SSL_SESS_CACHE_SERVER);
     }
 

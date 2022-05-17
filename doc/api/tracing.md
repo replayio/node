@@ -44,7 +44,7 @@ node --trace-event-categories v8,node,node.async_hooks server.js
 
 Prior versions of Node.js required the use of the `--trace-events-enabled`
 flag to enable trace events. This requirement has been removed. However, the
-`--trace-events-enabled` flag *may* still be used and will enable the
+`--trace-events-enabled` flag _may_ still be used and will enable the
 `node`, `node.async_hooks`, and `v8` trace event categories by default.
 
 ```bash
@@ -80,6 +80,17 @@ string that supports `${rotation}` and `${pid}`:
 node --trace-event-categories v8 --trace-event-file-pattern '${pid}-${rotation}.log' server.js
 ```
 
+To guarantee that the log file is properly generated after signal events like
+`SIGINT`, `SIGTERM`, or `SIGBREAK`, make sure to have the appropriate handlers
+in your code, such as:
+
+```js
+process.on('SIGINT', function onSigint() {
+  console.info('Received SIGINT.');
+  process.exit(130);  // Or applicable exit code depending on OS and signal
+});
+```
+
 The tracing system uses the same time source
 as the one used by `process.hrtime()`.
 However the trace-event timestamps are expressed in microseconds,
@@ -88,11 +99,13 @@ unlike `process.hrtime()` which returns nanoseconds.
 The features from this module are not available in [`Worker`][] threads.
 
 ## The `trace_events` module
+
 <!-- YAML
 added: v10.0.0
 -->
 
 ### `Tracing` object
+
 <!-- YAML
 added: v10.0.0
 -->
@@ -107,6 +120,7 @@ categories. Calling `tracing.disable()` will remove the categories from the
 set of enabled trace event categories.
 
 #### `tracing.categories`
+
 <!-- YAML
 added: v10.0.0
 -->
@@ -117,14 +131,15 @@ A comma-separated list of the trace event categories covered by this
 `Tracing` object.
 
 #### `tracing.disable()`
+
 <!-- YAML
 added: v10.0.0
 -->
 
 Disables this `Tracing` object.
 
-Only trace event categories *not* covered by other enabled `Tracing` objects
-and *not* specified by the `--trace-event-categories` flag will be disabled.
+Only trace event categories _not_ covered by other enabled `Tracing` objects
+and _not_ specified by the `--trace-event-categories` flag will be disabled.
 
 ```js
 const trace_events = require('trace_events');
@@ -143,6 +158,7 @@ console.log(trace_events.getEnabledCategories());
 ```
 
 #### `tracing.enable()`
+
 <!-- YAML
 added: v10.0.0
 -->
@@ -151,6 +167,7 @@ Enables this `Tracing` object for the set of categories covered by the
 `Tracing` object.
 
 #### `tracing.enabled`
+
 <!-- YAML
 added: v10.0.0
 -->
@@ -158,12 +175,13 @@ added: v10.0.0
 * {boolean} `true` only if the `Tracing` object has been enabled.
 
 ### `trace_events.createTracing(options)`
+
 <!-- YAML
 added: v10.0.0
 -->
 
 * `options` {Object}
-  * `categories` {string[]} An array of trace category names. Values included
+  * `categories` {string\[]} An array of trace category names. Values included
     in the array are coerced to a string when possible. An error will be
     thrown if the value cannot be coerced.
 * Returns: {Tracing}.
@@ -180,6 +198,7 @@ tracing.disable();
 ```
 
 ### `trace_events.getEnabledCategories()`
+
 <!-- YAML
 added: v10.0.0
 -->
@@ -188,7 +207,7 @@ added: v10.0.0
 
 Returns a comma-separated list of all currently-enabled trace event
 categories. The current set of enabled trace event categories is determined
-by the *union* of all currently-enabled `Tracing` objects and any categories
+by the _union_ of all currently-enabled `Tracing` objects and any categories
 enabled using the `--trace-event-categories` flag.
 
 Given the file `test.js` below, the command
@@ -209,5 +228,5 @@ console.log(trace_events.getEnabledCategories());
 
 [Performance API]: perf_hooks.md
 [V8]: v8.md
-[`Worker`]: worker_threads.md#worker_threads_class_worker
+[`Worker`]: worker_threads.md#class-worker
 [`async_hooks`]: async_hooks.md

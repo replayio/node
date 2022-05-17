@@ -168,7 +168,7 @@ void AsyncFromSyncBuiltinsAssembler::Generate_AsyncFromSyncIteratorMethod(
   TNode<Object> value_wrapper;
   {
     ScopedExceptionHandler handler(this, &reject_promise, &var_exception);
-    value_wrapper = CallBuiltin(Builtins::kPromiseResolve, native_context,
+    value_wrapper = CallBuiltin(Builtin::kPromiseResolve, native_context,
                                 promise_fun, value);
   }
 
@@ -180,14 +180,14 @@ void AsyncFromSyncBuiltinsAssembler::Generate_AsyncFromSyncIteratorMethod(
 
   // Perform ! PerformPromiseThen(valueWrapper,
   //     onFulfilled, undefined, promiseCapability).
-  args->PopAndReturn(CallBuiltin(Builtins::kPerformPromiseThen, context,
+  args->PopAndReturn(CallBuiltin(Builtin::kPerformPromiseThen, context,
                                  value_wrapper, on_fulfilled,
                                  UndefinedConstant(), promise));
 
   BIND(&reject_promise);
   {
     const TNode<Object> exception = var_exception.value();
-    CallBuiltin(Builtins::kRejectPromise, context, promise, exception,
+    CallBuiltin(Builtin::kRejectPromise, context, promise, exception,
                 TrueConstant());
     args->PopAndReturn(promise);
   }
@@ -259,7 +259,7 @@ AsyncFromSyncBuiltinsAssembler::LoadIteratorResult(
   BIND(&to_boolean);
   {
     const TNode<Object> result =
-        CallBuiltin(Builtins::kToBoolean, context, var_done.value());
+        CallBuiltin(Builtin::kToBoolean, context, var_done.value());
     var_done = result;
     Goto(&done);
   }
@@ -274,12 +274,12 @@ AsyncFromSyncBuiltinsAssembler::LoadIteratorResult(
 // Section #sec-%asyncfromsynciteratorprototype%.next
 TF_BUILTIN(AsyncFromSyncIteratorPrototypeNext, AsyncFromSyncBuiltinsAssembler) {
   TNode<IntPtrT> argc = ChangeInt32ToIntPtr(
-      UncheckedCast<Int32T>(Parameter(Descriptor::kJSActualArgumentsCount)));
+      UncheckedParameter<Int32T>(Descriptor::kJSActualArgumentsCount));
   CodeStubArguments args(this, argc);
 
   const TNode<Object> iterator = args.GetReceiver();
   const TNode<Object> value = args.GetOptionalArgumentValue(kValueOrReasonArg);
-  const TNode<Context> context = CAST(Parameter(Descriptor::kContext));
+  const auto context = Parameter<Context>(Descriptor::kContext);
 
   auto get_method = [=](const TNode<JSReceiver> unused) {
     return LoadObjectField(CAST(iterator),
@@ -295,12 +295,12 @@ TF_BUILTIN(AsyncFromSyncIteratorPrototypeNext, AsyncFromSyncBuiltinsAssembler) {
 TF_BUILTIN(AsyncFromSyncIteratorPrototypeReturn,
            AsyncFromSyncBuiltinsAssembler) {
   TNode<IntPtrT> argc = ChangeInt32ToIntPtr(
-      UncheckedCast<Int32T>(Parameter(Descriptor::kJSActualArgumentsCount)));
+      UncheckedParameter<Int32T>(Descriptor::kJSActualArgumentsCount));
   CodeStubArguments args(this, argc);
 
   const TNode<Object> iterator = args.GetReceiver();
   const TNode<Object> value = args.GetOptionalArgumentValue(kValueOrReasonArg);
-  const TNode<Context> context = CAST(Parameter(Descriptor::kContext));
+  const auto context = Parameter<Context>(Descriptor::kContext);
 
   auto if_return_undefined = [=, &args](
                                  const TNode<NativeContext> native_context,
@@ -309,12 +309,12 @@ TF_BUILTIN(AsyncFromSyncIteratorPrototypeReturn,
     // If return is undefined, then
     // Let iterResult be ! CreateIterResultObject(value, true)
     const TNode<Object> iter_result = CallBuiltin(
-        Builtins::kCreateIterResultObject, context, value, TrueConstant());
+        Builtin::kCreateIterResultObject, context, value, TrueConstant());
 
     // Perform ! Call(promiseCapability.[[Resolve]], undefined, « iterResult »).
     // IfAbruptRejectPromise(nextDone, promiseCapability).
     // Return promiseCapability.[[Promise]].
-    CallBuiltin(Builtins::kResolvePromise, context, promise, iter_result);
+    CallBuiltin(Builtin::kResolvePromise, context, promise, iter_result);
     args.PopAndReturn(promise);
   };
 
@@ -328,12 +328,12 @@ TF_BUILTIN(AsyncFromSyncIteratorPrototypeReturn,
 TF_BUILTIN(AsyncFromSyncIteratorPrototypeThrow,
            AsyncFromSyncBuiltinsAssembler) {
   TNode<IntPtrT> argc = ChangeInt32ToIntPtr(
-      UncheckedCast<Int32T>(Parameter(Descriptor::kJSActualArgumentsCount)));
+      UncheckedParameter<Int32T>(Descriptor::kJSActualArgumentsCount));
   CodeStubArguments args(this, argc);
 
   const TNode<Object> iterator = args.GetReceiver();
   const TNode<Object> reason = args.GetOptionalArgumentValue(kValueOrReasonArg);
-  const TNode<Context> context = CAST(Parameter(Descriptor::kContext));
+  const auto context = Parameter<Context>(Descriptor::kContext);
 
   auto if_throw_undefined = [=](const TNode<NativeContext> native_context,
                                 const TNode<JSPromise> promise,

@@ -93,6 +93,83 @@ const http = require('http');
 }
 
 {
+  // Check pre-cancelled
+  const signal = new EventTarget();
+  signal.aborted = true;
+
+  const rs = Readable.from((function* () {})());
+  finished(rs, { signal }, common.mustCall((err) => {
+    assert.strictEqual(err.name, 'AbortError');
+  }));
+}
+
+{
+  // Check cancelled before the stream ends sync.
+  const ac = new AbortController();
+  const { signal } = ac;
+
+  const rs = Readable.from((function* () {})());
+  finished(rs, { signal }, common.mustCall((err) => {
+    assert.strictEqual(err.name, 'AbortError');
+  }));
+
+  ac.abort();
+}
+
+{
+  // Check cancelled before the stream ends async.
+  const ac = new AbortController();
+  const { signal } = ac;
+
+  const rs = Readable.from((function* () {})());
+  setTimeout(() => ac.abort(), 1);
+  finished(rs, { signal }, common.mustCall((err) => {
+    assert.strictEqual(err.name, 'AbortError');
+  }));
+}
+
+{
+  // Check cancelled after doesn't throw.
+  const ac = new AbortController();
+  const { signal } = ac;
+
+  const rs = Readable.from((function* () {
+    yield 5;
+    setImmediate(() => ac.abort());
+  })());
+  rs.resume();
+  finished(rs, { signal }, common.mustSucceed());
+}
+
+{
+  // Promisified abort works
+  const finishedPromise = promisify(finished);
+  async function run() {
+    const ac = new AbortController();
+    const { signal } = ac;
+    const rs = Readable.from((function* () {})());
+    setImmediate(() => ac.abort());
+    await finishedPromise(rs, { signal });
+  }
+
+  assert.rejects(run, { name: 'AbortError' }).then(common.mustCall());
+}
+
+{
+  // Promisified pre-aborted works
+  const finishedPromise = promisify(finished);
+  async function run() {
+    const signal = new EventTarget();
+    signal.aborted = true;
+    const rs = Readable.from((function* () {})());
+    await finishedPromise(rs, { signal });
+  }
+
+  assert.rejects(run, { name: 'AbortError' }).then(common.mustCall());
+}
+
+
+{
   const rs = fs.createReadStream('file-does-not-exist');
 
   finished(rs, common.expectsError({
@@ -476,14 +553,14 @@ testClosed((opts) => new Writable({ write() {}, ...opts }));
 }
 
 {
-  const server = http.createServer((req, res) => {
-    res.on('close', () => {
+  const server = http.createServer(common.mustCall((req, res) => {
+    res.on('close', common.mustCall(() => {
       finished(res, common.mustCall(() => {
         server.close();
       }));
-    });
+    }));
     res.end();
-  })
+  }))
   .listen(0, function() {
     http.request({
       method: 'GET',
@@ -491,4 +568,43 @@ testClosed((opts) => new Writable({ write() {}, ...opts }));
     }).end()
       .on('response', common.mustCall());
   });
+}
+
+{
+  const server = http.createServer(common.mustCall((req, res) => {
+    req.on('close', common.mustCall(() => {
+      finished(req, common.mustCall(() => {
+        server.close();
+      }));
+    }));
+    req.destroy();
+  })).listen(0, function() {
+    http.request({
+      method: 'GET',
+      port: this.address().port
+    }).end().on('error', common.mustCall());
+  });
+}
+
+
+{
+  const w = new Writable({
+    write(chunk, encoding, callback) {
+      process.nextTick(callback);
+    }
+  });
+  w.aborted = false;
+  w.end();
+  let closed = false;
+  w.on('finish', () => {
+    assert.strictEqual(closed, false);
+    w.emit('aborted');
+  });
+  w.on('close', common.mustCall(() => {
+    closed = true;
+  }));
+
+  finished(w, common.mustCall(() => {
+    assert.strictEqual(closed, true);
+  }));
 }

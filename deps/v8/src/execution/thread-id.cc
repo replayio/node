@@ -11,27 +11,40 @@ namespace internal {
 
 namespace {
 
-DEFINE_LAZY_LEAKY_OBJECT_GETTER(base::Thread::LocalStorageKey, GetThreadIdKey,
-                                base::Thread::CreateThreadLocalKey())
+//thread_local int thread_id = 0;
 
 std::atomic<int> next_thread_id{1};
 
 }  // namespace
 
+// FIXME using thread_local runs into problems when replaying, possibly related to
+// process forking.
+static int& GetThreadId() {
+  static pthread_key_t key;
+  if (!key) {
+    pthread_key_create(&key, nullptr);
+  }
+
+  int* v = (int*)pthread_getspecific(key);
+  if (!v) {
+    v = new int(0);
+    pthread_setspecific(key, v);
+  }
+  return *v;
+}
+
+#define thread_id GetThreadId()
+
 // static
 ThreadId ThreadId::TryGetCurrent() {
-  int thread_id = base::Thread::GetThreadLocalInt(*GetThreadIdKey());
   return thread_id == 0 ? Invalid() : ThreadId(thread_id);
 }
 
 // static
 int ThreadId::GetCurrentThreadId() {
-  auto key = *GetThreadIdKey();
-  int thread_id = base::Thread::GetThreadLocalInt(key);
   if (thread_id == 0) {
     thread_id = next_thread_id.fetch_add(1);
     CHECK_LE(1, thread_id);
-    base::Thread::SetThreadLocalInt(key, thread_id);
   }
   return thread_id;
 }
