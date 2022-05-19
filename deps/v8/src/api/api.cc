@@ -11003,7 +11003,7 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   // Disable wasm background compilation. The wasm module compiler is extremely
   // complicated and getting this it to behave consistently when replaying in
   // the presence of multiple threads isn't worth the hassle.
-  internal::FLAG_wasm_num_compilation_tasks = 1;
+  internal::FLAG_wasm_num_compilation_tasks = 0;
   internal::FLAG_wasm_async_compilation = false;
 
   // Async stack traces can vary when recording vs. replaying, apparently depending
