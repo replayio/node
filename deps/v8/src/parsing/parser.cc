@@ -3514,6 +3514,17 @@ Statement* Parser::CheckCallable(Variable* var, Expression* error, int pos) {
 
 std::vector<std::pair<ASTEvent, int>> gASTEvents;
 
+static const char* ASTEventToString(ASTEvent event) {
+  switch (event) {
+    case ASTEvent::FunctionBodyStart: return "FunctionBodyStart";
+    case ASTEvent::FunctionBodyEnd: return "FunctionBodyEnd";
+    case ASTEvent::BreakIndent: return "BreakIndent";
+    case ASTEvent::Break: return "Break";
+    case ASTEvent::BreakDeindent: return "BreakDeindent";
+    default: return "Unknown";
+  }
+}
+
 void DumpASTEvents(const char* file) {
   int fd = open(file, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
   if (fd < 0) {
@@ -3522,9 +3533,15 @@ void DumpASTEvents(const char* file) {
     return;
   }
 
+  bool printEvents = getenv("DUMP_AST_VERBOSE");
+
   char* buf = new char[gASTEvents.size() * 5];
   int pos = 0;
   for (const auto& event : gASTEvents) {
+    if (printEvents) {
+      fprintf(stderr, "%s %d\n", ASTEventToString(event.first), event.second);
+    }
+
     buf[pos] = (char)event.first;
     uint32_t* ptr = (uint32_t*)&buf[pos + 1];
     *ptr = event.second;

@@ -34,8 +34,15 @@ namespace v8 {
 namespace internal {
 
 enum class ASTEvent {
-  FunctionBodyStart, // Position of {
-  FunctionBodyEnd, // Position of }
+  // Delimit a function body, specifying positions of { and }
+  FunctionBodyStart,
+  FunctionBodyEnd,
+
+  // Locations where it is suitable to insert a line break and possibly change
+  // the indentation level.
+  BreakIndent,
+  Break,
+  BreakDeindent,
 };
 
 extern std::vector<std::pair<ASTEvent, int>> gASTEvents;
@@ -1612,6 +1619,59 @@ class ParserBase {
   bool accept_IN_ = true;
 
   bool allow_eval_cache_ = true;
+
+  // When dumping the AST, current statement indentation level.
+  int dump_indent_level = 0;
+
+  // When dumping the AST, indentation level for the last break site.
+  int dump_last_indent_level = 0;
+
+  // When dumping the AST, whether the last break was for a right brace.
+  bool dump_last_break_rbrace = false;
+
+ protected:
+  inline void AddASTBreak(bool rbrace = false) {
+    if (flags().dump_ast()) {
+      int pos = scanner()->peek_location().beg_pos;
+      if (dump_last_indent_level == dump_indent_level) {
+        AddASTEvent(ASTEvent::Break, pos);
+      } else {
+        while (dump_last_indent_level < dump_indent_level) {
+          AddASTEvent(ASTEvent::BreakIndent, pos);
+          dump_last_indent_level++;
+        }
+        while (dump_last_indent_level > dump_indent_level) {
+          AddASTEvent(ASTEvent::BreakDeindent, pos);
+          dump_last_indent_level--;
+        }
+      }
+      dump_last_break_rbrace = rbrace;
+    }
+  }
+
+  inline void AddASTBreakIfNotRBrace() {
+    if (!dump_last_break_rbrace) {
+      AddASTBreak();
+    }
+  }
+
+  inline void ASTIndent() {
+    dump_indent_level++;
+  }
+
+  inline void ASTDeindent() {
+    dump_indent_level--;
+  }
+
+  struct ASTAutoIndent {
+    ParserBase<Impl>* parser;
+    ASTAutoIndent(ParserBase<Impl>* parser) : parser(parser) {
+      parser->ASTIndent();
+    }
+    ~ASTAutoIndent() {
+      parser->ASTDeindent();
+    }
+  };
 };
 
 template <typename Impl>
@@ -4328,6 +4388,7 @@ void ParserBase<Impl>::ParseFunctionBody(
   scope()->set_end_position(end_position());
 
   if (flags().dump_ast()) {
+    AddASTBreak();
     AddASTEvent(ASTEvent::FunctionBodyEnd, position());
   }
 
@@ -5110,23 +5171,31 @@ ParserBase<Impl>::ParseStatementListItem() {
   // LexicalDeclaration[In, Yield] :
   //   LetOrConst BindingList[?In, ?Yield] ;
 
+  base::Optional<ASTAutoIndent> indent;
+  indent.emplace(this);
+
   switch (peek()) {
     case Token::FUNCTION:
+      AddASTBreak();
       return ParseHoistableDeclaration(nullptr, false);
     case Token::CLASS:
+      AddASTBreak();
       Consume(Token::CLASS);
       return ParseClassDeclaration(nullptr, false);
     case Token::VAR:
     case Token::CONST:
+      AddASTBreak();
       return ParseVariableStatement(kStatementListItem, nullptr);
     case Token::LET:
       if (IsNextLetKeyword()) {
+        AddASTBreak();
         return ParseVariableStatement(kStatementListItem, nullptr);
       }
       break;
     case Token::ASYNC:
       if (PeekAhead() == Token::FUNCTION &&
           !scanner()->HasLineTerminatorAfterNext()) {
+        AddASTBreak();
         Consume(Token::ASYNC);
         return ParseAsyncFunctionDeclaration(nullptr, false);
       }
@@ -5134,6 +5203,9 @@ ParserBase<Impl>::ParseStatementListItem() {
     default:
       break;
   }
+
+  indent.reset();
+
   return ParseStatement(nullptr, nullptr, kAllowLabelledFunctionStatement);
 }
 
@@ -5158,6 +5230,12 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseStatement(
   //   ThrowStatement
   //   TryStatement
   //   DebuggerStatement
+
+  base::Optional<ASTAutoIndent> indent;
+  if (flags().dump_ast() && peek() != Token::LBRACE) {
+    indent.emplace(this);
+    AddASTBreak();
+  }
 
   // {own_labels} is always a subset of {labels}.
   DCHECK_IMPLIES(labels == nullptr, own_labels == nullptr);
@@ -5269,6 +5347,8 @@ typename ParserBase<Impl>::BlockT ParserBase<Impl>::ParseBlock(
       if (stat->IsEmptyStatement()) continue;
       statements.Add(stat);
     }
+
+    AddASTBreak(/* rbrace */ true);
 
     Expect(Token::RBRACE);
 
@@ -5463,6 +5543,10 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseIfStatement(
     then_statement = ParseScopedStatement(labels_copy);
   }
 
+  if (peek() == Token::ELSE) {
+    AddASTBreakIfNotRBrace();
+  }
+
   StatementT else_statement = impl()->NullStatement();
   if (Check(Token::ELSE)) {
     else_statement = ParseScopedStatement(labels);
@@ -5648,6 +5732,9 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseDoWhileStatement(
     SourceRangeScope range_scope(scanner(), &body_range);
     body = ParseStatement(nullptr, nullptr);
   }
+
+  AddASTBreakIfNotRBrace();
+
   Expect(Token::WHILE);
   Expect(Token::LPAREN);
 
