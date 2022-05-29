@@ -3512,5 +3512,34 @@ Statement* Parser::CheckCallable(Variable* var, Expression* error, int pos) {
   return validate_var;
 }
 
+std::vector<std::pair<ASTEvent, int>> gASTEvents;
+
+void DumpASTEvents(const char* file) {
+  int fd = open(file, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+  if (fd < 0) {
+    fprintf(stderr, "open %s failed\n", file);
+    gASTEvents.clear();
+    return;
+  }
+
+  char* buf = new char[gASTEvents.size() * 5];
+  int pos = 0;
+  for (const auto& event : gASTEvents) {
+    buf[pos] = (char)event.first;
+    uint32_t* ptr = (uint32_t*)&buf[pos + 1];
+    *ptr = event.second;
+    pos += 5;
+  }
+
+  int rv = write(fd, buf, pos);
+  if (rv != pos) {
+    fprintf(stderr, "write %s failed\n", file);
+  }
+
+  close(fd);
+  delete[] buf;
+  gASTEvents.clear();
+}
+
 }  // namespace internal
 }  // namespace v8

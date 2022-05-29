@@ -33,6 +33,19 @@
 namespace v8 {
 namespace internal {
 
+enum class ASTEvent {
+  FunctionBodyStart, // Position of {
+  FunctionBodyEnd, // Position of }
+};
+
+extern std::vector<std::pair<ASTEvent, int>> gASTEvents;
+
+inline void AddASTEvent(ASTEvent event, int pos) {
+  gASTEvents.emplace_back(event, pos);
+}
+
+void DumpASTEvents(const char* file);
+
 enum FunctionNameValidity {
   kFunctionNameIsStrictReserved,
   kSkipFunctionNameCheck,
@@ -4243,6 +4256,10 @@ void ParserBase<Impl>::ParseFunctionBody(
     StatementListT* body, IdentifierT function_name, int pos,
     const FormalParametersT& parameters, FunctionKind kind,
     FunctionSyntaxKind function_syntax_kind, FunctionBodyType body_type) {
+  if (flags().dump_ast()) {
+    AddASTEvent(ASTEvent::FunctionBodyStart, position());
+  }
+
   if (IsResumableFunction(kind)) impl()->PrepareGeneratorVariables();
 
   DeclarationScope* function_scope = parameters.scope;
@@ -4309,6 +4326,10 @@ void ParserBase<Impl>::ParseFunctionBody(
   }
 
   scope()->set_end_position(end_position());
+
+  if (flags().dump_ast()) {
+    AddASTEvent(ASTEvent::FunctionBodyEnd, position());
+  }
 
   bool allow_duplicate_parameters = false;
 

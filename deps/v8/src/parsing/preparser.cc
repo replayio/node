@@ -163,9 +163,17 @@ PreParser::PreParseResult PreParser::PreParseFunction(
     inner_scope->set_start_position(position());
   }
 
+  if (flags().dump_ast()) {
+    AddASTEvent(ASTEvent::FunctionBodyStart, position());
+  }
+
   {
     BlockState block_state(&scope_, inner_scope);
     ParseStatementListAndLogFunction(&formals);
+  }
+
+  if (flags().dump_ast()) {
+    AddASTEvent(ASTEvent::FunctionBodyEnd, scanner()->peek_location().beg_pos);
   }
 
   bool allow_duplicate_parameters = false;

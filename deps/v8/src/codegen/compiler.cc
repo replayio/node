@@ -2654,14 +2654,26 @@ Handle<Script> NewScript(
   return script;
 }
 
-static void SetRecordReplayIgnoreByURL(UnoptimizedCompileFlags& flags,
-                                       const ScriptDetails& script_details) {
+static void SetFlagsByURL(UnoptimizedCompileFlags& flags,
+                          const ScriptDetails& script_details) {
   if (recordreplay::IsRecordingOrReplaying()) {
     Handle<Object> script_name;
     if (script_details.name_obj.ToHandle(&script_name)) {
       std::unique_ptr<char[]> name_cstr = String::cast(*script_name).ToCString();
       if (RecordReplayIgnoreScriptByURL(name_cstr.get())) {
         flags.set_record_replay_ignore(true);
+      }
+    }
+  }
+
+  static const char* dump_ast_pattern = getenv("DUMP_AST");
+  if (dump_ast_pattern) {
+    Handle<Object> script_name;
+    if (script_details.name_obj.ToHandle(&script_name)) {
+      std::unique_ptr<char[]> name_cstr = String::cast(*script_name).ToCString();
+      if (strstr(name_cstr.get(), dump_ast_pattern)) {
+        fprintf(stderr, "Dumping AST %s\n", name_cstr.get());
+        flags.set_dump_ast(true);
       }
     }
   }
@@ -2672,7 +2684,7 @@ MaybeHandle<SharedFunctionInfo> CompileScriptOnMainThread(
     const ScriptDetails& script_details, NativesFlag natives,
     v8::Extension* extension, Isolate* isolate,
     IsCompiledScope* is_compiled_scope) {
-  SetRecordReplayIgnoreByURL(flags, script_details);
+  SetFlagsByURL(flags, script_details);
 
   UnoptimizedCompileState compile_state(isolate);
   ParseInfo parse_info(isolate, flags, &compile_state);
@@ -2684,8 +2696,15 @@ MaybeHandle<SharedFunctionInfo> CompileScriptOnMainThread(
                  script->IsUserJavaScript());
   DCHECK_EQ(parse_info.flags().is_repl_mode(), script->is_repl_mode());
 
-  return Compiler::CompileToplevel(&parse_info, script, isolate,
-                                   is_compiled_scope);
+  MaybeHandle<SharedFunctionInfo> rv =
+    Compiler::CompileToplevel(&parse_info, script, isolate,
+                              is_compiled_scope);
+
+  if (flags.dump_ast()) {
+    DumpASTEvents("ast.bin");
+  }
+
+  return rv;
 }
 
 class StressBackgroundCompileThread : public base::Thread {
@@ -2984,7 +3003,7 @@ MaybeHandle<JSFunction> Compiler::GetWrappedFunction(
     flags.set_collect_source_positions(true);
     // flags.set_eager(compile_options == ScriptCompiler::kEagerCompile);
 
-    SetRecordReplayIgnoreByURL(flags, script_details);
+    SetFlagsByURL(flags, script_details);
 
     UnoptimizedCompileState compile_state(isolate);
     ParseInfo parse_info(isolate, flags, &compile_state);
@@ -3003,6 +3022,10 @@ MaybeHandle<JSFunction> Compiler::GetWrappedFunction(
                                                  isolate, &is_compiled_scope);
     if (maybe_result.is_null()) isolate->ReportPendingMessages();
     ASSIGN_RETURN_ON_EXCEPTION(isolate, top_level, maybe_result, JSFunction);
+
+    if (flags.dump_ast()) {
+      DumpASTEvents("ast.bin");
+    }
 
     SharedFunctionInfo::ScriptIterator infos(isolate, *script);
     for (SharedFunctionInfo info = infos.Next(); !info.is_null();
