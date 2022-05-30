@@ -1630,9 +1630,8 @@ class ParserBase {
   bool dump_last_break_rbrace = false;
 
  protected:
-  inline void AddASTBreak(bool rbrace = false) {
+  inline void AddASTBreak(int pos, bool rbrace = false) {
     if (flags().dump_ast()) {
-      int pos = scanner()->peek_location().beg_pos;
       if (dump_last_indent_level == dump_indent_level) {
         AddASTEvent(ASTEvent::Break, pos);
       } else {
@@ -1647,6 +1646,10 @@ class ParserBase {
       }
       dump_last_break_rbrace = rbrace;
     }
+  }
+
+  inline void AddASTBreak(bool rbrace = false) {
+    AddASTBreak(scanner()->peek_location().beg_pos, rbrace);
   }
 
   inline void AddASTBreakIfNotRBrace() {
@@ -2089,6 +2092,8 @@ ParserBase<Impl>::ParseExpressionCoverGrammar() {
         function_state_->previous_function_was_likely_called()) {
       function_state_->set_next_function_is_likely_called();
     }
+
+    //AddASTBreak();
   }
 
   // Return the single element if the list is empty. We need to do this because
@@ -4000,8 +4005,17 @@ void ParserBase<Impl>::ParseVariableDeclarations(
 
   auto declaration_it = target_scope->declarations()->end();
 
+  ASTAutoIndent indent(this);
+  bool first = true;
+
   int bindings_start = peek_position();
   do {
+    if (first) {
+      first = false;
+    } else {
+      AddASTBreak();
+    }
+
     // Parse binding pattern.
     FuncNameInferrerState fni_state(&fni_);
 
@@ -4388,7 +4402,7 @@ void ParserBase<Impl>::ParseFunctionBody(
   scope()->set_end_position(end_position());
 
   if (flags().dump_ast()) {
-    AddASTBreak();
+    AddASTBreak(position());
     AddASTEvent(ASTEvent::FunctionBodyEnd, position());
   }
 

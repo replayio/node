@@ -173,7 +173,7 @@ PreParser::PreParseResult PreParser::PreParseFunction(
   }
 
   if (flags().dump_ast()) {
-    AddASTBreak();
+    AddASTBreak(scanner()->peek_location().beg_pos);
     AddASTEvent(ASTEvent::FunctionBodyEnd, scanner()->peek_location().beg_pos);
   }
 
