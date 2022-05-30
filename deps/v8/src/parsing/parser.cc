@@ -3512,50 +3512,64 @@ Statement* Parser::CheckCallable(Variable* var, Expression* error, int pos) {
   return validate_var;
 }
 
-std::vector<std::pair<ASTEvent, int>> gASTEvents;
+std::vector<std::pair<FunctionEvent, int>> gFunctionEvents;
+std::vector<std::pair<PrettyPrintEvent, int>> gPrettyPrintEvents;
 
-static const char* ASTEventToString(ASTEvent event) {
+static inline const char* PrettyPrintEventToString(PrettyPrintEvent event) {
   switch (event) {
-    case ASTEvent::FunctionBodyStart: return "FunctionBodyStart";
-    case ASTEvent::FunctionBodyEnd: return "FunctionBodyEnd";
-    case ASTEvent::BreakIndent: return "BreakIndent";
-    case ASTEvent::Break: return "Break";
-    case ASTEvent::BreakDeindent: return "BreakDeindent";
+    case PrettyPrintEvent::Indent: return "Indent";
+    case PrettyPrintEvent::Break: return "Break";
+    case PrettyPrintEvent::Deindent: return "Deindent";
     default: return "Unknown";
   }
 }
 
-void DumpASTEvents(const char* file) {
-  int fd = open(file, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-  if (fd < 0) {
-    fprintf(stderr, "open %s failed\n", file);
-    gASTEvents.clear();
-    return;
+static inline void AppendUTF8(std::vector<char>& buf, base::uc16 code) {
+  if (code <= 0x7F) {
+    buf.push_back(code);
+  } else if (code <= 0x7FF) {
+    buf.push_back(((code >> 6) & 0x1F) | 0xC0);
+    buf.push_back((code & 0x3F) | 0x80);
+  } else if (code <= 0xFFFF) {
+    buf.push_back(((code >> 12) & 0x0F) | 0xE0);
+    buf.push_back(((code >> 6) & 0x3F) | 0x80);
+    buf.push_back((code & 0x3F) | 0x80);
+  } else {
+    buf.push_back(((code >> 18) & 0x07) | 0xF0);
+    buf.push_back(((code >> 12) & 0x3F) | 0x80);
+    buf.push_back(((code >> 6) & 0x3F) | 0x80);
+    buf.push_back((code & 0x3F) | 0x80);
   }
+}
 
-  bool printEvents = getenv("DUMP_AST_VERBOSE");
+void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
+  bool dumpEvents = getenv("PRETTY_PRINT_DUMP_EVENTS");
 
-  char* buf = new char[gASTEvents.size() * 5];
-  int pos = 0;
-  for (const auto& event : gASTEvents) {
-    if (printEvents) {
-      fprintf(stderr, "%s %d\n", ASTEventToString(event.first), event.second);
+  DisallowGarbageCollection no_gc;
+
+  for (const auto& event : gPrettyPrintEvents) {
+    if (dumpEvents) {
+      fprintf(stderr, "%s %d\n", PrettyPrintEventToString(event.first), event.second);
     }
-
-    buf[pos] = (char)event.first;
-    uint32_t* ptr = (uint32_t*)&buf[pos + 1];
-    *ptr = event.second;
-    pos += 5;
   }
 
-  int rv = write(fd, buf, pos);
-  if (rv != pos) {
-    fprintf(stderr, "write %s failed\n", file);
+  Handle<String> sourceString(String::cast(script->source()), isolate);
+  String::FlatContent flatSource = sourceString->GetFlatContent(no_gc);
+
+  CHECK(flatSource.IsFlat());
+  CHECK(flatSource.IsTwoByte());
+
+  base::Vector<const base::uc16> chars = flatSource.ToUC16Vector();
+
+  std::vector<char> prettySource;
+  for (int i = 0; i < chars.size(); i++) {
+    AppendUTF8(prettySource, chars[i]);
   }
 
-  close(fd);
-  delete[] buf;
-  gASTEvents.clear();
+  int rv = write(STDOUT_FILENO, &prettySource[0], prettySource.size());
+  CHECK(rv == prettySource.size());
+
+  gPrettyPrintEvents.clear();
 }
 
 }  // namespace internal

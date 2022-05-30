@@ -2666,14 +2666,13 @@ static void SetFlagsByURL(UnoptimizedCompileFlags& flags,
     }
   }
 
-  static const char* dump_ast_pattern = getenv("DUMP_AST");
-  if (dump_ast_pattern) {
+  static const char* pretty_print_pattern = getenv("PRETTY_PRINT");
+  if (pretty_print_pattern) {
     Handle<Object> script_name;
     if (script_details.name_obj.ToHandle(&script_name)) {
       std::unique_ptr<char[]> name_cstr = String::cast(*script_name).ToCString();
-      if (strstr(name_cstr.get(), dump_ast_pattern)) {
-        fprintf(stderr, "Dumping AST %s\n", name_cstr.get());
-        flags.set_dump_ast(true);
+      if (strstr(name_cstr.get(), pretty_print_pattern)) {
+        flags.set_pretty_print(true);
       }
     }
   }
@@ -2700,8 +2699,8 @@ MaybeHandle<SharedFunctionInfo> CompileScriptOnMainThread(
     Compiler::CompileToplevel(&parse_info, script, isolate,
                               is_compiled_scope);
 
-  if (flags.dump_ast()) {
-    DumpASTEvents("ast.bin");
+  if (flags.pretty_print()) {
+    PrettyPrintScript(isolate, script);
   }
 
   return rv;
@@ -3023,8 +3022,8 @@ MaybeHandle<JSFunction> Compiler::GetWrappedFunction(
     if (maybe_result.is_null()) isolate->ReportPendingMessages();
     ASSIGN_RETURN_ON_EXCEPTION(isolate, top_level, maybe_result, JSFunction);
 
-    if (flags.dump_ast()) {
-      DumpASTEvents("ast.bin");
+    if (flags.pretty_print()) {
+      PrettyPrintScript(isolate, script);
     }
 
     SharedFunctionInfo::ScriptIterator infos(isolate, *script);

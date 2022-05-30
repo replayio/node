@@ -163,8 +163,8 @@ PreParser::PreParseResult PreParser::PreParseFunction(
     inner_scope->set_start_position(position());
   }
 
-  if (flags().dump_ast()) {
-    AddASTEvent(ASTEvent::FunctionBodyStart, position());
+  if (flags().find_functions()) {
+    AddFunctionEvent(FunctionEvent::BodyStart, position());
   }
 
   {
@@ -172,10 +172,11 @@ PreParser::PreParseResult PreParser::PreParseFunction(
     ParseStatementListAndLogFunction(&formals);
   }
 
-  if (flags().dump_ast()) {
-    AddASTBreak(scanner()->peek_location().beg_pos);
-    AddASTEvent(ASTEvent::FunctionBodyEnd, scanner()->peek_location().beg_pos);
+  if (flags().find_functions()) {
+    AddFunctionEvent(FunctionEvent::BodyEnd, scanner()->peek_location().beg_pos);
   }
+
+  AddPrettyPrintBreak(scanner()->peek_location().beg_pos);
 
   bool allow_duplicate_parameters = false;
   CheckConflictingVarDeclarations(inner_scope);

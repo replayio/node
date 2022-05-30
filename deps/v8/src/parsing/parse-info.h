@@ -46,7 +46,8 @@ class Zone;
   V(is_eager, bool, 1, _)                                \
   V(is_eval, bool, 1, _)                                 \
   V(record_replay_ignore, bool, 1, _)                    \
-  V(dump_ast, bool, 1, _)                                \
+  V(pretty_print, bool, 1, _)                            \
+  V(find_functions, bool, 1, _)                          \
   V(outer_language_mode, LanguageMode, 1, _)             \
   V(parse_restriction, ParseRestriction, 1, _)           \
   V(is_module, bool, 1, _)                               \

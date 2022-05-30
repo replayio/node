@@ -33,25 +33,37 @@
 namespace v8 {
 namespace internal {
 
-enum class ASTEvent {
+// Events used when finding functions in a script.
+enum class FunctionEvent {
   // Delimit a function body, specifying positions of { and }
-  FunctionBodyStart,
-  FunctionBodyEnd,
-
-  // Locations where it is suitable to insert a line break and possibly change
-  // the indentation level.
-  BreakIndent,
-  Break,
-  BreakDeindent,
+  BodyStart,
+  BodyEnd,
 };
 
-extern std::vector<std::pair<ASTEvent, int>> gASTEvents;
+extern std::vector<std::pair<FunctionEvent, int>> gFunctionEvents;
 
-inline void AddASTEvent(ASTEvent event, int pos) {
-  gASTEvents.emplace_back(event, pos);
+inline void AddFunctionEvent(FunctionEvent event, int pos) {
+  gFunctionEvents.emplace_back(event, pos);
 }
 
-void DumpASTEvents(const char* file);
+// Events used when pretty printing a script.
+enum class PrettyPrintEvent {
+  // Change statement indentation level. These do not have an associated position.
+  Indent,
+  Deindent,
+
+  // Place where it is suitable to insert a line break and indent the
+  // new line at the statement indentation level.
+  Break,
+};
+
+extern std::vector<std::pair<PrettyPrintEvent, int>> gPrettyPrintEvents;
+
+inline void AddPrettyPrintEvent(PrettyPrintEvent event, int pos) {
+  gPrettyPrintEvents.emplace_back(event, pos);
+}
+
+void PrettyPrintScript(Isolate* isolate, Handle<Script> script);
 
 enum FunctionNameValidity {
   kFunctionNameIsStrictReserved,
@@ -1620,59 +1632,46 @@ class ParserBase {
 
   bool allow_eval_cache_ = true;
 
-  // When dumping the AST, current statement indentation level.
-  int dump_indent_level = 0;
-
-  // When dumping the AST, indentation level for the last break site.
-  int dump_last_indent_level = 0;
-
-  // When dumping the AST, whether the last break was for a right brace.
-  bool dump_last_break_rbrace = false;
+  // When pretty printing, whether the last break was for a right brace.
+  bool pretty_print_last_break_rbrace = false;
 
  protected:
-  inline void AddASTBreak(int pos, bool rbrace = false) {
-    if (flags().dump_ast()) {
-      if (dump_last_indent_level == dump_indent_level) {
-        AddASTEvent(ASTEvent::Break, pos);
-      } else {
-        while (dump_last_indent_level < dump_indent_level) {
-          AddASTEvent(ASTEvent::BreakIndent, pos);
-          dump_last_indent_level++;
-        }
-        while (dump_last_indent_level > dump_indent_level) {
-          AddASTEvent(ASTEvent::BreakDeindent, pos);
-          dump_last_indent_level--;
-        }
-      }
-      dump_last_break_rbrace = rbrace;
+  inline void AddPrettyPrintBreak(int pos, bool rbrace = false) {
+    if (flags().pretty_print()) {
+      AddPrettyPrintEvent(PrettyPrintEvent::Break, pos);
+      pretty_print_last_break_rbrace = rbrace;
     }
   }
 
-  inline void AddASTBreak(bool rbrace = false) {
-    AddASTBreak(scanner()->peek_location().beg_pos, rbrace);
+  inline void AddPrettyPrintBreak(bool rbrace = false) {
+    AddPrettyPrintBreak(scanner()->peek_location().beg_pos, rbrace);
   }
 
-  inline void AddASTBreakIfNotRBrace() {
-    if (!dump_last_break_rbrace) {
-      AddASTBreak();
+  inline void AddPrettyPrintBreakIfNotRBrace() {
+    if (!pretty_print_last_break_rbrace) {
+      AddPrettyPrintBreak();
     }
   }
 
-  inline void ASTIndent() {
-    dump_indent_level++;
+  inline void PrettyPrintIndent() {
+    if (flags().pretty_print()) {
+      AddPrettyPrintEvent(PrettyPrintEvent::Indent, 0);
+    }
   }
 
-  inline void ASTDeindent() {
-    dump_indent_level--;
+  inline void PrettyPrintDeindent() {
+    if (flags().pretty_print()) {
+      AddPrettyPrintEvent(PrettyPrintEvent::Deindent, 0);
+    }
   }
 
-  struct ASTAutoIndent {
+  struct PrettyPrintAutoIndent {
     ParserBase<Impl>* parser;
-    ASTAutoIndent(ParserBase<Impl>* parser) : parser(parser) {
-      parser->ASTIndent();
+    PrettyPrintAutoIndent(ParserBase<Impl>* parser) : parser(parser) {
+      parser->PrettyPrintIndent();
     }
-    ~ASTAutoIndent() {
-      parser->ASTDeindent();
+    ~PrettyPrintAutoIndent() {
+      parser->PrettyPrintDeindent();
     }
   };
 };
@@ -2092,8 +2091,6 @@ ParserBase<Impl>::ParseExpressionCoverGrammar() {
         function_state_->previous_function_was_likely_called()) {
       function_state_->set_next_function_is_likely_called();
     }
-
-    //AddASTBreak();
   }
 
   // Return the single element if the list is empty. We need to do this because
@@ -4005,7 +4002,7 @@ void ParserBase<Impl>::ParseVariableDeclarations(
 
   auto declaration_it = target_scope->declarations()->end();
 
-  ASTAutoIndent indent(this);
+  PrettyPrintAutoIndent indent(this);
   bool first = true;
 
   int bindings_start = peek_position();
@@ -4013,7 +4010,7 @@ void ParserBase<Impl>::ParseVariableDeclarations(
     if (first) {
       first = false;
     } else {
-      AddASTBreak();
+      AddPrettyPrintBreak();
     }
 
     // Parse binding pattern.
@@ -4330,8 +4327,8 @@ void ParserBase<Impl>::ParseFunctionBody(
     StatementListT* body, IdentifierT function_name, int pos,
     const FormalParametersT& parameters, FunctionKind kind,
     FunctionSyntaxKind function_syntax_kind, FunctionBodyType body_type) {
-  if (flags().dump_ast()) {
-    AddASTEvent(ASTEvent::FunctionBodyStart, position());
+  if (flags().find_functions()) {
+    AddFunctionEvent(FunctionEvent::BodyStart, position());
   }
 
   if (IsResumableFunction(kind)) impl()->PrepareGeneratorVariables();
@@ -4401,10 +4398,11 @@ void ParserBase<Impl>::ParseFunctionBody(
 
   scope()->set_end_position(end_position());
 
-  if (flags().dump_ast()) {
-    AddASTBreak(position());
-    AddASTEvent(ASTEvent::FunctionBodyEnd, position());
+  if (flags().find_functions()) {
+    AddFunctionEvent(FunctionEvent::BodyEnd, position());
   }
+
+  AddPrettyPrintBreak(position());
 
   bool allow_duplicate_parameters = false;
 
@@ -5185,31 +5183,31 @@ ParserBase<Impl>::ParseStatementListItem() {
   // LexicalDeclaration[In, Yield] :
   //   LetOrConst BindingList[?In, ?Yield] ;
 
-  base::Optional<ASTAutoIndent> indent;
+  base::Optional<PrettyPrintAutoIndent> indent;
   indent.emplace(this);
 
   switch (peek()) {
     case Token::FUNCTION:
-      AddASTBreak();
+      AddPrettyPrintBreak();
       return ParseHoistableDeclaration(nullptr, false);
     case Token::CLASS:
-      AddASTBreak();
+      AddPrettyPrintBreak();
       Consume(Token::CLASS);
       return ParseClassDeclaration(nullptr, false);
     case Token::VAR:
     case Token::CONST:
-      AddASTBreak();
+      AddPrettyPrintBreak();
       return ParseVariableStatement(kStatementListItem, nullptr);
     case Token::LET:
       if (IsNextLetKeyword()) {
-        AddASTBreak();
+        AddPrettyPrintBreak();
         return ParseVariableStatement(kStatementListItem, nullptr);
       }
       break;
     case Token::ASYNC:
       if (PeekAhead() == Token::FUNCTION &&
           !scanner()->HasLineTerminatorAfterNext()) {
-        AddASTBreak();
+        AddPrettyPrintBreak();
         Consume(Token::ASYNC);
         return ParseAsyncFunctionDeclaration(nullptr, false);
       }
@@ -5245,10 +5243,10 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseStatement(
   //   TryStatement
   //   DebuggerStatement
 
-  base::Optional<ASTAutoIndent> indent;
-  if (flags().dump_ast() && peek() != Token::LBRACE) {
+  base::Optional<PrettyPrintAutoIndent> indent;
+  if (flags().pretty_print() && peek() != Token::LBRACE) {
     indent.emplace(this);
-    AddASTBreak();
+    AddPrettyPrintBreak();
   }
 
   // {own_labels} is always a subset of {labels}.
@@ -5362,7 +5360,7 @@ typename ParserBase<Impl>::BlockT ParserBase<Impl>::ParseBlock(
       statements.Add(stat);
     }
 
-    AddASTBreak(/* rbrace */ true);
+    AddPrettyPrintBreak(/* rbrace */ true);
 
     Expect(Token::RBRACE);
 
@@ -5558,7 +5556,7 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseIfStatement(
   }
 
   if (peek() == Token::ELSE) {
-    AddASTBreakIfNotRBrace();
+    AddPrettyPrintBreakIfNotRBrace();
   }
 
   StatementT else_statement = impl()->NullStatement();
@@ -5747,7 +5745,7 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseDoWhileStatement(
     body = ParseStatement(nullptr, nullptr);
   }
 
-  AddASTBreakIfNotRBrace();
+  AddPrettyPrintBreakIfNotRBrace();
 
   Expect(Token::WHILE);
   Expect(Token::LPAREN);
