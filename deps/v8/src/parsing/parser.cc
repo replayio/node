@@ -3728,8 +3728,16 @@ class PrettyPrintState {
   }
 };
 
+double prettyPrintParseTime;
+
+void OnStartPrettyPrint() {
+  prettyPrintParseTime = base::Time::Now().ToJsTime();
+}
+
 void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
   DisallowGarbageCollection no_gc;
+
+  double startTime = base::Time::Now().ToJsTime();
 
   Handle<String> sourceString(String::cast(script->source()), isolate);
   String::FlatContent flatSource = sourceString->GetFlatContent(no_gc);
@@ -3787,10 +3795,14 @@ void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
     }
   }
 
+  double endTime = base::Time::Now().ToJsTime();
+
   int rv = write(STDOUT_FILENO, &prettySource[0], prettySource.size());
   CHECK(rv == (int)prettySource.size());
 
   gPrettyPrintEvents.clear();
+
+  fprintf(stderr, "Total: %.2f (%.2f pretty printing)\n", endTime - prettyPrintParseTime, endTime - startTime);
 }
 
 }  // namespace internal

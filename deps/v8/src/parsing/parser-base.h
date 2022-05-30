@@ -59,7 +59,7 @@ enum class PrettyPrintEvent {
   // Ensure there is whitespace before the given position.
   Whitespace,
 
-  // Position of the start a subexpression.
+  // Position of the start of a subexpression.
   ExpressionStart,
 
   // End the most recent subexpression, does not have a position.
@@ -93,6 +93,9 @@ inline void AddPrettyPrintEvent(PrettyPrintEvent event, int pos) {
 
   gPrettyPrintEvents.emplace_back(event, pos);
 }
+
+// For reporting timing info.
+void OnStartPrettyPrint();
 
 void PrettyPrintScript(Isolate* isolate, Handle<Script> script);
 

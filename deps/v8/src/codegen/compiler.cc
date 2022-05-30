@@ -2672,6 +2672,7 @@ static void SetFlagsByURL(UnoptimizedCompileFlags& flags,
     if (script_details.name_obj.ToHandle(&script_name)) {
       std::unique_ptr<char[]> name_cstr = String::cast(*script_name).ToCString();
       if (strstr(name_cstr.get(), pretty_print_pattern)) {
+        OnStartPrettyPrint();
         flags.set_pretty_print(true);
       }
     }
