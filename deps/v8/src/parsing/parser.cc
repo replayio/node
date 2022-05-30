@@ -3535,6 +3535,19 @@ static inline void AppendUTF8(std::vector<char>& buf, base::uc16 code) {
   }
 }
 
+static inline void DebugAppend(std::vector<char>& buf, const char* format, ...) {
+  va_list args;
+  va_start(args, format);
+  char msg[50];
+  vsnprintf(msg, sizeof(msg), format, args);
+  va_end(args);
+
+  msg[sizeof(msg) - 1] = 0;
+  for (char* ptr = msg; *ptr; ptr++) {
+    buf.push_back(*ptr);
+  }
+}
+
 // State used to pretty print a sequence of characters.
 class PrettyPrintState {
  public:
@@ -3560,7 +3573,13 @@ class PrettyPrintState {
     }
 
     whitespacePositionsIndex = 0;
-    LoadNextWhitespacePosition();
+    LoadNextWhitespacePosition(start);
+
+    //DebugAppend(prettySource, "line %d %d", start, end);
+    //for (int pos : whitespacePositions) {
+    //  DebugAppend(prettySource, "whitespace %d", pos);
+    //}
+    //DebugAppend(prettySource, " ");
 
     for (int pos = start; pos < end; pos++) {
       if (pos == nextWhitespacePos) {
@@ -3569,7 +3588,7 @@ class PrettyPrintState {
           prettySource.push_back(' ');
         }
         AppendUTF8(prettySource, chars[pos]);
-        LoadNextWhitespacePosition();
+        LoadNextWhitespacePosition(pos + 1);
       } else {
         AppendUTF8(prettySource, chars[pos]);
       }
@@ -3583,13 +3602,19 @@ class PrettyPrintState {
   }
 
  private:
-  inline void LoadNextWhitespacePosition() {
-    if (whitespacePositionsIndex < whitespacePositions.size()) {
-      nextWhitespacePos = whitespacePositions[whitespacePositionsIndex];
-    } else {
-      nextWhitespacePos = -1;
+  // Update to the next whitespace position at or later than pos.
+  inline void LoadNextWhitespacePosition(int pos) {
+    while (true) {
+      if (whitespacePositionsIndex < whitespacePositions.size()) {
+        nextWhitespacePos = whitespacePositions[whitespacePositionsIndex];
+      } else {
+        nextWhitespacePos = INT32_MAX;
+      }
+      whitespacePositionsIndex++;
+      if (nextWhitespacePos >= pos) {
+        break;
+      }
     }
-    whitespacePositionsIndex++;
   }
 };
 

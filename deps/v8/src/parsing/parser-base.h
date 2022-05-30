@@ -1655,15 +1655,11 @@ class ParserBase {
   bool pretty_print_last_break_rbrace = false;
 
  protected:
-  inline void AddPrettyPrintBreak(int pos, bool rbrace = false) {
+  inline void AddPrettyPrintBreak(bool rbrace = false) {
     if (flags().pretty_print()) {
-      AddPrettyPrintEvent(PrettyPrintEvent::Break, pos);
+      AddPrettyPrintEvent(PrettyPrintEvent::Break, scanner()->peek_location().beg_pos);
       pretty_print_last_break_rbrace = rbrace;
     }
-  }
-
-  inline void AddPrettyPrintBreak(bool rbrace = false) {
-    AddPrettyPrintBreak(scanner()->peek_location().beg_pos, rbrace);
   }
 
   inline void AddPrettyPrintBreakIfNotRBrace() {
@@ -1672,14 +1668,10 @@ class ParserBase {
     }
   }
 
-  inline void AddPrettyPrintWhitespace(int pos) {
-    if (flags().pretty_print()) {
-      AddPrettyPrintEvent(PrettyPrintEvent::Whitespace, pos);
-    }
-  }
-
   inline void AddPrettyPrintWhitespace() {
-    AddPrettyPrintWhitespace(scanner()->peek_location().beg_pos);
+    if (flags().pretty_print()) {
+      AddPrettyPrintEvent(PrettyPrintEvent::Whitespace, scanner()->peek_location().beg_pos);
+    }
   }
 
   inline void PrettyPrintIndent() {
@@ -4452,6 +4444,7 @@ void ParserBase<Impl>::ParseFunctionBody(
                                                      kNoSourcePosition));
         expression_scope.ValidateExpression();
       }
+      AddPrettyPrintBreak(position());
       Expect(closing_token);
     }
   }
@@ -4461,8 +4454,6 @@ void ParserBase<Impl>::ParseFunctionBody(
   if (flags().find_functions()) {
     AddFunctionEvent(FunctionEvent::BodyEnd, position());
   }
-
-  AddPrettyPrintBreak(position());
 
   bool allow_duplicate_parameters = false;
 
@@ -6425,6 +6416,7 @@ typename ParserBase<Impl>::ForStatementT ParserBase<Impl>::ParseStandardForLoop(
     *cond = ParseExpression();
   }
   Expect(Token::SEMICOLON);
+  AddPrettyPrintWhitespace();
 
   if (peek() != Token::RPAREN) {
     ExpressionT exp = ParseExpression();

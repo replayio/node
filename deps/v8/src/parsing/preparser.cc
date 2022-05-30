@@ -177,7 +177,9 @@ PreParser::PreParseResult PreParser::PreParseFunction(
     AddFunctionEvent(FunctionEvent::BodyEnd, scanner()->peek_location().beg_pos);
   }
 
-  AddPrettyPrintBreak(scanner()->peek_location().beg_pos);
+  if (peek() == Token::RBRACE) {
+    AddPrettyPrintBreak();
+  }
 
   bool allow_duplicate_parameters = false;
   CheckConflictingVarDeclarations(inner_scope);
