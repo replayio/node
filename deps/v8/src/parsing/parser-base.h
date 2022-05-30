@@ -79,6 +79,9 @@ inline const char* PrettyPrintEventToString(PrettyPrintEvent event) {
     case PrettyPrintEvent::Break: return "Break";
     case PrettyPrintEvent::Deindent: return "Deindent";
     case PrettyPrintEvent::Whitespace: return "Whitespace";
+    case PrettyPrintEvent::ExpressionStart: return "ExpressionStart";
+    case PrettyPrintEvent::ExpressionEnd: return "ExpressionEnd";
+    case PrettyPrintEvent::ExpressionBreak: return "ExpressionBreak";
     default: return "Unknown";
   }
 }
@@ -3159,6 +3162,7 @@ ParserBase<Impl>::ParseConditionalExpression() {
   //   LogicalExpression
   //   LogicalExpression '?' AssignmentExpression ':' AssignmentExpression
   //
+  PrettyPrintAutoExpression pretty_print(this);
   int pos = peek_position();
   ExpressionT expression = ParseLogicalExpression();
   return peek() == Token::CONDITIONAL
@@ -3172,6 +3176,8 @@ ParserBase<Impl>::ParseLogicalExpression() {
   // LogicalExpression ::
   //   LogicalORExpression
   //   CoalesceExpression
+
+  PrettyPrintAutoExpression pretty_print(this);
 
   // Both LogicalORExpression and CoalesceExpression start with BitwiseOR.
   // Parse for binary expressions >= 6 (BitwiseOR);
@@ -3229,6 +3235,7 @@ ParserBase<Impl>::ParseConditionalContinuation(ExpressionT expression,
                                                int pos) {
   SourceRange then_range, else_range;
 
+  AddPrettyPrintExpressionBreak();
   AddPrettyPrintWhitespace();
 
   ExpressionT left;
@@ -3245,6 +3252,7 @@ ParserBase<Impl>::ParseConditionalContinuation(ExpressionT expression,
   ExpressionT right;
   {
     SourceRangeScope range_scope(scanner(), &else_range);
+    AddPrettyPrintExpressionBreak();
     AddPrettyPrintWhitespace();
     Expect(Token::COLON);
     AddPrettyPrintWhitespace();
@@ -3271,6 +3279,7 @@ ParserBase<Impl>::ParseBinaryContinuation(ExpressionT x, int prec, int prec1) {
 
         AddPrettyPrintWhitespace();
         op = Next();
+        AddPrettyPrintExpressionBreak();
         AddPrettyPrintWhitespace();
 
         const bool is_right_associative = op == Token::EXP;
@@ -3316,6 +3325,9 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseBinaryExpression(
     int prec) {
   DCHECK_GE(prec, 4);
   ExpressionT x;
+
+  PrettyPrintAutoExpression pretty_print(this);
+
   // "#foo in ShiftExpression" needs to be parsed separately, since private
   // identifiers are not valid PrimaryExpressions.
   if (V8_UNLIKELY(FLAG_harmony_private_brand_checks &&
