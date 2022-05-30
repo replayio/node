@@ -3548,6 +3548,9 @@ static inline void DebugAppend(std::vector<char>& buf, const char* format, ...) 
   }
 }
 
+// Maximum characters we want to put on a line.
+static const int LineMaxChars = 80;
+
 // State used to pretty print a sequence of characters.
 class PrettyPrintState {
  public:
@@ -3563,29 +3566,32 @@ class PrettyPrintState {
   size_t whitespacePositionsIndex;
   int nextWhitespacePos;
 
+  // Events describing expressions in the characters being printed.
+  std::vector<std::pair<PrettyPrintEvent, int>> expressionEvents;
+
   PrettyPrintState(const base::uc16* chars, std::vector<char>& prettySource)
     : chars(chars), prettySource(prettySource) {}
 
-  // Pretty print a range of the input source and add it to the result.
-  inline void AppendPrettyPrintedLine(int indent, int start, int end) {
+  inline void AppendIndentation(int indent) {
     for (int i = 0; i < indent; i++) {
       prettySource.push_back(' ');
     }
+  }
 
+  // Pretty print a range of the input source and add it to the result.
+  // Returns the number of characters written.
+  inline int AppendPrettyPrintedText(int start, int end) {
     whitespacePositionsIndex = 0;
     LoadNextWhitespacePosition(start);
 
-    //DebugAppend(prettySource, "line %d %d", start, end);
-    //for (int pos : whitespacePositions) {
-    //  DebugAppend(prettySource, "whitespace %d", pos);
-    //}
-    //DebugAppend(prettySource, " ");
+    int insertedSpaces = 0;
 
     for (int pos = start; pos < end; pos++) {
       if (pos == nextWhitespacePos) {
         char last = prettySource.size() ? prettySource[prettySource.size() - 1] : ' ';
         if (last != ' ' && last != '\n') {
           prettySource.push_back(' ');
+          insertedSpaces++;
         }
         AppendUTF8(prettySource, chars[pos]);
         LoadNextWhitespacePosition(pos + 1);
@@ -3593,12 +3599,57 @@ class PrettyPrintState {
         AppendUTF8(prettySource, chars[pos]);
       }
     }
+
+    return insertedSpaces + end - start;
+  }
+
+  inline void AppendPrettyPrintedLine(int indent, int start, int end) {
+    AppendIndentation(indent);
+    AppendPrettyPrintedText(start, end);
     prettySource.push_back('\n');
+  }
+
+  // Pretty print a line and add it to the result, breaking up expressions if the
+  // line is too long.
+  void AppendPrettyPrintedLineCheckOverflow(int lineWritten, int indent, int start, int end) {
+    if (lineWritten + indent + end - start < LineMaxChars) {
+      AppendPrettyPrintedLine(indent, start, end);
+      return;
+    }
+
+    // Look for a place where we can break up the expression.
+    std::vector<int> breaks;
+    int breakExpression = FindExpressionBreaks(start, end, breaks);
+
+    if (!breaks.size()) {
+      // There are no subexpressions we can break this line up at.
+      AppendPrettyPrintedLine(indent, start, end);
+    }
+
+    //fprintf(stderr, "ExpressionBreaks %d %d", start, end);
+    //for (int breakPosition : breaks) {
+    //  fprintf(stderr, " Break %d", breakPosition);
+    //}
+    //fprintf(stderr, "\n");
+
+    int expressionIndent = indent + 2;
+    if (start < breakExpression) {
+      AppendIndentation(indent);
+      int written = AppendPrettyPrintedText(start, breakExpression);
+      expressionIndent = indent + written;
+      AppendPrettyPrintedLineCheckOverflow(expressionIndent, 0, breakExpression, breaks[0]);
+    }
+
+    for (size_t i = 0; i < breaks.size(); i++) {
+      int subexpressionEnd = (i + 1 < breaks.size()) ? breaks[i + 1] : end;
+      AppendPrettyPrintedLineCheckOverflow(0, expressionIndent, breaks[i], subexpressionEnd);
+    }
   }
 
   // Clear out temporary state.
   inline void Reset() {
     whitespacePositions.clear();
+    expressionEvents.clear();
   }
 
  private:
@@ -3615,6 +3666,50 @@ class PrettyPrintState {
         break;
       }
     }
+  }
+
+  int FindExpressionBreaks(int start, int end, std::vector<int>& breaks) {
+    // Start positions of expressions that have been started.
+    std::vector<int> expressionPositions;
+
+    int bestExpression = -1;
+    int bestDepth = INT32_MAX;
+    std::vector<int> bestExpressionBreaks;
+
+    for (const auto& event : expressionEvents) {
+      switch (event.first) {
+        case PrettyPrintEvent::ExpressionStart:
+          if (event.second >= start && event.second < end) {
+            expressionPositions.push_back(event.second);
+          }
+          break;
+        case PrettyPrintEvent::ExpressionEnd:
+          if (expressionPositions.size()) {
+            expressionPositions.pop_back();
+          }
+          break;
+        case PrettyPrintEvent::ExpressionBreak:
+          if (event.second > start && event.second < end) {
+            int currentExpression = expressionPositions.size() ? expressionPositions.back() : start;
+            int currentDepth = expressionPositions.size();
+            if (currentExpression == bestExpression) {
+              bestExpressionBreaks.push_back(event.second);
+            } else if (currentDepth < bestDepth) {
+              bestExpression = currentExpression;
+              bestDepth = currentDepth;
+              bestExpressionBreaks.push_back(event.second);
+            }
+          }
+          break;
+        default:
+          break;
+      }
+    }
+
+    for (int breakPosition : bestExpressionBreaks) {
+      breaks.push_back(breakPosition);
+    }
+    return bestExpression;
   }
 };
 
@@ -3659,7 +3754,7 @@ void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
         break;
       case PrettyPrintEvent::Break:
         if (event.second > lastPos) {
-          prettyState.AppendPrettyPrintedLine(lastIndent, lastPos, event.second);
+          prettyState.AppendPrettyPrintedLineCheckOverflow(0, lastIndent, lastPos, event.second);
           lastPos = event.second;
           lastIndent = indent;
           prettyState.Reset();
@@ -3668,11 +3763,16 @@ void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
       case PrettyPrintEvent::Whitespace:
         prettyState.whitespacePositions.push_back(event.second);
         break;
+      case PrettyPrintEvent::ExpressionStart:
+      case PrettyPrintEvent::ExpressionEnd:
+      case PrettyPrintEvent::ExpressionBreak:
+        prettyState.expressionEvents.push_back(event);
+        break;
     }
   }
 
   int rv = write(STDOUT_FILENO, &prettySource[0], prettySource.size());
-  CHECK(rv == prettySource.size());
+  CHECK(rv == (int)prettySource.size());
 
   gPrettyPrintEvents.clear();
 }

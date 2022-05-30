@@ -52,12 +52,21 @@ enum class PrettyPrintEvent {
   Indent,
   Deindent,
 
-  // Place where it is suitable to insert a line break and indent the
+  // Position where it is suitable to insert a line break and indent the
   // new line at the statement indentation level.
   Break,
 
   // Ensure there is whitespace before the given position.
   Whitespace,
+
+  // Position of the start a subexpression.
+  ExpressionStart,
+
+  // End the most recent subexpression, does not have a position.
+  ExpressionEnd,
+
+  // Position where a large expression can be broken across multiple lines.
+  ExpressionBreak,
 };
 
 extern std::vector<std::pair<PrettyPrintEvent, int>> gPrettyPrintEvents;
@@ -1674,25 +1683,38 @@ class ParserBase {
     }
   }
 
-  inline void PrettyPrintIndent() {
+  inline void AddPrettyPrintExpressionBreak() {
     if (flags().pretty_print()) {
-      AddPrettyPrintEvent(PrettyPrintEvent::Indent, 0);
-    }
-  }
-
-  inline void PrettyPrintDeindent() {
-    if (flags().pretty_print()) {
-      AddPrettyPrintEvent(PrettyPrintEvent::Deindent, 0);
+      AddPrettyPrintEvent(PrettyPrintEvent::ExpressionBreak, scanner()->peek_location().beg_pos);
     }
   }
 
   struct PrettyPrintAutoIndent {
     ParserBase<Impl>* parser;
     PrettyPrintAutoIndent(ParserBase<Impl>* parser) : parser(parser) {
-      parser->PrettyPrintIndent();
+      if (parser->flags().pretty_print()) {
+        AddPrettyPrintEvent(PrettyPrintEvent::Indent, 0);
+      }
     }
     ~PrettyPrintAutoIndent() {
-      parser->PrettyPrintDeindent();
+      if (parser->flags().pretty_print()) {
+        AddPrettyPrintEvent(PrettyPrintEvent::Deindent, 0);
+      }
+    }
+  };
+
+  struct PrettyPrintAutoExpression {
+    ParserBase<Impl>* parser;
+    PrettyPrintAutoExpression(ParserBase<Impl>* parser) : parser(parser) {
+      if (parser->flags().pretty_print()) {
+        AddPrettyPrintEvent(PrettyPrintEvent::ExpressionStart,
+                            parser->scanner()->peek_location().beg_pos);
+      }
+    }
+    ~PrettyPrintAutoExpression() {
+      if (parser->flags().pretty_print()) {
+        AddPrettyPrintEvent(PrettyPrintEvent::ExpressionEnd, 0);
+      }
     }
   };
 };
@@ -2080,6 +2102,8 @@ ParserBase<Impl>::ParseExpressionCoverGrammar() {
   //   AssignmentExpression
   //   Expression ',' AssignmentExpression
 
+  PrettyPrintAutoExpression pretty_print(this);
+
   ExpressionListT list(pointer_buffer());
   ExpressionT expression;
   AccumulationScope accumulation_scope(expression_scope());
@@ -2101,6 +2125,7 @@ ParserBase<Impl>::ParseExpressionCoverGrammar() {
 
     if (!Check(Token::COMMA)) break;
 
+    AddPrettyPrintExpressionBreak();
     AddPrettyPrintWhitespace();
 
     if (peek() == Token::RPAREN && PeekAhead() == Token::ARROW) {
@@ -4778,11 +4803,17 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseClassLiteral(
     scope.ValidateExpression();
   }
 
+  AddPrettyPrintWhitespace();
   Expect(Token::LBRACE);
+
+  base::Optional<PrettyPrintAutoIndent> indent;
+  indent.emplace(this);
 
   const bool has_extends = !impl()->IsNull(class_info.extends);
   while (peek() != Token::RBRACE) {
     if (Check(Token::SEMICOLON)) continue;
+
+    AddPrettyPrintBreak();
 
     // Either we're parsing a `static { }` initialization block or a property.
     if (FLAG_harmony_class_static_blocks && peek() == Token::STATIC &&
@@ -4843,6 +4874,9 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseClassLiteral(
                                      &class_info);
     impl()->InferFunctionName();
   }
+
+  indent.reset();
+  AddPrettyPrintBreak();
 
   Expect(Token::RBRACE);
   int end_pos = end_position();
