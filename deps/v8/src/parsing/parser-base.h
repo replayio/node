@@ -55,11 +55,30 @@ enum class PrettyPrintEvent {
   // Place where it is suitable to insert a line break and indent the
   // new line at the statement indentation level.
   Break,
+
+  // Ensure there is whitespace before the given position.
+  Whitespace,
 };
 
 extern std::vector<std::pair<PrettyPrintEvent, int>> gPrettyPrintEvents;
 
+const bool gDumpPrettyPrintEvents = false;
+
+inline const char* PrettyPrintEventToString(PrettyPrintEvent event) {
+  switch (event) {
+    case PrettyPrintEvent::Indent: return "Indent";
+    case PrettyPrintEvent::Break: return "Break";
+    case PrettyPrintEvent::Deindent: return "Deindent";
+    case PrettyPrintEvent::Whitespace: return "Whitespace";
+    default: return "Unknown";
+  }
+}
+
 inline void AddPrettyPrintEvent(PrettyPrintEvent event, int pos) {
+  if (gDumpPrettyPrintEvents) {
+    fprintf(stderr, "PrettyPrintEvent %s %d\n", PrettyPrintEventToString(event), pos);
+  }
+
   gPrettyPrintEvents.emplace_back(event, pos);
 }
 
@@ -1653,6 +1672,16 @@ class ParserBase {
     }
   }
 
+  inline void AddPrettyPrintWhitespace(int pos) {
+    if (flags().pretty_print()) {
+      AddPrettyPrintEvent(PrettyPrintEvent::Whitespace, pos);
+    }
+  }
+
+  inline void AddPrettyPrintWhitespace() {
+    AddPrettyPrintWhitespace(scanner()->peek_location().beg_pos);
+  }
+
   inline void PrettyPrintIndent() {
     if (flags().pretty_print()) {
       AddPrettyPrintEvent(PrettyPrintEvent::Indent, 0);
@@ -2080,6 +2109,8 @@ ParserBase<Impl>::ParseExpressionCoverGrammar() {
 
     if (!Check(Token::COMMA)) break;
 
+    AddPrettyPrintWhitespace();
+
     if (peek() == Token::RPAREN && PeekAhead() == Token::ARROW) {
       // a trailing comma is allowed at the end of an arrow parameter list
       break;
@@ -2187,6 +2218,7 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseArrayLiteral() {
     values.Add(elem);
     if (peek() != Token::RBRACK) {
       Expect(Token::COMMA);
+      AddPrettyPrintWhitespace();
       if (elem->IsFailureExpression()) return elem;
     }
   }
@@ -2616,6 +2648,7 @@ ParserBase<Impl>::ParseObjectPropertyDefinition(ParsePropertyInfo* prop_info,
         *has_seen_proto = true;
       }
       Consume(Token::COLON);
+      AddPrettyPrintWhitespace();
       AcceptINScope scope(this, true);
       ExpressionT value =
           ParsePossibleDestructuringSubPattern(prop_info->accumulation_scope);
@@ -2774,6 +2807,11 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseObjectLiteral() {
   bool has_seen_proto = false;
 
   Consume(Token::LBRACE);
+
+  if (peek() != Token::RBRACE) {
+    AddPrettyPrintWhitespace();
+  }
+
   AccumulationScope accumulation_scope(expression_scope());
 
   // If methods appear inside the object literal, we'll enter this scope.
@@ -2809,6 +2847,7 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseObjectLiteral() {
     if (peek() != Token::RBRACE) {
       Expect(Token::COMMA);
     }
+    AddPrettyPrintWhitespace();
 
     fni_.Infer();
   }
@@ -2881,6 +2920,8 @@ void ParserBase<Impl>::ParseArguments(
         expression_scope()->SetInitializers(variable_index, peek_position());
 
     if (!Check(Token::COMMA)) break;
+
+    AddPrettyPrintWhitespace();
   }
 
   if (args->length() > Code::kMaxArguments) {
@@ -2986,8 +3027,12 @@ ParserBase<Impl>::ParseAssignmentExpressionCoverGrammar() {
         MessageTemplate::kInvalidLhsInAssignment, early_error);
   }
 
+  AddPrettyPrintWhitespace();
+
   Consume(op);
   int op_position = position();
+
+  AddPrettyPrintWhitespace();
 
   ExpressionT right = ParseAssignmentExpression();
 
@@ -3167,10 +3212,13 @@ ParserBase<Impl>::ParseConditionalContinuation(ExpressionT expression,
                                                int pos) {
   SourceRange then_range, else_range;
 
+  AddPrettyPrintWhitespace();
+
   ExpressionT left;
   {
     SourceRangeScope range_scope(scanner(), &then_range);
     Consume(Token::CONDITIONAL);
+    AddPrettyPrintWhitespace();
     // In parsing the first assignment expression in conditional
     // expressions we always accept the 'in' keyword; see ECMA-262,
     // section 11.12, page 58.
@@ -3180,7 +3228,9 @@ ParserBase<Impl>::ParseConditionalContinuation(ExpressionT expression,
   ExpressionT right;
   {
     SourceRangeScope range_scope(scanner(), &else_range);
+    AddPrettyPrintWhitespace();
     Expect(Token::COLON);
+    AddPrettyPrintWhitespace();
     right = ParseAssignmentExpression();
   }
   ExpressionT expr = factory()->NewConditional(expression, left, right, pos);
@@ -3201,7 +3251,10 @@ ParserBase<Impl>::ParseBinaryContinuation(ExpressionT x, int prec, int prec1) {
       Token::Value op;
       {
         SourceRangeScope right_range_scope(scanner(), &right_range);
+
+        AddPrettyPrintWhitespace();
         op = Next();
+        AddPrettyPrintWhitespace();
 
         const bool is_right_associative = op == Token::EXP;
         const int next_prec = is_right_associative ? prec1 : prec1 + 1;
@@ -3951,6 +4004,7 @@ void ParserBase<Impl>::ParseFormalParameterList(FormalParametersT* parameters) {
         // allow the trailing comma
         break;
       }
+      AddPrettyPrintWhitespace();
     }
   }
 
@@ -4049,9 +4103,15 @@ void ParserBase<Impl>::ParseVariableDeclarations(
 
     Scanner::Location variable_loc = scanner()->location();
 
+    if (peek() == Token::ASSIGN) {
+      AddPrettyPrintWhitespace();
+    }
+
     ExpressionT value = impl()->NullExpression();
     int value_beg_pos = kNoSourcePosition;
     if (Check(Token::ASSIGN)) {
+      AddPrettyPrintWhitespace();
+
       DCHECK(!impl()->IsNull(pattern));
       {
         value_beg_pos = peek_position();
@@ -4560,7 +4620,9 @@ ParserBase<Impl>::ParseArrowFunctionLiteral(
     FunctionState function_state(&function_state_, &scope_,
                                  formal_parameters.scope);
 
+    AddPrettyPrintWhitespace();
     Consume(Token::ARROW);
+    AddPrettyPrintWhitespace();
 
     if (peek() == Token::LBRACE) {
       // Multiple statement body
@@ -5351,6 +5413,8 @@ typename ParserBase<Impl>::BlockT ParserBase<Impl>::ParseBlock(
     scope()->set_start_position(peek_position());
     Target target(this, body, labels, nullptr, Target::TARGET_FOR_NAMED_ONLY);
 
+    AddPrettyPrintWhitespace();
+
     Expect(Token::LBRACE);
 
     while (peek() != Token::RBRACE) {
@@ -5537,6 +5601,9 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseIfStatement(
 
   int pos = peek_position();
   Consume(Token::IF);
+
+  AddPrettyPrintWhitespace();
+
   Expect(Token::LPAREN);
   ExpressionT condition = ParseExpression();
   Expect(Token::RPAREN);
@@ -5653,6 +5720,7 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseReturnStatement() {
   // reporting any errors on it, because of the way errors are
   // reported (underlining).
   Consume(Token::RETURN);
+  AddPrettyPrintWhitespace();
   Scanner::Location loc = scanner()->location();
 
   switch (GetDeclarationScope()->scope_type()) {
@@ -5825,6 +5893,7 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseSwitchStatement(
   int switch_pos = peek_position();
 
   Consume(Token::SWITCH);
+  AddPrettyPrintWhitespace();
   Expect(Token::LPAREN);
   ExpressionT tag = ParseExpression();
   Expect(Token::RPAREN);
@@ -5838,7 +5907,11 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseSwitchStatement(
     Target target(this, switch_statement, labels, nullptr,
                   Target::TARGET_FOR_ANONYMOUS);
 
+    base::Optional<PrettyPrintAutoIndent> indent;
+    indent.emplace(this);
+
     bool default_seen = false;
+    AddPrettyPrintWhitespace();
     Expect(Token::LBRACE);
     while (peek() != Token::RBRACE) {
       // An empty label indicates the default case.
@@ -5847,6 +5920,7 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseSwitchStatement(
       SourceRange clause_range;
       {
         SourceRangeScope range_scope(scanner(), &clause_range);
+        AddPrettyPrintBreak();
         if (Check(Token::CASE)) {
           label = ParseExpression();
         } else {
@@ -5870,6 +5944,8 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseSwitchStatement(
       impl()->RecordCaseClauseSourceRange(clause, clause_range);
       switch_statement->cases()->Add(clause, zone());
     }
+    indent.reset();
+    AddPrettyPrintBreak();
     Expect(Token::RBRACE);
 
     int end_pos = end_position();
@@ -5897,6 +5973,7 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseTryStatement() {
   //   'finally' Block
 
   Consume(Token::TRY);
+  AddPrettyPrintWhitespace();
   int pos = position();
 
   BlockT try_block = ParseBlock(nullptr);
@@ -5910,10 +5987,13 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseTryStatement() {
 
   SourceRange catch_range, finally_range;
 
+  AddPrettyPrintWhitespace();
+
   BlockT catch_block = impl()->NullBlock();
   {
     SourceRangeScope catch_range_scope(scanner(), &catch_range);
     if (Check(Token::CATCH)) {
+      AddPrettyPrintWhitespace();
       bool has_binding;
       has_binding = Check(Token::LPAREN);
 
@@ -5997,6 +6077,10 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseTryStatement() {
   DCHECK(has_error() || peek() == Token::FINALLY ||
          !impl()->IsNull(catch_block));
   {
+    if (peek() == Token::FINALLY) {
+      AddPrettyPrintWhitespace();
+    }
+
     SourceRangeScope range_scope(scanner(), &finally_range);
     if (Check(Token::FINALLY)) {
       finally_block = ParseBlock(nullptr);
@@ -6026,6 +6110,7 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseForStatement(
   ForInfo for_info(this);
 
   Consume(Token::FOR);
+  AddPrettyPrintWhitespace();
   Expect(Token::LPAREN);
 
   bool starts_with_let = peek() == Token::LET;
@@ -6059,6 +6144,7 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseForStatement(
     }
 
     Expect(Token::SEMICOLON);
+    AddPrettyPrintWhitespace();
 
     // Parse the remaining code in the inner block scope since the declaration
     // above was parsed there. We'll finalize the unnecessary outer block scope
@@ -6140,6 +6226,7 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseForStatement(
   }
 
   Expect(Token::SEMICOLON);
+  AddPrettyPrintWhitespace();
 
   // Standard 'for' loop, we have parsed the initializer at this point.
   ExpressionT cond = impl()->NullExpression();
@@ -6372,6 +6459,7 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseForAwaitStatement(
   BlockState for_state(zone(), &scope_);
   Expect(Token::FOR);
   Expect(Token::AWAIT);
+  AddPrettyPrintWhitespace();
   Expect(Token::LPAREN);
   scope()->set_start_position(scanner()->location().beg_pos);
   scope()->set_is_hidden();

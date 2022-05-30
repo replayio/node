@@ -155,6 +155,7 @@ PreParser::PreParseResult PreParser::PreParseFunction(
                            formals_end_position);
   }
 
+  AddPrettyPrintWhitespace();
   Expect(Token::LBRACE);
   DeclarationScope* inner_scope = function_scope;
 
@@ -322,6 +323,7 @@ PreParser::Expression PreParser::ParseFunctionLiteral(
     CheckArityRestrictions(formals.arity, kind, formals.has_rest,
                            start_position, formals_end_position);
 
+    AddPrettyPrintWhitespace();
     Expect(Token::LBRACE);
 
     // Parse function body.

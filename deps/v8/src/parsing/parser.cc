@@ -955,6 +955,7 @@ FunctionLiteral* Parser::DoParseFunction(Isolate* isolate, ParseInfo* info,
           // '(' StrictFormalParameters ')'
           ParseFormalParameterList(&formals);
           Expect(Token::RPAREN);
+          AddPrettyPrintWhitespace();
         } else {
           // BindingIdentifier
           ParameterParsingScope scope(impl(), &formals);
@@ -2967,6 +2968,7 @@ void Parser::ParseFunction(
       CheckArityRestrictions(formals.arity, kind, formals.has_rest,
                              function_scope->start_position(),
                              formals_end_position);
+      AddPrettyPrintWhitespace();
       Expect(Token::LBRACE);
     }
     formals.duplicate_loc = formals_scope.duplicate_location();
@@ -3515,15 +3517,6 @@ Statement* Parser::CheckCallable(Variable* var, Expression* error, int pos) {
 std::vector<std::pair<FunctionEvent, int>> gFunctionEvents;
 std::vector<std::pair<PrettyPrintEvent, int>> gPrettyPrintEvents;
 
-static inline const char* PrettyPrintEventToString(PrettyPrintEvent event) {
-  switch (event) {
-    case PrettyPrintEvent::Indent: return "Indent";
-    case PrettyPrintEvent::Break: return "Break";
-    case PrettyPrintEvent::Deindent: return "Deindent";
-    default: return "Unknown";
-  }
-}
-
 static inline void AppendUTF8(std::vector<char>& buf, base::uc16 code) {
   if (code <= 0x7F) {
     buf.push_back(code);
@@ -3542,16 +3535,66 @@ static inline void AppendUTF8(std::vector<char>& buf, base::uc16 code) {
   }
 }
 
-void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
-  bool dumpEvents = getenv("PRETTY_PRINT_DUMP_EVENTS");
+// State used to pretty print a sequence of characters.
+class PrettyPrintState {
+ public:
+  // Source being pretty printed.
+  const base::uc16* chars;
 
-  DisallowGarbageCollection no_gc;
+  // Result being written to.
+  std::vector<char>& prettySource;
 
-  for (const auto& event : gPrettyPrintEvents) {
-    if (dumpEvents) {
-      fprintf(stderr, "%s %d\n", PrettyPrintEventToString(event.first), event.second);
+  // Positions where whitespace is needed in the characters being printed.
+  std::vector<int> whitespacePositions;
+
+  size_t whitespacePositionsIndex;
+  int nextWhitespacePos;
+
+  PrettyPrintState(const base::uc16* chars, std::vector<char>& prettySource)
+    : chars(chars), prettySource(prettySource) {}
+
+  // Pretty print a range of the input source and add it to the result.
+  inline void AppendPrettyPrintedLine(int indent, int start, int end) {
+    for (int i = 0; i < indent; i++) {
+      prettySource.push_back(' ');
     }
+
+    whitespacePositionsIndex = 0;
+    LoadNextWhitespacePosition();
+
+    for (int pos = start; pos < end; pos++) {
+      if (pos == nextWhitespacePos) {
+        char last = prettySource.size() ? prettySource[prettySource.size() - 1] : ' ';
+        if (last != ' ' && last != '\n') {
+          prettySource.push_back(' ');
+        }
+        AppendUTF8(prettySource, chars[pos]);
+        LoadNextWhitespacePosition();
+      } else {
+        AppendUTF8(prettySource, chars[pos]);
+      }
+    }
+    prettySource.push_back('\n');
   }
+
+  // Clear out temporary state.
+  inline void Reset() {
+    whitespacePositions.clear();
+  }
+
+ private:
+  inline void LoadNextWhitespacePosition() {
+    if (whitespacePositionsIndex < whitespacePositions.size()) {
+      nextWhitespacePos = whitespacePositions[whitespacePositionsIndex];
+    } else {
+      nextWhitespacePos = -1;
+    }
+    whitespacePositionsIndex++;
+  }
+};
+
+void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
+  DisallowGarbageCollection no_gc;
 
   Handle<String> sourceString(String::cast(script->source()), isolate);
   String::FlatContent flatSource = sourceString->GetFlatContent(no_gc);
@@ -3562,8 +3605,45 @@ void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
   base::Vector<const base::uc16> chars = flatSource.ToUC16Vector();
 
   std::vector<char> prettySource;
-  for (int i = 0; i < chars.size(); i++) {
-    AppendUTF8(prettySource, chars[i]);
+
+  // Ignore indentation changes before the first break.
+  size_t eventIndex = 0;
+  for (; eventIndex < gPrettyPrintEvents.size(); eventIndex++) {
+    const auto& event = gPrettyPrintEvents[eventIndex];
+    if (event.first == PrettyPrintEvent::Break) {
+      break;
+    }
+  }
+
+  int indent = 0;
+  int lastPos = 0;
+
+  // Indentation at the last line break.
+  int lastIndent = 0;
+
+  PrettyPrintState prettyState(chars.begin(), prettySource);
+
+  for (; eventIndex < gPrettyPrintEvents.size(); eventIndex++) {
+    const auto& event = gPrettyPrintEvents[eventIndex];
+    switch (event.first) {
+      case PrettyPrintEvent::Indent:
+        indent += 2;
+        break;
+      case PrettyPrintEvent::Deindent:
+        indent -= 2;
+        break;
+      case PrettyPrintEvent::Break:
+        if (event.second > lastPos) {
+          prettyState.AppendPrettyPrintedLine(lastIndent, lastPos, event.second);
+          lastPos = event.second;
+          lastIndent = indent;
+          prettyState.Reset();
+        }
+        break;
+      case PrettyPrintEvent::Whitespace:
+        prettyState.whitespacePositions.push_back(event.second);
+        break;
+    }
   }
 
   int rv = write(STDOUT_FILENO, &prettySource[0], prettySource.size());
