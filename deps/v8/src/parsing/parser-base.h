@@ -5723,6 +5723,7 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseIfStatement(
   }
 
   if (peek() == Token::ELSE) {
+    AddPrettyPrintWhitespace();
     AddPrettyPrintBreakIfNotRBrace();
   }
 
@@ -5913,9 +5914,11 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseDoWhileStatement(
     body = ParseStatement(nullptr, nullptr);
   }
 
+  AddPrettyPrintWhitespace();
   AddPrettyPrintBreakIfNotRBrace();
 
   Expect(Token::WHILE);
+  AddPrettyPrintWhitespace();
   Expect(Token::LPAREN);
 
   ExpressionT cond = ParseExpression();
@@ -5948,6 +5951,7 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseWhileStatement(
   StatementT body = impl()->NullStatement();
 
   Consume(Token::WHILE);
+  AddPrettyPrintWhitespace();
   Expect(Token::LPAREN);
   ExpressionT cond = ParseExpression();
   Expect(Token::RPAREN);

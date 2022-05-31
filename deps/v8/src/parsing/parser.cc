@@ -3535,6 +3535,9 @@ static inline void AppendUTF8(std::vector<char>& buf, base::uc16 code) {
   }
 }
 
+// This can be handy for adding debugging information to the pretty printed text.
+#if 0
+
 static inline void DebugAppend(std::vector<char>& buf, const char* format, ...) {
   va_list args;
   va_start(args, format);
@@ -3547,6 +3550,8 @@ static inline void DebugAppend(std::vector<char>& buf, const char* format, ...) 
     buf.push_back(*ptr);
   }
 }
+
+#endif // 0
 
 // Next character from the input source which will be written while pretty printing.
 static int gNextCharacter = 0;
@@ -3608,7 +3613,8 @@ class PrettyPrintState {
   // Pretty print a line and add it to the result, breaking up expressions if the
   // line is too long. lineWritten is how many characters have already been written
   // to the line.
-  void AppendPrettyPrintedLineCheckOverflow(int lineWritten, int start, int end) {
+  void AppendPrettyPrintedLineCheckOverflow(int lineWritten, int start, int end,
+                                            int expressionEventsStart, int expressionEventsEnd) {
     CHECK(start == gNextCharacter);
 
     if (lineWritten + end - start < LineMaxChars) {
@@ -3617,11 +3623,14 @@ class PrettyPrintState {
       return;
     }
 
+    NarrowExpressionEventsRange(start, end, &expressionEventsStart, &expressionEventsEnd);
+
     // Look for a place where we can break up the expression.
     std::vector<int> breaks;
     bool bracketed;
     int bracketedEnd;
-    int breakExpression = FindExpressionBreaks(start, end, breaks, &bracketed, &bracketedEnd);
+    int breakExpression = FindExpressionBreaks(start, end, breaks, &bracketed, &bracketedEnd,
+                                               expressionEventsStart, expressionEventsEnd);
 
     if (!breaks.size()) {
       // There are no subexpressions we can break this line up at.
@@ -3634,11 +3643,6 @@ class PrettyPrintState {
       bracketedEnd = -1;
     }
 
-    //DebugAppend(prettySource, "breakLine %d %d %d %d %d ", start, end, breakExpression, bracketed, bracketedEnd);
-    //for (int breakPosition : breaks) {
-    //  DebugAppend(prettySource, "break %d ", breakPosition);
-    //}
-
     int initialWritten = lineWritten;
 
     if (start < breakExpression) {
@@ -3648,7 +3652,8 @@ class PrettyPrintState {
     int expressionIndent = bracketed ? initialWritten + 2 : lineWritten;
 
     int prettySize = prettySource.size();
-    AppendPrettyPrintedLineCheckOverflow(lineWritten, breakExpression, breaks[0]);
+    AppendPrettyPrintedLineCheckOverflow(lineWritten, breakExpression, breaks[0],
+                                         expressionEventsStart, expressionEventsEnd);
 
     // Watch out for inserting a space before the expression we are aligning
     // subexpressions with.
@@ -3659,12 +3664,14 @@ class PrettyPrintState {
     for (size_t i = 0; i < breaks.size(); i++) {
       int subexpressionEnd = (i + 1 < breaks.size()) ? breaks[i + 1] : (bracketedEnd >= 0 ? bracketedEnd : end);
       AppendIndentation(expressionIndent);
-      AppendPrettyPrintedLineCheckOverflow(expressionIndent, breaks[i], subexpressionEnd);
+      AppendPrettyPrintedLineCheckOverflow(expressionIndent, breaks[i], subexpressionEnd,
+                                           expressionEventsStart, expressionEventsEnd);
     }
 
     if (bracketedEnd >= 0) {
       AppendIndentation(initialWritten);
-      AppendPrettyPrintedLineCheckOverflow(initialWritten, bracketedEnd, end);
+      AppendPrettyPrintedLineCheckOverflow(initialWritten, bracketedEnd, end,
+                                           expressionEventsStart, expressionEventsEnd);
     }
   }
 
@@ -3690,8 +3697,35 @@ class PrettyPrintState {
     }
   }
 
+  // Narrow the range of expressions so it covers only the given position range.
+  void NarrowExpressionEventsRange(int start, int end,
+                                   int* expressionEventsStart, int* expressionEventsEnd) {
+    int oldStart = *expressionEventsStart;
+    int oldEnd = *expressionEventsEnd;
+
+    int newStart = oldStart;
+    int newEnd = oldEnd;
+
+    for (int i = oldStart; i < oldEnd; i++) {
+      const auto& event = expressionEvents[i];
+      if (event.second) {
+        if (event.second < start) {
+          newStart = i + 1;
+        }
+        if (event.second >= end) {
+          newEnd = i;
+          break;
+        }
+      }
+    }
+
+    *expressionEventsStart = newStart;
+    *expressionEventsEnd = newEnd;
+  }
+
   int FindExpressionBreaks(int start, int end, std::vector<int>& breaks,
-                           bool* bracketed, int* bracketedEnd) {
+                           bool* bracketed, int* bracketedEnd,
+                           int expressionEventsStart, int expressionEventsEnd) {
     // Start positions of expressions that have been started.
     std::vector<int> expressionPositions;
 
@@ -3702,7 +3736,8 @@ class PrettyPrintState {
     int bestExpressionEnd;
     std::vector<int> bestExpressionBreaks;
 
-    for (const auto& event : expressionEvents) {
+    for (int i = expressionEventsStart; i < expressionEventsEnd; i++) {
+      const auto& event = expressionEvents[i];
       switch (event.first) {
         case PrettyPrintEvent::ExpressionStart:
         case PrettyPrintEvent::BracketedExpressionStart:
@@ -3813,7 +3848,8 @@ void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
       case PrettyPrintEvent::Break:
         if (event.second > lastPos) {
           prettyState.AppendIndentation(lastIndent);
-          prettyState.AppendPrettyPrintedLineCheckOverflow(lastIndent, lastPos, event.second);
+          prettyState.AppendPrettyPrintedLineCheckOverflow(lastIndent, lastPos, event.second,
+                                                           0, prettyState.expressionEvents.size());
           lastPos = event.second;
           lastIndent = indent;
           prettyState.Reset();
@@ -3840,7 +3876,9 @@ void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
 
   gPrettyPrintEvents.clear();
 
-  fprintf(stderr, "Total: %.2f (%.2f pretty printing)\n", endTime - prettyPrintParseTime, endTime - startTime);
+  if (getenv("PRETTY_PRINT_TIMING")) {
+    fprintf(stderr, "Total: %.2f (%.2f pretty printing)\n", endTime - prettyPrintParseTime, endTime - startTime);
+  }
 }
 
 }  // namespace internal
