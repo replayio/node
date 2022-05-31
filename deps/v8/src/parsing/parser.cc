@@ -3605,19 +3605,15 @@ class PrettyPrintState {
     return insertedSpaces + end - start;
   }
 
-  inline void AppendPrettyPrintedLine(int indent, int start, int end) {
-    AppendIndentation(indent);
-    AppendPrettyPrintedText(start, end);
-    prettySource.push_back('\n');
-  }
-
   // Pretty print a line and add it to the result, breaking up expressions if the
-  // line is too long.
-  void AppendPrettyPrintedLineCheckOverflow(int lineWritten, int indent, int start, int end) {
+  // line is too long. lineWritten is how many characters have already been written
+  // to the line.
+  void AppendPrettyPrintedLineCheckOverflow(int lineWritten, int start, int end) {
     CHECK(start == gNextCharacter);
 
-    if (lineWritten + indent + end - start < LineMaxChars) {
-      AppendPrettyPrintedLine(indent, start, end);
+    if (lineWritten + end - start < LineMaxChars) {
+      AppendPrettyPrintedText(start, end);
+      prettySource.push_back('\n');
       return;
     }
 
@@ -3629,7 +3625,8 @@ class PrettyPrintState {
 
     if (!breaks.size()) {
       // There are no subexpressions we can break this line up at.
-      AppendPrettyPrintedLine(indent, start, end);
+      AppendPrettyPrintedText(start, end);
+      prettySource.push_back('\n');
       return;
     }
 
@@ -3642,32 +3639,32 @@ class PrettyPrintState {
     //  DebugAppend(prettySource, "break %d ", breakPosition);
     //}
 
-    // How much to indent subexpressions after each break site.
-    int expressionIndent = indent;
+    int initialWritten = lineWritten;
+
     if (start < breakExpression) {
-      AppendIndentation(indent);
-      int written = AppendPrettyPrintedText(start, breakExpression);
-      expressionIndent = bracketed ? indent + 2 : indent + written;
+      lineWritten += AppendPrettyPrintedText(start, breakExpression);
+    }
 
-      int prettySize = prettySource.size();
-      AppendPrettyPrintedLineCheckOverflow(expressionIndent, 0, breakExpression, breaks[0]);
+    int expressionIndent = bracketed ? initialWritten + 2 : lineWritten;
 
-      // Watch out for inserting a space before the expression we are aligning
-      // subexpressions with.
-      if (prettySource[prettySize] == ' ') {
-        expressionIndent++;
-      }
-    } else {
-      AppendPrettyPrintedLineCheckOverflow(0, indent, breakExpression, breaks[0]);
+    int prettySize = prettySource.size();
+    AppendPrettyPrintedLineCheckOverflow(lineWritten, breakExpression, breaks[0]);
+
+    // Watch out for inserting a space before the expression we are aligning
+    // subexpressions with.
+    if (!bracketed && prettySource[prettySize] == ' ') {
+      expressionIndent++;
     }
 
     for (size_t i = 0; i < breaks.size(); i++) {
       int subexpressionEnd = (i + 1 < breaks.size()) ? breaks[i + 1] : (bracketedEnd >= 0 ? bracketedEnd : end);
-      AppendPrettyPrintedLineCheckOverflow(0, expressionIndent, breaks[i], subexpressionEnd);
+      AppendIndentation(expressionIndent);
+      AppendPrettyPrintedLineCheckOverflow(expressionIndent, breaks[i], subexpressionEnd);
     }
 
     if (bracketedEnd >= 0) {
-      AppendPrettyPrintedLineCheckOverflow(0, indent, bracketedEnd, end);
+      AppendIndentation(initialWritten);
+      AppendPrettyPrintedLineCheckOverflow(initialWritten, bracketedEnd, end);
     }
   }
 
@@ -3815,7 +3812,8 @@ void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
         break;
       case PrettyPrintEvent::Break:
         if (event.second > lastPos) {
-          prettyState.AppendPrettyPrintedLineCheckOverflow(0, lastIndent, lastPos, event.second);
+          prettyState.AppendIndentation(lastIndent);
+          prettyState.AppendPrettyPrintedLineCheckOverflow(lastIndent, lastPos, event.second);
           lastPos = event.second;
           lastIndent = indent;
           prettyState.Reset();
