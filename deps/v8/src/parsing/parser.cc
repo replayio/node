@@ -3614,6 +3614,8 @@ class PrettyPrintState {
   // Pretty print a line and add it to the result, breaking up expressions if the
   // line is too long.
   void AppendPrettyPrintedLineCheckOverflow(int lineWritten, int indent, int start, int end) {
+    CHECK(start == gNextCharacter);
+
     if (lineWritten + indent + end - start < LineMaxChars) {
       AppendPrettyPrintedLine(indent, start, end);
       return;
@@ -3621,7 +3623,9 @@ class PrettyPrintState {
 
     // Look for a place where we can break up the expression.
     std::vector<int> breaks;
-    int breakExpression = FindExpressionBreaks(start, end, breaks);
+    bool bracketed;
+    int bracketedEnd;
+    int breakExpression = FindExpressionBreaks(start, end, breaks, &bracketed, &bracketedEnd);
 
     if (!breaks.size()) {
       // There are no subexpressions we can break this line up at.
@@ -3629,7 +3633,11 @@ class PrettyPrintState {
       return;
     }
 
-    //DebugAppend(prettySource, "breakLine %d %d %d ", start, end, breakExpression);
+    if (bracketedEnd <= breaks[breaks.size() - 1]) {
+      bracketedEnd = -1;
+    }
+
+    //DebugAppend(prettySource, "breakLine %d %d %d %d %d ", start, end, breakExpression, bracketed, bracketedEnd);
     //for (int breakPosition : breaks) {
     //  DebugAppend(prettySource, "break %d ", breakPosition);
     //}
@@ -3639,7 +3647,7 @@ class PrettyPrintState {
     if (start < breakExpression) {
       AppendIndentation(indent);
       int written = AppendPrettyPrintedText(start, breakExpression);
-      expressionIndent = indent + written;
+      expressionIndent = bracketed ? indent + 2 : indent + written;
 
       int prettySize = prettySource.size();
       AppendPrettyPrintedLineCheckOverflow(expressionIndent, 0, breakExpression, breaks[0]);
@@ -3654,8 +3662,12 @@ class PrettyPrintState {
     }
 
     for (size_t i = 0; i < breaks.size(); i++) {
-      int subexpressionEnd = (i + 1 < breaks.size()) ? breaks[i + 1] : end;
+      int subexpressionEnd = (i + 1 < breaks.size()) ? breaks[i + 1] : (bracketedEnd >= 0 ? bracketedEnd : end);
       AppendPrettyPrintedLineCheckOverflow(0, expressionIndent, breaks[i], subexpressionEnd);
+    }
+
+    if (bracketedEnd >= 0) {
+      AppendPrettyPrintedLineCheckOverflow(0, indent, bracketedEnd, end);
     }
   }
 
@@ -3681,17 +3693,22 @@ class PrettyPrintState {
     }
   }
 
-  int FindExpressionBreaks(int start, int end, std::vector<int>& breaks) {
+  int FindExpressionBreaks(int start, int end, std::vector<int>& breaks,
+                           bool* bracketed, int* bracketedEnd) {
     // Start positions of expressions that have been started.
     std::vector<int> expressionPositions;
 
     int bestExpression = -1;
     int bestDepth = INT32_MAX;
+
+    bool bestExpressionBracketed;
+    int bestExpressionEnd;
     std::vector<int> bestExpressionBreaks;
 
     for (const auto& event : expressionEvents) {
       switch (event.first) {
         case PrettyPrintEvent::ExpressionStart:
+        case PrettyPrintEvent::BracketedExpressionStart:
           if (event.second >= start && event.second < end) {
             expressionPositions.push_back(event.second);
           }
@@ -3701,17 +3718,35 @@ class PrettyPrintState {
             expressionPositions.pop_back();
           }
           break;
-        case PrettyPrintEvent::ExpressionBreak:
+        case PrettyPrintEvent::BracketedExpressionEnd:
           if (event.second > start && event.second < end) {
             int currentExpression = expressionPositions.size() ? expressionPositions.back() : start;
             int currentDepth = expressionPositions.size();
             if (currentExpression == bestExpression &&
-                currentDepth == bestDepth) {
+                currentDepth == bestDepth &&
+                bestExpressionBracketed) {
+              bestExpressionEnd = event.second;
+            }
+          }
+          if (expressionPositions.size()) {
+            expressionPositions.pop_back();
+          }
+          break;
+        case PrettyPrintEvent::ExpressionBreak:
+        case PrettyPrintEvent::BracketedExpressionBreak:
+          if (event.second > start && event.second < end) {
+            int currentExpression = expressionPositions.size() ? expressionPositions.back() : start;
+            int currentDepth = expressionPositions.size();
+            if (currentExpression == bestExpression &&
+                currentDepth == bestDepth &&
+                bestExpressionBracketed == (event.first == PrettyPrintEvent::BracketedExpressionBreak)) {
               bestExpressionBreaks.push_back(event.second);
             } else if (currentDepth < bestDepth) {
               bestExpressionBreaks.clear();
               bestExpression = currentExpression;
               bestDepth = currentDepth;
+              bestExpressionBracketed = (event.first == PrettyPrintEvent::BracketedExpressionBreak);
+              bestExpressionEnd = -1;
               bestExpressionBreaks.push_back(event.second);
             }
           }
@@ -3724,6 +3759,8 @@ class PrettyPrintState {
     for (int breakPosition : bestExpressionBreaks) {
       breaks.push_back(breakPosition);
     }
+    *bracketed = bestExpressionBracketed;
+    *bracketedEnd = bestExpressionEnd;
     return bestExpression;
   }
 };
@@ -3790,6 +3827,9 @@ void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
       case PrettyPrintEvent::ExpressionStart:
       case PrettyPrintEvent::ExpressionEnd:
       case PrettyPrintEvent::ExpressionBreak:
+      case PrettyPrintEvent::BracketedExpressionStart:
+      case PrettyPrintEvent::BracketedExpressionEnd:
+      case PrettyPrintEvent::BracketedExpressionBreak:
         prettyState.expressionEvents.push_back(event);
         break;
     }

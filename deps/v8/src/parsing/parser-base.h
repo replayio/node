@@ -59,14 +59,25 @@ enum class PrettyPrintEvent {
   // Ensure there is whitespace before the given position.
   Whitespace,
 
-  // Position of the start of a subexpression.
+  // Position of the start of a expression.
   ExpressionStart,
 
-  // End the most recent subexpression, does not have a position.
+  // End the most recent expression, does not have a position.
   ExpressionEnd,
 
   // Position where a large expression can be broken across multiple lines.
   ExpressionBreak,
+
+  // Position of the start of a bracketed subexpression. These subexpressions
+  // have brackets --- (), [], {} --- and are indented differently when breaking
+  // them across multiple lines.
+  BracketedExpressionStart,
+
+  // Position of the end of the most recent bracketed subexpression.
+  BracketedExpressionEnd,
+
+  // Position where a bracketed subexpression can be broken across multiple lines.
+  BracketedExpressionBreak,
 };
 
 extern std::vector<std::pair<PrettyPrintEvent, int>> gPrettyPrintEvents;
@@ -82,6 +93,9 @@ inline const char* PrettyPrintEventToString(PrettyPrintEvent event) {
     case PrettyPrintEvent::ExpressionStart: return "ExpressionStart";
     case PrettyPrintEvent::ExpressionEnd: return "ExpressionEnd";
     case PrettyPrintEvent::ExpressionBreak: return "ExpressionBreak";
+    case PrettyPrintEvent::BracketedExpressionStart: return "BracketedExpressionStart";
+    case PrettyPrintEvent::BracketedExpressionEnd: return "BracketedExpressionEnd";
+    case PrettyPrintEvent::BracketedExpressionBreak: return "BracketedExpressionBreak";
     default: return "Unknown";
   }
 }
@@ -1695,6 +1709,24 @@ class ParserBase {
     }
   }
 
+  inline void AddPrettyPrintBracketedExpressionStart() {
+    if (flags().pretty_print()) {
+      AddPrettyPrintEvent(PrettyPrintEvent::BracketedExpressionStart, scanner()->peek_location().beg_pos);
+    }
+  }
+
+  inline void AddPrettyPrintBracketedExpressionBreak() {
+    if (flags().pretty_print()) {
+      AddPrettyPrintEvent(PrettyPrintEvent::BracketedExpressionBreak, scanner()->peek_location().beg_pos);
+    }
+  }
+
+  inline void AddPrettyPrintBracketedExpressionEnd() {
+    if (flags().pretty_print()) {
+      AddPrettyPrintEvent(PrettyPrintEvent::BracketedExpressionEnd, scanner()->peek_location().beg_pos);
+    }
+  }
+
   struct PrettyPrintAutoIndent {
     ParserBase<Impl>* parser;
     PrettyPrintAutoIndent(ParserBase<Impl>* parser) : parser(parser) {
@@ -2200,10 +2232,18 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseArrayLiteral() {
   // ArrayLiteral ::
   //   '[' Expression? (',' Expression?)* ']'
 
+  AddPrettyPrintBracketedExpressionStart();
+
   int pos = peek_position();
   ExpressionListT values(pointer_buffer());
   int first_spread_index = -1;
   Consume(Token::LBRACK);
+
+  if (peek() != Token::RBRACK) {
+    AddPrettyPrintBracketedExpressionBreak();
+  } else {
+    AddPrettyPrintBracketedExpressionEnd();
+  }
 
   AccumulationScope accumulation_scope(expression_scope());
 
@@ -2242,7 +2282,10 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseArrayLiteral() {
     if (peek() != Token::RBRACK) {
       Expect(Token::COMMA);
       AddPrettyPrintWhitespace();
+      AddPrettyPrintBracketedExpressionBreak();
       if (elem->IsFailureExpression()) return elem;
+    } else {
+      AddPrettyPrintBracketedExpressionEnd();
     }
   }
 
@@ -2829,10 +2872,15 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseObjectLiteral() {
   bool has_rest_property = false;
   bool has_seen_proto = false;
 
+  AddPrettyPrintBracketedExpressionStart();
+
   Consume(Token::LBRACE);
 
   if (peek() != Token::RBRACE) {
+    AddPrettyPrintBracketedExpressionBreak();
     AddPrettyPrintWhitespace();
+  } else {
+    AddPrettyPrintBracketedExpressionEnd();
   }
 
   AccumulationScope accumulation_scope(expression_scope());
@@ -2869,6 +2917,9 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseObjectLiteral() {
 
     if (peek() != Token::RBRACE) {
       Expect(Token::COMMA);
+      AddPrettyPrintBracketedExpressionBreak();
+    } else {
+      AddPrettyPrintBracketedExpressionEnd();
     }
     AddPrettyPrintWhitespace();
 
@@ -2906,9 +2957,15 @@ void ParserBase<Impl>::ParseArguments(
   // Arguments ::
   //   '(' (AssignmentExpression)*[','] ')'
 
+  AddPrettyPrintBracketedExpressionStart();
+
   *has_spread = false;
   Consume(Token::LPAREN);
   AccumulationScope accumulation_scope(expression_scope());
+
+  if (peek() != Token::RPAREN) {
+    AddPrettyPrintBracketedExpressionBreak();
+  }
 
   int variable_index = 0;
   while (peek() != Token::RPAREN) {
@@ -2944,6 +3001,7 @@ void ParserBase<Impl>::ParseArguments(
 
     if (!Check(Token::COMMA)) break;
 
+    AddPrettyPrintBracketedExpressionBreak();
     AddPrettyPrintWhitespace();
   }
 
@@ -2951,6 +3009,8 @@ void ParserBase<Impl>::ParseArguments(
     ReportMessage(MessageTemplate::kTooManyArguments);
     return;
   }
+
+  AddPrettyPrintBracketedExpressionEnd();
 
   Scanner::Location location = scanner_->location();
   if (!Check(Token::RPAREN)) {
