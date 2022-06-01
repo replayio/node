@@ -113,6 +113,8 @@ void OnStartPrettyPrint();
 
 void PrettyPrintScript(Isolate* isolate, Handle<Script> script);
 
+void DumpFunctionLocations();
+
 enum FunctionNameValidity {
   kFunctionNameIsStrictReserved,
   kSkipFunctionNameCheck,

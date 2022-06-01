@@ -2677,6 +2677,17 @@ static void SetFlagsByURL(UnoptimizedCompileFlags& flags,
       }
     }
   }
+
+  static const char* find_functions_pattern = getenv("FIND_FUNCTIONS");
+  if (find_functions_pattern) {
+    Handle<Object> script_name;
+    if (script_details.name_obj.ToHandle(&script_name)) {
+      std::unique_ptr<char[]> name_cstr = String::cast(*script_name).ToCString();
+      if (strstr(name_cstr.get(), find_functions_pattern)) {
+        flags.set_find_functions(true);
+      }
+    }
+  }
 }
 
 MaybeHandle<SharedFunctionInfo> CompileScriptOnMainThread(
@@ -2702,6 +2713,10 @@ MaybeHandle<SharedFunctionInfo> CompileScriptOnMainThread(
 
   if (flags.pretty_print()) {
     PrettyPrintScript(isolate, script);
+  }
+
+  if (flags.find_functions()) {
+    DumpFunctionLocations();
   }
 
   return rv;
@@ -3025,6 +3040,10 @@ MaybeHandle<JSFunction> Compiler::GetWrappedFunction(
 
     if (flags.pretty_print()) {
       PrettyPrintScript(isolate, script);
+    }
+
+    if (flags.find_functions()) {
+      DumpFunctionLocations();
     }
 
     SharedFunctionInfo::ScriptIterator infos(isolate, *script);

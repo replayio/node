@@ -3883,5 +3883,11 @@ void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
   }
 }
 
+void DumpFunctionLocations() {
+  for (const auto& event : gFunctionEvents) {
+    fprintf(stdout, "%c%d\n", (event.first == FunctionEvent::BodyStart) ? '{' : '}', event.second);
+  }
+}
+
 }  // namespace internal
 }  // namespace v8
