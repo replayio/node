@@ -3799,6 +3799,15 @@ class PrettyPrintState {
   }
 };
 
+inline bool HasNewline(const base::uc16* chars, int start, int end) {
+  for (int i = start; i < end; i++) {
+    if (chars[i] == '\n') {
+      return true;
+    }
+  }
+  return false;
+}
+
 double prettyPrintParseTime;
 
 void OnStartPrettyPrint() {
@@ -3849,9 +3858,15 @@ void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
         break;
       case PrettyPrintEvent::Break:
         if (event.second > lastPos) {
-          prettyState.AppendIndentation(lastIndent);
-          prettyState.AppendPrettyPrintedLineCheckOverflow(lastIndent, lastPos, event.second,
-                                                           0, prettyState.expressionEvents.size());
+          // If there are already newlines in the indicated range, don't change the
+          // formatting at all.
+          if (HasNewline(chars.begin(), lastPos, event.second)) {
+            prettyState.AppendPrettyPrintedText(lastPos, event.second);
+          } else {
+            prettyState.AppendIndentation(lastIndent);
+            prettyState.AppendPrettyPrintedLineCheckOverflow(lastIndent, lastPos, event.second,
+                                                             0, prettyState.expressionEvents.size());
+          }
           lastPos = event.second;
           lastIndent = indent;
           prettyState.Reset();
