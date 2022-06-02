@@ -3823,9 +3823,22 @@ void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
   String::FlatContent flatSource = sourceString->GetFlatContent(no_gc);
 
   CHECK(flatSource.IsFlat());
-  CHECK(flatSource.IsTwoByte());
 
-  base::Vector<const base::uc16> chars = flatSource.ToUC16Vector();
+  std::unique_ptr<base::uc16[]> chars_raw;
+
+  base::Vector<const base::uc16> chars;
+  if (flatSource.IsTwoByte()) {
+    chars = flatSource.ToUC16Vector();
+  } else {
+    base::Vector<const uint8_t> chars_onebyte = flatSource.ToOneByteVector();
+
+    int length = chars_onebyte.length();
+    chars_raw = std::make_unique<base::uc16[]>(length);
+    for (int i = 0; i < length; i++) {
+      chars_raw[i] = chars_onebyte[i];
+    }
+    chars = base::Vector<const base::uc16>(chars_raw.get(), length);
+  }
 
   std::vector<char> prettySource;
   gNextCharacter = 0;
