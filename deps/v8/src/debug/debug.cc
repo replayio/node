@@ -2250,10 +2250,7 @@ void Debug::OnAfterCompile(Handle<Script> script) {
 
 static void RecordReplayRegisterScript(Handle<Script> script);
 
-void Debug::ProcessCompileEvent(bool has_compile_error, Handle<Script> script) {
-  if (!has_compile_error && recordreplay::IsRecordingOrReplaying() && IsMainThread()) {
-    RecordReplayRegisterScript(script);
-  }
+void Debug::DoProcessCompileEvent(bool has_compile_error, Handle<Script> script) {
 
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kDebugger);
   // Ignore temporary scripts.
@@ -2282,6 +2279,13 @@ void Debug::ProcessCompileEvent(bool has_compile_error, Handle<Script> script) {
     RCS_SCOPE(isolate_, RuntimeCallCounterId::kDebuggerCallback);
     debug_delegate_->ScriptCompiled(ToApiHandle<debug::Script>(script),
                                     running_live_edit_, has_compile_error);
+  }
+}
+
+void Debug::ProcessCompileEvent(bool has_compile_error, Handle<Script> script) {
+  Debug::DoProcessCompileEvent(has_compile_error, script);
+  if (!has_compile_error && recordreplay::IsRecordingOrReplaying() && IsMainThread()) {
+    RecordReplayRegisterScript(script);
   }
 }
 
