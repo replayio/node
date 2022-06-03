@@ -427,6 +427,7 @@ class V8_EXPORT_PRIVATE Debug {
                    v8::debug::ExceptionType exception_type);
 
   void ProcessCompileEvent(bool has_compile_error, Handle<Script> script);
+  void DoProcessCompileEvent(bool has_compile_error, Handle<Script> script);
 
   // Find the closest source position for a break point for a given position.
   int FindBreakablePosition(Handle<DebugInfo> debug_info, int source_position);
