@@ -1047,10 +1047,7 @@ static std::string GetStackContents(Isolate* isolate, size_t max_frames) {
 
   std::string contents;
   for (JavaScriptFrameIterator it(isolate); !it.done(); it.Advance()) {
-    JavaScriptFrame* frame = JavaScriptFrame::cast(it.frame());
-    if (frame->type() != StackFrame::OPTIMIZED && frame->type() != StackFrame::INTERPRETED) {
-      continue;
-    }
+    JavaScriptFrame* frame = it.frame();
     std::vector<FrameSummary> frames;
     frame->Summarize(&frames);
     for (int i = frames.size() - 1; i >= 0; i--) {

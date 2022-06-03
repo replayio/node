@@ -3212,10 +3212,7 @@ static Handle<Object> RecordReplayCountStackFrames(Isolate* isolate,
   // exception unwinds and so forth.
   size_t count = 0;
   for (JavaScriptFrameIterator it(isolate); !it.done(); it.Advance()) {
-    JavaScriptFrame* frame = JavaScriptFrame::cast(it.frame());
-    if (frame->type() != StackFrame::OPTIMIZED && frame->type() != StackFrame::INTERPRETED) {
-      continue;
-    }
+    JavaScriptFrame* frame = it.frame();
     std::vector<FrameSummary> frames;
     frame->Summarize(&frames);
 
@@ -3285,10 +3282,7 @@ static Handle<Object> RecordReplayCurrentGeneratorId(Isolate* isolate, Handle<Ob
 static Handle<Object> RecordReplayGetStackFunctionIds(Isolate* isolate, Handle<Object> params) {
   std::vector<std::string> functions;
   for (JavaScriptFrameIterator it(isolate); !it.done(); it.Advance()) {
-    JavaScriptFrame* frame = JavaScriptFrame::cast(it.frame());
-    if (frame->type() != StackFrame::OPTIMIZED && frame->type() != StackFrame::INTERPRETED) {
-      continue;
-    }
+    JavaScriptFrame* frame = it.frame();
     std::vector<FrameSummary> frames;
     frame->Summarize(&frames);
 
