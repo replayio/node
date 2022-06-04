@@ -4481,7 +4481,7 @@ void ParserBase<Impl>::ParseFunctionBody(
     StatementListT* body, IdentifierT function_name, int pos,
     const FormalParametersT& parameters, FunctionKind kind,
     FunctionSyntaxKind function_syntax_kind, FunctionBodyType body_type) {
-  if (flags().find_functions()) {
+  if (flags().find_functions() && body_type == FunctionBodyType::kBlock) {
     AddFunctionEvent(FunctionEvent::BodyStart, position());
   }
 
@@ -4553,7 +4553,7 @@ void ParserBase<Impl>::ParseFunctionBody(
 
   scope()->set_end_position(end_position());
 
-  if (flags().find_functions()) {
+  if (flags().find_functions() && body_type == FunctionBodyType::kBlock) {
     AddFunctionEvent(FunctionEvent::BodyEnd, position());
   }
 
