@@ -3519,24 +3519,6 @@ Statement* Parser::CheckCallable(Variable* var, Expression* error, int pos) {
 std::vector<std::pair<FunctionEvent, int>> gFunctionEvents;
 std::vector<std::pair<PrettyPrintEvent, int>> gPrettyPrintEvents;
 
-static inline void AppendUTF8(std::vector<char>& buf, base::uc16 code) {
-  if (code <= 0x7F) {
-    buf.push_back(code);
-  } else if (code <= 0x7FF) {
-    buf.push_back(((code >> 6) & 0x1F) | 0xC0);
-    buf.push_back((code & 0x3F) | 0x80);
-  } else if (code <= 0xFFFF) {
-    buf.push_back(((code >> 12) & 0x0F) | 0xE0);
-    buf.push_back(((code >> 6) & 0x3F) | 0x80);
-    buf.push_back((code & 0x3F) | 0x80);
-  } else {
-    buf.push_back(((code >> 18) & 0x07) | 0xF0);
-    buf.push_back(((code >> 12) & 0x3F) | 0x80);
-    buf.push_back(((code >> 6) & 0x3F) | 0x80);
-    buf.push_back((code & 0x3F) | 0x80);
-  }
-}
-
 // This can be handy for adding debugging information to the pretty printed text.
 #if 0
 
@@ -3557,6 +3539,40 @@ static inline void DebugAppend(std::vector<char>& buf, const char* format, ...) 
 
 // Next character from the input source which will be written while pretty printing.
 static int gNextCharacter = 0;
+
+static inline void AppendUTF8(std::vector<char>& buf, const base::uc16* chars, int* pos) {
+  CHECK(gNextCharacter++ == *pos);
+
+  uint32_t code = chars[*pos];
+  if (code <= 0x7F) {
+    buf.push_back(code);
+  } else if (code <= 0x7FF) {
+    buf.push_back(((code >> 6) & 0x1F) | 0xC0);
+    buf.push_back((code & 0x3F) | 0x80);
+  } else {
+    // Combine any encountered surrogate pairs.
+    if ((code & 0xf800) == 0xd800 && !(code & 0x0400)) {
+      // No bounds check here...
+      base::uc16 nextCode = chars[*pos + 1];
+      if ((nextCode & 0xf800) == 0xd800 && (nextCode & 0x0400)) {
+        (*pos)++;
+        gNextCharacter++;
+        code = 0x10000 + (code - 0xd800) * 0x400 + (nextCode - 0xdc00);
+      }
+    }
+
+    if (code <= 0xFFFF) {
+      buf.push_back(((code >> 12) & 0x0F) | 0xE0);
+      buf.push_back(((code >> 6) & 0x3F) | 0x80);
+      buf.push_back((code & 0x3F) | 0x80);
+    } else {
+      buf.push_back(((code >> 18) & 0x07) | 0xF0);
+      buf.push_back(((code >> 12) & 0x3F) | 0x80);
+      buf.push_back(((code >> 6) & 0x3F) | 0x80);
+      buf.push_back((code & 0x3F) | 0x80);
+    }
+  }
+}
 
 // Maximum characters we want to put on a line.
 static const int LineMaxChars = 80;
@@ -3605,8 +3621,7 @@ class PrettyPrintState {
         }
         LoadNextWhitespacePosition(pos + 1);
       }
-      CHECK(gNextCharacter++ == pos);
-      AppendUTF8(prettySource, chars[pos]);
+      AppendUTF8(prettySource, chars, &pos);
     }
 
     return insertedSpaces + end - start;
