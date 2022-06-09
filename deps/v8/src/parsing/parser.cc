@@ -3823,6 +3823,20 @@ inline bool HasNewline(const base::uc16* chars, int start, int end) {
   return false;
 }
 
+static FILE* GetOutputFile() {
+  const char* path = getenv("OUTPUT_FILE");
+  if (path) {
+    return fopen(path);
+  }
+  return stdout;
+}
+
+static void CloseOutputFile(FILE* file) {
+  if (file != stdout) {
+    fclose(file);
+  }
+}
+
 double prettyPrintParseTime;
 
 void OnStartPrettyPrint() {
@@ -3916,8 +3930,12 @@ void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
 
   double endTime = base::Time::Now().ToJsTime();
 
-  int rv = write(STDOUT_FILENO, &prettySource[0], prettySource.size());
-  CHECK(rv == (int)prettySource.size());
+  FILE* file = GetOutputFile();
+
+  size_t rv = fwrite(&prettySource[0], 1, prettySource.size(), file);
+  CHECK(rv == prettySource.size());
+
+  CloseOutputFile(file);
 
   gPrettyPrintEvents.clear();
 
@@ -3927,9 +3945,14 @@ void PrettyPrintScript(Isolate* isolate, Handle<Script> script) {
 }
 
 void DumpFunctionLocations() {
+  FILE* file = GetOutputFile();
+
   for (const auto& event : gFunctionEvents) {
-    fprintf(stdout, "%c%d\n", (event.first == FunctionEvent::BodyStart) ? '{' : '}', event.second);
+    fprintf(file, "%c%d\n", (event.first == FunctionEvent::BodyStart) ? '{' : '}', event.second);
   }
+
+  CloseOutputFile(file);
+  gFunctionEvents.clear();
 }
 
 }  // namespace internal
