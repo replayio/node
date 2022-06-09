@@ -3826,7 +3826,7 @@ inline bool HasNewline(const base::uc16* chars, int start, int end) {
 static FILE* GetOutputFile() {
   const char* path = getenv("OUTPUT_FILE");
   if (path) {
-    return fopen(path);
+    return fopen(path, "w");
   }
   return stdout;
 }
