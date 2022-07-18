@@ -7,6 +7,10 @@ const {
 
 const revision = getLatestRevision();
 
+const clobberInput = process.env.INPUT_CLOBBER;
+console.log("Clobber", clobberInput);
+const clobber = clobberInput == "true";
+
 sendBuildTestRequest({
   name: `Node Build/Test ${revision}`,
   tasks: [
@@ -22,6 +26,7 @@ function platformTasks(platform) {
       kind: "BuildRuntime",
       runtime: "node",
       revision,
+      clobber,
     },
     platform
   );
