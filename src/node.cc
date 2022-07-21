@@ -980,6 +980,7 @@ static void (*gRecordReplayAttach)(const char* dispatchAddress, const char* buil
 static void (*gRecordReplaySetApiKey)(const char* apiKey);
 static void (*gRecordReplayRecordCommandLineArguments)(int*, char***);
 static void (*gRecordReplaySaveRecording)(const char* dir);
+static void (*gRecordReplayRememberRecording)();
 static void (*gRecordReplayAddMetadata)(const char* metadata);
 static void (*gRecordReplayFinishRecording)();
 static void (*gBeginCallbackRegion)();
@@ -1169,6 +1170,7 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   RecordReplayLoadSymbol(handle, "RecordReplayRecordCommandLineArguments",
                          gRecordReplayRecordCommandLineArguments);
   RecordReplayLoadSymbol(handle, "RecordReplaySaveRecording", gRecordReplaySaveRecording);
+  RecordReplayLoadSymbol(handle, "RecordReplayRememberRecording", gRecordReplayRememberRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayAddMetadata", gRecordReplayAddMetadata);
   RecordReplayLoadSymbol(handle, "RecordReplayFinishRecording", gRecordReplayFinishRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayGetRecordingId", gRecordReplayGetRecordingId);
@@ -1193,6 +1195,8 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
     if (gRecordReplaySaveRecording) {
       gRecordReplaySaveRecording(nullptr);
     }
+
+    gRecordReplayRememberRecording();
 
     if (gRecordReplayAddMetadata) {
       std::string metadata = GetRecordingMetadata(*pargc, *pargv);
