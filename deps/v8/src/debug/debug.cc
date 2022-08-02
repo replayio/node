@@ -2826,8 +2826,11 @@ Handle<Object> RecordReplayGetSourceContents(Isolate* isolate, Handle<Object> pa
   Handle<String> source(String::cast(script->source()), isolate);
   padded_source += source->ToCString().get();
 
+  base::Vector<const char> nsource(padded_source.c_str(), padded_source.length());
+  Handle<String> nsource_string = isolate->factory()->NewStringFromUtf8(nsource).ToHandleChecked();
+
   Handle<JSObject> obj = NewPlainObject(isolate);
-  SetProperty(isolate, obj, "contents", padded_source.c_str());
+  SetProperty(isolate, obj, "contents", nsource_string);
   SetProperty(isolate, obj, "contentType", "text/javascript");
   return obj;
 }
