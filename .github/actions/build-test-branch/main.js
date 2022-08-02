@@ -5,7 +5,7 @@ const {
   newTask,
 } = require("../utils");
 
-const branchName = getBranchName(process.env.GITHUB_REF);
+const branchName = process.env.GITHUB_REF_NAME;
 console.log("BranchName", branchName);
 
 const nodeRevision = getLatestRevision();
@@ -76,13 +76,4 @@ function platformTasks(platform) {
   );
 
   return [buildTask, testTask, jestTask];
-}
-
-function getBranchName(refName) {
-  // Strip everything after the last "/" from the ref to get the branch name.
-  const index = refName.lastIndexOf("/");
-  if (index == -1) {
-    return refName;
-  }
-  return refName.substring(index + 1);
 }
