@@ -2741,8 +2741,8 @@ extern void RecordReplayOnNewSource(Isolate* isolate, const char* id,
                                     const char* kind, const char* url);
 
 static Handle<String> CStringToHandle(Isolate* isolate, const char* str) {
-  base::Vector<const uint8_t> nstr((const uint8_t*) str, strlen(str));
-  return isolate->factory()->NewStringFromOneByte(nstr).ToHandleChecked();
+  base::Vector<const char> nstr(str, strlen(str));
+  return isolate->factory()->NewStringFromUtf8(nstr).ToHandleChecked();
 }
 
 static Handle<Object> GetProperty(Isolate* isolate,
@@ -2826,11 +2826,8 @@ Handle<Object> RecordReplayGetSourceContents(Isolate* isolate, Handle<Object> pa
   Handle<String> source(String::cast(script->source()), isolate);
   padded_source += source->ToCString().get();
 
-  base::Vector<const char> nsource(padded_source.c_str(), padded_source.length());
-  Handle<String> nsource_string = isolate->factory()->NewStringFromUtf8(nsource).ToHandleChecked();
-
   Handle<JSObject> obj = NewPlainObject(isolate);
-  SetProperty(isolate, obj, "contents", nsource_string);
+  SetProperty(isolate, obj, "contents", padded_source.c_str());
   SetProperty(isolate, obj, "contentType", "text/javascript");
   return obj;
 }
