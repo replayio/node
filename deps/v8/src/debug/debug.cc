@@ -2741,8 +2741,8 @@ extern void RecordReplayOnNewSource(Isolate* isolate, const char* id,
                                     const char* kind, const char* url);
 
 static Handle<String> CStringToHandle(Isolate* isolate, const char* str) {
-  base::Vector<const uint8_t> nstr((const uint8_t*) str, strlen(str));
-  return isolate->factory()->NewStringFromOneByte(nstr).ToHandleChecked();
+  base::Vector<const char> nstr(str, strlen(str));
+  return isolate->factory()->NewStringFromUtf8(nstr).ToHandleChecked();
 }
 
 static Handle<Object> GetProperty(Isolate* isolate,
