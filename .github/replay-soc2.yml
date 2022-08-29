@@ -12,4 +12,5 @@
 #
 allowlist:
   - replay-test/**
+  - .github/**
 blocklist:
