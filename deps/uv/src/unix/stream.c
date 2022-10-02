@@ -74,6 +74,8 @@ struct uv__stream_select_s {
     (errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOBUFS)
 #endif /* defined(__APPLE__) */
 
+extern void V8RecordReplayAssert(const char* format, ...);
+
 static void uv__stream_connect(uv_stream_t*);
 static void uv__write(uv_stream_t* stream);
 static void uv__read(uv_stream_t* stream);
@@ -815,6 +817,12 @@ static int uv__try_write(uv_stream_t* stream,
   iov = (struct iovec*) bufs;
   iovcnt = nbufs;
 
+  // https://linear.app/replay/issue/RUN-650
+  V8RecordReplayAssert("uv__try_write %d %u", uv__stream_fd(stream), nbufs);
+  if (nbufs == 1) {
+    V8RecordReplayAssert("uv__try_write #1 %u", iov[0].iov_len);
+  }
+
   iovmax = uv__getiovmax();
 
   /* Limit iov count to avoid EINVALs from writev() */
@@ -1121,7 +1129,6 @@ static int uv__stream_recv_cmsg(uv_stream_t* stream, struct msghdr* msg) {
 # pragma clang diagnostic ignored "-Wvla-extension"
 #endif
 
-extern void V8RecordReplayAssert(const char* format, ...);
 
 static void uv__read(uv_stream_t* stream) {
   uv_buf_t buf;
