@@ -10484,10 +10484,12 @@ void RecordReplayChangeInstrument(bool enabled) {
 uint64_t gTargetProgress;
 
 void RecordReplaySetTargetProgress(uint64_t progress) {
+  fprintf(stderr, "SetTargetProgress %zu %zu\n", *gProgressCounter, progress);
   gTargetProgress = progress;
 }
 
 void RecordReplayOnTargetProgressReached() {
+  fprintf(stderr, "TargetProgressReached %zu\n", *gProgressCounter);
   gRecordReplayProgressReached();
 }
 

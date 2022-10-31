@@ -197,6 +197,7 @@ class EffectControlLinearizer {
   void LowerTransitionElementsKind(Node* node);
   Node* LowerLoadFieldByIndex(Node* node);
   Node* LowerLoadMessage(Node* node);
+  void LowerIncrementAndCheckProgressCounter(Node* node);
   Node* AdaptFastCallTypedArrayArgument(Node* node,
                                         ElementsKind expected_elements_kind,
                                         GraphAssemblerLabel<0>* bailout);
@@ -1302,6 +1303,9 @@ bool EffectControlLinearizer::TryWireInStateEffect(Node* node,
       break;
     case IrOpcode::kLoadMessage:
       result = LowerLoadMessage(node);
+      break;
+    case IrOpcode::kIncrementAndCheckProgressCounter:
+      LowerIncrementAndCheckProgressCounter(node);
       break;
     case IrOpcode::kStoreMessage:
       LowerStoreMessage(node);
@@ -4972,6 +4976,31 @@ Node* EffectControlLinearizer::LowerLoadMessage(Node* node) {
   Node* object_pattern =
       __ LoadField(AccessBuilder::ForExternalIntPtr(), offset);
   return __ BitcastWordToTagged(object_pattern);
+}
+
+Node* EffectControlLinearizer::LowerIncrementAndCheckProgressCounter(Node* node) {
+  auto reached_target_progress = __ MakeDeferredLabel();
+  auto done = __ MakeLabel();
+
+  Node* progress_counter = __ ExternalConstant(ExternalReference::record_replay_progress_counter());
+  Node* target_progress = __ ExternalConstant(ExternalReference::record_replay_target_progress());
+
+  Node* incremented_value = __ IncrementAndFetchLocation(progress_counter);
+  Node* check = __ EqualsLocation(incremented_value, target_progress);
+
+  __ GotoIf(check, &reached_target_progress);
+  __ Goto(&done);
+
+  __ Bind(&reached_target_progress);
+
+  Operator::Properties properties = Operator::kNoDeopt | Operator::kNoThrow;
+  Runtime::FunctionId id = Runtime::kRecordReplayTargetProgressReached;
+  auto call_descriptor = Linkage::GetRuntimeCallDescriptor(
+    graph()->zone(), id, 0, properties, CallDescriptor::kNeedsFrameState);
+  __ Call(call_descriptor);
+
+  __ Goto(&done);
+  __ Bind(&done);
 }
 
 void EffectControlLinearizer::LowerStoreMessage(Node* node) {

@@ -1505,7 +1505,7 @@ Type Typer::Visitor::TypeJSObjectIsArray(Node* node) { return Type::Boolean(); }
 
 Type Typer::Visitor::TypeDateNow(Node* node) { return Type::Number(); }
 
-Type Typer::Visitor::TypeIncrementAndCheckProgressCounter(Node* node) { return Type::Boolean(); }
+Type Typer::Visitor::TypeIncrementAndCheckProgressCounter(Node* node) { return Type::Any(); }
 
 Type Typer::Visitor::JSCallTyper(Type fun, Typer* t) {
   if (!fun.IsHeapConstant() || !fun.AsHeapConstant()->Ref().IsJSFunction()) {

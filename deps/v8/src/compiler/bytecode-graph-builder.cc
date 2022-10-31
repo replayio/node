@@ -3587,17 +3587,8 @@ void BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
     Node* node = NewNode(op, closure);
     environment()->RecordAfterState(node, Environment::kAttachFrameState);
   } else {
-    Node* inc_progress_counter =
-      NewNode(simplified()->IncrementAndCheckProgressCounter());
-    NewBranch(inc_progress_counter, BranchHint::kFalse);
-    {
-      SubEnvironment sub_environment(this);
-      NewIfTrue();
-      const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayTargetProgressReached);
-      Node* node = NewNode(op);
-      environment()->RecordAfterState(node, Environment::kAttachFrameState);
-    }
-    NewIfFalse();
+    Node* node = NewNode(simplified()->IncrementAndCheckProgressCounter());
+    environment()->RecordAfterState(node, Environment::kAttachFrameState);
   }
 }
 
