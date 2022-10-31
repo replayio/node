@@ -4987,7 +4987,7 @@ Node* EffectControlLinearizer::LowerIncrementAndCheckProgressCounter(Node* node)
   Node* incremented_value = __ IntAdd(progress_counter_value, __ Int32Constant(1));
 
   __ Store(StoreRepresentation(MachineRepresentation::kWord64, kNoWriteBarrier),
-           progress_counter, 0, progress_counter_value);
+           progress_counter, 0, incremented_value);
 
   Node* target_progress = __ ExternalConstant(ExternalReference::record_replay_target_progress());
   Node* target_progress_value = __ Load(MachineType::Uint64(), target_progress, 0);
