@@ -197,7 +197,7 @@ class EffectControlLinearizer {
   void LowerTransitionElementsKind(Node* node);
   Node* LowerLoadFieldByIndex(Node* node);
   Node* LowerLoadMessage(Node* node);
-  void LowerIncrementAndCheckProgressCounter(Node* node);
+  Node* LowerIncrementAndCheckProgressCounter(Node* node);
   Node* AdaptFastCallTypedArrayArgument(Node* node,
                                         ElementsKind expected_elements_kind,
                                         GraphAssemblerLabel<0>* bailout);
@@ -1305,7 +1305,7 @@ bool EffectControlLinearizer::TryWireInStateEffect(Node* node,
       result = LowerLoadMessage(node);
       break;
     case IrOpcode::kIncrementAndCheckProgressCounter:
-      LowerIncrementAndCheckProgressCounter(node);
+      result = LowerIncrementAndCheckProgressCounter(node);
       break;
     case IrOpcode::kStoreMessage:
       LowerStoreMessage(node);
@@ -4983,10 +4983,15 @@ Node* EffectControlLinearizer::LowerIncrementAndCheckProgressCounter(Node* node)
   auto done = __ MakeLabel();
 
   Node* progress_counter = __ ExternalConstant(ExternalReference::record_replay_progress_counter());
-  Node* target_progress = __ ExternalConstant(ExternalReference::record_replay_target_progress());
+  Node* progress_counter_value = __ Load(MachineType::Uint64(), progress_counter, 0);
+  Node* incremented_value = __ IntAdd(progress_counter_value, __ Int32Constant(1));
 
-  Node* incremented_value = __ IncrementAndFetchLocation(progress_counter);
-  Node* check = __ EqualsLocation(incremented_value, target_progress);
+  __ Store(StoreRepresentation(MachineRepresentation::kWord64, kNoWriteBarrier),
+           progress_counter, 0, progress_counter_value);
+
+  Node* target_progress = __ ExternalConstant(ExternalReference::record_replay_target_progress());
+  Node* target_progress_value = __ Load(MachineType::Uint64(), target_progress, 0);
+  Node* check = __ IntPtrEqual(incremented_value, target_progress_value);
 
   __ GotoIf(check, &reached_target_progress);
   __ Goto(&done);
@@ -4996,11 +5001,16 @@ Node* EffectControlLinearizer::LowerIncrementAndCheckProgressCounter(Node* node)
   Operator::Properties properties = Operator::kNoDeopt | Operator::kNoThrow;
   Runtime::FunctionId id = Runtime::kRecordReplayTargetProgressReached;
   auto call_descriptor = Linkage::GetRuntimeCallDescriptor(
-    graph()->zone(), id, 0, properties, CallDescriptor::kNeedsFrameState);
-  __ Call(call_descriptor);
+    graph()->zone(), id, 0, properties, CallDescriptor::kNoFlags);
+  __ Call(call_descriptor, __ CEntryStubConstant(1),
+          __ ExternalConstant(ExternalReference::Create(id)),
+          __ Int32Constant(0), __ NoContextConstant());
 
   __ Goto(&done);
   __ Bind(&done);
+
+  // It's not clear how to mark this node as not having any outputs...
+  return __ Int32Constant(0);
 }
 
 void EffectControlLinearizer::LowerStoreMessage(Node* node) {
