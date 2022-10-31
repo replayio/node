@@ -424,6 +424,7 @@
   V(FastApiCall)                        \
   V(FindOrderedHashMapEntry)            \
   V(FindOrderedHashMapEntryForInt32Key) \
+  V(IncrementAndCheckProgressCounter)   \
   V(LoadDataViewElement)                \
   V(LoadElement)                        \
   V(LoadField)                          \

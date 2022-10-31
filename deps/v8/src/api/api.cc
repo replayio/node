@@ -10505,24 +10505,15 @@ static bool gRecordReplayInstrumentNodeInternals;
 
 // Whether JS assertions for execution and/or values are enabled.
 // This is not static so that it can be tested directly, for efficiency.
-bool gRecordReplayJSAsserts;
-
-// If non-zero, only execution asserts are enabled and only this frequency of
-// execution is asserted.
-static size_t gRecordRelayJSAssertFrequency;
+bool gRecordReplayAssertValues;
 
 // Any source filters where JS asserts should be added.
 static std::vector<std::string> gRecordReplayJSAssertFilters;
 
 static void InitializeRecordReplayAsserts() {
-  gRecordReplayJSAsserts = !!getenv("RECORD_REPLAY_JS_ASSERTS");
-  if (!gRecordReplayJSAsserts) {
+  gRecordReplayAssertValues = !!getenv("RECORD_REPLAY_JS_ASSERTS");
+  if (!gRecordReplayAssertValues) {
     return;
-  }
-
-  const char* frequency = getenv("RECORD_REPLAY_JS_ASSERT_FREQUENCY");
-  if (frequency) {
-    gRecordRelayJSAssertFrequency = atoi(frequency);
   }
 
   // The assertion filters are a comma separated list of patterns for sources where
@@ -10543,15 +10534,6 @@ static void InitializeRecordReplayAsserts() {
 
 bool RecordReplayInstrumentNodeInternals() {
   return gRecordReplayInstrumentNodeInternals;
-}
-
-// Whether to assert values seen during JS execution.
-bool RecordReplayAssertJSValues() {
-  return gRecordReplayJSAsserts && !gRecordRelayJSAssertFrequency;
-}
-
-bool RecordReplayShouldAssertForProgress(uint64_t progress) {
-  return !gRecordRelayJSAssertFrequency || !(progress % gRecordRelayJSAssertFrequency);
 }
 
 bool RecordReplayShouldAssertForSource(const char* source) {
