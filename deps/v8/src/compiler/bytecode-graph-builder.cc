@@ -33,6 +33,7 @@
 namespace v8 {
 namespace internal {
 
+extern bool gRecordReplayAssertValues;
 extern bool gRecordReplayInstrumentationEnabled;
 
 namespace compiler {
@@ -3579,11 +3580,16 @@ void BytecodeGraphBuilder::VisitIncBlockCounter() {
 
 void BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
   PrepareEagerCheckpoint();
-  Node* closure = GetFunctionClosure();
-  const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayAssertExecutionProgress);
+  if (gRecordReplayAssertValues) {
+    Node* closure = GetFunctionClosure();
+    const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayAssertExecutionProgress);
 
-  Node* node = NewNode(op, closure);
-  environment()->RecordAfterState(node, Environment::kAttachFrameState);
+    Node* node = NewNode(op, closure);
+    environment()->RecordAfterState(node, Environment::kAttachFrameState);
+  } else {
+    Node* node = NewNode(simplified()->IncrementAndCheckProgressCounter());
+    environment()->RecordAfterState(node, Environment::kAttachFrameState);
+  }
 }
 
 void BytecodeGraphBuilder::VisitRecordReplayInstrumentation() {

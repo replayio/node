@@ -22,7 +22,7 @@ namespace internal {
 extern int RegisterAssertValueSite(const std::string& desc, int source_position);
 extern int RegisterInstrumentationSite(const char* kind, int source_position,
                                        int bytecode_offset);
-extern bool RecordReplayAssertJSValues();
+extern bool gRecordReplayAssertValues;
 
 namespace interpreter {
 
@@ -1359,7 +1359,7 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayIncExecutionProgressCoun
 }
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayAssertValue(const std::string& desc) {
-  if (emit_record_replay_opcodes_ && RecordReplayAssertJSValues()) {
+  if (emit_record_replay_opcodes_ && gRecordReplayAssertValues) {
     int index = RegisterAssertValueSite(desc, most_recent_source_position_);
     OutputRecordReplayAssertValue(index);
   }

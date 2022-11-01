@@ -917,9 +917,8 @@ RUNTIME_FUNCTION(Runtime_ProfileCreateSnapshotDataBlob) {
 
 extern uint64_t* gProgressCounter;
 extern uint64_t gTargetProgress;
-extern bool gRecordReplayJSAsserts;
+extern bool gRecordReplayAssertValues;
 
-extern bool RecordReplayShouldAssertForProgress(uint64_t progress);
 extern bool RecordReplayShouldAssertForSource(const char* source);
 
 // Define this to check preconditions for using record/replay opcodes.
@@ -966,11 +965,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
     RecordReplayOnTargetProgressReached();
   }
 
-  if (!gRecordReplayJSAsserts) {
-    return ReadOnlyRoots(isolate).undefined_value();
-  }
-
-  if (!RecordReplayShouldAssertForProgress(*gProgressCounter)) {
+  if (!gRecordReplayAssertValues) {
     return ReadOnlyRoots(isolate).undefined_value();
   }
 
@@ -1007,6 +1002,12 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
                        (size_t)*gProgressCounter,
                        name.c_str(), info.line + 1, info.column);
 
+  return ReadOnlyRoots(isolate).undefined_value();
+}
+
+RUNTIME_FUNCTION(Runtime_RecordReplayTargetProgressReached) {
+  CHECK(*gProgressCounter == gTargetProgress);
+  RecordReplayOnTargetProgressReached();
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
