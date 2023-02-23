@@ -80,21 +80,36 @@ function driverExtension() {
   return currentPlatform() == "windows" ? "dll" : "so";
 }
 
-function computeBuildId() {
-  const nodeRevision = spawnChecked("git", ["rev-parse", "--short=12", "HEAD"]).stdout.toString().trim();
-  const nodeDate = spawnChecked("git", [
-    "show",
-    "HEAD",
-    "--pretty=%cd",
-    "--date=short",
-    "--no-patch",
-  ])
+/**
+ * @returns {string} "YYYYMMDD" format of UTC timestamp of given revision.
+ */
+function getRevisionDate(
+  revision = "HEAD",
+  spawnOptions
+) {
+  const dateString = spawnChecked(
+    "git",
+    ["show", revision, "--pretty=%cd", "--date=iso-strict", "--no-patch"],
+    spawnOptions
+  )
     .stdout.toString()
-    .trim()
-    .replace(/-/g, "");
+    .trim();
+
+  // convert to UTC -> then get the date only
+  // explanations: https://github.com/replayio/backend/pull/7115#issue-1587869475
+  return new Date(dateString).toISOString().substring(0, 10).replace(/-/g, "");
+}
+
+/**
+ * WARNING: We have copy-and-pasted `computeBuildId` into all our runtimes and `backend`.
+ * When changing this: always keep all versions of this in sync, or else, builds will break.
+ */
+function computeBuildId() {
+  const runtimeRevision = spawnChecked("git", ["rev-parse", "--short", "HEAD"]).stdout.toString().trim();
+  const runtimeDate = getRevisionDate();
 
   // Use the later of the two dates in the build ID.
-  const date = +nodeDate >= +driverDate ? nodeDate : driverDate;
+  const date = +runtimeDate >= +driverDate ? runtimeDate : driverDate;
 
-  return `${currentPlatform()}-node-${date}-${nodeRevision}-${driverRevision}`;
+  return `${currentPlatform()}-node-${date}-${runtimeRevision}-${driverRevision}`;
 }
