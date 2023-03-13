@@ -10409,7 +10409,7 @@ static void (*gRecordReplayUnregisterPointer)(const void* ptr);
 static int (*gRecordReplayPointerId)(const void* ptr);
 static void* (*gRecordReplayIdPointer)(int id);
 static bool (*gHasDivergedFromRecording)();
-static bool (*gIsUnhandledDivergenceAllowed)();
+static bool (*gAllowSideEffects)();
 static size_t (*gRecordReplayNewBookmark)();
 static void (*gRecordReplayOnDebuggerStatement)();
 static const char* (*gRecordReplayGetRecordingId)();
@@ -10815,9 +10815,9 @@ bool recordreplay::HasDivergedFromRecording() {
   return false;
 }
 
-bool recordreplay::IsUnhandledDivergenceAllowed() {
+bool recordreplay::AllowSideEffects() {
   if (IsRecordingOrReplaying()) {
-    return gIsUnhandledDivergenceAllowed();
+    return gAllowSideEffects();
   }
   return true;
 }
@@ -10922,7 +10922,7 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayPointerId", gRecordReplayPointerId);
   RecordReplayLoadSymbol(handle, "RecordReplayIdPointer", gRecordReplayIdPointer);
   RecordReplayLoadSymbol(handle, "RecordReplayHasDivergedFromRecording", gHasDivergedFromRecording);
-  RecordReplayLoadSymbol(handle, "RecordReplayIsUnhandledDivergenceAllowed", gIsUnhandledDivergenceAllowed);
+  RecordReplayLoadSymbol(handle, "RecordReplayAllowSideEffects", gAllowSideEffects);
   RecordReplayLoadSymbol(handle, "RecordReplayNewBookmark", gRecordReplayNewBookmark);
   RecordReplayLoadSymbol(handle, "RecordReplayOnDebuggerStatement", gRecordReplayOnDebuggerStatement);
   RecordReplayLoadSymbol(handle, "RecordReplayGetRecordingId", gRecordReplayGetRecordingId);

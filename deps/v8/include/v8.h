@@ -12695,7 +12695,7 @@ static int PointerId(const void* ptr);
 static void* IdPointer(int id);
 
 static bool HasDivergedFromRecording();
-static bool IsUnhandledDivergenceAllowed();
+static bool AllowSideEffects();
 
 }; // class recordreplay
 
