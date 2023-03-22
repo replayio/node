@@ -57,12 +57,12 @@ using v8::Object;
 using v8::String;
 using v8::Value;
 
-// When recording/replaying, sometimes when diverged from the recording we want
+// When recording/replaying, sometimes when side effects aren't allowed we want
 // to avoid interacting with the system in potentially new ways, as this can cause
 // the associated command to e.g. get an object's contents to fail. In this case
 // we return an "unavailable" string.
 static bool MaybeMarkUnavailable(const FunctionCallbackInfo<Value>& args) {
-  if (!v8::recordreplay::IsUnhandledDivergenceAllowed()) {
+  if (!v8::recordreplay::AllowSideEffects()) {
     Environment* env = Environment::GetCurrent(args);
     args.GetReturnValue().Set(
       String::NewFromUtf8(env->isolate(), "unavailable").ToLocalChecked());
