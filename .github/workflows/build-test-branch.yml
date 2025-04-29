@@ -20,9 +20,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Connect to Tailscale
-        uses: tailscale/github-action@v1
+        uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TAILSCALE_API_KEY }}
+          tags: tag:node-fork-ci
       - uses: actions/checkout@v2
       - uses: ./.github/actions/build-test-branch
         env:
