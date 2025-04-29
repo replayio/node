@@ -6,6 +6,7 @@ on:
         description: "Build node from scratch"
         type: boolean
         required: false
+  pull_request:
   push:
     branches:
       - master
