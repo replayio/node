@@ -6,10 +6,8 @@ const node = __dirname;
 // Download the record/replay driver archive, using the latest version unless
 //it was overridden via the environment.
 let driverArchive = `${currentPlatform()}-recordreplay.tgz`;
-let downloadArchive = driverArchive;
-if (process.env.DRIVER_REVISION) {
-  downloadArchive = `${currentPlatform()}-recordreplay-${process.env.DRIVER_REVISION}.tgz`;
-}
+let driverRevision = process.env.DRIVER_REVISION ? process.env.DRIVER_REVISION : fs.readFileSync("REPLAY_BACKEND_REV", "utf8");
+let downloadArchive = `${currentPlatform()}-recordreplay-${driverRevision.trim().substring(0,12)}.tgz`;
 const driverFile = `${currentPlatform()}-recordreplay.${driverExtension()}`;
 const driverJSON = `${currentPlatform()}-recordreplay.json`;
 spawnChecked("curl", [`https://static.replay.io/downloads/${downloadArchive}`, "-o", driverArchive], { stdio: "inherit" });
