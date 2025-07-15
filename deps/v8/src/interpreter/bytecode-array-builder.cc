@@ -19,7 +19,8 @@
 namespace v8 {
 namespace internal {
 
-extern int RegisterAssertValueSite(const std::string& desc, int source_position);
+extern int RegisterAssertValueSite(const std::string& desc,
+                                   int source_position);
 extern int RegisterInstrumentationSite(const char* kind, int source_position,
                                        int bytecode_offset);
 extern bool gRecordReplayAssertValues;
@@ -48,8 +49,7 @@ class RegisterTransferWriter final
 
 BytecodeArrayBuilder::BytecodeArrayBuilder(
     Zone* zone, int parameter_count, int locals_count,
-    bool record_replay_ignore,
-    FeedbackVectorSpec* feedback_vector_spec,
+    bool record_replay_ignore, FeedbackVectorSpec* feedback_vector_spec,
     SourcePositionTableBuilder::RecordingMode source_position_mode)
     : zone_(zone),
       feedback_vector_spec_(feedback_vector_spec),
@@ -71,7 +71,8 @@ BytecodeArrayBuilder::BytecodeArrayBuilder(
         zone->New<RegisterTransferWriter>(this));
   }
 
-  if (recordreplay::IsRecordingOrReplaying() && IsMainThread() && !record_replay_ignore) {
+  if (recordreplay::IsRecordingOrReplaying() && IsMainThread() &&
+      !record_replay_ignore) {
     emit_record_replay_opcodes_ = true;
   }
 }
@@ -846,7 +847,8 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadNamedProperty(
     Register object, const AstRawString* name, int feedback_slot) {
   size_t name_index = GetConstantPoolEntry(name);
   OutputLdaNamedProperty(object, name_index, feedback_slot);
-  RecordReplayAssertValue(std::string("LoadNamedProperty ") + name->to_string());
+  RecordReplayAssertValue(std::string("LoadNamedProperty ") +
+                          name->to_string());
   return *this;
 }
 
@@ -917,7 +919,8 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::StoreNamedProperty(
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::StoreNamedOwnProperty(
     Register object, const AstRawString* name, int feedback_slot) {
-  RecordReplayAssertValue(std::string("StoreNamedOwnProperty " + name->to_string()));
+  RecordReplayAssertValue(
+      std::string("StoreNamedOwnProperty " + name->to_string()));
   size_t name_index = GetConstantPoolEntry(name);
   // Ensure that the store operation is in sync with the IC slot kind.
   DCHECK_EQ(
@@ -1351,14 +1354,16 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::IncBlockCounter(
   return *this;
 }
 
-BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayIncExecutionProgressCounter() {
+BytecodeArrayBuilder&
+BytecodeArrayBuilder::RecordReplayIncExecutionProgressCounter() {
   if (emit_record_replay_opcodes_) {
     OutputRecordReplayIncExecutionProgressCounter();
   }
   return *this;
 }
 
-BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayAssertValue(const std::string& desc) {
+BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayAssertValue(
+    const std::string& desc) {
   if (emit_record_replay_opcodes_ && gRecordReplayAssertValues) {
     int index = RegisterAssertValueSite(desc, most_recent_source_position_);
     OutputRecordReplayAssertValue(index);
@@ -1366,25 +1371,48 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayAssertValue(const std::s
   return *this;
 }
 
-BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayInstrumentation(const char* kind,
-                                                                        int source_position) {
+int BytecodeArrayBuilder::RecordReplayRegisterInstrumentationSite(
+    const char* kind, int source_position) {
+  if (!strcmp(kind, "breakpoint") && source_position != kNoSourcePosition &&
+      record_replay_instrumentation_site_locations_.find(source_position) !=
+          record_replay_instrumentation_site_locations_.end()) {
+    // Don't insert a breakpoint at the same location more than once.
+    return -1;
+  }
+  record_replay_instrumentation_site_locations_.insert(source_position);
+
+  // Chromium's v8 uses function_index since:
+  // https://github.com/replayio/chromium-v8/pull/222
+  int bytecode_offset = bytecode_array_writer_.size();
+  return RegisterInstrumentationSite(kind, source_position, bytecode_offset);
+}
+
+bool BytecodeArrayBuilder::EmitRecordReplayInstrumentationOpcodes() const {
   // Instrumentation opcodes aren't needed when recording.
-  if (emit_record_replay_opcodes_ && recordreplay::IsReplaying()) {
-    int bytecode_offset = bytecode_array_writer_.size();
-    int index = RegisterInstrumentationSite(kind, source_position, bytecode_offset);
-    OutputRecordReplayInstrumentation(index);
+  return emit_record_replay_opcodes_ && recordreplay::IsReplaying();
+}
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayInstrumentation(
+    const char* kind, int source_position) {
+  if (EmitRecordReplayInstrumentationOpcodes()) {
+    int index = RecordReplayRegisterInstrumentationSite(kind, source_position);
+    if (index >= 0) {
+      OutputRecordReplayInstrumentation(index);
+    }
   }
   return *this;
 }
 
-BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayInstrumentationGenerator(
+BytecodeArrayBuilder&
+BytecodeArrayBuilder::RecordReplayInstrumentationGenerator(
     const char* kind, Register generator_object) {
   // Even though instrumentation opcodes aren't needed when recording, we still
   // need to emit InstrumentationGenerator opcodes so that generator objects
   // will be associated with IDs at consistent points.
   if (emit_record_replay_opcodes_) {
     int bytecode_offset = bytecode_array_writer_.size();
-    int index = RegisterInstrumentationSite(kind, kNoSourcePosition, bytecode_offset);
+    int index =
+        RegisterInstrumentationSite(kind, kNoSourcePosition, bytecode_offset);
     OutputRecordReplayInstrumentationGenerator(index, generator_object);
   }
   return *this;

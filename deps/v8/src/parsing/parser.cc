@@ -3320,7 +3320,8 @@ void Parser::AddTemplateExpression(TemplateLiteralState* state,
 }
 
 Expression* Parser::CloseTemplateLiteral(TemplateLiteralState* state, int start,
-                                         Expression* tag) {
+                                         Expression* tag,
+                                         int call_head_token_position) {
   TemplateLiteral* lit = *state;
   int pos = lit->position();
   const ZonePtrList<const AstRawString>* cooked_strings = lit->cooked();
@@ -3343,7 +3344,8 @@ Expression* Parser::CloseTemplateLiteral(TemplateLiteralState* state, int start,
     ScopedPtrList<Expression> call_args(pointer_buffer());
     call_args.Add(template_object);
     call_args.AddAll(expressions->ToConstVector());
-    return factory()->NewTaggedTemplate(tag, call_args, pos);
+    return factory()->NewTaggedTemplate(tag, call_args, pos,
+                                        call_head_token_position);
   }
 }
 
