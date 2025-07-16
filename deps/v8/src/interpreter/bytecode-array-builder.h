@@ -461,6 +461,8 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
   BytecodeArrayBuilder& RecordReplayInstrumentationGenerator(
       const char* kind, Register generator_object);
 
+  bool EmitRecordReplayInstrumentationOpcodes() const;
+
   // Complex flow control.
   BytecodeArrayBuilder& ForInEnumerate(Register receiver);
   BytecodeArrayBuilder& ForInPrepare(RegisterList cache_info_triple,
