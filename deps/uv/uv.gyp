@@ -222,6 +222,7 @@
             '-Wno-unused-parameter',
             '-Wstrict-prototypes',
             '-fno-strict-aliasing',
+            '-fPIE',
           ],
         }],
         [ 'OS in "mac ios"', {
