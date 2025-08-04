@@ -119,6 +119,12 @@
       ['OS == "linux" and llvm_version != "0.0"', {
         'libraries': ['-latomic'],
       }],
+      ['OS in "linux freebsd solaris"', {
+        'ldflags': [
+          '-fPIE',
+          '-pie',
+        ],
+      }],
     ],
   },
 
