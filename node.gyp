@@ -1273,7 +1273,7 @@
     }, # overlapped-checker
 
     # TODO(joyeecheung): do not depend on node_lib,
-    # instead create a smaller static library node_lib_base that does
+    # instead create a smalletry thisr static library node_lib_base that does
     # just enough for node_native_module.cc and the cache builder to
     # compile without compiling the generated code cache C++ file.
     # So generate_code_cache -> mkcodecache -> node_lib_base,
@@ -1431,6 +1431,7 @@
               },
             }],
             ['OS=="linux" and target_arch=="x64"', {
+              'dependencies': ['deps/openssl/openssl.gyp:openssl'],
               'cflags': [
                 '-Wno-deprecated-declarations',
                 '-fPIC',
