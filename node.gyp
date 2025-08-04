@@ -1031,7 +1031,11 @@
       ],
       'conditions': [
         ['OS=="linux"', {
-          'ldflags': [ '-fsanitize=fuzzer' ]
+          'ldflags': [
+            '-fsanitize=fuzzer',
+            '-fPIE',
+            '-pie',
+          ]
         }],
         # Ensure that ossfuzz flag has been set and that we are on Linux
         [ 'OS!="linux" or ossfuzz!="true"', {
@@ -1074,7 +1078,11 @@
       ],
       'conditions': [
         ['OS=="linux"', {
-          'ldflags': [ '-fsanitize=fuzzer' ]
+          'ldflags': [
+            '-fsanitize=fuzzer',
+            '-fPIE',
+            '-pie',
+          ]
         }],
         # Ensure that ossfuzz flag has been set and that we are on Linux
         [ 'OS!="linux" or ossfuzz!="true"', {
@@ -1252,6 +1260,13 @@
         ['OS!="win"', {
           'sources': [
             'test/overlapped-checker/main_unix.c'
+          ],
+          'cflags': [
+            '-fPIE',
+          ],
+          'ldflags': [
+            '-fPIE',
+            '-pie',
           ],
         }],
       ]
