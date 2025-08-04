@@ -119,12 +119,12 @@
       ['OS == "linux" and llvm_version != "0.0"', {
         'libraries': ['-latomic'],
       }],
-                ['OS in "linux freebsd solaris" and _type=="executable"', {
-            'ldflags': [
-              '-fPIE',
-              '-pie',
-            ],
-          }],
+      ['OS in "linux freebsd solaris" and node_shared=="false"', {
+        'ldflags': [
+          '-fPIE',
+          '-pie',
+        ],
+      }],
     ],
   },
 
@@ -339,6 +339,15 @@
         }, {
           'sources': [
             'src/node_snapshot_stub.cc'
+          ],
+        }],
+        [ 'OS in "linux freebsd solaris"', {
+          'cflags': [
+            '-fPIE',
+          ],
+          'ldflags+': [
+            '-fPIE',
+            '-pie',
           ],
         }],
         [ 'OS in "linux freebsd" and '
