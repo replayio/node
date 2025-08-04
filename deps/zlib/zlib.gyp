@@ -54,7 +54,7 @@
           'conditions': [
             ['OS!="win"', {
               'cflags!': [ '-ansi' ],
-              'cflags': [ '-Wno-implicit-fallthrough' ],
+              'cflags': [ '-Wno-implicit-fallthrough', '-fPIE' ],
               'defines': [ 'HAVE_HIDDEN' ],
             }],
             ['OS=="mac" or OS=="ios" or OS=="freebsd" or OS=="android"', {
