@@ -58,7 +58,7 @@
       ],
     }, {
       # linux and others
-      'cflags': ['-Wno-missing-field-initializers',],
+      'cflags': ['-Wno-missing-field-initializers', '-fPIC'],
       'defines': [
         'OPENSSLDIR="/etc/ssl"',
         'ENGINESDIR="/dev/null"',
