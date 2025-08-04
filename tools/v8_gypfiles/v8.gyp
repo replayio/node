@@ -311,7 +311,7 @@
           'sources': [
             '<(V8_ROOT)/src/builtins/riscv64/builtins-riscv64.cc',
           ],
-        }],        
+        }],
         ['v8_target_arch=="mips64" or v8_target_arch=="mips64el"', {
           'sources': [
             '<(V8_ROOT)/src/builtins/mips64/builtins-mips64.cc',
@@ -396,6 +396,13 @@
         # Refs: https://github.com/nodejs/node/pull/26685
         'GCC_GENERATE_DEBUGGING_SYMBOLS': 'NO',
       },
+      'conditions': [
+        ['OS in "linux freebsd solaris"', {
+          'cflags': [
+            '-fPIE',
+          ],
+        }],
+      ],
       'actions': [
         {
           'action_name': 'run_mksnapshot',
@@ -904,7 +911,7 @@
           'sources': [
             '<!@pymod_do_main(GN-scraper "<(V8_ROOT)/BUILD.gn"  "\\"v8_base_without_compiler.*?v8_current_cpu == \\"riscv64\\".*?sources \\+= ")',
           ],
-        }],        
+        }],
         ['OS=="win"', {
           'msvs_precompiled_header': '<(V8_ROOT)/../../tools/msvs/pch/v8_pch.h',
           'msvs_precompiled_source': '<(V8_ROOT)/../../tools/msvs/pch/v8_pch.cc',
