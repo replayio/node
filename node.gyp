@@ -119,7 +119,7 @@
       ['OS == "linux" and llvm_version != "0.0"', {
         'libraries': ['-latomic'],
       }],
-      ['OS in "linux freebsd solaris" and node_shared=="false"', {
+      ['OS in "linux freebsd solaris" and node_shared=="false" and target_name!="test_crypto_engine"', {
         'ldflags': [
           '-fPIE',
           '-pie',
@@ -1447,6 +1447,10 @@
               ],
               'ldflags': [
                 '-fPIC',
+              ],
+              'ldflags!': [
+                '-fPIE',
+                '-pie',
               ],
             }],
           ],
