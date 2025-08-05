@@ -93,6 +93,13 @@
       'sources': [
         'src/gtest_main.cc',
       ],
+      'conditions': [
+        ['OS in "linux freebsd solaris"', {
+          'cflags': [
+            '-fPIE',
+          ],
+        }],
+      ],
     },
     {
       'target_name': 'gtest_prod',
