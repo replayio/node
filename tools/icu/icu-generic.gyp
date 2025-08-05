@@ -346,6 +346,11 @@
         [ 'OS == "solaris"', { 'defines': [
           '_XOPEN_SOURCE_EXTENDED=0',
         ]}],
+        ['OS in "linux freebsd solaris"', {
+          'cflags': [
+            '-fPIE',
+          ],
+        }],
       ],
       'include_dirs': [
         '<(icu_path)/source/common',
