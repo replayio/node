@@ -826,6 +826,14 @@
             },
           ],
         }],
+        ['OS in "linux freebsd solaris"', {
+          'cflags': [
+            '-fPIE'
+          ],
+          'cflags_cc': [
+            '-fPIE'
+          ],
+        }],
       ],
       'actions': [
         {
