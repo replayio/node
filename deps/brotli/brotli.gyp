@@ -8,12 +8,23 @@
         ['OS=="linux"', {
           'defines': [
             'OS_LINUX'
-          ]
+          ],
+          'cflags': [
+            '-fPIE',
+          ],
         }],
         ['OS=="freebsd"', {
           'defines': [
             'OS_FREEBSD'
-          ]
+          ],
+          'cflags': [
+            '-fPIE',
+          ],
+        }],
+        ['OS=="solaris"', {
+          'cflags': [
+            '-fPIE',
+          ],
         }],
         ['OS=="mac"', {
           'defines': [
