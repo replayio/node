@@ -8,6 +8,13 @@
         'include_dirs': [ 'include' ],
       },
       'sources': [ 'src/llhttp.c', 'src/api.c', 'src/http.c' ],
+      'conditions': [
+        ['OS in "linux freebsd solaris"', {
+          'cflags': [
+            '-fPIE',
+          ],
+        }],
+      ],
     },
   ]
 }
