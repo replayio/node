@@ -342,6 +342,17 @@
             '<(obj_dir)/<(node_text_start_object_path)'
           ]
         }],
+        ['OS in "linux freebsd solaris"', {
+          'cflags': [
+            '-fPIE',
+          ],
+          'cflags_cc': [
+            '-fPIE',
+          ],
+          'ldflags': [
+            '-pie',
+          ],
+        }],
       ],
     }, # node_core_target_name
     {
