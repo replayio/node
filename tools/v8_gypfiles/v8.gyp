@@ -1353,6 +1353,11 @@
         ['want_separate_host_toolset', {
           'toolsets': ['host', 'target'],
         }],
+        ['OS in "linux freebsd solaris"', {
+          'cflags': [
+            '-fPIE',
+          ],
+        }],
         ['component=="shared_library"', {
           'direct_dependent_settings': {
             'defines': ['USING_V8_PLATFORM_SHARED'],
