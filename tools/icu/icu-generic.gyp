@@ -119,6 +119,13 @@
               '<(icu_path)/source/i18n',
             ],
           },
+          'conditions': [
+            ['OS in "linux freebsd solaris"', {
+              'cflags': [
+                '-fPIE',
+              ],
+            }],
+          ],
           'export_dependent_settings': [ 'icuucx', 'icu_uconfig_target' ],
         }],
         ['_toolset=="host"', {
