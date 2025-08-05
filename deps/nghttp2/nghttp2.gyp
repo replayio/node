@@ -26,6 +26,11 @@
             },
           },
         }],
+        ['OS in "linux freebsd solaris"', {
+          'cflags': [
+            '-fPIE',
+          ],
+        }],
         ['debug_nghttp2 == 1', {
           'defines': [ 'DEBUGBUILD=1' ]
         }]
