@@ -780,6 +780,11 @@
             'src/node_crypto.h'
           ],
         }],
+        [ 'OS in "linux freebsd solaris"', {
+          'cflags': [
+            '-fPIE',
+          ],
+        }],
         [ 'OS in "linux freebsd mac solaris" and '
           'target_arch=="x64" and '
           'node_target_type=="executable"', {
