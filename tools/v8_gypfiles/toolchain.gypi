@@ -1210,7 +1210,6 @@
                 'cflags': [
                   '-fdata-sections',
                   '-ffunction-sections',
-                  '-fPIE',
                 ],
               }],
               ['OS=="mac"', {
@@ -1261,7 +1260,6 @@
                 'cflags': [
                   '-fdata-sections',
                   '-ffunction-sections',
-                  '-fPIE',
                 ],
                 'conditions': [
                   # Don't use -O3 with sanitizers.
