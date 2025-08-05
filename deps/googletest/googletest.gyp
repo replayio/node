@@ -69,6 +69,11 @@
             ],
           },
         }],
+        ['OS in "linux freebsd solaris"', {
+          'cflags': [
+            '-fPIE',
+          ],
+        }],
       ],
       'direct_dependent_settings': {
         'defines': [
