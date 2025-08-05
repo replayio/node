@@ -144,7 +144,8 @@
             '-pedantic',
             '-Wall',
             '-Wextra',
-            '-Wno-unused-parameter'
+            '-Wno-unused-parameter',
+            '-fPIE'
           ],
           'defines': [ 'HAVE_CONFIG_H' ],
         }],
