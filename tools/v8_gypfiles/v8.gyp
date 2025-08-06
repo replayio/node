@@ -1101,9 +1101,6 @@
               '-lrt'
             ],
           },
-          'cflags': [
-            '-fPIE',
-          ],
         }],
         ['OS=="aix"', {
           'variables': {
@@ -1224,9 +1221,6 @@
             '<(V8_ROOT)/src/base/debug/stack_trace_posix.cc',
             '<(V8_ROOT)/src/base/platform/platform-solaris.cc',
           ],
-          'cflags': [
-            '-fPIE',
-          ],
         }],
 
         # YMMV with the following conditions
@@ -1285,9 +1279,6 @@
             '<(V8_ROOT)/src/base/platform/platform-posix.cc',
             '<(V8_ROOT)/src/base/platform/platform-posix-time.h',
             '<(V8_ROOT)/src/base/platform/platform-posix-time.cc',
-          ],
-          'cflags': [
-            '-fPIE',
           ],
         }
          ],
