@@ -1206,15 +1206,6 @@
             'Ws2_32.lib',
           ],
         }],
-        ['OS in "linux freebsd solaris"', {
-          'cflags': [
-            '-fPIE',
-          ],
-          'ldflags': [
-            '-fPIE',
-            '-pie',
-          ],
-        }],
       ],
     }, # cctest
 
@@ -1269,15 +1260,6 @@
             'Dbghelp.lib',
             'winmm.lib',
             'Ws2_32.lib',
-          ],
-        }],
-        ['OS in "linux freebsd solaris"', {
-          'cflags': [
-            '-fPIE',
-          ],
-          'ldflags': [
-            '-fPIE',
-            '-pie',
           ],
         }],
       ],
@@ -1367,15 +1349,6 @@
             'Ws2_32.lib',
           ],
         }],
-        ['OS in "linux freebsd solaris"', {
-          'cflags': [
-            '-fPIE',
-          ],
-          'ldflags': [
-            '-fPIE',
-            '-pie',
-          ],
-        }],
       ],
     }, # mkcodecache
     {
@@ -1425,15 +1398,6 @@
             'Dbghelp.lib',
             'winmm.lib',
             'Ws2_32.lib',
-          ],
-        }],
-        ['OS in "linux freebsd solaris"', {
-          'cflags': [
-            '-fPIE',
-          ],
-          'ldflags': [
-            '-fPIE',
-            '-pie',
           ],
         }],
       ],
