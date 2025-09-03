@@ -34,6 +34,8 @@ typedef int mode_t;
 #include <termios.h>  // tcgetattr, tcsetattr
 #endif
 
+static const char* AnnotationHookJSName = "recordreplay.annotationHook";
+
 namespace v8 {
 
 extern void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& args);
@@ -546,6 +548,36 @@ static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) 
   gRecordReplayInspectorSession->Dispatch(messageView);
 }
 
+// Called from javascript.
+// `recordreplay.annotationHook(kind, contents)`
+// Since this function is called from userland JS, we avoid assertions.
+// We don't want flawed uses of the API to crash the recording.
+static void RecordReplayAnnotationHook(
+    const FunctionCallbackInfo<Value>& args) {
+  if (!(args.Length() >= 2 && args[0]->IsString())) {
+    v8::recordreplay::Print("[RuntimeError] %s called with incorrect arguments",
+                            AnnotationHookJSName);
+    return;
+  }
+
+  v8::Isolate* isolate = args.GetIsolate();
+  v8::Local<v8::Object> payload = v8::Object::New(isolate);
+  v8::Local<v8::Context> context = isolate->GetCurrentContext();
+  payload->Set(context, ToV8String(isolate, "message"), args[1]).Check();
+
+  v8::Local<v8::String> json;
+  if (!v8::JSON::Stringify(context, payload).ToLocal(&json)) {
+    v8::recordreplay::Print(
+        "[RuntimeError] %s contents failed to json stringify",
+        AnnotationHookJSName);
+    return;
+  }
+
+  v8::String::Utf8Value kind(args.GetIsolate(), args[0]);
+  v8::String::Utf8Value contents(args.GetIsolate(), json);
+  v8::recordreplay::OnAnnotation(*kind, *contents);
+}
+
 v8::CFunction BindingData::fast_number_(v8::CFunction::Make(FastNumber));
 v8::CFunction BindingData::fast_bigint_(v8::CFunction::Make(FastBigInt));
 
@@ -697,6 +729,8 @@ static void Initialize(Local<Object> target,
                  v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
   env->SetMethod(target, "recordReplayElapsedTimeMs",
                  v8::FunctionCallbackRecordReplayElapsedTimeMs);
+  env->SetMethod(
+      target, "recordReplayAnnotationHook", RecordReplayAnnotationHook);
 }
 
 void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
@@ -740,6 +774,7 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(v8::FunctionCallbackRecordReplayGetRecordingId);
   registry->Register(v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
   registry->Register(v8::FunctionCallbackRecordReplayElapsedTimeMs);
+  registry->Register(RecordReplayAnnotationHook);
 }
 
 }  // namespace process
