@@ -563,7 +563,7 @@ static void RecordReplayAnnotationHook(
   v8::Isolate* isolate = args.GetIsolate();
   v8::Local<v8::Object> payload = v8::Object::New(isolate);
   v8::Local<v8::Context> context = isolate->GetCurrentContext();
-  payload->Set(context, ToV8String(isolate, "message"), args[1]).Check();
+  payload->Set(context, v8::String::NewFromUtf8(isolate, "message").ToLocalChecked(), args[1]).Check();
 
   v8::Local<v8::String> json;
   if (!v8::JSON::Stringify(context, payload).ToLocal(&json)) {
