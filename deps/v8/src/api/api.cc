@@ -10823,6 +10823,12 @@ bool recordreplay::AllowSideEffects() {
   return true;
 }
 
+void recordreplay::OnAnnotation(const char* kind, const char* contents) {
+  if (IsRecordingOrReplaying()) {
+    gRecordReplayOnAnnotation(kind, contents);
+  }
+}
+
 extern "C" size_t V8RecordReplayNewBookmark() {
   if (recordreplay::IsRecordingOrReplaying()) {
     return gRecordReplayNewBookmark();
