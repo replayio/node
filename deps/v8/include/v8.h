@@ -12696,6 +12696,7 @@ static void* IdPointer(int id);
 
 static bool HasDivergedFromRecording();
 static bool AllowSideEffects();
+static void OnAnnotation(const char* kind, const char* contents);
 
 }; // class recordreplay
 

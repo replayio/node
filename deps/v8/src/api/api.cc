@@ -10416,6 +10416,7 @@ static const char* (*gRecordReplayGetRecordingId)();
 static char* (*gRecordReplayCurrentExecutionPoint)();
 static void (*gRecordReplayFree)(void*);
 static size_t (*gRecordReplayElapsedTimeMs)();
+static void (*gRecordReplayOnAnnotation)(const char*, const char*);
 
 namespace internal {
 
@@ -10822,6 +10823,12 @@ bool recordreplay::AllowSideEffects() {
   return true;
 }
 
+void recordreplay::OnAnnotation(const char* kind, const char* contents) {
+  if (IsRecordingOrReplaying()) {
+    gRecordReplayOnAnnotation(kind, contents);
+  }
+}
+
 extern "C" size_t V8RecordReplayNewBookmark() {
   if (recordreplay::IsRecordingOrReplaying()) {
     return gRecordReplayNewBookmark();
@@ -10929,6 +10936,8 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayCurrentExecutionPoint", gRecordReplayCurrentExecutionPoint);
   RecordReplayLoadSymbol(handle, "RecordReplayFree", gRecordReplayFree);
   RecordReplayLoadSymbol(handle, "RecordReplayElapsedTimeMs", gRecordReplayElapsedTimeMs);
+  RecordReplayLoadSymbol(handle, "RecordReplayOnAnnotation",
+                         gRecordReplayOnAnnotation);
 
   void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
   RecordReplayLoadSymbol(handle, "RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);
