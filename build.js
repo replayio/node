@@ -36,9 +36,7 @@ namespace node {
 
 const numCPUs = os.cpus().length;
 
-if (process.env.CONFIGURE_NODE) {
-  spawnChecked(`${node}/configure`, [], { cwd: node, stdio: "inherit" });
-}
+spawnChecked(`${node}/configure`, [], { cwd: node, stdio: "inherit" });
 spawnChecked("make", [`-j${numCPUs}`, "-C", "out", "BUILDTYPE=Release"], {
   cwd: node,
   stdio: "inherit",
