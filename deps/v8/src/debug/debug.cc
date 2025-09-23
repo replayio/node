@@ -3387,7 +3387,12 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
     if (RecordReplayIgnoreScriptByURL(name.get())) {
       return;
     }
-    url = std::string("file://") + name.get();
+    std::string name_str(name.get());
+    if (name_str.find("file://") == 0) {
+      url = name_str;
+    } else {
+      url = std::string("file://") + name_str;
+    }
   }
 
   RecordReplayOnNewSource(isolate, id.get(), "scriptSource", url.length() ? url.c_str() : nullptr);
