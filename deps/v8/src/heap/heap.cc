@@ -423,6 +423,11 @@ size_t Heap::Available() {
 }
 
 bool Heap::CanExpandOldGeneration(size_t size) {
+  if (recordreplay::IsReplaying()) {
+    // Always allow expanding the heap when replaying, as memory usage can be
+    // larger when replaying than recording.
+    return true;
+  }
   if (force_oom_ || force_gc_on_next_allocation_) return false;
   if (OldGenerationCapacity() + size > max_old_generation_size()) return false;
   // The OldGenerationCapacity does not account compaction spaces used
@@ -1673,6 +1678,7 @@ Heap::DevToolsTraceEventScope::~DevToolsTraceEventScope() {
 bool Heap::CollectGarbage(AllocationSpace space,
                           GarbageCollectionReason gc_reason,
                           const v8::GCCallbackFlags gc_callback_flags) {
+  recordreplay::AutoDisallowEvents disallow;
   if (V8_UNLIKELY(!deserialization_complete_)) {
     // During isolate initialization heap always grows. GC is only requested
     // if a new page allocation fails. In such a case we should crash with
@@ -2170,6 +2176,13 @@ GCTracer::Scope::ScopeId CollectorScopeId(GarbageCollector collector) {
 
 size_t Heap::PerformGarbageCollection(
     GarbageCollector collector, const v8::GCCallbackFlags gc_callback_flags) {
+  // For now we are completely disabling GC in the old space when recording/replaying
+  // to avoid crashes and needing to deal with non-deterministic behavior that
+  // can be triggered by sweeping.
+  if (recordreplay::IsRecordingOrReplaying() &&
+      collector == GarbageCollector::MARK_COMPACTOR) {
+    return 0;
+  }
   DisallowJavascriptExecution no_js(isolate());
 
   if (IsYoungGenerationCollector(collector)) {
@@ -5224,6 +5237,8 @@ bool Heap::ShouldOptimizeForLoadTime() {
 // - either we need to optimize for memory usage,
 // - or the incremental marking is not in progress and we cannot start it.
 bool Heap::ShouldExpandOldGenerationOnSlowAllocation(LocalHeap* local_heap) {
+  recordreplay::AutoDisallowEvents disallow;
+
   if (always_allocate() || OldGenerationSpaceAvailable() > 0) return true;
   // We reached the old generation allocation limit.
 
@@ -5250,7 +5265,9 @@ bool Heap::ShouldExpandOldGenerationOnSlowAllocation(LocalHeap* local_heap) {
   }
 
   if (incremental_marking()->IsStopped() &&
-      IncrementalMarkingLimitReached() == IncrementalMarkingLimit::kNoLimit) {
+      IncrementalMarkingLimitReached() == IncrementalMarkingLimit::kNoLimit &&
+      // Incremental marking is disabled when recording/replaying.
+      !recordreplay::IsRecordingOrReplaying()) {
     // We cannot start incremental marking.
     return false;
   }
@@ -5782,6 +5799,8 @@ void Heap::NotifyBootstrapComplete() {
 
 void Heap::NotifyOldGenerationExpansion(AllocationSpace space,
                                         MemoryChunk* chunk) {
+  recordreplay::AutoDisallowEvents disallow;
+
   // Pages created during bootstrapping may contain immortal immovable objects.
   if (!deserialization_complete()) {
     chunk->MarkNeverEvacuate();
