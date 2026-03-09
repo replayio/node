@@ -4,6 +4,7 @@
 
 #include "src/compiler/backend/code-generator.h"
 
+#include "include/replayio.h"
 #include "src/base/iterator.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/codegen/macro-assembler-inl.h"
@@ -554,6 +555,8 @@ base::OwnedVector<byte> CodeGenerator::GetProtectedInstructionsData() {
 }
 
 MaybeHandle<Code> CodeGenerator::FinalizeCode() {
+  replayio::AutoDisallowEvents disallow("CodeGenerator::FinalizeCode");
+
   if (result_ != kSuccess) {
     tasm()->AbortedCodeGeneration();
     return MaybeHandle<Code>();
