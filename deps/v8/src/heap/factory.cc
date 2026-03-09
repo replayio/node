@@ -3837,7 +3837,7 @@ Handle<JSMessageObject> Factory::NewJSMessageObject(
     MessageTemplate message, DirectHandle<Object> argument, int start_position,
     int end_position, DirectHandle<SharedFunctionInfo> shared_info,
     int bytecode_offset, DirectHandle<Script> script,
-    DirectHandle<StackTraceInfo> stack_trace) {
+    DirectHandle<StackTraceInfo> stack_trace, int record_replay_bookmark) {
   DirectHandle<Map> map = message_object_map();
   Tagged<JSMessageObject> message_obj =
       Cast<JSMessageObject>(New(map, AllocationType::kYoung));
@@ -3874,6 +3874,7 @@ Handle<JSMessageObject> Factory::NewJSMessageObject(
     message_obj->set_stack_trace(*stack_trace, SKIP_WRITE_BARRIER);
   }
   message_obj->set_error_level(v8::Isolate::kMessageError);
+  message_obj->set_record_replay_bookmark(record_replay_bookmark);
   return handle(message_obj, isolate());
 }
 
