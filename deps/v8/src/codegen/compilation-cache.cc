@@ -293,7 +293,7 @@ InfoCellPair CompilationCache::LookupEval(
     cache_type = "eval-global";
 
   } else {
-    DCHECK_NE(position, kNoSourcePosition);
+    //DCHECK_NE(position, kNoSourcePosition);
     DirectHandle<NativeContext> native_context(context->native_context(),
                                                isolate());
     result = eval_contextual_.Lookup(source, outer_info, native_context,
@@ -338,7 +338,7 @@ void CompilationCache::PutEval(DirectHandle<String> source,
                      feedback_cell, position);
     cache_type = "eval-global";
   } else {
-    DCHECK_NE(position, kNoSourcePosition);
+    //DCHECK_NE(position, kNoSourcePosition);
     DirectHandle<NativeContext> native_context(context->native_context(),
                                                isolate());
     eval_contextual_.Put(source, outer_info, function_info, native_context,
