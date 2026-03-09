@@ -1713,6 +1713,8 @@ Type Typer::Visitor::TypeUnsigned32Divide(Node* node) {
   return Type::Range(0, lhs.Max(), zone());
 }
 
+Type Typer::Visitor::TypeIncrementAndCheckProgressCounter(Node* node) { return Type::Any(); }
+
 Type Typer::Visitor::JSCallTyper(Type fun, Typer* t) {
   if (!fun.IsHeapConstant() || !fun.AsHeapConstant()->Ref().IsJSFunction()) {
     return Type::NonInternal();
