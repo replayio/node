@@ -431,6 +431,8 @@ class Parser : public AsyncWrap, public StreamListener {
     headers_completed_ = true;
     header_nread_ = 0;
 
+    v8::recordreplay::Assert("Parser::on_headers_complete");
+
     // Arguments for the on-headers-complete javascript callback. This
     // list needs to be kept in sync with the actual argument list for
     // `parserOnHeadersComplete` in lib/_http_common.js.
