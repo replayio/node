@@ -18,7 +18,6 @@ using v8::Local;
 using v8::Object;
 using v8::Value;
 
-
 template <typename WrapType, typename UVType>
 ConnectionWrap<WrapType, UVType>::ConnectionWrap(Environment* env,
                                                  Local<Object> object,
@@ -77,6 +76,8 @@ void ConnectionWrap<WrapType, UVType>::OnConnection(uv_stream_t* handle,
 template <typename WrapType, typename UVType>
 void ConnectionWrap<WrapType, UVType>::AfterConnect(uv_connect_t* req,
                                                     int status) {
+  v8::recordreplay::Assert("ConnectionWrap::AfterConnect");
+
   std::unique_ptr<ConnectWrap> req_wrap
     (static_cast<ConnectWrap*>(req->data));
   CHECK_NOT_NULL(req_wrap);
