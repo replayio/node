@@ -42,6 +42,9 @@
 
 namespace v8 {
 namespace internal {
+
+extern bool RecordReplayIgnoreScript(Script script);
+
 namespace interpreter {
 
 // Scoped class tracking context objects created by the visitor. Represents
@@ -1396,7 +1399,9 @@ BytecodeGenerator::BytecodeGenerator(
     : local_isolate_(local_isolate),
       zone_(compile_zone),
       builder_(zone(), info->num_parameters_including_this(),
-               info->scope()->num_stack_slots(), info->feedback_vector_spec(),
+               info->scope()->num_stack_slots(),
+               info->flags().record_replay_ignore(),
+               info->feedback_vector_spec(),
                info->SourcePositionRecordingMode()),
       info_(info),
       ast_string_constants_(ast_string_constants),
@@ -1463,6 +1468,11 @@ using NullContextScopeFor = typename NullContextScopeHelper<Isolate>::Type;
 template <typename IsolateT>
 Handle<BytecodeArray> BytecodeGenerator::FinalizeBytecode(
     IsolateT* isolate, Handle<Script> script) {
+  if (recordreplay::IsRecordingOrReplaying() && IsMainThread()) {
+    CHECK(info()->flags().record_replay_ignore() ==
+          RecordReplayIgnoreScript(*script));
+  }
+
   DCHECK_EQ(ThreadId::Current(), isolate->thread_id());
 #ifdef DEBUG
   // Unoptimized compilation should be context-independent. Verify that we don't
@@ -1725,6 +1735,24 @@ void BytecodeGenerator::GenerateBodyPrologue() {
 
   // Emit tracing call if requested to do so.
   if (v8_flags.trace) builder()->CallRuntime(Runtime::kTraceEnter);
+
+  if (recordreplay::IsRecordingOrReplaying()) {
+    builder()->RecordReplayIncExecutionProgressCounter();
+
+    int num_parameters = closure_scope()->num_parameters();
+    for (int i = 0; i < num_parameters; i++) {
+      Register parameter(builder()->Parameter(i));
+      builder()->LoadAccumulatorWithRegister(parameter).RecordReplayAssertValue(
+          "Parameter");
+    }
+
+    if (IsResumableFunction(literal->kind())) {
+      builder()->RecordReplayInstrumentationGenerator("generator",
+                                                      generator_object());
+    } else {
+      builder()->RecordReplayInstrumentation("main");
+    }
+  }
 
   // Increment the function-scope block coverage counter.
   BuildIncrementBlockCoverageCounterIfEnabled(literal, SourceRangeKind::kBody);
@@ -2244,6 +2272,32 @@ void BytecodeGenerator::VisitStatements(
   }
 }
 
+void BytecodeGenerator::ReplayExpressionShiftedSetStatementPosition(
+    Statement* stmt, Expression* expr) {
+  builder()->SetStatementPosition(stmt, /* record_replay_breakpoint */ false);
+  if (expr->position() < 0) {
+    // expression is empty, so the breakpoint gets added at the statement itself
+    builder()->RecordReplayInstrumentation("breakpoint", stmt->position());
+  } else if (expr->IsBinaryOperation()) {
+    // given the breakpoint gets shifted to the expression (if that's available)
+    // by default we first check if it's not a binary operation, in which case
+    // we need to make sure the breakpoint is added at the position of the left
+    // operand this targets the case in which the binary operation's position is
+    // set to its right operand, see:
+    // https://github.com/v8/v8/commit/5bf9e470f8290dde983797e695e5156374d81962
+    // without this the pre-call-post-args breakpoint added by `VisitCall` would
+    // not be added as it would be treated as duplicate. without this
+    // specialcase the breakpoints would be added like this (3 would be
+    // skipped):
+    //
+    // return /*2*/foo(), /*1*//*3*/bar();
+    builder()->RecordReplayInstrumentation(
+        "breakpoint", expr->AsBinaryOperation()->left()->position());
+  } else {
+    builder()->RecordReplayInstrumentation("breakpoint", expr->position());
+  }
+}
+
 void BytecodeGenerator::VisitExpressionStatement(ExpressionStatement* stmt) {
   builder()->SetStatementPosition(stmt);
   VisitForEffect(stmt->expression());
@@ -2312,7 +2366,7 @@ void BytecodeGenerator::VisitBreakStatement(BreakStatement* stmt) {
 
 void BytecodeGenerator::VisitReturnStatement(ReturnStatement* stmt) {
   AllocateBlockCoverageSlotIfEnabled(stmt, SourceRangeKind::kContinuation);
-  builder()->SetStatementPosition(stmt);
+  ReplayExpressionShiftedSetStatementPosition(stmt, stmt->expression());
   VisitForAccumulatorValue(stmt->expression());
   int return_position = stmt->end_position();
   if (return_position == ReturnStatement::kFunctionLiteralReturnPosition) {
@@ -2739,6 +2793,12 @@ void BytecodeGenerator::BuildTryCatch(
   }
 
   merge_elider.Merge();
+  // Unlike in gecko, we need to increment the progress counter at catch
+  // blocks so we can detect when exceptions are initially thrown vs. being
+  // rethrown. See Runtime_UnwindAndFindExceptionHandler.
+  builder()->RecordReplayIncExecutionProgressCounter();
+
+  builder()->RecordReplayAssertValue("BeginCatch");
 
   try_control_builder.EndCatch();
 }
@@ -2806,6 +2866,10 @@ void BytecodeGenerator::BuildTryFinally(
   commands.RecordHandlerReThrowPath();
 
   try_control_builder.BeginFinally();
+
+  // See BuildTryCatch for why we increment the progress counter here.
+  builder()->RecordReplayIncExecutionProgressCounter();
+  builder()->RecordReplayAssertValue("BeginFinally");
 
   // Evaluate the finally-block.
   finally_body_func(token, result, message);
@@ -4589,7 +4653,9 @@ void BytecodeGenerator::BuildReturn(int source_position) {
     builder()->StoreAccumulatorInRegister(result).CallRuntime(
         Runtime::kTraceExit, result);
   }
-  builder()->SetStatementPosition(source_position);
+  builder()->SetStatementPosition(source_position,
+                                  /* record_replay_breakpoint */ false);
+  builder()->RecordReplayInstrumentation("exit");
   builder()->Return();
 }
 
@@ -5726,6 +5792,8 @@ void BytecodeGenerator::BuildSuspendPoint(int position) {
 
   RegisterList registers = register_allocator()->AllLiveRegisters();
 
+  builder()->RecordReplayInstrumentation("exit");
+
   // Save context, registers, and state. This bytecode then returns the value
   // in the accumulator.
   builder()->SetExpressionPosition(position);
@@ -5737,6 +5805,9 @@ void BytecodeGenerator::BuildSuspendPoint(int position) {
   // Clobbers all registers and sets the accumulator to the
   // [[input_or_debug_pos]] slot of the generator object.
   builder()->ResumeGenerator(generator_object(), registers);
+
+  builder()->RecordReplayIncExecutionProgressCounter();
+  builder()->RecordReplayInstrumentationGenerator("entry", generator_object());
 }
 
 void BytecodeGenerator::VisitYield(Yield* expr) {
@@ -6487,6 +6558,9 @@ void BytecodeGenerator::VisitCall(Call* expr) {
     return VisitCallSuper(expr);
   }
 
+  size_t start_locations_size =
+      builder()->record_replay_instrumentation_site_locations_.size();
+
   // We compile the call differently depending on the presence of spreads and
   // their positions.
   //
@@ -6681,6 +6755,39 @@ void BytecodeGenerator::VisitCall(Call* expr) {
   }
 
   builder()->SetExpressionPosition(expr);
+
+  // Emit a breakpoint for all call expressions
+  // after arguments have already been evaluated.
+  // This might duplicate the call's parent's position,
+  // so we should try to have it get deduplicated
+  // by inserting it before the call, *if* there are no arguments.
+  //
+  // Example1 (potentially deduped breakpoint):
+  // `/*BREAK1*/func();
+  //
+  // Example2 (extra breakpoint after arguments evaluation):
+  // `/*BREAK1*/func/*BREAK3*/(/*BREAK2*/g());`
+
+  // TODO: Deduplicate property call locations
+  //       NOTE: In this case, `expr->position()` is different from the
+  //             `ExpressionStatement`'s position.
+  //       Example: `/*BREAK1*/o.func/*BREAK2*/();`
+
+  if (expr->call_head_token_position() &&
+      start_locations_size !=
+          builder()->record_replay_instrumentation_site_locations_.size()) {
+    // Has arguments and visiting them added breakpoints.
+    // Move this to a position that is assured not to conflict with any other
+    // AST node.
+    builder()->RecordReplayInstrumentation("breakpoint",
+                                           expr->call_head_token_position());
+  } else {
+    // Might have arguments but visiting them didn't add breakpoints.
+    // Add this to a potentially conflicting position, letting it to be
+    // deduplicated in such case. If there is no conflict, a breakpoint will be
+    // added.
+    builder()->RecordReplayInstrumentation("breakpoint", expr->position());
+  }
 
   if (spread_position == Call::kHasFinalSpread) {
     DCHECK(!implicit_undefined_receiver);
