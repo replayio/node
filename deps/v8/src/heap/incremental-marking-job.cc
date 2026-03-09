@@ -28,6 +28,8 @@ class IncrementalMarkingJob::Task : public CancelableTask {
   // CancelableTask overrides.
   void RunInternal() override;
 
+  bool IsRecordReplayNonDeterministic() const override { return true; }
+
   Isolate* isolate() const { return isolate_; }
 
  private:

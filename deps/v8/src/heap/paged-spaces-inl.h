@@ -134,7 +134,11 @@ V8_INLINE bool PagedSpaceBase::EnsureAllocation(int size_in_bytes,
   if (allocation_info_.top() + size_in_bytes <= allocation_info_.limit()) {
     return true;
   }
-  return RefillLabMain(size_in_bytes, origin);
+  if (!RefillLabMain(size_in_bytes, origin)) {
+    recordreplay::Diagnostic("PagedSpace::EnsureAllocation RefillLabMain failed");
+    return false;
+  }
+  return true;
 }
 
 }  // namespace internal
