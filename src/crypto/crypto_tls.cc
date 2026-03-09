@@ -613,6 +613,7 @@ void TLSWrap::EncOut() {
   size_t count = arraysize(data);
   write_size_ = NodeBIO::FromBIO(enc_out_)->PeekMultiple(data, size, &count);
   CHECK(write_size_ != 0 && count != 0);
+  v8::recordreplay::Assert("TLSWrap::EncOut %zu %zu", count, write_size_);
 
   uv_buf_t buf[arraysize(data)];
   uv_buf_t* bufs = buf;
