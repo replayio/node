@@ -669,7 +669,8 @@ class CommonFrame : public StackFrame {
   // Build a list with summaries for this frame including all inlined frames.
   // The functions are ordered bottom-to-top (i.e. summaries.last() is the
   // top-most activation; caller comes before callee).
-  virtual FrameSummaries Summarize(bool never_allocate = false) const;
+  virtual FrameSummaries Summarize(bool never_allocate = false,
+                            bool allow_invalid = false) const;
 
   static CommonFrame* cast(StackFrame* frame) {
     // It is always safe to cast to common.
@@ -750,7 +751,8 @@ class CommonFrameWithJSLinkage : public CommonFrame {
   virtual bool IsConstructor() const;
 
   // Summarize Frame
-  FrameSummaries Summarize(bool never_allocate = false) const override;
+  FrameSummaries Summarize(bool never_allocate = false,
+                            bool allow_invalid = false) const override;
 
  protected:
   inline explicit CommonFrameWithJSLinkage(StackFrameIteratorBase* iterator);
@@ -960,7 +962,8 @@ class BuiltinExitFrame : public ExitFrame {
              int index) const override;
 
   // Summarize Frame
-  FrameSummaries Summarize(bool never_allocate = false) const override;
+  FrameSummaries Summarize(bool never_allocate = false,
+                            bool allow_invalid = false) const override;
 
  protected:
   inline explicit BuiltinExitFrame(StackFrameIteratorBase* iterator);
@@ -1004,8 +1007,9 @@ class ApiCallbackExitFrame : public ExitFrame {
              int index) const override;
 
   // Summarize Frame
-  FrameSummaries Summarize(bool never_allocate = false) const override {
-    return SummarizeApiFrame(false, never_allocate);
+  FrameSummaries Summarize(bool never_allocate = false,
+                            bool allow_invalid = false) const override {
+    return SummarizeApiFrame(false, never_allocate, allow_invalid);
   }
 
   static ApiCallbackExitFrame* cast(StackFrame* frame) {
@@ -1016,8 +1020,8 @@ class ApiCallbackExitFrame : public ExitFrame {
  protected:
   inline explicit ApiCallbackExitFrame(StackFrameIteratorBase* iterator);
 
-  FrameSummaries SummarizeApiFrame(bool is_constructor,
-                                   bool never_allocate) const;
+  FrameSummaries SummarizeApiFrame(bool is_constructor, bool never_allocate,
+                                   bool allow_invalid) const;
   void PrintApiFrame(StringStream* accumulator, PrintMode mode, int index,
                      bool is_constructor) const;
 
@@ -1044,8 +1048,9 @@ class ApiConstructExitFrame : public ApiCallbackExitFrame {
              int index) const override;
 
   // Summarize Frame
-  FrameSummaries Summarize(bool never_allocate = false) const override {
-    return SummarizeApiFrame(true, never_allocate);
+  FrameSummaries Summarize(bool never_allocate = false,
+                            bool allow_invalid = false) const override {
+    return SummarizeApiFrame(true, never_allocate, allow_invalid);
   }
 
   static ApiConstructExitFrame* cast(StackFrame* frame) {
@@ -1071,7 +1076,8 @@ class ApiAccessorExitFrame : public ExitFrame {
   inline Tagged<Object> holder() const;
 
   // Summarize Frame
-  FrameSummaries Summarize(bool never_allocate = false) const override;
+  FrameSummaries Summarize(bool never_allocate = false,
+                            bool allow_invalid = false) const override;
 
   static ApiAccessorExitFrame* cast(StackFrame* frame) {
     DCHECK(frame->is_api_named_accessor_exit() ||
@@ -1147,7 +1153,8 @@ class StubFrame : public TypedFrame {
   // TurboFan stub frames are supported.
   int LookupExceptionHandlerInTable();
 
-  FrameSummaries Summarize(bool never_allocate = false) const override;
+  FrameSummaries Summarize(bool never_allocate = false,
+                            bool allow_invalid = false) const override;
 
  protected:
   inline explicit StubFrame(StackFrameIteratorBase* iterator);
@@ -1164,7 +1171,8 @@ class OptimizedJSFrame : public JavaScriptFrame {
   void GetFunctions(
       std::vector<Tagged<SharedFunctionInfo>>* functions) const override;
 
-  FrameSummaries Summarize(bool never_allocate = false) const override;
+  FrameSummaries Summarize(bool never_allocate = false,
+                            bool allow_invalid = false) const override;
 
   Tagged<DeoptimizationData> GetDeoptimizationData(Tagged<Code> code,
                                                    int* deopt_index) const;
@@ -1218,7 +1226,8 @@ class UnoptimizedJSFrame : public JavaScriptFrame {
   inline void SetFeedbackVector(Tagged<FeedbackVector> feedback_vector);
 
   // Build a list with summaries for this frame including all inlined frames.
-  FrameSummaries Summarize(bool never_allocate = false) const override;
+  FrameSummaries Summarize(bool never_allocate = false,
+                            bool allow_invalid = false) const override;
 
   static UnoptimizedJSFrame* cast(StackFrame* frame) {
     DCHECK(frame->is_unoptimized_js());
@@ -1389,7 +1398,8 @@ class WasmFrame : public TypedFrame {
   int generated_code_offset() const;
   bool is_inspectable() const;
 
-  FrameSummaries Summarize(bool never_allocate = false) const override;
+  FrameSummaries Summarize(bool never_allocate = false,
+                            bool allow_invalid = false) const override;
 
   static WasmFrame* cast(StackFrame* frame) {
     DCHECK(frame->is_wasm()
@@ -1450,7 +1460,8 @@ class WasmInterpreterEntryFrame final : public WasmFrame {
   void Print(StringStream* accumulator, PrintMode mode,
              int index) const override;
 
-  FrameSummaries Summarize(bool never_allocate = false) const override;
+  FrameSummaries Summarize(bool never_allocate = false,
+                            bool allow_invalid = false) const override;
 
   // Determine the code for the frame.
   Tagged<HeapObject> unchecked_code() const override;
