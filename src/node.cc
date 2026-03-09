@@ -35,6 +35,7 @@
 #include "node_errors.h"
 #include "node_internals.h"
 #include "node_main_instance.h"
+#include "node_messaging.h"
 #include "node_metadata.h"
 #include "node_options-inl.h"
 #include "node_perf.h"
@@ -288,6 +289,9 @@ std::optional<StartExecutionCallbackInfoWithModule> CallbackInfoFromArray(
 
 MaybeLocal<Value> StartExecution(Environment* env,
                                  StartExecutionCallbackWithModule cb) {
+  if (v8::IsMainThread()) {
+    v8::recordreplay::NewCheckpoint();
+  }
   InternalCallbackScope callback_scope(
       env,
       Object::New(env->isolate()),
@@ -1172,13 +1176,40 @@ bool CanEnableWebAssemblyTrapHandler() {
 #endif  // __POSIX__
 }
 #endif  // NODE_USE_V8_WASM_TRAP_HANDLER
-
+// See node_recordreplay.cc and the generated node_record_replay_driver.cc.
+extern char gBuildId[];
+void InitializeRecordReplay(int* pargc, char*** pargv);
+void ApplyRecordReplayMaxOldSpace();
 static std::shared_ptr<InitializationResultImpl>
 InitializeOncePerProcessInternal(const std::vector<std::string>& args,
                                  ProcessInitializationFlags::Flags flags =
                                      ProcessInitializationFlags::kNoFlags) {
   auto result = std::make_shared<InitializationResultImpl>();
   result->args_ = args;
+
+  // The driver records the command line and may drop its own arguments from
+  // it, so the result's arguments are rebuilt from what it leaves behind.
+  {
+    std::vector<char*> argv;
+    argv.reserve(result->args_.size() + 1);
+    for (std::string& arg : result->args_) argv.push_back(&arg[0]);
+    argv.push_back(nullptr);
+    int argc = static_cast<int>(result->args_.size());
+    char** pargv = argv.data();
+    InitializeRecordReplay(&argc, &pargv);
+    result->args_ = std::vector<std::string>(pargv, pargv + argc);
+    if (v8::recordreplay::IsReplaying()) {
+      // The driver hands back the recording's arguments, in memory it owns.
+      // libuv keeps a pointer into argv for the process title instead of
+      // copying it (see uv_get_process_title), and Start() set the arguments
+      // up before the driver had a say, so the title would be this process's
+      // own. It has to be the recording's: node reports it to a debugger
+      // frontend as the execution context's name.
+      uv_setup_args(argc, pargv);
+    }
+  }
+
+  worker::SiblingGroup::InitializeOncePerProcess();
 
   if (!(flags & ProcessInitializationFlags::kNoParseGlobalDebugVariables)) {
     // Initialized the enabled list for Debug() calls with system
@@ -1198,6 +1229,8 @@ InitializeOncePerProcessInternal(const std::vector<std::string>& args,
     }
   }
 
+  ApplyRecordReplayMaxOldSpace();
+
   if (!(flags & ProcessInitializationFlags::kNoUseLargePages) &&
       (per_process::cli_options->use_largepages == "on")) {
     result->errors_.emplace_back("--use-largepages is no longer supported.");
@@ -1215,6 +1248,13 @@ InitializeOncePerProcessInternal(const std::vector<std::string>& args,
   if (!(flags & ProcessInitializationFlags::kNoPrintHelpOrVersionOutput)) {
     if (per_process::cli_options->print_version) {
       printf("%s\n", NODE_VERSION);
+      result->exit_code_ = ExitCode::kNoFailure;
+      result->early_return_ = true;
+      return result;
+    }
+
+    if (per_process::cli_options->print_build_id) {
+      printf("%s\n", gBuildId);
       result->exit_code_ = ExitCode::kNoFailure;
       result->early_return_ = true;
       return result;
@@ -1422,7 +1462,12 @@ InitializeOncePerProcessInternal(const std::vector<std::string>& args,
     }
 #endif  // defined(_WIN32)
     is_wasm_trap_handler_configured.store(true);
-    V8::EnableWebAssemblyTrapHandler(false);
+    // The recorder doesn't install handlers for fatal signals and treats every
+    // SIGSEGV as a crash, so when recording/replaying V8 keeps emitting the
+    // bounds checks.
+    if (!v8::recordreplay::IsRecordingOrReplaying()) {
+      V8::EnableWebAssemblyTrapHandler(false);
+    }
   }
 #endif  // NODE_USE_V8_WASM_TRAP_HANDLER
 
