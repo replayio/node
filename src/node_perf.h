@@ -21,7 +21,9 @@ class ExternalReferenceRegistry;
 
 namespace performance {
 
-extern const uint64_t timeOrigin;
+extern uint64_t timeOrigin;
+
+void InitPerformance();
 
 inline const char* GetPerformanceMilestoneName(
     PerformanceMilestone milestone) {
