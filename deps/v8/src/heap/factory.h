@@ -1024,9 +1024,8 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
       MessageTemplate message, DirectHandle<Object> argument,
       int start_position, int end_position,
       DirectHandle<SharedFunctionInfo> shared_info, int bytecode_offset,
-      DirectHandle<Script> script,
-      DirectHandle<StackTraceInfo> stack_trace =
-          DirectHandle<StackTraceInfo>::null());
+      DirectHandle<Script> script, DirectHandle<StackTraceInfo> stack_trace,
+      int record_replay_bookmark);
 
   Handle<DebugInfo> NewDebugInfo(DirectHandle<SharedFunctionInfo> shared);
 
