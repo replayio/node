@@ -45,6 +45,7 @@ WasmWrapperHandle::~WasmWrapperHandle() {
 }
 
 std::optional<Builtin> WasmImportWrapperCache::BuiltinForWrapper(
+extern void RecordReplayAddOrderedMutex(const char* name, base::Mutex* mutex);
     const CacheKey& key) {
   if (key.kind != ImportCallKind::kJSFunction) return {};
 
@@ -188,5 +189,9 @@ WasmImportWrapperCache::CompileWasmJsFastCallWrapper(
 
 template class EXPORT_TEMPLATE_DEFINE(V8_EXPORT_PRIVATE)
     WasmWrapperCache<ImportWrapperCacheKey>;
+}
+
+WasmImportWrapperCache::WasmImportWrapperCache() {
+  RecordReplayAddOrderedMutex("WasmImportWrapperCache::mutex_", &mutex_);
 
 }  // namespace v8::internal::wasm
