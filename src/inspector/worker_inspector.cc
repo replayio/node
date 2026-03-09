@@ -64,12 +64,22 @@ ParentInspectorHandle::ParentInspectorHandle(
       wait_(wait_for_connect) {}
 
 ParentInspectorHandle::~ParentInspectorHandle() {
+  // Worker inspection is NYI when recording/replaying.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
   parent_thread_->Post(
       std::unique_ptr<Request>(new WorkerFinishedRequest(id_)));
 }
 
 void ParentInspectorHandle::WorkerStarted(
     std::shared_ptr<MainThreadHandle> worker_thread, bool waiting) {
+  // Worker inspection is NYI when recording/replaying.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
   std::unique_ptr<Request> request(
       new WorkerStartedRequest(id_, url_, worker_thread, waiting));
   parent_thread_->Post(std::move(request));
@@ -78,6 +88,11 @@ void ParentInspectorHandle::WorkerStarted(
 std::unique_ptr<inspector::InspectorSession> ParentInspectorHandle::Connect(
     std::unique_ptr<inspector::InspectorSessionDelegate> delegate,
     bool prevent_shutdown) {
+  // Worker inspection is NYI when recording/replaying.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return nullptr;
+  }
+
   return parent_thread_->Connect(std::move(delegate), prevent_shutdown);
 }
 
