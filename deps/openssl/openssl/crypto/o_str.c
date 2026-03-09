@@ -13,6 +13,8 @@
 #include "internal/cryptlib.h"
 #include "internal/o_str.h"
 
+extern void RecordReplayAssertFromC(const char* aFormat, ...);
+
 int OPENSSL_memcmp(const void *v1, const void *v2, size_t n)
 {
     const unsigned char *c1 = v1, *c2 = v2;
@@ -220,6 +222,8 @@ char *OPENSSL_buf2hexstr(const unsigned char *buffer, long len)
 
 int openssl_strerror_r(int errnum, char *buf, size_t buflen)
 {
+    RecordReplayAssertFromC("openssl_strerror_r %d %lu", errnum, buflen);
+
 #if defined(_MSC_VER) && _MSC_VER>=1400 && !defined(_WIN32_WCE)
     return !strerror_s(buf, buflen, errnum);
 #elif defined(_GNU_SOURCE)
