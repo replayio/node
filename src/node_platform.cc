@@ -3,6 +3,7 @@
 
 #include "env-inl.h"
 #include "debug_utils-inl.h"
+#include "replayio.h"
 #include <algorithm>  // find_if(), find(), move()
 #include <cmath>  // llround()
 #include <memory>  // unique_ptr(), shared_ptr(), make_shared()
@@ -511,14 +512,21 @@ void NodePlatform::RegisterIsolate(Isolate* isolate,
 }
 
 void NodePlatform::UnregisterIsolate(Isolate* isolate) {
-  Mutex::ScopedLock lock(per_isolate_mutex_);
-  auto existing_it = per_isolate_.find(isolate);
-  CHECK_NE(existing_it, per_isolate_.end());
-  auto& existing = existing_it->second;
-  if (existing.second) {
-    existing.second->Shutdown();
+  std::shared_ptr<PerIsolatePlatformData> existing;
+  {
+    Mutex::ScopedLock lock(per_isolate_mutex_);
+    auto existing_it = per_isolate_.find(isolate);
+    CHECK_NE(existing_it, per_isolate_.end());
+    existing = std::move(existing_it->second.second);
+    per_isolate_.erase(existing_it);
   }
-  per_isolate_.erase(existing_it);
+  // Shutdown takes ordered locks, which another thread can be due to take
+  // first while it waits for per_isolate_mutex_, e.g. to post a task to its own
+  // isolate. Nothing orders that mutex when replaying, so holding it here could
+  // deadlock.
+  if (existing) {
+    existing->Shutdown();
+  }
 }
 
 void NodePlatform::AddIsolateFinishedCallback(Isolate* isolate,
@@ -747,6 +755,7 @@ std::shared_ptr<v8::TaskRunner> NodePlatform::GetForegroundTaskRunner(
 
 double NodePlatform::MonotonicallyIncreasingTime() {
   // Convert nanos to seconds.
+  v8::replayio::AutoPassThroughEvents pt;
   return uv_hrtime() / 1e9;
 }
 

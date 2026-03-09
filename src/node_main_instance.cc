@@ -86,6 +86,8 @@ NodeMainInstance::~NodeMainInstance() {
   platform_->DisposeIsolate(isolate_);
 }
 
+extern void RecordReplayFinishRecording();
+
 ExitCode NodeMainInstance::Run() {
   Locker locker(isolate_);
   Isolate::Scope isolate_scope(isolate_);
@@ -117,6 +119,8 @@ void NodeMainInstance::Run(ExitCode* exit_code, Environment* env) {
     *exit_code =
         SpinEventLoopInternal(env).FromMaybe(ExitCode::kGenericUserError);
   }
+
+  RecordReplayFinishRecording();
 
 #if defined(LEAK_SANITIZER)
   __lsan_do_leak_check();
