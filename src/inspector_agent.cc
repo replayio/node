@@ -291,6 +291,7 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   void flushProtocolNotifications() override { }
 
   void sendMessageToFrontend(const StringView& message) {
+    std::string raw_message = protocol::StringUtil::StringViewToUtf8(message);
     delegate_->SendMessageToFrontend(message);
   }
 
@@ -782,6 +783,11 @@ std::unique_ptr<InspectorSession> Agent::Connect(
 std::unique_ptr<InspectorSession> Agent::ConnectToMainThread(
     std::unique_ptr<InspectorSessionDelegate> delegate,
     bool prevent_shutdown) {
+  // Worker inspection is NYI when recording/replaying.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return nullptr;
+  }
+
   if (!parent_env_->should_create_inspector() && !client_) {
     ThrowUninitializedInspectorError(parent_env_);
     return std::unique_ptr<InspectorSession>{};
