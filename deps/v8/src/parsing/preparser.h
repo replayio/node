@@ -645,6 +645,7 @@ class PreParserFactory {
   PreParserExpression NewCall(PreParserExpression expression,
                               const PreParserExpressionList& arguments, int pos,
                               bool has_spread,
+                              int call_head_token_position = 0,
                               Call::PossiblyEval possibly_eval = Call::NOT_EVAL,
                               bool optional_chain = false) {
     if (possibly_eval == Call::IS_POSSIBLY_EVAL) {
@@ -656,12 +657,13 @@ class PreParserFactory {
   }
   PreParserExpression NewTaggedTemplate(
       PreParserExpression expression, const PreParserExpressionList& arguments,
-      int pos) {
+      int pos, int call_head_token_position) {
     return PreParserExpression::CallTaggedTemplate();
   }
   PreParserExpression NewCallNew(const PreParserExpression& expression,
                                  const PreParserExpressionList& arguments,
-                                 int pos, bool has_spread) {
+                                 int pos, bool has_spread,
+                                 int call_head_token_position = 0) {
     return PreParserExpression::Default();
   }
   PreParserStatement NewReturnStatement(
@@ -1037,7 +1039,8 @@ class PreParser : public ParserBase<PreParser> {
   V8_INLINE void AddTemplateSpan(TemplateLiteralState* state, bool should_cook,
                                  bool tail) {}
   V8_INLINE PreParserExpression CloseTemplateLiteral(
-      TemplateLiteralState* state, int start, const PreParserExpression& tag) {
+      TemplateLiteralState* state, int start, const PreParserExpression& tag,
+      int call_head_token_position = 0) {
     return PreParserExpression::Default();
   }
   V8_INLINE bool IsPrivateReference(const PreParserExpression& expression) {
