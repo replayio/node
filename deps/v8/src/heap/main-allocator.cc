@@ -4,6 +4,8 @@
 
 #include "src/heap/main-allocator.h"
 
+#include "src/base/replayio.h"
+
 #include "src/base/logging.h"
 #include "src/base/optional.h"
 #include "src/common/globals.h"
@@ -642,7 +644,11 @@ bool PagedSpaceAllocatorPolicy::EnsureAllocation(int size_in_bytes,
       allocator_->allocation_info().limit()) {
     return true;
   }
-  return RefillLab(size_in_bytes, origin);
+  if (!RefillLab(size_in_bytes, origin)) {
+    recordreplay::Diagnostic("PagedSpace::EnsureAllocation RefillLab failed");
+    return false;
+  }
+  return true;
 }
 
 bool PagedSpaceAllocatorPolicy::RefillLab(int size_in_bytes,

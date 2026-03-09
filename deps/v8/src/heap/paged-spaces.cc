@@ -7,6 +7,7 @@
 #include <atomic>
 
 #include "src/base/logging.h"
+#include "include/replayio.h"
 #include "src/base/optional.h"
 #include "src/base/platform/mutex.h"
 #include "src/common/globals.h"
