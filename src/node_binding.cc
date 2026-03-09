@@ -308,6 +308,8 @@ extern "C" void node_module_register(void* m) {
   }
 }
 
+extern void RecordReplayAddonContextRegister(addon_context_register_func* pfunc);
+
 namespace binding {
 
 static struct global_handle_map_t {
@@ -366,7 +368,9 @@ DLib::DLib(const char* filename, int flags)
 
 #ifdef __POSIX__
 bool DLib::Open() {
+  recordreplay::MarkNextDlopenAsAddon(filename_.c_str());
   handle_ = dlopen(filename_.c_str(), flags_);
+  v8::recordreplay::Assert("DLib::Open %s %d", filename_.c_str(), !!handle_);
   if (handle_ != nullptr) return true;
   errmsg_ = dlerror();
   return false;
@@ -822,6 +826,8 @@ static void DLOpenImpl(const FunctionCallbackInfo<Value>& args,
     const bool is_opened = dlib->Open();
     image.AfterOpen(is_opened, is_opened ? dlib->handle_ : nullptr);
 
+    v8::recordreplay::Assert("DLOpen Callback #1 %d", is_opened);
+
     // Objects containing v14 or later modules will have registered themselves
     // on the pending list.  Activate all of them now.  At present, only one
     // module per object is supported.
@@ -837,6 +843,18 @@ static void DLOpenImpl(const FunctionCallbackInfo<Value>& args,
 #endif  // _WIN32
       THROW_ERR_DLOPEN_FAILED(env, "%s", errmsg);
       return false;
+    }
+
+    // When replaying binary modules do not run, so mp won't be set.
+    // Reconstruct mp's contents.
+    if (v8::recordreplay::IsRecordingOrReplaying()) {
+      bool hasModule = v8::recordreplay::RecordReplayValue("DLOpen HasModule", !!mp);
+      if (hasModule) {
+        if (v8::recordreplay::IsReplaying()) {
+          mp = new node_module;
+        }
+        v8::recordreplay::RecordReplayBytes("DLOpen ModuleContents", mp, sizeof(node_module));
+      }
     }
 
     if (mp != nullptr) {
@@ -904,8 +922,11 @@ static void DLOpenImpl(const FunctionCallbackInfo<Value>& args,
     // Do not keep the lock while running userland addon loading code.
     Mutex::ScopedUnlock unlock(lock);
     if (mp->nm_context_register_func != nullptr) {
-      mp->nm_context_register_func(exports, module, context, mp->nm_priv);
+      addon_context_register_func func = mp->nm_context_register_func;
+      RecordReplayAddonContextRegister(&func);
+      func(exports, module, context, mp->nm_priv);
     } else if (mp->nm_register_func != nullptr) {
+      v8::recordreplay::InvalidateRecording("Binary module nm_register_func NYI");
       mp->nm_register_func(exports, module, mp->nm_priv);
     } else {
       dlib->Close();
