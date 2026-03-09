@@ -12,6 +12,8 @@
 #include "include/v8-function.h"
 #include "include/v8-inspector.h"
 #include "include/v8-microtask-queue.h"
+#include "src/base/optional.h"
+#include "src/base/replayio.h"
 #include "src/base/safe_conversions.h"
 #include "src/debug/debug-interface.h"
 #include "src/inspector/crc32.h"
@@ -346,6 +348,14 @@ Response buildScopes(v8::Isolate* isolate, v8::debug::ScopeIterator* iterator,
   String16 scriptId = String16::fromInteger(iterator->GetScriptId());
 
   for (; !iterator->Done(); iterator->Advance()) {
+    // Replay builds the scopes of every frame on the stack for console messages
+    // and pauses, and building a scope object makes handles for each of its
+    // bindings. A deep stack in a module with many bindings would otherwise
+    // keep millions of handles alive, which every scavenge visits.
+    v8::base::Optional<v8::HandleScope> recordReplayHandles;
+    if (v8::recordreplay::IsRecordingOrReplaying()) {
+      recordReplayHandles.emplace(isolate);
+    }
     std::unique_ptr<RemoteObject> object;
     Response result =
         injectedScript->wrapObject(iterator->GetObject(), kBacktraceObjectGroup,

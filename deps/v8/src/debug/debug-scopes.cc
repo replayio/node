@@ -953,6 +953,10 @@ bool ScopeIterator::VisitLocals(const Visitor& visitor, Mode mode,
       case VariableLocation::CONTEXT:
         if (mode == Mode::STACK) continue;
         DCHECK(var->IsContextSlot());
+        // This index is sometimes out of range when gathering state using
+        // the Record Replay driver.
+        if (index >= context_->length()) continue;
+
 
         // We know of at least one open bug where the context and scope chain
         // don't match (https://crbug.com/753338).
