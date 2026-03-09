@@ -68,7 +68,12 @@ bool RandomBytesTraits::DeriveBits(
     const RandomBytesConfig& params,
     ByteSource* unused) {
   CheckEntropy();  // Ensure that OpenSSL's PRNG is properly seeded.
-  return RAND_bytes(params.buffer, params.size) != 0;
+  bool rv = RAND_bytes(params.buffer, params.size) != 0;
+
+  v8::recordreplay::AssertBytes("RandomBytesTraits::DeriveBits",
+                                params.buffer, params.size);
+
+  return rv;
 }
 
 void RandomPrimeConfig::MemoryInfo(MemoryTracker* tracker) const {
