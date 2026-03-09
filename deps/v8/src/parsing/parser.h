@@ -514,7 +514,8 @@ class V8_EXPORT_PRIVATE Parser : public NON_EXPORTED_BASE(ParserBase<Parser>) {
   void AddTemplateExpression(TemplateLiteralState* state,
                              Expression* expression);
   Expression* CloseTemplateLiteral(TemplateLiteralState* state, int start,
-                                   Expression* tag);
+                                   Expression* tag,
+                                   int call_head_token_position = 0);
 
   Expression* RewriteSuperCall(Expression* call_expression);
 
