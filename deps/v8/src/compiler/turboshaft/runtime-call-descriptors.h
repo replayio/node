@@ -215,7 +215,17 @@ struct runtime : CallDescriptorBuilder {
     static constexpr bool kCanTriggerLazyDeopt = true;
     static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
   };
-
+  struct RecordReplayTargetProgressReached
+      : public Descriptor<RecordReplayTargetProgressReached> {
+    static constexpr auto kFunction =
+        Runtime::kRecordReplayTargetProgressReached;
+    using Arguments = NoArguments;
+    using returns_t = V<Object>;
+    // The call lazily deoptimizes this code when what runs at the target
+    // progress discards it, so it needs the frame state.
+    static constexpr bool kCanTriggerLazyDeopt = true;
+    static constexpr Operator::Properties kProperties = Operator::kNoThrow;
+  };
   struct TerminateExecution : public Descriptor<TerminateExecution> {
     static constexpr auto kFunction = Runtime::kTerminateExecution;
     using Arguments = NoArguments;
