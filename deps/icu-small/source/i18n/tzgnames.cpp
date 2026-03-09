@@ -1166,6 +1166,13 @@ U_CDECL_END
  * block.
  */
 static void sweepCache() {
+    // Not when recording/replaying: the sweep reads the clock on the thread
+    // which makes this access, and which one does depends on timing when
+    // several threads use the cache.
+    if (umtx_isRecordingOrReplaying()) {
+        return;
+    }
+
     int32_t pos = UHASH_FIRST;
     const UHashElement* elem;
     double now = (double)uprv_getUTCtime();
