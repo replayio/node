@@ -266,7 +266,11 @@ size_t Worker::NearHeapLimit(void* data, size_t current_heap_limit,
           "new_limit=%" PRIu64 "\n",
           static_cast<uint64_t>(new_limit));
   }
-  worker->Exit(1, "ERR_WORKER_OUT_OF_MEMORY", "JS heap out of memory");
+  // We can't force workers to exit at non-deterministic points when
+  // recording/replaying.
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    worker->Exit(1, "ERR_WORKER_OUT_OF_MEMORY", "JS heap out of memory");
+  }
   return new_limit;
 }
 
