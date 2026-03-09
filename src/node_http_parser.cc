@@ -47,6 +47,7 @@
 
 
 namespace node {
+
 namespace {  // NOLINT(build/namespaces)
 
 using v8::Array;
@@ -299,6 +300,8 @@ class Parser : public AsyncWrap, public StreamListener {
   int on_headers_complete() {
     header_nread_ = 0;
     header_parsing_start_time_ = 0;
+
+    v8::recordreplay::Assert("Parser::on_headers_complete");
 
     // Arguments for the on-headers-complete javascript callback. This
     // list needs to be kept in sync with the actual argument list for
