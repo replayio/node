@@ -1548,6 +1548,8 @@ bool Isolate::MayAccess(Handle<Context> accessing_context,
 }
 
 Object Isolate::StackOverflow() {
+  recordreplay::InvalidateRecording("Stack overflow");
+
   // Whoever calls this method should not have overflown the stack limit by too
   // much. Otherwise we risk actually running out of stack space.
   // We allow for up to 8kB overflow, because we typically allow up to 4KB
@@ -3389,6 +3391,8 @@ Isolate::Isolate(std::unique_ptr<i::IsolateAllocator> isolate_allocator)
       cancelable_task_manager_(new CancelableTaskManager()) {
   TRACE_ISOLATE(constructor);
   CheckIsolateLayout();
+
+  owning_thread_ = pthread_self();
 
   // ThreadManager is initialized early to support locking an isolate
   // before it is entered.
@@ -5601,6 +5605,13 @@ void Isolate::SetUseCounterCallback(v8::Isolate::UseCounterCallback callback) {
 }
 
 void Isolate::CountUsage(v8::Isolate::UseCounterFeature feature) {
+  // Don't count usage when recording/replaying, as this can involve posting
+  // tasks to other threads in places that run non-deterministically
+  // (e.g. compilation).
+  if (recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
   // The counter callback
   // - may cause the embedder to call into V8, which is not generally possible
   //   during GC.
