@@ -201,7 +201,17 @@ struct RuntimeCallDescriptor {
     static constexpr bool kNeedsFrameState = true;
     static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
   };
-
+  struct RecordReplayTargetProgressReached
+      : public Descriptor<RecordReplayTargetProgressReached> {
+    static constexpr auto kFunction =
+        Runtime::kRecordReplayTargetProgressReached;
+    using arguments_t = std::tuple<>;
+    using result_t = V<Object>;
+    // The call lazily deoptimizes this code when what runs at the target
+    // progress discards it, so it needs the frame state.
+    static constexpr bool kNeedsFrameState = true;
+    static constexpr Operator::Properties kProperties = Operator::kNoThrow;
+  };
   struct TerminateExecution : public Descriptor<TerminateExecution> {
     static constexpr auto kFunction = Runtime::kTerminateExecution;
     using arguments_t = std::tuple<>;
