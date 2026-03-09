@@ -422,9 +422,12 @@ Tagged<Object> CompileOptimizedOSR(Isolate* isolate,
                                    DirectHandle<JSFunction> function,
                                    CodeKind min_opt_level,
                                    BytecodeOffset osr_offset) {
+  // Only synchronous compilation is currently supported when recording or
+  // replaying, see CompileOptimized() above.
   ConcurrencyMode mode =
       V8_LIKELY(isolate->concurrent_recompilation_enabled() &&
-                v8_flags.concurrent_osr)
+                v8_flags.concurrent_osr &&
+                !recordreplay::IsRecordingOrReplaying())
           ? ConcurrencyMode::kConcurrent
           : ConcurrencyMode::kSynchronous;
 
