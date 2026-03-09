@@ -103,6 +103,8 @@ static RAND_GLOBAL *rand_get_global(OSSL_LIB_CTX *libctx)
     return ossl_lib_ctx_get_data(libctx, OSSL_LIB_CTX_DRBG_INDEX);
 }
 
+extern void RecordReplayAssertFromC(const char* aFormat, ...);
+
 #ifndef FIPS_MODULE
 #include <stdio.h>
 #include <time.h>
@@ -149,6 +151,7 @@ static int rand_inited = 0;
 DEFINE_RUN_ONCE_STATIC(do_rand_init)
 {
 #ifndef OPENSSL_NO_ENGINE
+    RecordReplayAssertFromC("do_rand_init");
     rand_engine_lock = CRYPTO_THREAD_lock_new();
     if (rand_engine_lock == NULL)
         return 0;
@@ -669,6 +672,8 @@ static EVP_RAND_CTX *rand_new_drbg(OSSL_LIB_CTX *libctx, EVP_RAND_CTX *parent,
     unsigned int reseed_interval,
     time_t reseed_time_interval)
 {
+    RecordReplayAssertFromC("rand_new_drbg %d", !!parent);
+
     EVP_RAND *rand;
     RAND_GLOBAL *dgbl = rand_get_global(libctx);
     EVP_RAND_CTX *ctx;
@@ -757,6 +762,7 @@ static EVP_RAND_CTX *rand_new_crngt(OSSL_LIB_CTX *libctx, EVP_RAND_CTX *parent)
 static EVP_RAND_CTX *rand_get0_primary(OSSL_LIB_CTX *ctx, RAND_GLOBAL *dgbl)
 {
     EVP_RAND_CTX *ret, *seed, *newseed = NULL, *primary;
+    RecordReplayAssertFromC("RAND_get0_primary");
 
     if (dgbl == NULL)
         return NULL;
@@ -828,6 +834,8 @@ static EVP_RAND_CTX *rand_get0_primary(OSSL_LIB_CTX *ctx, RAND_GLOBAL *dgbl)
  */
 EVP_RAND_CTX *RAND_get0_primary(OSSL_LIB_CTX *ctx)
 {
+    RecordReplayAssertFromC("RAND_get0_public");
+
     RAND_GLOBAL *dgbl = rand_get_global(ctx);
 
     return dgbl == NULL ? NULL : rand_get0_primary(ctx, dgbl);
@@ -915,6 +923,8 @@ static EVP_RAND_CTX *rand_get0_private(OSSL_LIB_CTX *ctx, RAND_GLOBAL *dgbl)
  */
 EVP_RAND_CTX *RAND_get0_private(OSSL_LIB_CTX *ctx)
 {
+    RecordReplayAssertFromC("RAND_get0_private");
+
     RAND_GLOBAL *dgbl = rand_get_global(ctx);
 
     return dgbl == NULL ? NULL : rand_get0_private(ctx, dgbl);

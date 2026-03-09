@@ -7,6 +7,9 @@
  * https://www.openssl.org/source/license.html
  */
 
+#define _GNU_SOURCE
+#include <dlfcn.h>
+
 #include <string.h>
 #include <openssl/crypto.h>
 #include <openssl/err.h>
@@ -22,6 +25,22 @@
 #include "prov/provider_ctx.h"
 #include "prov/providercommon.h"
 #include "crypto/context.h"
+
+extern void RecordReplayAssertFromC(const char* aFormat, ...);
+
+static void (*gRecordReplayBytesFn)(const char*, const void*, size_t);
+
+static void RecordReplayBytesFromC(const char* why, const void* ptr, size_t nbytes) {
+  if (!gRecordReplayBytesFn) {
+    void* fnptr = dlsym(RTLD_DEFAULT, "RecordReplayBytes");
+    if (!fnptr) {
+      return;
+    }
+    gRecordReplayBytesFn = fnptr;
+  }
+
+  gRecordReplayBytesFn(why, ptr, nbytes);
+}
 
 /*
  * Support framework for NIST SP 800-90A DRBG
@@ -350,6 +369,8 @@ int ossl_prov_drbg_instantiate(PROV_DRBG *drbg, unsigned int strength,
     int prediction_resistance,
     const unsigned char *pers, size_t perslen)
 {
+    RecordReplayAssertFromC("ossl_prov_drbg_instantiate %d", !!drbg->parent);
+
     unsigned char *nonce = NULL, *entropy = NULL;
     size_t noncelen = 0, entropylen = 0;
     size_t min_entropy, min_entropylen, max_entropylen;
@@ -697,6 +718,14 @@ int ossl_prov_drbg_generate(PROV_DRBG *drbg, unsigned char *out, size_t outlen,
     }
 
     drbg->generate_counter++;
+
+    /*
+     * Force random bytes to be the same when replaying as when recording;
+     * some sources of entropy used (like pointer values) won't automatically
+     * have the same value when replaying, and we don't want to weaken these
+     * sources when recording/replaying.
+     */
+    RecordReplayBytesFromC("RAND_DRBG_generate", out, outlen);
 
     ret = 1;
 err:
