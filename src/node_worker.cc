@@ -290,9 +290,13 @@ size_t Worker::NearHeapLimit(void* data, size_t current_heap_limit,
           static_cast<uint64_t>(new_limit));
   }
   // TODO(joyeecheung): maybe this should be kV8FatalError instead?
-  worker->Exit(ExitCode::kGenericUserError,
-               "ERR_WORKER_OUT_OF_MEMORY",
-               "JS heap out of memory");
+  // We can't force workers to exit at non-deterministic points when
+  // recording/replaying.
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    worker->Exit(ExitCode::kGenericUserError,
+                 "ERR_WORKER_OUT_OF_MEMORY",
+                 "JS heap out of memory");
+  }
   return new_limit;
 }
 
