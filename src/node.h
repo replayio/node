@@ -1202,6 +1202,20 @@ void RegisterSignalHandler(int signal,
                            bool reset_handler = false);
 #endif  // _WIN32
 
+// Record/replay stuff.
+namespace recordreplay {
+
+bool IsRecordingFinished();
+void BeginCallbackRegion();
+void EndCallbackRegion();
+
+struct AutoCallbackRegion {
+  AutoCallbackRegion() { BeginCallbackRegion(); }
+  ~AutoCallbackRegion() { EndCallbackRegion(); }
+};
+
+} // namespace recordreplay
+
 }  // namespace node
 
 #endif  // SRC_NODE_H_
