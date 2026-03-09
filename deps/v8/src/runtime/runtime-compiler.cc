@@ -99,7 +99,11 @@ RUNTIME_FUNCTION(Runtime_CompileMaglev_Concurrent) {
   DCHECK_EQ(1, args.length());
   Handle<JSFunction> function = args.at<JSFunction>(0);
   return CompileOptimized(isolate, function, CodeKind::MAGLEV,
-                          ConcurrencyMode::kConcurrent);
+                          // Only synchronous compilation is currently
+                          // supported when recording/replaying.
+                          recordreplay::IsRecordingOrReplaying()
+                          ? ConcurrencyMode::kSynchronous
+                          : ConcurrencyMode::kConcurrent);
 }
 
 RUNTIME_FUNCTION(Runtime_CompileMaglev_Synchronous) {
@@ -115,7 +119,11 @@ RUNTIME_FUNCTION(Runtime_CompileTurbofan_Concurrent) {
   DCHECK_EQ(1, args.length());
   Handle<JSFunction> function = args.at<JSFunction>(0);
   return CompileOptimized(isolate, function, CodeKind::TURBOFAN,
-                          ConcurrencyMode::kConcurrent);
+                          // Only synchronous compilation is currently
+                          // supported when recording/replaying.
+                          recordreplay::IsRecordingOrReplaying()
+                          ? ConcurrencyMode::kSynchronous
+                          : ConcurrencyMode::kConcurrent);
 }
 
 RUNTIME_FUNCTION(Runtime_CompileTurbofan_Synchronous) {
@@ -247,9 +255,12 @@ RUNTIME_FUNCTION(Runtime_CompileOptimizedOSR) {
   BytecodeOffset osr_offset = BytecodeOffset(frame->GetBytecodeOffset());
   DCHECK(!osr_offset.IsNone());
 
+  // Only synchronous compilation is currently supported when
+  // recording/replaying, see CompileTurbofan_Concurrent.
   ConcurrencyMode mode =
       V8_LIKELY(isolate->concurrent_recompilation_enabled() &&
-                FLAG_concurrent_osr)
+                FLAG_concurrent_osr &&
+                !recordreplay::IsRecordingOrReplaying())
           ? ConcurrencyMode::kConcurrent
           : ConcurrencyMode::kSynchronous;
 
