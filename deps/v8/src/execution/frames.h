@@ -584,7 +584,7 @@ class CommonFrame : public StackFrame {
   // Build a list with summaries for this frame including all inlined frames.
   // The functions are ordered bottom-to-top (i.e. summaries.last() is the
   // top-most activation; caller comes before callee).
-  virtual void Summarize(std::vector<FrameSummary>* frames) const;
+  virtual void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const;
 
   static CommonFrame* cast(StackFrame* frame) {
     // It is always safe to cast to common.
@@ -665,7 +665,7 @@ class CommonFrameWithJSLinkage : public CommonFrame {
   virtual bool IsConstructor() const;
 
   // Summarize Frame
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const override;
 
  protected:
   inline explicit CommonFrameWithJSLinkage(StackFrameIteratorBase* iterator);
@@ -868,7 +868,8 @@ class BuiltinExitFrame : public ExitFrame {
              int index) const override;
 
   // Summarize Frame
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames,
+                 bool allow_invalid = false) const override;
 
  protected:
   inline explicit BuiltinExitFrame(StackFrameIteratorBase* iterator);
@@ -910,7 +911,8 @@ class ApiCallbackExitFrame : public ExitFrame {
              int index) const override;
 
   // Summarize Frame
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames,
+                 bool allow_invalid = false) const override;
 
   static ApiCallbackExitFrame* cast(StackFrame* frame) {
     DCHECK(frame->is_api_callback_exit());
@@ -942,7 +944,8 @@ class StubFrame : public TypedFrame {
   // TurboFan stub frames are supported.
   int LookupExceptionHandlerInTable();
 
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames,
+                 bool allow_invalid = false) const override;
 
  protected:
   inline explicit StubFrame(StackFrameIteratorBase* iterator);
@@ -959,7 +962,7 @@ class OptimizedFrame : public JavaScriptFrame {
   void GetFunctions(
       std::vector<Tagged<SharedFunctionInfo>>* functions) const override;
 
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const override;
 
   Tagged<DeoptimizationData> GetDeoptimizationData(int* deopt_index) const;
 
@@ -1000,7 +1003,7 @@ class UnoptimizedFrame : public JavaScriptFrame {
   inline void SetFeedbackVector(Tagged<FeedbackVector> feedback_vector);
 
   // Build a list with summaries for this frame including all inlined frames.
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const override;
 
   static UnoptimizedFrame* cast(StackFrame* frame) {
     DCHECK(frame->is_unoptimized());
@@ -1169,7 +1172,7 @@ class WasmFrame : public TypedFrame {
   int generated_code_offset() const;
   bool is_inspectable() const;
 
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const override;
 
   static WasmFrame* cast(StackFrame* frame) {
     DCHECK(frame->is_wasm());
