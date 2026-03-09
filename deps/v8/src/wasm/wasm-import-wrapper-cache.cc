@@ -19,6 +19,8 @@
 
 namespace v8::internal::wasm {
 
+extern void RecordReplayAddOrderedMutex(const char* name, base::Mutex* mutex);
+
 WasmCode* WasmImportWrapperCache::ModificationScope::operator[](
     const CacheKey& key) {
   return cache_->entry_map_[key];
@@ -222,6 +224,10 @@ void WasmImportWrapperCache::Free(std::vector<WasmCode*>& wrappers) {
   }
   // Make sure nobody tries to access stale pointers.
   wrappers.clear();
+}
+
+WasmImportWrapperCache::WasmImportWrapperCache() {
+  RecordReplayAddOrderedMutex("WasmImportWrapperCache::mutex_", &mutex_);
 }
 
 WasmCode* WasmImportWrapperCache::MaybeGet(ImportCallKind kind,
