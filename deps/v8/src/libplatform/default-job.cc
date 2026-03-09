@@ -6,6 +6,7 @@
 
 #include "src/base/bits.h"
 #include "src/base/macros.h"
+#include "v8.h"
 
 namespace v8 {
 namespace platform {
@@ -41,6 +42,10 @@ DefaultJobState::~DefaultJobState() { DCHECK_EQ(0U, active_workers_); }
 
 void DefaultJobState::NotifyConcurrencyIncrease() {
   if (is_canceled_.load(std::memory_order_relaxed)) return;
+
+  if (recordreplay::AreEventsDisallowed()) {
+    return;
+  }
 
   size_t num_tasks_to_post = 0;
   TaskPriority priority;
