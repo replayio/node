@@ -73,6 +73,30 @@
 namespace v8 {
 namespace internal {
 
+extern bool RecordReplayIgnoreScriptByURL(const char* url);
+
+static void SetRecordReplayFlags(UnoptimizedCompileFlags& flags,
+                                 const ScriptDetails& script_details) {
+  if (!recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
+  if (!IsMainThread() ||
+      recordreplay::AreEventsDisallowed("CompileFlags") ||
+      recordreplay::IsInReplayCode("CompileFlags")) {
+    flags.set_record_replay_ignore(true);
+    return;
+  }
+
+  Handle<Object> script_name;
+  if (script_details.name_obj.ToHandle(&script_name)) {
+    std::unique_ptr<char[]> name_cstr = String::cast(*script_name).ToCString();
+    if (RecordReplayIgnoreScriptByURL(name_cstr.get())) {
+      flags.set_record_replay_ignore(true);
+    }
+  }
+}
+
 namespace {
 
 constexpr bool IsOSR(BytecodeOffset osr_offset) { return !osr_offset.IsNone(); }
@@ -2360,6 +2384,11 @@ MaybeHandle<JSFunction> Compiler::GetFunctionFromEval(
     DCHECK(!flags.is_module());
     flags.set_parse_restriction(restriction);
 
+    {
+      ScriptDetails empty_details;
+      SetRecordReplayFlags(flags, empty_details);
+    }
+
     UnoptimizedCompileState compile_state;
     ReusableUnoptimizedCompileState reusable_state(isolate);
     ParseInfo parse_info(isolate, flags, &compile_state, &reusable_state);
@@ -2823,10 +2852,12 @@ Handle<Script> NewScript(
 }
 
 MaybeHandle<SharedFunctionInfo> CompileScriptOnMainThread(
-    const UnoptimizedCompileFlags flags, Handle<String> source,
+    UnoptimizedCompileFlags flags, Handle<String> source,
     const ScriptDetails& script_details, NativesFlag natives,
     v8::Extension* extension, Isolate* isolate,
     IsCompiledScope* is_compiled_scope) {
+  SetRecordReplayFlags(flags, script_details);
+
   UnoptimizedCompileState compile_state;
   ReusableUnoptimizedCompileState reusable_state(isolate);
   ParseInfo parse_info(isolate, flags, &compile_state, &reusable_state);
@@ -3216,6 +3247,8 @@ MaybeHandle<JSFunction> Compiler::GetWrappedFunction(
     // being omitted.
     flags.set_collect_source_positions(true);
     flags.set_is_eager(compile_options == ScriptCompiler::kEagerCompile);
+
+    SetRecordReplayFlags(flags, script_details);
 
     UnoptimizedCompileState compile_state;
     ReusableUnoptimizedCompileState reusable_state(isolate);
