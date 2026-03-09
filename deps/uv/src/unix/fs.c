@@ -46,6 +46,8 @@
 #include <fcntl.h>
 #include <poll.h>
 
+extern void V8RecordReplayAssert(const char* format, ...);
+
 #if defined(__DragonFly__)        ||                                      \
     defined(__FreeBSD__)          ||                                      \
     defined(__FreeBSD_kernel__)   ||                                      \
@@ -149,6 +151,7 @@ extern char *mkdtemp(char *template); /* See issue #740 on AIX < 7 */
 
 #define POST                                                                  \
   do {                                                                        \
+    V8RecordReplayAssert("POST_WORK %d", (int)req->fs_type); \
     if (cb != NULL) {                                                         \
       uv__req_register(loop, req);                                            \
       uv__work_submit(loop,                                                   \
@@ -160,6 +163,7 @@ extern char *mkdtemp(char *template); /* See issue #740 on AIX < 7 */
     }                                                                         \
     else {                                                                    \
       uv__fs_work(&req->work_req);                                            \
+      V8RecordReplayAssert("POST_WORK_DONE %d %d", (int)req->fs_type, req->result); \
       return req->result;                                                     \
     }                                                                         \
   }                                                                           \
@@ -379,7 +383,10 @@ clobber:
 
 static ssize_t uv__fs_open(uv_fs_t* req) {
 #ifdef O_CLOEXEC
-  return open(req->path, req->flags | O_CLOEXEC, req->mode);
+  ssize_t rv = open(req->path, req->flags | O_CLOEXEC, req->mode);
+  V8RecordReplayAssert("uv__fs_open %s %d %d %d",
+                       req->path, req->flags, req->mode, rv);
+  return rv;
 #else  /* O_CLOEXEC */
   int r;
 
@@ -388,6 +395,9 @@ static ssize_t uv__fs_open(uv_fs_t* req) {
 
   r = open(req->path, req->flags, req->mode);
 
+  V8RecordReplayAssert("uv__fs_open %s %d %d %d",
+                       req->path, req->flags, req->mode, r);
+
   /* In case of failure `uv__cloexec` will leave error in `errno`,
    * so it is enough to just set `r` to `-1`.
    */
@@ -395,6 +405,7 @@ static ssize_t uv__fs_open(uv_fs_t* req) {
     r = uv__close(r);
     if (r != 0)
       abort();
+    V8RecordReplayAssert("uv__fs_open #1");
     r = -1;
   }
 
@@ -425,9 +436,11 @@ static ssize_t uv__fs_preadv(uv_file fd,
   end = bufs + nbufs;
 
   for (;;) {
-    do
+    do {
+      V8RecordReplayAssert("uv__fs_preadv pread %d %lu %lu", fd,
+                           buf->len - pos, off + result);
       rc = pread(fd, buf->base + pos, buf->len - pos, off + result);
-    while (rc == -1 && errno == EINTR);
+    } while (rc == -1 && errno == EINTR);
 
     if (rc == 0)
       break;
@@ -467,13 +480,21 @@ static ssize_t uv__fs_read(uv_fs_t* req) {
   if (req->nbufs > iovmax)
     req->nbufs = iovmax;
 
+  V8RecordReplayAssert("uv__fs_read start %d %u %d",
+                       req->file, req->nbufs, req->off);
+
   if (req->off < 0) {
-    if (req->nbufs == 1)
+    if (req->nbufs == 1) {
+      V8RecordReplayAssert("uv__fs_read read %d %lu", req->file,
+                           req->bufs[0].len);
       result = read(req->file, req->bufs[0].base, req->bufs[0].len);
+    }
     else
       result = readv(req->file, (struct iovec*) req->bufs, req->nbufs);
   } else {
     if (req->nbufs == 1) {
+      V8RecordReplayAssert("uv__fs_read pread %d %lu %lu", req->file,
+                           req->bufs[0].len, req->off);
       result = pread(req->file, req->bufs[0].base, req->bufs[0].len, req->off);
       goto done;
     }
@@ -842,10 +863,15 @@ static ssize_t uv__fs_sendfile_emul(uv_fs_t* req) {
       buflen = sizeof(buf);
 
     do
-      if (use_pread)
+      if (use_pread) {
+        V8RecordReplayAssert("uv__fs_sendfile_emul pread %d %lu %lu",
+                             in_fd, buflen, offset);
         nread = pread(in_fd, buf, buflen, offset);
-      else
+      } else {
+        V8RecordReplayAssert("uv__fs_sendfile_emul read %d %lu", in_fd,
+                             buflen);
         nread = read(in_fd, buf, buflen);
+      }
     while (nread == -1 && errno == EINTR);
 
     if (nread == 0)
@@ -1205,6 +1231,11 @@ static ssize_t uv__fs_write(uv_fs_t* req) {
   if (pthread_mutex_lock(&lock))
     abort();
 #endif
+
+  // https://github.com/RecordReplay/backend/issues/4792
+  V8RecordReplayAssert("uv__fs_write start %d %d %d %d",
+                       req->file, (int)req->off, (int)req->nbufs,
+                       req->nbufs ? (int)req->bufs[0].len : -1);
 
   if (req->off < 0) {
     if (req->nbufs == 1)
@@ -1641,6 +1672,9 @@ static ssize_t uv__fs_write_all(uv_fs_t* req) {
   ssize_t total;
   ssize_t result;
 
+  // https://github.com/RecordReplay/backend/issues/4792
+  V8RecordReplayAssert("uv__fs_write_all start");
+
   iovmax = uv__getiovmax();
   nbufs = req->nbufs;
   bufs = req->bufs;
@@ -1651,9 +1685,12 @@ static ssize_t uv__fs_write_all(uv_fs_t* req) {
     if (req->nbufs > iovmax)
       req->nbufs = iovmax;
 
-    do
+    do {
       result = uv__fs_write(req);
-    while (result < 0 && errno == EINTR);
+
+      // https://github.com/RecordReplay/backend/issues/4792
+      V8RecordReplayAssert("uv__fs_write_all #1 %d", (int)result);
+    } while (result < 0 && errno == EINTR);
 
     if (result <= 0) {
       if (total == 0)
@@ -1676,6 +1713,9 @@ static ssize_t uv__fs_write_all(uv_fs_t* req) {
   req->bufs = NULL;
   req->nbufs = 0;
 
+  // https://github.com/RecordReplay/backend/issues/4792
+  V8RecordReplayAssert("uv__fs_write_all done %d", (int)total);
+
   return total;
 }
 
@@ -1691,6 +1731,8 @@ static void uv__fs_work(struct uv__work* w) {
 
   do {
     errno = 0;
+
+    V8RecordReplayAssert("uv__fs_work %d", (int)req->fs_type);
 
 #define X(type, action)                                                       \
   case UV_FS_ ## type:                                                        \
@@ -1737,12 +1779,16 @@ static void uv__fs_work(struct uv__work* w) {
     default: abort();
     }
 #undef X
+
+    V8RecordReplayAssert("uv__fs_work #1 %d", r);
   } while (r == -1 && errno == EINTR && retry_on_eintr);
 
   if (r == -1)
     req->result = UV__ERR(errno);
   else
     req->result = r;
+
+  V8RecordReplayAssert("uv__fs_work #2 %d %d", r, req->result);
 
   if (r == 0 && (req->fs_type == UV_FS_STAT ||
                  req->fs_type == UV_FS_FSTAT ||
@@ -1972,10 +2018,15 @@ int uv_fs_open(uv_loop_t* loop,
                int flags,
                int mode,
                uv_fs_cb cb) {
+  V8RecordReplayAssert("uv_fs_open %s %d %d", path, flags, mode);
+
   INIT(OPEN);
   PATH;
   req->flags = flags;
   req->mode = mode;
+
+  V8RecordReplayAssert("uv_fs_open START_POST %d", !!cb);
+
   POST;
 }
 
@@ -1987,6 +2038,8 @@ int uv_fs_read(uv_loop_t* loop, uv_fs_t* req,
                int64_t off,
                uv_fs_cb cb) {
   INIT(READ);
+
+  V8RecordReplayAssert("uv_fs_read %d", (int)req->fs_type);
 
   if (bufs == NULL || nbufs == 0)
     return UV_EINVAL;
