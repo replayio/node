@@ -36,9 +36,13 @@ namespace credentials {
 // Look up environment variable unless running as setuid root.
 bool SafeGetenv(const char* key, std::string* text, Environment* env) {
 #if !defined(__CloudABI__) && !defined(_WIN32)
-  if (per_process::linux_at_secure || getuid() != geteuid() ||
-      getgid() != getegid())
-    goto fail;
+  // Avoid interacting with the system when diverged from the recording.
+  // We can call getenv(), but can't figure out user IDs.
+  if (!v8::recordreplay::HasDivergedFromRecording()) {
+    if (per_process::linux_at_secure || getuid() != geteuid() ||
+        getgid() != getegid())
+      goto fail;
+  }
 #endif
 
   if (env != nullptr) {

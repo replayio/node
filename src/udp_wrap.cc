@@ -663,6 +663,7 @@ int UDPWrap::RecvStop() {
 
 
 void UDPWrap::OnSendDone(ReqWrap<uv_udp_send_t>* req, int status) {
+  v8::recordreplay::Assert("UDPWrap::OnSendDone");
   std::unique_ptr<SendWrap> req_wrap{static_cast<SendWrap*>(req)};
   if (req_wrap->have_callback()) {
     Environment* env = req_wrap->env();
