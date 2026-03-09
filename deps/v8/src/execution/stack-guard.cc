@@ -167,6 +167,10 @@ bool StackGuard::CheckInterrupt(InterruptFlag flag) {
 }
 
 void StackGuard::RequestInterrupt(InterruptFlag flag) {
+  if (flag == TERMINATE_EXECUTION) {
+    recordreplay::InvalidateRecording("Requested terminate execution");
+  }
+
   ExecutionAccess access(isolate_);
   // Check the chain of InterruptsScope for interception.
   if (thread_local_.interrupt_scopes_ &&
@@ -316,6 +320,7 @@ Tagged<Object> StackGuard::HandleInterrupts(InterruptLevel level) {
 
   if (TestAndClear(&interrupt_flags, TERMINATE_EXECUTION)) {
     TRACE_EVENT0("v8.execute", "V8.TerminateExecution");
+    recordreplay::InvalidateRecording("Terminate execution from execution interrupt");
     return isolate_->TerminateExecution();
   }
 
