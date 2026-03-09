@@ -31,6 +31,8 @@ struct uv__process_title {
 };
 
 extern void uv__set_process_title(const char* title);
+extern int V8RecordReplayIsRecording(void);
+extern int V8RecordReplayIsReplaying(void);
 
 static uv_mutex_t process_title_mutex;
 static uv_once_t process_title_mutex_once = UV_ONCE_INIT;
@@ -96,6 +98,13 @@ char** uv_setup_args(int argc, char** argv) {
 int uv_set_process_title(const char* title) {
   struct uv__process_title* pt;
   size_t len;
+
+  /* Not when recording/replaying: when replaying the arguments are not
+   * adjacent, and writing the title over them corrupts most of the process
+   * memory. The recording skips it as well, so both report the same title.
+   */
+  if (V8RecordReplayIsRecording() || V8RecordReplayIsReplaying())
+    return 0;
 
   /* If uv_setup_args wasn't called or failed, we can't continue. */
   if (args_mem == NULL)

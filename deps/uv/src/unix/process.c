@@ -63,6 +63,9 @@ extern char **environ;
 # include "zos-base.h"
 #endif
 
+extern void V8RecordReplayAssert(const char* format, ...);
+extern void V8RecordReplayDiagnostic(const char* format, ...);
+
 #if defined(__APPLE__) || \
     defined(__DragonFly__) || \
     defined(__FreeBSD__) || \
@@ -76,6 +79,8 @@ extern char **environ;
 
 #ifdef UV_USE_SIGCHLD
 static void uv__chld(uv_signal_t* handle, int signum) {
+  V8RecordReplayAssert("uv__chld start");
+
   assert(signum == SIGCHLD);
   uv__wait_children(handle->loop);
 }
@@ -278,6 +283,8 @@ static void uv__process_child_init(const uv_process_options_t* options,
                                    int stdio_count,
                                    int (*pipes)[2],
                                    int error_fd) {
+  V8RecordReplayDiagnostic("uv__process_child_init start");
+
   sigset_t signewset;
   int close_fd;
   int use_fd;
@@ -924,9 +931,11 @@ static int uv__spawn_and_init_child(
   uv__close(signal_pipe[1]);
 
   if (err == 0) {
-    do
+    do {
+      V8RecordReplayDiagnostic("uv_spawn read pipe start");
       r = read(signal_pipe[0], &exec_errorno, sizeof(exec_errorno));
-    while (r == -1 && errno == EINTR);
+      V8RecordReplayDiagnostic("uv_spawn read pipe done %d %d", r, errno);
+    } while (r == -1 && errno == EINTR);
 
     if (r == 0)
       ; /* okay, EOF */
@@ -967,6 +976,12 @@ int uv_spawn(uv_loop_t* loop,
   int err;
   int exec_errorno;
   int i;
+
+  V8RecordReplayDiagnostic("uv_spawn start");
+  char** nargs;
+  for (nargs = options->args; *nargs; nargs++) {
+    V8RecordReplayDiagnostic("uv_spawn arg %s", *nargs);
+  }
 
   assert(options->file != NULL);
   assert(!(options->flags & ~(UV_PROCESS_DETACHED |
