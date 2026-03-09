@@ -81,6 +81,13 @@ void DirHandle::New(const FunctionCallbackInfo<Value>& args) {
 
 DirHandle::~DirHandle() {
   CHECK(!closing_);  // We should not be deleting while explicitly closing!
+
+  // When recording/replaying we can't close directories at non-deterministic
+  // points. Let the directory leak.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
   GCClose();         // Close synchronously and emit warning
   CHECK(closed_);    // We have to be closed at the point
 }
