@@ -32,6 +32,15 @@
 # define SA_RESTART 0
 #endif
 
+extern int V8RecordReplayIsRecording(void);
+extern int V8RecordReplayIsReplaying(void);
+extern void V8RecordReplayAssert(const char* format, ...);
+extern void V8RecordReplayDiagnostic(const char* format, ...);
+extern uintptr_t V8RecordReplayValue(const char* why, uintptr_t value);
+extern void V8RecordReplayRegisterPointer(const void* ptr);
+extern int V8RecordReplayPointerId(const void* ptr);
+extern void* V8RecordReplayIdPointer(int id);
+
 typedef struct {
   uv_signal_t* handle;
   int signum;
@@ -404,6 +413,10 @@ static int uv__signal_start(uv_signal_t* handle,
 
   RB_INSERT(uv__signal_tree_s, &uv__signal_tree, handle);
 
+  // Note: Handles added to the tree are not unregistered, which is a minor
+  // memory leak but is otherwise fine.
+  V8RecordReplayRegisterPointer(handle);
+
   uv__signal_unlock_and_unblock(&saved_sigmask);
 
   handle->signal_cb = signal_cb;
@@ -455,6 +468,27 @@ static void uv__signal_event(uv_loop_t* loop,
     for (i = 0; i < end; i += sizeof(uv__signal_msg_t)) {
       msg = (uv__signal_msg_t*) (buf + i);
       handle = msg->handle;
+
+      /* When recording/replaying, the data we read from the pipe will be the
+       * data which was originally read from the pipe while recording, because
+       * the write to the pipe happened inside the signal handler and is not
+       * replayed.
+       *
+       * Because of this the handle pointer we have here is invalid when
+       * replaying, and we need to save/restore the actual pointer we can use
+       * in this process.
+       */
+      if (V8RecordReplayIsRecording()) {
+        int id = V8RecordReplayPointerId(handle);
+        if (!id) {
+          fprintf(stderr, "uv__signal_event: Missing pointer ID for message handle\n");
+          abort();
+        }
+        V8RecordReplayValue("uv__signal_event handle", id);
+      } else if (V8RecordReplayIsReplaying()) {
+        int id = V8RecordReplayValue("uv__signal_event handle", 0);
+        handle = V8RecordReplayIdPointer(id);
+      }
 
       if (msg->signum == handle->signum) {
         assert(!(handle->flags & UV_HANDLE_CLOSING));
