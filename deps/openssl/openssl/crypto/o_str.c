@@ -15,6 +15,8 @@
 #include "internal/cryptlib.h"
 #include "internal/thread_once.h"
 
+extern void RecordReplayAssertFromC(const char* aFormat, ...);
+
 #define DEFAULT_SEPARATOR ':'
 #define CH_ZERO '\0'
 
@@ -298,6 +300,8 @@ char *OPENSSL_buf2hexstr(const unsigned char *buf, long buflen)
 
 int openssl_strerror_r(int errnum, char *buf, size_t buflen)
 {
+    RecordReplayAssertFromC("openssl_strerror_r %d %lu", errnum, buflen);
+
 #if defined(_MSC_VER) && _MSC_VER>=1400 && !defined(_WIN32_WCE)
     return !strerror_s(buf, buflen, errnum);
 #elif defined(_GNU_SOURCE)

@@ -20,27 +20,25 @@
 void ERR_print_errors_cb(int (*cb) (const char *str, size_t len, void *u),
                          void *u)
 {
-    CRYPTO_THREAD_ID tid = CRYPTO_THREAD_get_current_id();
+    /*
+     * For recording/replaying omit the thread id, which upstream prints as the
+     * first field of every line and which currently varies when replaying.
+     */
     unsigned long l;
     const char *file, *data, *func;
     int line, flags;
 
     while ((l = ERR_get_error_all(&file, &line, &func, &data, &flags)) != 0) {
         char buf[ERR_PRINT_BUF_SIZE] = "";
-        char *hex = NULL;
         int offset;
 
         if ((flags & ERR_TXT_STRING) == 0)
             data = "";
 
-        hex = ossl_buf2hexstr_sep((const unsigned char *)&tid, sizeof(tid), '\0');
-        BIO_snprintf(buf, sizeof(buf), "%s:", hex == NULL ? "<null>" : hex);
+        ossl_err_string_int(l, func, buf, sizeof(buf));
         offset = strlen(buf);
-        ossl_err_string_int(l, func, buf + offset, sizeof(buf) - offset);
-        offset += strlen(buf + offset);
         BIO_snprintf(buf + offset, sizeof(buf) - offset, ":%s:%d:%s\n",
                      file, line, data);
-        OPENSSL_free(hex);
         if (cb(buf, strlen(buf), u) <= 0)
             break;              /* abort outputting the error report */
     }
