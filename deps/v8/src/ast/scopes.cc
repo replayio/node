@@ -1058,6 +1058,14 @@ Variable* DeclarationScope::DeclareParameter(const AstRawString* name,
   if (name == ast_value_factory->arguments_string()) {
     set_has_arguments_parameter(true);
   }
+  // While replaying, force all variables to be context-allocated.
+  // Ideally we'd only do this for non-leaf functions, but it's not
+  // immediately obvious how to do that at this level.
+  // (RUN-2604)
+  if (recordreplay::IsReplaying() &&
+      recordreplay::FeatureEnabled("force-variable-context-allocation")) {
+    var->RecordReplaySetForced();
+  }
   return var;
 }
 
@@ -1189,6 +1197,20 @@ Variable* Scope::DeclareVariable(
   // lead to repeated DeclareEvalVar or DeclareEvalFunction calls.
   decls_.Add(declaration);
   declaration->set_var(var);
+
+  // While replaying, force all variables to be context-allocated.
+  // Ideally we'd only do this for non-leaf functions, but it's not
+  // immediately obvious how to do that at this level.
+  // (RUN-2604)
+  if (recordreplay::IsReplaying() &&
+      recordreplay::FeatureEnabled("force-variable-context-allocation") &&
+      (kind == VariableKind::NORMAL_VARIABLE ||
+       kind == VariableKind::SLOPPY_BLOCK_FUNCTION_VARIABLE) &&
+      // `var arguments;` declares the function's own arguments variable, and
+      // allocating it would also put mapped parameters in the context.
+      !name->IsOneByteEqualTo("arguments")) {
+    var->RecordReplaySetForced();
+  }
   return var;
 }
 
@@ -2404,6 +2426,29 @@ bool Scope::MustAllocate(Variable* var) {
     var->set_is_used();
     if (inner_scope_calls_eval() && !var->is_this()) var->SetMaybeAssigned();
   }
+  // A variable the replay forced (see DeclareVariable) which nothing
+  // references (`var unused;`). A recording leaves it unallocated. The replay
+  // allocates it, for Replay's own session to describe, and marks it so other
+  // sessions don't see it (see Variable::RecordReplayIsForced).
+  //
+  // Known limitation: allocating it also runs code the recording doesn't,
+  // such as creating the closure of an unreferenced function declaration.
+  // Nothing recorded depends on that as far as we know.
+  //
+  // A parameter is never one of those: the caller puts it in the frame and
+  // AllocateParameter() discards this function's result, so a recording
+  // describes a parameter whether or not the function mentions it. The replay
+  // moves it to the context instead (see MustAllocateInContext), and leaves
+  // is_used() as the recording has it: bytecode generation reads it, and a
+  // parameter the body doesn't mention is unused, so marking it used here
+  // would emit the store of a hoisted function declaration shadowing it which
+  // the recording never ran, and a session the program attached would see the
+  // function where the recording has the argument.
+  if (var->RecordReplayIsForced() && !var->is_used() &&
+      !var->is_parameter()) {
+    var->set_is_used();
+    var->RecordReplaySetUnreferenced();
+  }
   CHECK(!var->has_forced_context_allocation() || var->is_used());
   // Global variables do not need to be allocated.
   return !var->IsGlobalObjectProperty() && var->is_used();
@@ -2426,7 +2471,16 @@ bool Scope::MustAllocateInContext(Variable* var) {
       return true;
     }
   }
-  return var->has_forced_context_allocation() || inner_scope_calls_eval();
+  if (var->has_forced_context_allocation() || inner_scope_calls_eval()) {
+    return true;
+  }
+  // A variable the replay forced which a recording keeps on the stack. Other
+  // sessions see it as on the stack (see Variable::RecordReplayIsForced).
+  if (var->RecordReplayIsForced()) {
+    if (!var->RecordReplayIsUnreferenced()) var->RecordReplaySetMovedFromStack();
+    return true;
+  }
+  return false;
 }
 
 void Scope::AllocateStackSlot(Variable* var) {
