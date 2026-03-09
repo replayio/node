@@ -86,6 +86,7 @@ class WasmImportWrapperCache {
                      int expected_arity, Suspend suspend) const;
 
   size_t EstimateCurrentMemoryConsumption() const;
+  WasmImportWrapperCache();
 
  private:
   mutable base::Mutex mutex_;

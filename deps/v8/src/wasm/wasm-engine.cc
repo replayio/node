@@ -144,6 +144,11 @@ class ClearWeakScriptHandleTask : public CancelableTask {
     location_.reset();
   }
 
+  // Freeing a NativeModule is what posts this task, and the GC decides when
+  // that happens: the replay frees at other points (see
+  // Task::IsRecordReplayNonDeterministic).
+  bool IsRecordReplayNonDeterministic() const override { return true; }
+
  private:
   std::unique_ptr<Address*> location_;
 };
