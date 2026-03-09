@@ -34,7 +34,6 @@ namespace internal {
 // allocation and constant-time deallocation of the entire syntax
 // tree.
 
-
 // ----------------------------------------------------------------------------
 // Nodes of the abstract syntax tree. Only concrete classes are
 // enumerated here.
@@ -111,9 +110,9 @@ namespace internal {
 
 #define FAILURE_NODE_LIST(V) V(FailureExpression)
 
-#define AST_NODE_LIST(V)                        \
-  DECLARATION_NODE_LIST(V)                      \
-  STATEMENT_NODE_LIST(V)                        \
+#define AST_NODE_LIST(V)   \
+  DECLARATION_NODE_LIST(V) \
+  STATEMENT_NODE_LIST(V)   \
   EXPRESSION_NODE_LIST(V)
 
 // Forward declarations
@@ -135,7 +134,7 @@ AST_NODE_LIST(DEF_FORWARD_DECLARATION)
 FAILURE_NODE_LIST(DEF_FORWARD_DECLARATION)
 #undef DEF_FORWARD_DECLARATION
 
-class AstNode: public ZoneObject {
+class AstNode : public ZoneObject {
  public:
 #define DECLARE_TYPE_ENUM(type) k##type,
   enum NodeType : uint8_t {
@@ -177,12 +176,10 @@ class AstNode: public ZoneObject {
       : position_(position), bit_field_(NodeTypeField::encode(type)) {}
 };
 
-
 class Statement : public AstNode {
  protected:
   Statement(int position, NodeType type) : AstNode(position, type) {}
 };
-
 
 class Expression : public AstNode {
  public:
@@ -424,7 +421,6 @@ class FunctionDeclaration final : public Declaration {
   FunctionLiteral* fun_;
 };
 
-
 class IterationStatement : public BreakableStatement {
  public:
   Statement* body() const { return body_; }
@@ -438,7 +434,6 @@ class IterationStatement : public BreakableStatement {
  private:
   Statement* body_;
 };
-
 
 class DoWhileStatement final : public IterationStatement {
  public:
@@ -459,7 +454,6 @@ class DoWhileStatement final : public IterationStatement {
   Expression* cond_;
 };
 
-
 class WhileStatement final : public IterationStatement {
  public:
   void Initialize(Expression* cond, Statement* body) {
@@ -478,7 +472,6 @@ class WhileStatement final : public IterationStatement {
 
   Expression* cond_;
 };
-
 
 class ForStatement final : public IterationStatement {
  public:
@@ -513,8 +506,8 @@ class ForStatement final : public IterationStatement {
 class ForEachStatement : public IterationStatement {
  public:
   enum VisitMode {
-    ENUMERATE,   // for (each in subject) body;
-    ITERATE      // for (each of subject) body;
+    ENUMERATE,  // for (each in subject) body;
+    ITERATE     // for (each of subject) body;
   };
 
   using IterationStatement::Initialize;
@@ -581,12 +574,10 @@ class ExpressionStatement final : public Statement {
   Expression* expression_;
 };
 
-
 class JumpStatement : public Statement {
  protected:
   JumpStatement(int pos, NodeType type) : Statement(pos, type) {}
 };
-
 
 class ContinueStatement final : public JumpStatement {
  public:
@@ -602,7 +593,6 @@ class ContinueStatement final : public JumpStatement {
   IterationStatement* target_;
 };
 
-
 class BreakStatement final : public JumpStatement {
  public:
   BreakableStatement* target() const { return target_; }
@@ -616,7 +606,6 @@ class BreakStatement final : public JumpStatement {
 
   BreakableStatement* target_;
 };
-
 
 class ReturnStatement final : public JumpStatement {
  public:
@@ -652,7 +641,6 @@ class ReturnStatement final : public JumpStatement {
 
   using TypeField = JumpStatement::NextBitField<Type, 2>;
 };
-
 
 class WithStatement final : public Statement {
  public:
@@ -697,7 +685,6 @@ class CaseClause final : public ZoneObject {
   ZonePtrList<Statement> statements_;
 };
 
-
 class SwitchStatement final : public BreakableStatement {
  public:
   Expression* tag() const { return tag_; }
@@ -715,7 +702,6 @@ class SwitchStatement final : public BreakableStatement {
   Expression* tag_;
   ZonePtrList<CaseClause> cases_;
 };
-
 
 // If-statements always have non-null references to their then- and
 // else-parts. When parsing if-statements with no explicit else-part,
@@ -750,7 +736,6 @@ class IfStatement final : public Statement {
   Statement* else_statement_;
 };
 
-
 class TryStatement : public Statement {
  public:
   Block* try_block() const { return try_block_; }
@@ -763,7 +748,6 @@ class TryStatement : public Statement {
  private:
   Block* try_block_;
 };
-
 
 class TryCatchStatement final : public TryStatement {
  public:
@@ -848,7 +832,6 @@ class TryCatchStatement final : public TryStatement {
   HandlerTable::CatchPrediction catch_prediction_;
 };
 
-
 class TryFinallyStatement final : public TryStatement {
  public:
   Block* finally_block() const { return finally_block_; }
@@ -865,7 +848,6 @@ class TryFinallyStatement final : public TryStatement {
   Block* finally_block_;
 };
 
-
 class DebuggerStatement final : public Statement {
  private:
   friend class AstNodeFactory;
@@ -874,14 +856,12 @@ class DebuggerStatement final : public Statement {
   explicit DebuggerStatement(int pos) : Statement(pos, kDebuggerStatement) {}
 };
 
-
 class EmptyStatement final : public Statement {
  private:
   friend class AstNodeFactory;
   friend Zone;
   EmptyStatement() : Statement(kNoSourcePosition, kEmptyStatement) {}
 };
-
 
 // Delegates to another statement, which may be overwritten.
 // This was introduced to implement ES2015 Annex B3.3 for conditionally making
@@ -916,7 +896,6 @@ class SloppyBlockFunctionStatement final : public Statement {
   Statement* statement_;
   SloppyBlockFunctionStatement* next_;
 };
-
 
 class Literal final : public Expression {
  public:
@@ -1631,13 +1610,16 @@ class CallBase : public Expression {
   SpreadPosition spread_position() const {
     return SpreadPositionField::decode(bit_field_);
   }
+  int call_head_token_position() const { return call_head_token_position_; }
 
  protected:
   CallBase(Zone* zone, NodeType type, Expression* expression,
-           const ScopedPtrList<Expression>& arguments, int pos, bool has_spread)
+           const ScopedPtrList<Expression>& arguments, int pos, bool has_spread,
+           int call_head_token_position)
       : Expression(pos, type),
         expression_(expression),
-        arguments_(arguments.ToConstVector(), zone) {
+        arguments_(arguments.ToConstVector(), zone),
+        call_head_token_position_(call_head_token_position) {
     DCHECK(type == kCall || type == kCallNew);
     if (has_spread) {
       ComputeSpreadPosition();
@@ -1656,6 +1638,7 @@ class CallBase : public Expression {
 
   Expression* expression_;
   ZonePtrList<Expression> arguments_;
+  int call_head_token_position_;
 };
 
 class Call final : public CallBase {
@@ -1703,8 +1686,10 @@ class Call final : public CallBase {
 
   Call(Zone* zone, Expression* expression,
        const ScopedPtrList<Expression>& arguments, int pos, bool has_spread,
-       PossiblyEval possibly_eval, bool optional_chain)
-      : CallBase(zone, kCall, expression, arguments, pos, has_spread) {
+       int call_head_token_position, PossiblyEval possibly_eval,
+       bool optional_chain)
+      : CallBase(zone, kCall, expression, arguments, pos, has_spread,
+                 call_head_token_position) {
     bit_field_ |=
         IsPossiblyEvalField::encode(possibly_eval == IS_POSSIBLY_EVAL) |
         IsTaggedTemplateField::encode(false) |
@@ -1713,8 +1698,9 @@ class Call final : public CallBase {
 
   Call(Zone* zone, Expression* expression,
        const ScopedPtrList<Expression>& arguments, int pos,
-       TaggedTemplateTag tag)
-      : CallBase(zone, kCall, expression, arguments, pos, false) {
+       TaggedTemplateTag tag, int call_head_token_position)
+      : CallBase(zone, kCall, expression, arguments, pos, false,
+                 call_head_token_position) {
     bit_field_ |= IsPossiblyEvalField::encode(false) |
                   IsTaggedTemplateField::encode(true) |
                   IsOptionalChainLinkField::encode(false);
@@ -1731,8 +1717,10 @@ class CallNew final : public CallBase {
   friend Zone;
 
   CallNew(Zone* zone, Expression* expression,
-          const ScopedPtrList<Expression>& arguments, int pos, bool has_spread)
-      : CallBase(zone, kCallNew, expression, arguments, pos, has_spread) {}
+          const ScopedPtrList<Expression>& arguments, int pos, bool has_spread,
+          int call_head_token_position)
+      : CallBase(zone, kCallNew, expression, arguments, pos, has_spread,
+                 call_head_token_position) {}
 };
 
 // The CallRuntime class does not represent any official JavaScript
@@ -1776,7 +1764,6 @@ class CallRuntime final : public Expression {
   ZonePtrList<Expression> arguments_;
 };
 
-
 class UnaryOperation final : public Expression {
  public:
   Token::Value op() const { return OperatorField::decode(bit_field_); }
@@ -1796,7 +1783,6 @@ class UnaryOperation final : public Expression {
 
   using OperatorField = Expression::NextBitField<Token::Value, 7>;
 };
-
 
 class BinaryOperation final : public Expression {
  public:
@@ -1908,7 +1894,6 @@ class CountOperation final : public Expression {
   Expression* expression_;
 };
 
-
 class CompareOperation final : public Expression {
  public:
   Token::Value op() const { return OperatorField::decode(bit_field_); }
@@ -1936,7 +1921,6 @@ class CompareOperation final : public Expression {
 
   using OperatorField = Expression::NextBitField<Token::Value, 7>;
 };
-
 
 class Spread final : public Expression {
  public:
@@ -2108,7 +2092,6 @@ class Throw final : public Expression {
 
   Expression* exception_;
 };
-
 
 class FunctionLiteral final : public Expression {
  public:
@@ -2523,7 +2506,6 @@ class ClassLiteral final : public Expression {
   Variable* static_home_object_;
 };
 
-
 class NativeFunctionLiteral final : public Expression {
  public:
   Handle<String> name() const { return name_->string(); }
@@ -2544,7 +2526,6 @@ class NativeFunctionLiteral final : public Expression {
   v8::Extension* extension_;
 };
 
-
 class SuperPropertyReference final : public Expression {
  public:
   VariableProxy* home_object() const { return home_object_; }
@@ -2558,7 +2539,6 @@ class SuperPropertyReference final : public Expression {
 
   VariableProxy* home_object_;
 };
-
 
 class SuperCallReference final : public Expression {
  public:
@@ -2707,8 +2687,8 @@ class AstVisitor {
   Subclass* impl() { return static_cast<Subclass*>(this); }
 };
 
-#define GENERATE_VISIT_CASE(NodeType)                                   \
-  case AstNode::k##NodeType:                                            \
+#define GENERATE_VISIT_CASE(NodeType) \
+  case AstNode::k##NodeType:          \
     return this->impl()->Visit##NodeType(static_cast<NodeType*>(node));
 
 #define GENERATE_FAILURE_CASE(NodeType) \
@@ -2871,10 +2851,8 @@ class AstNodeFactory final {
         expression, ReturnStatement::kSyntheticAsyncReturn, pos, end_position);
   }
 
-  WithStatement* NewWithStatement(Scope* scope,
-                                  Expression* expression,
-                                  Statement* statement,
-                                  int pos) {
+  WithStatement* NewWithStatement(Scope* scope, Expression* expression,
+                                  Statement* statement, int pos) {
     return zone_->New<WithStatement>(scope, expression, statement, pos);
   }
 
@@ -2923,9 +2901,7 @@ class AstNodeFactory final {
     return zone_->New<DebuggerStatement>(pos);
   }
 
-  class EmptyStatement* EmptyStatement() {
-    return empty_statement_;
-  }
+  class EmptyStatement* EmptyStatement() { return empty_statement_; }
 
   class ThisExpression* ThisExpression() {
     // Clear any previously set "parenthesized" flag on this_expression_ so this
@@ -2943,9 +2919,7 @@ class AstNodeFactory final {
     return zone_->New<class ThisExpression>(pos);
   }
 
-  class FailureExpression* FailureExpression() {
-    return failure_expression_;
-  }
+  class FailureExpression* FailureExpression() { return failure_expression_; }
 
   SloppyBlockFunctionStatement* NewSloppyBlockFunctionStatement(
       int pos, Variable* var, Token::Value init) {
@@ -3058,24 +3032,28 @@ class AstNodeFactory final {
 
   Call* NewCall(Expression* expression,
                 const ScopedPtrList<Expression>& arguments, int pos,
-                bool has_spread,
+                bool has_spread, int call_head_token_position = 0,
                 Call::PossiblyEval possibly_eval = Call::NOT_EVAL,
                 bool optional_chain = false) {
     DCHECK_IMPLIES(possibly_eval == Call::IS_POSSIBLY_EVAL, !optional_chain);
     return zone_->New<Call>(zone_, expression, arguments, pos, has_spread,
-                            possibly_eval, optional_chain);
+                            call_head_token_position, possibly_eval,
+                            optional_chain);
   }
 
   Call* NewTaggedTemplate(Expression* expression,
-                          const ScopedPtrList<Expression>& arguments, int pos) {
+                          const ScopedPtrList<Expression>& arguments, int pos,
+                          int call_head_token_position) {
     return zone_->New<Call>(zone_, expression, arguments, pos,
-                            Call::TaggedTemplateTag::kTrue);
+                            Call::TaggedTemplateTag::kTrue,
+                            call_head_token_position);
   }
 
   CallNew* NewCallNew(Expression* expression,
                       const ScopedPtrList<Expression>& arguments, int pos,
-                      bool has_spread) {
-    return zone_->New<CallNew>(zone_, expression, arguments, pos, has_spread);
+                      bool has_spread, int call_head_token_position = 0) {
+    return zone_->New<CallNew>(zone_, expression, arguments, pos, has_spread,
+                               call_head_token_position);
   }
 
   CallRuntime* NewCallRuntime(Runtime::FunctionId id,
@@ -3097,16 +3075,13 @@ class AstNodeFactory final {
     return zone_->New<CallRuntime>(zone_, context_index, arguments, pos);
   }
 
-  UnaryOperation* NewUnaryOperation(Token::Value op,
-                                    Expression* expression,
+  UnaryOperation* NewUnaryOperation(Token::Value op, Expression* expression,
                                     int pos) {
     return zone_->New<UnaryOperation>(op, expression, pos);
   }
 
-  BinaryOperation* NewBinaryOperation(Token::Value op,
-                                      Expression* left,
-                                      Expression* right,
-                                      int pos) {
+  BinaryOperation* NewBinaryOperation(Token::Value op, Expression* left,
+                                      Expression* right, int pos) {
     return zone_->New<BinaryOperation>(op, left, right, pos);
   }
 
@@ -3115,17 +3090,13 @@ class AstNodeFactory final {
     return zone_->New<NaryOperation>(zone_, op, first, initial_subsequent_size);
   }
 
-  CountOperation* NewCountOperation(Token::Value op,
-                                    bool is_prefix,
-                                    Expression* expr,
-                                    int pos) {
+  CountOperation* NewCountOperation(Token::Value op, bool is_prefix,
+                                    Expression* expr, int pos) {
     return zone_->New<CountOperation>(op, is_prefix, expr, pos);
   }
 
-  CompareOperation* NewCompareOperation(Token::Value op,
-                                        Expression* left,
-                                        Expression* right,
-                                        int pos) {
+  CompareOperation* NewCompareOperation(Token::Value op, Expression* left,
+                                        Expression* right, int pos) {
     return zone_->New<CompareOperation>(op, left, right, pos);
   }
 
@@ -3135,16 +3106,13 @@ class AstNodeFactory final {
 
   Conditional* NewConditional(Expression* condition,
                               Expression* then_expression,
-                              Expression* else_expression,
-                              int position) {
+                              Expression* else_expression, int position) {
     return zone_->New<Conditional>(condition, then_expression, else_expression,
                                    position);
   }
 
-  Assignment* NewAssignment(Token::Value op,
-                            Expression* target,
-                            Expression* value,
-                            int pos) {
+  Assignment* NewAssignment(Token::Value op, Expression* target,
+                            Expression* value, int pos) {
     DCHECK(Token::IsAssignmentOp(op));
     DCHECK_NOT_NULL(target);
     DCHECK_NOT_NULL(value);
@@ -3317,7 +3285,6 @@ class AstNodeFactory final {
   class ThisExpression* this_expression_;
   class FailureExpression* failure_expression_;
 };
-
 
 // Type testing & conversion functions overridden by concrete subclasses.
 // Inline functions for AstNode.
