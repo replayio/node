@@ -21,6 +21,7 @@ class DebugStackTraceIterator final : public debug::StackTraceIterator {
 
   bool Done() const override;
   void Advance() override;
+  bool IsValid() const override;
 
   int GetContextId() const override;
   v8::MaybeLocal<v8::Value> GetReceiver() const override;
@@ -34,12 +35,16 @@ class DebugStackTraceIterator final : public debug::StackTraceIterator {
   v8::MaybeLocal<v8::Value> Evaluate(v8::Local<v8::String> source,
                                      bool throw_on_side_effect) override;
 
+  StackFrameId FrameId() override;
+  int InlineFrameIndex() override;
+
  private:
   Isolate* isolate_;
   StackTraceFrameIterator iterator_;
   std::unique_ptr<FrameInspector> frame_inspector_;
   int inlined_frame_index_;
   bool is_top_frame_;
+  bool invalid_;
 };
 }  // namespace internal
 }  // namespace v8
