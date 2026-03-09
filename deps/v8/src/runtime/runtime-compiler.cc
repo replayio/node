@@ -127,6 +127,13 @@ RUNTIME_FUNCTION(Runtime_CompileOptimized) {
       UNREACHABLE();
   }
 
+  // Only synchronous compilation is currently supported when recording or
+  // replaying. Upstream picks the mode per tiering state above, and the
+  // Maglev tiers it added request concurrent compilation too.
+  if (recordreplay::IsRecordingOrReplaying()) {
+    mode = ConcurrencyMode::kSynchronous;
+  }
+
   // As a pre- and post-condition of CompileOptimized, the function *must* be
   // compiled, i.e. the installed InstructionStream object must not be
   // CompileLazy.
@@ -462,8 +469,11 @@ Tagged<Object> CompileOptimizedOSR(Isolate* isolate,
                                    CodeKind min_opt_level,
                                    BytecodeOffset osr_offset) {
   ConcurrencyMode mode =
+  // Only synchronous compilation is currently supported when
+  // recording/replaying, see Runtime_CompileOptimized.
       V8_LIKELY(isolate->concurrent_recompilation_enabled() &&
-                v8_flags.concurrent_osr)
+                v8_flags.concurrent_osr &&
+                !recordreplay::IsRecordingOrReplaying())
           ? ConcurrencyMode::kConcurrent
           : ConcurrencyMode::kSynchronous;
 
