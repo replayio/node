@@ -103,7 +103,9 @@ MaybeLocal<Value> PrepareStackTraceCallback(Local<Context> context,
 
 void* NodeArrayBufferAllocator::Allocate(size_t size) {
   void* ret;
-  if (zero_fill_field_ || per_process::cli_options->zero_fill_all_buffers)
+  if (zero_fill_field_ ||
+      per_process::cli_options->zero_fill_all_buffers ||
+      v8::recordreplay::IsRecordingOrReplaying())
     ret = allocator_->Allocate(size);
   else
     ret = allocator_->AllocateUninitialized(size);
@@ -880,7 +882,10 @@ ThreadId AllocateEnvironmentThreadId() {
   exit(static_cast<int>(exit_code));
 }
 
+extern void RecordReplayFinishRecording();
+
 void DefaultProcessExitHandlerInternal(Environment* env, ExitCode exit_code) {
+  RecordReplayFinishRecording();
   env->set_stopping(true);
   env->set_can_call_into_js(false);
   env->stop_sub_worker_contexts();
