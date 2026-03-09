@@ -597,8 +597,28 @@ static void napi_module_register_cb(v8::Local<v8::Object> exports,
       exports,
       module,
       context,
-      static_cast<const napi_module*>(priv)->nm_register_func);
+      v8::recordreplay::IsReplaying()
+      ? (napi_addon_register_func)0x1
+      : static_cast<const napi_module*>(priv)->nm_register_func);
 }
+
+namespace node {
+
+void RecordReplayAddonContextRegister(addon_context_register_func* pfunc) {
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
+  if (v8::recordreplay::RecordReplayValue("RecordReplayAddonContextRegisterFunc",
+                                          *pfunc == napi_module_register_cb)) {
+    *pfunc = napi_module_register_cb;
+    return;
+  }
+
+  v8::recordreplay::InvalidateRecording("Binary module unknown addon_context_register_func");
+}
+
+} // namespace node
 
 void napi_module_register_by_symbol(v8::Local<v8::Object> exports,
                                     v8::Local<v8::Value> module,
@@ -633,9 +653,23 @@ void napi_module_register_by_symbol(v8::Local<v8::Object> exports,
   // Create a new napi_env for this specific module.
   napi_env env = v8impl::NewEnv(context, module_filename);
 
+  v8::recordreplay::RegisterPointer(env);
+  v8::recordreplay::RegisterPointer(v8impl::JsValueFromV8LocalValue(exports));
+
   napi_value _exports;
   env->CallIntoModule([&](napi_env env) {
-    _exports = init(env, v8impl::JsValueFromV8LocalValue(exports));
+    if (v8::recordreplay::IsReplaying()) {
+      node::recordreplay::AutoCallbackRegion region;
+      int id = v8::recordreplay::RecordReplayValue("napi_module_register_by_symbol", 0);
+      _exports = (napi_value) v8::recordreplay::IdPointer(id);
+    } else {
+      {
+        node::recordreplay::AutoCallbackRegion region;
+        _exports = init(env, v8impl::JsValueFromV8LocalValue(exports));
+      }
+      int id = v8::recordreplay::PointerId(_exports);
+      v8::recordreplay::RecordReplayValue("napi_module_register_by_symbol", id);
+    }
   });
 
   // If register function returned a non-null exports object different from
