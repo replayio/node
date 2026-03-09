@@ -539,7 +539,7 @@ void Message::MemoryInfo(MemoryTracker* tracker) const {
 }
 
 MessagePortData::MessagePortData(MessagePort* owner)
-    : owner_(owner) {
+    : mutex_(/* ordered */ true), owner_(owner) {
 }
 
 MessagePortData::~MessagePortData() {
