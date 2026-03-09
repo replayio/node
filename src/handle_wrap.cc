@@ -70,6 +70,8 @@ void HandleWrap::Close(const FunctionCallbackInfo<Value>& args) {
 }
 
 void HandleWrap::Close(Local<Value> close_callback) {
+  v8::recordreplay::Assert("HandleWrap::Close");
+
   if (state_ != kInitialized)
     return;
 
@@ -139,6 +141,8 @@ HandleWrap::HandleWrap(Environment* env,
 
 
 void HandleWrap::OnClose(uv_handle_t* handle) {
+  v8::recordreplay::Assert("HandleWrap::OnClose");
+
   CHECK_NOT_NULL(handle->data);
   BaseObjectPtr<HandleWrap> wrap { static_cast<HandleWrap*>(handle->data) };
   wrap->Detach();
@@ -158,8 +162,11 @@ void HandleWrap::OnClose(uv_handle_t* handle) {
       wrap->object()
           ->Has(env->context(), env->handle_onclose_symbol())
           .FromMaybe(false)) {
+    v8::recordreplay::Assert("HandleWrap::OnClose #1");
     wrap->MakeCallback(env->handle_onclose_symbol(), 0, nullptr);
   }
+
+  v8::recordreplay::Assert("HandleWrap::OnClose #2");
 }
 Local<FunctionTemplate> HandleWrap::GetConstructorTemplate(Environment* env) {
   return GetConstructorTemplate(env->isolate_data());
