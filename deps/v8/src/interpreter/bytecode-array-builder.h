@@ -37,6 +37,7 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
  public:
   BytecodeArrayBuilder(
       Zone* zone, int parameter_count, int locals_count,
+      bool record_replay_ignore,
       FeedbackVectorSpec* feedback_vector_spec = nullptr,
       SourcePositionTableBuilder::RecordingMode source_position_mode =
           SourcePositionTableBuilder::RECORD_SOURCE_POSITIONS);
@@ -475,6 +476,17 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
   // Increment the block counter at the given slot (block code coverage).
   BytecodeArrayBuilder& IncBlockCounter(int slot);
 
+  BytecodeArrayBuilder& RecordReplayIncExecutionProgressCounter();
+  BytecodeArrayBuilder& RecordReplayAssertValue(const std::string& desc);
+  int RecordReplayRegisterInstrumentationSite(const char* kind,
+                                              int source_position);
+  BytecodeArrayBuilder& RecordReplayInstrumentation(
+      const char* kind, int source_position = kNoSourcePosition);
+  BytecodeArrayBuilder& RecordReplayInstrumentationGenerator(
+      const char* kind, Register generator_object);
+
+  bool EmitRecordReplayInstrumentationOpcodes() const;
+
   // Complex flow control.
   BytecodeArrayBuilder& ForInEnumerate(Register receiver);
   BytecodeArrayBuilder& ForInPrepare(RegisterList cache_info_triple,
@@ -522,8 +534,9 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
 
   void InitializeReturnPosition(FunctionLiteral* literal);
 
-  void SetStatementPosition(Statement* stmt) {
-    SetStatementPosition(stmt->position());
+  void SetStatementPosition(Statement* stmt,
+                            bool record_replay_breakpoint = true) {
+    SetStatementPosition(stmt->position(), record_replay_breakpoint);
   }
 
   base::Optional<BytecodeSourceInfo> MaybePopSourcePosition(int scope_start) {
@@ -541,9 +554,14 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
     latest_source_info_ = source_info;
   }
 
-  void SetStatementPosition(int position) {
+  void SetStatementPosition(int position,
+                            bool record_replay_breakpoint = true) {
     if (position == kNoSourcePosition) return;
     latest_source_info_.MakeStatementPosition(position);
+    most_recent_source_position_ = position;
+    if (record_replay_breakpoint) {
+      RecordReplayInstrumentation("breakpoint", position);
+    }
   }
 
   void SetExpressionPosition(Expression* expr) {
@@ -552,6 +570,7 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
 
   void SetExpressionPosition(int position) {
     if (position == kNoSourcePosition) return;
+    most_recent_source_position_ = position;
     if (!latest_source_info_.is_statement()) {
       // Ensure the current expression position is overwritten with the
       // latest value.
@@ -559,8 +578,9 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
     }
   }
 
-  void SetExpressionAsStatementPosition(Expression* expr) {
-    SetStatementPosition(expr->position());
+  void SetExpressionAsStatementPosition(Expression* expr,
+                                        bool record_replay_breakpoint = true) {
+    SetStatementPosition(expr->position(), record_replay_breakpoint);
   }
 
   bool RemainderOfBlockIsDead() const {
@@ -666,6 +686,11 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
   BytecodeRegisterOptimizer* register_optimizer_;
   BytecodeSourceInfo latest_source_info_;
   BytecodeSourceInfo deferred_source_info_;
+  int most_recent_source_position_ = -1;
+  bool emit_record_replay_opcodes_ = false;
+
+ public:
+  std::unordered_set<int> record_replay_instrumentation_site_locations_;
 };
 
 V8_EXPORT_PRIVATE std::ostream& operator<<(
