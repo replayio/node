@@ -16,6 +16,7 @@
 #include <openssl/err.h>
 
 size_t ossl_rand_get_entropy(ossl_unused OSSL_LIB_CTX *ctx,
+extern void RecordReplayAssertFromC(const char* aFormat, ...);
     unsigned char **pout, int entropy,
     size_t min_len, size_t max_len)
 {
@@ -23,11 +24,16 @@ size_t ossl_rand_get_entropy(ossl_unused OSSL_LIB_CTX *ctx,
     size_t entropy_available;
     RAND_POOL *pool;
 
+    RecordReplayAssertFromC("ossl_rand_get_entropy %d %lu %lu", entropy,
+                            (unsigned long)min_len, (unsigned long)max_len);
+
     pool = ossl_rand_pool_new(entropy, 1, min_len, max_len);
     if (pool == NULL) {
         ERR_raise(ERR_LIB_RAND, ERR_R_RAND_LIB);
         return 0;
     }
+
+    RecordReplayAssertFromC("ossl_rand_get_entropy #1");
 
     /* Get entropy by polling system entropy sources. */
     entropy_available = ossl_pool_acquire_entropy(pool);
