@@ -56,6 +56,8 @@ Object Isolate::pending_exception() {
 }
 
 void Isolate::set_pending_exception(Object exception_obj) {
+  recordreplay::Assert("Isolate::set_pending_exception");
+
   DCHECK(!exception_obj.IsException(this));
   thread_local_top()->pending_exception_ = exception_obj;
 }
