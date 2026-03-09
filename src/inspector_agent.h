@@ -104,6 +104,13 @@ class Agent {
       std::unique_ptr<InspectorSessionDelegate> delegate,
       bool prevent_shutdown);
 
+  // Connects Replay's own session (see RecordReplaySendCDPMessage). It belongs
+  // to the recorder rather than to a debugger the user attached, so it doesn't
+  // go through Connect(): the permission model denies the inspector, and
+  // neither it nor --test or --watch create client_ for the main thread.
+  std::unique_ptr<InspectorSession> RecordReplayConnect(
+      std::unique_ptr<InspectorSessionDelegate> delegate);
+
   // Called from the worker to create inspector sessions that is connected
   // to the main thread.
   // The inspector responds by using the delegate to send messages back.
@@ -138,6 +145,9 @@ class Agent {
   node::Environment* parent_env_;
   // Encapsulates majority of the Inspector functionality
   std::shared_ptr<NodeInspectorClient> client_;
+  // client_ exists only for Replay's own session: the environment didn't
+  // create the inspector, so it stays unavailable to the user.
+  bool record_replay_owns_client_ = false;
   // Interface for transports, e.g. WebSocket server
   std::unique_ptr<InspectorIo> io_;
   std::unique_ptr<ParentInspectorHandle> parent_handle_;
