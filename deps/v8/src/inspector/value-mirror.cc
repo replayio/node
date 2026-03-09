@@ -1858,10 +1858,12 @@ std::unique_ptr<ValueMirror> ValueMirror::create(v8::Local<v8::Context> context,
     return nullptr;
   }
   v8::Local<v8::Object> object = value.As<v8::Object>();
-  auto clientSubtype = clientFor(context)->valueSubtype(object);
-  if (clientSubtype) {
-    String16 subtype = toString16(clientSubtype->string());
-    return clientMirror(context, object, subtype);
+  if (!v8::recordreplay::HasDivergedFromRecording()) {
+    auto clientSubtype = clientFor(context)->valueSubtype(object);
+    if (clientSubtype) {
+      String16 subtype = toString16(clientSubtype->string());
+      return clientMirror(context, object, subtype);
+    }
   }
   if (object->IsRegExp()) {
     v8::Local<v8::RegExp> regexp = object.As<v8::RegExp>();
