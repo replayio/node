@@ -217,6 +217,11 @@ class ClearWeakScriptHandleTask : public CancelableTask {
     handle_ = nullptr;
   }
 
+  // Freeing a NativeModule is what posts this task, and the GC decides when
+  // that happens: the replay frees at other points (see
+  // Task::IsRecordReplayNonDeterministic).
+  bool IsRecordReplayNonDeterministic() const override { return true; }
+
  private:
   // This is owned by the Isolate to ensure correct shutdown ordering.
   WasmOrphanedGlobalHandle* handle_;
