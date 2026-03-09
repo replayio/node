@@ -30,12 +30,16 @@
 #include "util-inl.h"
 #include "v8-inspector.h"
 #include "v8-platform.h"
+#include "replayio.h"
 
 #include "libplatform/libplatform.h"
 
 #ifdef __POSIX__
 #include <pthread.h>
 #include <climits>  // PTHREAD_STACK_MIN
+#include <fcntl.h>
+#include <unistd.h>
+#include <cerrno>
 #endif  // __POSIX__
 
 #include <algorithm>
@@ -72,25 +76,52 @@ static uv_sem_t start_io_thread_semaphore;
 #endif  // __POSIX__
 // Agents that asked for the debug signal handler; SIGUSR1 (or the Windows
 // remote thread) starts the io thread of each. The mutex also guards the
-// once-per-process watchdog setup.
-static Mutex start_io_thread_agents_mutex;
+// once-per-process watchdog setup. Constructed on first use, once recording
+// or replaying has started, so that it is ordered.
+static Mutex& StartIoThreadAgentsMutex() {
+  static Mutex mutex { /* ordered */ true };
+  return mutex;
+}
 static std::vector<Agent*> start_io_thread_agents;
 static bool debug_signal_handler_started = false;
 
 static void RequestIoThreadStartOnAgents() {
-  Mutex::ScopedLock lock(start_io_thread_agents_mutex);
+  Mutex::ScopedLock lock(StartIoThreadAgentsMutex());
   for (Agent* agent : start_io_thread_agents) agent->RequestIoThreadStart();
 }
 
 #ifdef __POSIX__
+// When recording or replaying, the signal handler wakes the thread through
+// this pipe instead of the semaphore. Signals aren't delivered when replaying,
+// but the thread's read is recorded, so it wakes at the same point.
+static int start_io_thread_pipe[2] = { -1, -1 };
+
 static void StartIoThreadWakeup(int signo, siginfo_t* info, void* ucontext) {
+  if (start_io_thread_pipe[1] >= 0) {
+    int saved_errno = errno;
+    char byte = 0;
+    // Non-blocking: a full pipe already wakes the thread.
+    while (write(start_io_thread_pipe[1], &byte, 1) < 0 && errno == EINTR) {}
+    errno = saved_errno;
+    return;
+  }
   uv_sem_post(&start_io_thread_semaphore);
 }
 
 inline void* StartIoThreadMain(void* unused) {
   uv_thread_setname("SignalInspector");
   for (;;) {
-    uv_sem_wait(&start_io_thread_semaphore);
+    if (start_io_thread_pipe[0] >= 0) {
+      char bytes[64];
+      ssize_t rv = read(start_io_thread_pipe[0], bytes, sizeof(bytes));
+      if (rv < 0 && errno == EINTR)
+        continue;
+      // The pipe is gone, e.g. the application closed every descriptor.
+      if (rv <= 0)
+        return nullptr;
+    } else {
+      uv_sem_wait(&start_io_thread_semaphore);
+    }
     RequestIoThreadStartOnAgents();
   }
 }
@@ -100,6 +131,12 @@ static int StartWatchdogThread() {
   // it's not safe to call directly from the signal handler, it can
   // deadlock with the thread it interrupts.
   CHECK_EQ(0, uv_sem_init(&start_io_thread_semaphore, 0));
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    CHECK_EQ(0, pipe(start_io_thread_pipe));
+    for (int fd : start_io_thread_pipe)
+      CHECK_EQ(0, fcntl(fd, F_SETFD, FD_CLOEXEC));
+    CHECK_EQ(0, fcntl(start_io_thread_pipe[1], F_SETFL, O_NONBLOCK));
+  }
   pthread_attr_t attr;
   CHECK_EQ(0, pthread_attr_init(&attr));
 #if defined(PTHREAD_STACK_MIN) && !defined(__FreeBSD__)
@@ -141,7 +178,7 @@ static int StartWatchdogThread() {
 
 static int StartDebugSignalHandler() {
   {
-    Mutex::ScopedLock lock(start_io_thread_agents_mutex);
+    Mutex::ScopedLock lock(StartIoThreadAgentsMutex());
     if (!debug_signal_handler_started) {
       // Leave SIGUSR1 blocked on failure. We don't install a signal handler,
       // receiving the signal would terminate the process.
@@ -172,7 +209,7 @@ static int GetDebugSignalHandlerMappingName(DWORD pid, wchar_t* buf,
 }
 
 static int StartDebugSignalHandler() {
-  Mutex::ScopedLock lock(start_io_thread_agents_mutex);
+  Mutex::ScopedLock lock(StartIoThreadAgentsMutex());
   if (debug_signal_handler_started) return 0;
   debug_signal_handler_started = true;
   wchar_t mapping_name[32];
@@ -527,6 +564,13 @@ class NodeInspectorClient : public V8InspectorClient {
     ContextInfo info(name);
     info.is_default = true;
     contextCreated(env->context(), info);
+    // The interface's locks are ordered, so it must be created at the same
+    // point when recording and replaying. Lazily, it's created by whichever
+    // session or StartIoThread() asks first, and Replay's own session only
+    // connects when replaying.
+    if (v8::recordreplay::IsRecordingOrReplaying()) {
+      getThreadHandle();
+    }
   }
 
   void runMessageLoopOnPause(int context_group_id) override {
@@ -851,7 +895,7 @@ Agent::~Agent() {
 void Agent::StopAcceptingIoThreadStarts() {
   if (start_io_thread_async_ == nullptr) return;
   {
-    Mutex::ScopedLock lock(start_io_thread_agents_mutex);
+    Mutex::ScopedLock lock(StartIoThreadAgentsMutex());
     std::erase(start_io_thread_agents, this);
   }
   parent_env_->RemoveCleanupHook(StopAcceptingIoThreadStartsHook, this);
@@ -882,7 +926,7 @@ bool Agent::Start(const std::string& path,
                            }));
     uv_unref(reinterpret_cast<uv_handle_t*>(start_io_thread_async_));
     {
-      Mutex::ScopedLock lock(start_io_thread_agents_mutex);
+      Mutex::ScopedLock lock(StartIoThreadAgentsMutex());
       start_io_thread_agents.push_back(this);
     }
     parent_env_->AddCleanupHook(StopAcceptingIoThreadStartsHook, this);
@@ -914,7 +958,8 @@ bool Agent::StartIoThread() {
                                     permission::PermissionScope::kInspector,
                                     "StartIoThread",
                                     false);
-  if (!parent_env_->should_create_inspector() && !client_) {
+  if (!parent_env_->should_create_inspector() &&
+      (!client_ || record_replay_owns_client_)) {
     ThrowUninitializedInspectorError(parent_env_);
     return false;
   }
@@ -943,7 +988,8 @@ std::unique_ptr<InspectorSession> Agent::Connect(
                                     permission::PermissionScope::kInspector,
                                     "Connect",
                                     std::unique_ptr<InspectorSession>{});
-  if (!parent_env_->should_create_inspector() && !client_) {
+  if (!parent_env_->should_create_inspector() &&
+      (!client_ || record_replay_owns_client_)) {
     ThrowUninitializedInspectorError(parent_env_);
     return std::unique_ptr<InspectorSession>{};
   }
@@ -956,6 +1002,30 @@ std::unique_ptr<InspectorSession> Agent::Connect(
       new SameThreadInspectorSession(session_id, client_));
 }
 
+std::unique_ptr<InspectorSession> Agent::RecordReplayConnect(
+    std::unique_ptr<InspectorSessionDelegate> delegate) {
+  CHECK(v8::recordreplay::IsRecordingOrReplaying());
+  CHECK(parent_env_->is_main_thread());
+  // Created with events allowed, like Start() does: the client's thread handle
+  // has ordered locks (see NodeInspectorClient). Unlike Start(), this installs
+  // no SIGUSR1 handler or at-exit wait for frontends, and the user's inspector
+  // entry points keep refusing (see record_replay_owns_client_). Contexts
+  // created before this, e.g. by a vm call in a --require preload, aren't
+  // reported to the client.
+  if (!client_) {
+    client_ = std::make_shared<NodeInspectorClient>(parent_env_,
+                                                    /* is_main */ true);
+    record_replay_owns_client_ = true;
+  }
+
+  v8::replayio::AutoMarkReplayCode mark;
+  v8::replayio::AutoDisallowEvents disallow("Agent::RecordReplayConnect");
+  int session_id = client_->connectFrontend(std::move(delegate),
+                                            /* prevent_shutdown */ false);
+  return std::unique_ptr<InspectorSession>(
+      new SameThreadInspectorSession(session_id, client_));
+}
+
 std::unique_ptr<InspectorSession> Agent::ConnectToMainThread(
     std::unique_ptr<InspectorSessionDelegate> delegate,
     bool prevent_shutdown) {
@@ -963,6 +1033,10 @@ std::unique_ptr<InspectorSession> Agent::ConnectToMainThread(
                                     permission::PermissionScope::kInspector,
                                     "ConnectToMainThread",
                                     std::unique_ptr<InspectorSession>{});
+  // Worker inspection is NYI when recording/replaying.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return nullptr;
+  }
   if (!parent_env_->should_create_inspector() && !client_) {
     ThrowUninitializedInspectorError(parent_env_);
     return std::unique_ptr<InspectorSession>{};
@@ -1040,7 +1114,8 @@ void Agent::WaitForDisconnect() {
   THROW_IF_INSUFFICIENT_PERMISSIONS(parent_env_,
                                     permission::PermissionScope::kInspector,
                                     "WaitForDisconnect");
-  if (!parent_env_->should_create_inspector() && !client_) {
+  if (!parent_env_->should_create_inspector() &&
+      (!client_ || record_replay_owns_client_)) {
     ThrowUninitializedInspectorError(parent_env_);
     return;
   }
@@ -1207,7 +1282,8 @@ std::unique_ptr<ParentInspectorHandle> Agent::GetParentHandle(
                                     permission::PermissionScope::kInspector,
                                     "GetParentHandle",
                                     std::unique_ptr<ParentInspectorHandle>{});
-  if (!parent_env_->should_create_inspector() && !client_) {
+  if (!parent_env_->should_create_inspector() &&
+      (!client_ || record_replay_owns_client_)) {
     ThrowUninitializedInspectorError(parent_env_);
     return std::unique_ptr<ParentInspectorHandle>{};
   }
@@ -1224,7 +1300,8 @@ std::unique_ptr<ParentInspectorHandle> Agent::GetParentHandle(
 void Agent::WaitForConnect() {
   THROW_IF_INSUFFICIENT_PERMISSIONS(
       parent_env_, permission::PermissionScope::kInspector, "WaitForConnect");
-  if (!parent_env_->should_create_inspector() && !client_) {
+  if (!parent_env_->should_create_inspector() &&
+      (!client_ || record_replay_owns_client_)) {
     ThrowUninitializedInspectorError(parent_env_);
     return;
   }
@@ -1272,7 +1349,8 @@ std::shared_ptr<WorkerManager> Agent::GetWorkerManager() {
                                     permission::PermissionScope::kInspector,
                                     "GetWorkerManager",
                                     std::unique_ptr<WorkerManager>{});
-  if (!parent_env_->should_create_inspector() && !client_) {
+  if (!parent_env_->should_create_inspector() &&
+      (!client_ || record_replay_owns_client_)) {
     ThrowUninitializedInspectorError(parent_env_);
     return std::unique_ptr<WorkerManager>{};
   }
