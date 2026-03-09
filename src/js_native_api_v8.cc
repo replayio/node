@@ -571,6 +571,25 @@ void RefBase::Finalize(bool is_env_teardown) {
   }
 }
 
+namespace {
+
+// Whether the module's current call into N-API is also made when replaying.
+// Module code doesn't run when replaying: the calls it made in callbacks the
+// driver intercepted are replayed instead, at the same points. Its other calls,
+// e.g. from finalizers, don't happen when replaying.
+bool RecordReplayInModuleCallback() {
+  return node::recordreplay::AreEventsRecorded() &&
+         node::recordreplay::IsInsideInterceptedCallback();
+}
+
+// Stands in for a module's finalizer when replaying, where the replayed call
+// which created the reference has no finalizer (the driver passes it as null),
+// so that the reference is finalized along the same path as when recording.
+// Finalizers are never called when replaying, see CallModuleFinalizer.
+void RecordReplayFinalizerStub(napi_env env, void* data, void* hint) {}
+
+}  // anonymous namespace
+
 template <typename... Args>
 Reference::Reference(napi_env env, v8::Local<v8::Value> value, Args&&... args)
     : RefBase(env, std::forward<Args>(args)...),
@@ -589,16 +608,106 @@ Reference* Reference::New(napi_env env,
                           napi_finalize finalize_callback,
                           void* finalize_data,
                           void* finalize_hint) {
-  return new Reference(env,
-                       value,
-                       initial_refcount,
-                       delete_self,
-                       finalize_callback,
-                       finalize_data,
-                       finalize_hint);
+  Reference* reference = new Reference(env,
+                                       value,
+                                       initial_refcount,
+                                       delete_self,
+                                       finalize_callback,
+                                       finalize_data,
+                                       finalize_hint);
+  reference->RecordReplayTrack();
+  return reference;
+}
+
+// The GC collects values at different points when recording and replaying,
+// so whether a weak reference's value is still alive differs, but the module
+// has to see the same results when replaying. References the module creates
+// in replayed calls (see RecordReplayInModuleCallback) are given an id, and
+// when replaying their values are held strongly until the points where the
+// recording saw the GC collect them: the ids of references whose values were
+// collected are recorded whenever the module reads a reference, and the replay
+// clears those references then.
+//
+// The finalizer of a collected reference, and its deletion when it deletes
+// itself, are deferred the same way: the second pass callback only notes the
+// reference, and node::recordreplay::DeferredFinalization finalizes it at the
+// next GC poll on both sides (see RecordReplayFinalize).
+void Reference::RecordReplayTrack() {
+  if (!RecordReplayInModuleCallback()) {
+    return;
+  }
+  _record_replay_id = ++_env->record_replay_last_ref_id;
+  v8::recordreplay::Assert("napi_ref created %d", _record_replay_id);
+  _env->record_replay_refs[_record_replay_id] = this;
+  if (v8::recordreplay::IsReplaying() && RefCount() == 0) {
+    ClearWeak();
+  }
+  _record_replay_finalization =
+      node::Environment::GetCurrent(_env->context())->deferred_finalization();
+  _record_replay_finalize_id =
+      _record_replay_finalization->Track(this, "napi_ref");
+  if (_record_replay_finalize_id) {
+    // Whether the recording's module gave a finalizer, which the replayed call
+    // may not have (see RecordReplayFinalizerStub).
+    _record_replay_has_finalizer = v8::recordreplay::RecordReplayValue(
+        "napi_ref has finalizer", _finalize_callback != nullptr);
+  }
+}
+
+void Reference::RecordReplayFinalize() {
+  // When recording, the first pass callback reset the handle, and the second
+  // pass callback freed its parameter. When replaying, the value was kept alive
+  // instead (unless RecordReplayFlushClearedRefs reset the handle already),
+  // and no callback ran: do the same, so that SetWeak() behaves alike from now
+  // on.
+  _persistent.Reset();
+  // The value is gone on both sides now, so a later read needs no flush.
+  _env->record_replay_cleared_refs.erase(_record_replay_id);
+  if (!_secondPassScheduled) {
+    delete _secondPassParameter;
+  }
+  _secondPassParameter = nullptr;
+  if (_record_replay_has_finalizer && _finalize_callback == nullptr) {
+    _finalize_callback = RecordReplayFinalizerStub;
+  }
+  Finalize();
+}
+
+void Reference::RecordReplayFlushClearedRefs(napi_env env) {
+  std::vector<int> cleared(env->record_replay_cleared_refs.begin(),
+                           env->record_replay_cleared_refs.end());
+  size_t count =
+      v8::recordreplay::RecordReplayValue("napi_ref cleared", cleared.size());
+  cleared.resize(count);
+  if (count) {
+    v8::recordreplay::RecordReplayBytes(
+        "napi_ref cleared ids", cleared.data(), count * sizeof(int));
+  }
+  if (v8::recordreplay::IsReplaying()) {
+    for (int id : cleared) {
+      auto iter = env->record_replay_refs.find(id);
+      if (iter != env->record_replay_refs.end()) {
+        Reference* reference = iter->second;
+        // Do what the GC's weak callback did when recording: it reset the
+        // persistent in its first pass. Its second pass noted the reference
+        // for the next GC poll, or left it for ~napi_env__ to finalize at
+        // environment teardown when it could not be tracked, on both sides
+        // (see SecondPassCallback).
+        reference->_persistent.Reset();
+      }
+    }
+  }
+  env->record_replay_cleared_refs.clear();
 }
 
 Reference::~Reference() {
+  if (_record_replay_id) {
+    _env->record_replay_refs.erase(_record_replay_id);
+    _env->record_replay_cleared_refs.erase(_record_replay_id);
+  }
+  if (_record_replay_finalize_id) {
+    _record_replay_finalization->Untrack(_record_replay_finalize_id);
+  }
   // If the second pass callback is scheduled, it will delete the
   // parameter passed to it, otherwise it will never be scheduled
   // and we need to delete it here.
@@ -663,6 +772,11 @@ void Reference::ClearWeak() {
 // Mark the reference as weak and eligible for collection
 // by the gc.
 void Reference::SetWeak() {
+  // Values of tracked references are held strongly when replaying, see
+  // RecordReplayTrack.
+  if (_record_replay_id && v8::recordreplay::IsReplaying()) {
+    return;
+  }
   if (_secondPassParameter == nullptr) {
     // This means that the Reference has already been processed
     // by the second pass callback, so its already been Finalized, do
@@ -691,6 +805,10 @@ void Reference::FinalizeCallback(
 
   // The reference must be reset during the first pass.
   reference->_persistent.Reset();
+  if (reference->_record_replay_id) {
+    reference->_env->record_replay_cleared_refs.insert(
+        reference->_record_replay_id);
+  }
   // Mark the parameter not delete-able until the second pass callback is
   // invoked.
   reference->_secondPassScheduled = true;
@@ -2582,7 +2700,16 @@ napi_status NAPI_CDECL napi_get_reference_value(napi_env env,
   CHECK_ARG(env, result);
 
   v8impl::Reference* reference = reinterpret_cast<v8impl::Reference*>(ref);
-  *result = v8impl::JsValueFromV8LocalValue(reference->Get());
+  bool record_replay = v8impl::RecordReplayInModuleCallback();
+  if (record_replay) {
+    v8impl::Reference::RecordReplayFlushClearedRefs(env);
+  }
+  v8::Local<v8::Value> value = reference->Get();
+  if (record_replay && reference->RecordReplayId()) {
+    v8::recordreplay::Assert("napi_get_reference_value %d %d",
+                             reference->RecordReplayId(), !value.IsEmpty());
+  }
+  *result = v8impl::JsValueFromV8LocalValue(value);
 
   return napi_clear_last_error(env);
 }
