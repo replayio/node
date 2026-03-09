@@ -3931,6 +3931,13 @@ class TurboshaftAssemblerOpInterface
     return CallRuntime<typename RuntimeCallDescriptor::TerminateExecution>(
         isolate, frame_state, context, LazyDeoptOnThrow::kNo, {});
   }
+  V<Object> CallRuntime_RecordReplayTargetProgressReached(
+      Isolate* isolate, V<turboshaft::FrameState> frame_state,
+      V<Context> context) {
+    return CallRuntime<
+        typename RuntimeCallDescriptor::RecordReplayTargetProgressReached>(
+        isolate, frame_state, context, LazyDeoptOnThrow::kNo, {});
+  }
   V<Object> CallRuntime_TransitionElementsKind(Isolate* isolate,
                                                V<Context> context,
                                                V<HeapObject> object,
