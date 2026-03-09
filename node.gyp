@@ -833,6 +833,7 @@
 
       'sources': [
         '<@(node_sources)',
+        'src/node_recordreplay.cc',
         # Dependency headers
         'deps/v8/include/v8.h',
         'deps/postject/postject-api.h',

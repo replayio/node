@@ -1739,7 +1739,18 @@ NODE_EXTERN struct ssl_ctx_st* GetSSLCtx(v8::Local<v8::Context> context,
                                          v8::Local<v8::Value> secure_context);
 
 }  // namespace crypto
+// Record/replay stuff.
+namespace recordreplay {
+bool IsRecordingFinished();
+void BeginCallbackRegion();
+void EndCallbackRegion();
 
+struct AutoCallbackRegion {
+  AutoCallbackRegion() { BeginCallbackRegion(); }
+  ~AutoCallbackRegion() { EndCallbackRegion(); }
+};
+
+} // namespace recordreplay
 }  // namespace node
 
 #endif  // SRC_NODE_H_
