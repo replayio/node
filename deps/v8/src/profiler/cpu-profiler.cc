@@ -692,6 +692,11 @@ void CpuProfiler::StartProcessorIfNotStarted() {
         std::make_unique<Symbolizer>(code_observer_->instruction_stream_map());
   }
 
+  // Samples are taken wherever the profiler thread's signals interrupt this
+  // thread, and the replay can't send them at the same points, so a recording
+  // with CPU profiles can't be replayed.
+  recordreplay::InvalidateRecording("CPU profiler started");
+
   base::TimeDelta sampling_interval = ComputeSamplingInterval();
   processor_.reset(new SamplingEventsProcessor(
       isolate_, symbolizer_.get(), code_observer_.get(), profiles_.get(),
