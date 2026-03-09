@@ -151,6 +151,8 @@ class V8_EXPORT_PRIVATE MemoryReducer {
     TimerTask(const TimerTask&) = delete;
     TimerTask& operator=(const TimerTask&) = delete;
 
+    bool IsRecordReplayNonDeterministic() const override { return true; }
+
    private:
     // v8::internal::CancelableTask overrides.
     void RunInternal() override;
