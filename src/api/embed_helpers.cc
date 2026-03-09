@@ -37,6 +37,10 @@ Maybe<ExitCode> SpinEventLoopInternal(Environment* env) {
     env->performance_state()->Mark(
         node::performance::NODE_PERFORMANCE_MILESTONE_LOOP_START);
     do {
+      v8::recordreplay::Assert(
+          "SpinEventLoop %d %d",
+          env->is_stopping(),
+          uv_loop_alive(env->event_loop()));
       if (env->is_stopping()) break;
       uv_run(env->event_loop(), UV_RUN_DEFAULT);
       if (env->is_stopping()) break;
@@ -44,6 +48,7 @@ Maybe<ExitCode> SpinEventLoopInternal(Environment* env) {
       platform->DrainTasks(isolate);
 
       more = uv_loop_alive(env->event_loop());
+      v8::recordreplay::Assert("SpinEventLoop After %d", more);
       if (more && !env->is_stopping()) continue;
 
       if (EmitProcessBeforeExit(env).IsNothing())

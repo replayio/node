@@ -832,7 +832,8 @@ Environment::Environment(IsolateData* isolate_data,
       thread_id_(thread_id.id == static_cast<uint64_t>(-1)
                      ? AllocateEnvironmentThreadId().id
                      : thread_id.id),
-      thread_name_(thread_name) {
+      thread_name_(thread_name),
+      native_immediates_threadsafe_mutex_(/* ordered */ true) {
   constexpr bool is_shared_ro_heap =
 #ifdef NODE_V8_SHARED_RO_HEAP
       true;
@@ -1384,10 +1385,14 @@ Maybe<bool> Environment::CheckUnsettledTopLevelAwait() const {
 }
 
 void Environment::RunAndClearInterrupts() {
-  while (native_immediates_interrupts_.size() > 0) {
+  while (true) {
     NativeImmediateQueue queue;
     {
+      v8::recordreplay::Assert("native_immediates_threadsafe_mutex #1");
       Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
+      if (native_immediates_interrupts_.size() == 0) {
+        break;
+      }
       queue.ConcatMove(std::move(native_immediates_interrupts_));
     }
     DebugSealHandleScope seal_handle_scope(isolate());
@@ -1398,6 +1403,8 @@ void Environment::RunAndClearInterrupts() {
 }
 
 void Environment::RunAndClearNativeImmediates(bool only_refed) {
+  v8::recordreplay::Assert("Environment::RunAndClearNativeImmediates");
+
   TRACE_EVENT0(TRACING_CATEGORY_NODE1(environment),
                "RunAndClearNativeImmediates");
   HandleScope handle_scope(isolate_);
@@ -1451,8 +1458,9 @@ void Environment::RunAndClearNativeImmediates(bool only_refed) {
   // This is intentionally placed after the `ref_count` handling, because when
   // refed threadsafe immediates are created, they are not counted towards the
   // count in immediate_info() either.
+  v8::recordreplay::Assert("native_immediates_threadsafe_mutex #2");
   NativeImmediateQueue threadsafe_immediates;
-  if (native_immediates_threadsafe_.size() > 0) {
+  {
     Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
     threadsafe_immediates.ConcatMove(std::move(native_immediates_threadsafe_));
   }
@@ -1460,6 +1468,9 @@ void Environment::RunAndClearNativeImmediates(bool only_refed) {
 }
 
 void Environment::RequestInterruptFromV8() {
+  // V8 interrupts will not be replayed at precise positions.
+  v8::recordreplay::InvalidateRecording("RequestInterruptFromV8 called");
+
   // The Isolate may outlive the Environment, so some logic to handle the
   // situation in which the Environment is destroyed before the handler runs
   // is required.
@@ -1510,6 +1521,8 @@ void Environment::ToggleTimerRef(bool ref) {
 void Environment::RunTimers(uv_timer_t* handle) {
   Environment* env = Environment::from_timer_handle(handle);
   TRACE_EVENT0(TRACING_CATEGORY_NODE1(environment), "RunTimers");
+
+  v8::recordreplay::Assert("Environment::RunTimers");
 
   if (!env->can_call_into_js())
     return;
@@ -1569,6 +1582,12 @@ void Environment::RunTimers(uv_timer_t* handle) {
 
 
 void Environment::CheckImmediate(uv_check_t* handle) {
+  // We're near the top of the event loop, periodically create new
+  // checkpoints so that the recording can be processed more efficiently.
+  if (v8::IsMainThread()) {
+    v8::recordreplay::NewCheckpoint();
+  }
+
   Environment* env = Environment::from_immediate_check_handle(handle);
   TRACE_EVENT0(TRACING_CATEGORY_NODE1(environment), "CheckImmediate");
 
@@ -1581,6 +1600,7 @@ void Environment::CheckImmediate(uv_check_t* handle) {
     return;
 
   do {
+    v8::recordreplay::Assert("Environment::CheckImmediate Callback");
     MakeCallback(env->isolate(),
                  env->process_object(),
                  env->immediate_callback_function(),
@@ -1605,6 +1625,8 @@ void Environment::ToggleImmediateRef(bool ref) {
 }
 
 uint64_t Environment::GetNowUint64() {
+  // https://github.com/RecordReplay/backend/issues/4886
+  v8::recordreplay::Assert("Environment::GetNow");
   uv_update_time(event_loop());
   uint64_t now = uv_now(event_loop());
   CHECK_GE(now, timer_base());
@@ -1614,6 +1636,7 @@ uint64_t Environment::GetNowUint64() {
 
 Local<Value> Environment::GetNow() {
   uint64_t now = GetNowUint64();
+  v8::recordreplay::RecordReplayBytes("Environment::GetNow", &now, sizeof(now));
   if (now <= 0xffffffff)
     return Integer::NewFromUnsigned(isolate(), static_cast<uint32_t>(now));
   return Number::New(isolate(), static_cast<double>(now));
@@ -1905,6 +1928,8 @@ void Environment::Exit(ExitCode exit_code) {
 }
 
 void Environment::stop_sub_worker_contexts() {
+  v8::recordreplay::Assert("Environment::stop_sub_worker_contexts");
+
   DCHECK_EQ(Isolate::GetCurrent(), isolate());
 
   while (!sub_worker_contexts_.empty()) {

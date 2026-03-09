@@ -1278,6 +1278,7 @@ class Environment final : public MemoryRetainer {
 
   v8::CpuProfiler* cpu_profiler_ = nullptr;
   std::unordered_map<std::string, v8::ProfilerId> pending_profiles_;
+  int record_replay_task_queue_async_id_ = 0;
 };
 
 }  // namespace node
