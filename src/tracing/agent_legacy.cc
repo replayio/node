@@ -1,5 +1,7 @@
 #include "tracing/agent_legacy.h"
 
+#include "replayio.h"
+
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -258,6 +260,11 @@ void LegacyTracingAgent::Flush(bool blocking) {
 }
 
 void LegacyTracingAgent::StartTracing(const std::string& categories) {
+  // For now we don't support tracing when recording/replaying,
+  // due to non-deterministic behavior it can introduce. node 24 emits the
+  // events from its own agent, so this is where tracing becomes active.
+  v8::recordreplay::InvalidateRecording("Event tracing enabled");
+
   // Attach a new NodeTraceWriter only if this function hasn't been called
   // before.
   if (tracing_file_writer_.id_ != LegacyTracingAgent::kDefaultHandleId) return;
