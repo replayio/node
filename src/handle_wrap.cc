@@ -36,7 +36,6 @@ using v8::Local;
 using v8::Object;
 using v8::Value;
 
-
 void HandleWrap::Ref(const FunctionCallbackInfo<Value>& args) {
   HandleWrap* wrap;
   ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
@@ -70,6 +69,8 @@ void HandleWrap::Close(const FunctionCallbackInfo<Value>& args) {
 }
 
 void HandleWrap::Close(Local<Value> close_callback) {
+  v8::recordreplay::Assert("HandleWrap::Close");
+
   if (state_ != kInitialized)
     return;
 
@@ -86,6 +87,12 @@ void HandleWrap::Close(Local<Value> close_callback) {
 
 
 void HandleWrap::OnGCCollect() {
+  // Leak the handle when recording/replaying to avoid non-deterministic
+  // behavior.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
   // When all references to a HandleWrap are lost and the object is supposed to
   // be destroyed, we first call Close() to clean up the underlying libuv
   // handle. The OnClose callback then acquires and destroys another reference
@@ -133,6 +140,8 @@ HandleWrap::HandleWrap(Environment* env,
 
 
 void HandleWrap::OnClose(uv_handle_t* handle) {
+  v8::recordreplay::Assert("HandleWrap::OnClose");
+
   CHECK_NOT_NULL(handle->data);
   BaseObjectPtr<HandleWrap> wrap { static_cast<HandleWrap*>(handle->data) };
   wrap->Detach();
@@ -151,8 +160,11 @@ void HandleWrap::OnClose(uv_handle_t* handle) {
   if (!wrap->persistent().IsEmpty() &&
       wrap->object()->Has(env->context(), env->handle_onclose_symbol())
       .FromMaybe(false)) {
+    v8::recordreplay::Assert("HandleWrap::OnClose #1");
     wrap->MakeCallback(env->handle_onclose_symbol(), 0, nullptr);
   }
+
+  v8::recordreplay::Assert("HandleWrap::OnClose #2");
 }
 
 Local<FunctionTemplate> HandleWrap::GetConstructorTemplate(Environment* env) {
