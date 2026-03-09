@@ -878,6 +878,8 @@ void GlobalHandles::PostGarbageCollectionProcessing(
 
   const bool synchronous_second_pass =
       isolate_->MemorySaverModeEnabled() || v8_flags.predictable ||
+      // Avoid posting runnables at non-deterministic points.
+      recordreplay::IsRecordingOrReplaying() ||
       isolate_->heap()->IsTearingDown() ||
       (gc_callback_flags &
        (kGCCallbackFlagForced | kGCCallbackFlagCollectAllAvailableGarbage |
