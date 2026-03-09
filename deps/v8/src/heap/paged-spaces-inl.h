@@ -122,6 +122,7 @@ AllocationResult PagedSpace::AllocateRawUnaligned(int size_in_bytes,
                                                   AllocationOrigin origin) {
   DCHECK(!FLAG_enable_third_party_heap);
   if (!EnsureLabMain(size_in_bytes, origin)) {
+    recordreplay::Diagnostic("PagedSpace::AllocateRawUnaligned EnsureLabMain failed");
     return AllocationResult::Retry(identity());
   }
 
