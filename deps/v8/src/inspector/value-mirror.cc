@@ -1566,12 +1566,14 @@ std::unique_ptr<ValueMirror> ValueMirror::create(v8::Local<v8::Context> context,
   if (value->IsSymbol()) {
     return std::make_unique<SymbolMirror>(value.As<v8::Symbol>());
   }
-  auto clientSubtype = (value->IsUndefined() || value->IsObject())
-                           ? clientFor(context)->valueSubtype(value)
-                           : nullptr;
-  if (clientSubtype) {
-    String16 subtype = toString16(clientSubtype->string());
-    return clientMirror(context, value, subtype);
+  if (!v8::recordreplay::HasDivergedFromRecording()) {
+    auto clientSubtype = (value->IsUndefined() || value->IsObject())
+                            ? clientFor(context)->valueSubtype(value)
+                            : nullptr;
+    if (clientSubtype) {
+      String16 subtype = toString16(clientSubtype->string());
+      return clientMirror(context, value, subtype);
+    }
   }
   if (value->IsUndefined()) {
     return std::make_unique<PrimitiveValueMirror>(
