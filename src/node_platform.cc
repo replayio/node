@@ -48,7 +48,7 @@ static void PrintSourceLocation(const v8::SourceLocation& location) {
   }
 }
 
-static void PlatformWorkerThread(void* data) {
+static void RunPlatformWorkerThread(void* data) {
   uv_thread_setname("V8Worker");
   std::unique_ptr<PlatformWorkerData>
       worker_data(static_cast<PlatformWorkerData*>(data));
@@ -353,6 +353,11 @@ void PerIsolatePlatformData::PostTaskImpl(std::unique_ptr<Task> task,
       DumpNativeBacktrace(stderr);
     }
     fflush(stderr);
+  if (task->IsRecordReplayNonDeterministic() && v8::recordreplay::IsRecordingOrReplaying()) {
+    // For now we ignore non-deterministic tasks. This prevents the GC from working.
+    return;
+  }
+  v8::recordreplay::Assert("PerIsolatePlatformData::PostTask");
   }
 
   auto locked = foreground_tasks_.Lock();
@@ -377,6 +382,11 @@ void PerIsolatePlatformData::PostDelayedTaskImpl(
       DumpNativeBacktrace(stderr);
     }
     fflush(stderr);
+  if (task->IsRecordReplayNonDeterministic() && v8::recordreplay::IsRecordingOrReplaying()) {
+    // For now we ignore non-deterministic tasks. This prevents the GC from working.
+    return;
+  }
+  v8::recordreplay::Assert("PerIsolatePlatformData::PostDelayedTask");
   }
 
   auto locked = foreground_delayed_tasks_.Lock();
@@ -546,7 +556,11 @@ void PerIsolatePlatformData::RunForegroundTask(std::unique_ptr<Task> task) {
   if (isolate_->IsExecutionTerminating()) return;
   DebugSealHandleScope scope(isolate_);
   Environment* env = Environment::GetCurrent(isolate_);
-  if (env != nullptr) {
+  // Don't create an InternalCallbackScope when recording/replaying and the
+  // task runs non-deterministically, as the associated callbacks must run
+  // deterministically.
+  if (env != nullptr &&
+      (!v8::recordreplay::IsRecordingOrReplaying() || !task->IsRecordReplayNonDeterministic())) {
     v8::HandleScope scope(isolate_);
     InternalCallbackScope cb_scope(env, Object::New(isolate_), { 0, 0 },
                                    InternalCallbackScope::kNoFlags);
@@ -575,6 +589,7 @@ void PerIsolatePlatformData::DeleteFromScheduledTasks(DelayedTask* task) {
 }
 
 void PerIsolatePlatformData::RunForegroundTask(uv_timer_t* handle) {
+  v8::recordreplay::Assert("PerIsolatePlatformData::RunForegroundTask");
   DelayedTask* delayed = ContainerOf(&DelayedTask::timer, handle);
   delayed->platform_data->RunForegroundTask(std::move(delayed->task));
   delayed->platform_data->DeleteFromScheduledTasks(delayed);
@@ -777,7 +792,7 @@ v8::PageAllocator* NodePlatform::GetPageAllocator() {
 
 template <class T>
 TaskQueue<T>::TaskQueue()
-    : lock_(),
+    : lock_(/* ordered */ true),
       tasks_available_(),
       outstanding_tasks_drained_(),
       outstanding_tasks_(0),
