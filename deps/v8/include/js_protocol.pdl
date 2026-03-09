@@ -484,6 +484,21 @@ domain Debugger
       # Actual breakpoint location.
       Location location
 
+  command getCallFrames
+    returns
+      array of CallFrame callFrames
+
+  command getFrameLocations
+    parameters
+      # Maximum number of frame locations to return
+      optional number maxFrames
+    returns
+      array of Location frameLocations
+
+  command getPendingException
+    returns
+      Runtime.RemoteObject exception
+
   # Fired when the virtual machine stopped on breakpoint or exception or any other stop criteria.
   event paused
     parameters
