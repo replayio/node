@@ -81,6 +81,30 @@
 namespace v8 {
 namespace internal {
 
+extern bool RecordReplayIgnoreScriptByURL(const char* url);
+
+static void SetRecordReplayFlags(UnoptimizedCompileFlags& flags,
+                                 const ScriptDetails& script_details) {
+  if (!recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
+  if (!IsMainThread() ||
+      recordreplay::AreEventsDisallowed("CompileFlags") ||
+      recordreplay::IsInReplayCode("CompileFlags")) {
+    flags.set_record_replay_ignore(true);
+    return;
+  }
+
+  Handle<Object> script_name;
+  if (script_details.name_obj.ToHandle(&script_name)) {
+    std::unique_ptr<char[]> name_cstr = Cast<String>(*script_name)->ToCString();
+    if (RecordReplayIgnoreScriptByURL(name_cstr.get())) {
+      flags.set_record_replay_ignore(true);
+    }
+  }
+}
+
 namespace {
 
 constexpr bool IsOSR(BytecodeOffset osr_offset) { return !osr_offset.IsNone(); }
@@ -3370,6 +3394,11 @@ MaybeDirectHandle<JSFunction> Compiler::GetFunctionFromEval(
     DCHECK(!flags.is_module());
     flags.set_parse_restriction(restriction);
 
+    {
+      ScriptDetails empty_details;
+      SetRecordReplayFlags(flags, empty_details);
+    }
+
     UnoptimizedCompileState compile_state;
     ReusableUnoptimizedCompileState reusable_state(isolate);
     ParseInfo parse_info(isolate, flags, &compile_state, &reusable_state);
@@ -3777,12 +3806,14 @@ Handle<Script> NewScript(Isolate* isolate, ParseInfo* parse_info,
 }
 
 MaybeDirectHandle<SharedFunctionInfo> CompileScriptOnMainThread(
-    const UnoptimizedCompileFlags flags, DirectHandle<String> source,
+    UnoptimizedCompileFlags flags, DirectHandle<String> source,
     const ScriptDetails& script_details, NativesFlag natives,
     v8::Extension* extension, Isolate* isolate,
     MaybeHandle<Script> maybe_script, IsCompiledScope* is_compiled_scope,
     CompileHintCallback compile_hint_callback = nullptr,
     void* compile_hint_callback_data = nullptr) {
+    IsCompiledScope* is_compiled_scope) {
+  SetRecordReplayFlags(flags, script_details);
   UnoptimizedCompileState compile_state;
   ReusableUnoptimizedCompileState reusable_state(isolate);
   ParseInfo parse_info(isolate, flags, &compile_state, &reusable_state);
@@ -4244,6 +4275,8 @@ MaybeDirectHandle<JSFunction> Compiler::GetWrappedFunction(
     // being omitted.
     flags.set_collect_source_positions(true);
     flags.set_is_eager(compile_options & ScriptCompiler::kEagerCompile);
+
+    SetRecordReplayFlags(flags, script_details);
 
     UnoptimizedCompileState compile_state;
     ReusableUnoptimizedCompileState reusable_state(isolate);

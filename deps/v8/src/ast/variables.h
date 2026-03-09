@@ -85,6 +85,29 @@ class Variable final : public ZoneObject {
   }
   bool is_used() { return IsUsedField::decode(bit_field_); }
   void set_is_used() { bit_field_ = IsUsedField::update(bit_field_, true); }
+  // While replaying, force-variable-context-allocation (RUN-2604) puts
+  // declared variables in a context for Replay's own session to read them
+  // (see Scope::DeclareVariable). Where a recording would allocate a forced
+  // variable differently, it is either unreferenced, which a recording
+  // doesn't allocate at all, or moved from the stack, where a recording keeps
+  // it (see Scope::MustAllocate and Scope::MustAllocateInContext). Other
+  // sessions don't see either difference.
+  bool RecordReplayIsForced() const {
+    return record_replay_bits_ & kRecordReplayForced;
+  }
+  void RecordReplaySetForced() { record_replay_bits_ |= kRecordReplayForced; }
+  bool RecordReplayIsUnreferenced() const {
+    return record_replay_bits_ & kRecordReplayUnreferenced;
+  }
+  void RecordReplaySetUnreferenced() {
+    record_replay_bits_ |= kRecordReplayUnreferenced;
+  }
+  bool RecordReplayIsMovedFromStack() const {
+    return record_replay_bits_ & kRecordReplayMovedFromStack;
+  }
+  void RecordReplaySetMovedFromStack() {
+    record_replay_bits_ |= kRecordReplayMovedFromStack;
+  }
   MaybeAssignedFlag maybe_assigned() const {
     return MaybeAssignedFlagField::decode(bit_field_);
   }
@@ -336,6 +359,11 @@ class Variable final : public ZoneObject {
   int initializer_position_;
   uint16_t bit_field_;
   uint16_t hole_check_analysis_bit_field_;
+
+  static constexpr uint8_t kRecordReplayForced = 1 << 0;
+  static constexpr uint8_t kRecordReplayUnreferenced = 1 << 1;
+  static constexpr uint8_t kRecordReplayMovedFromStack = 1 << 2;
+  uint8_t record_replay_bits_ = 0;
 
   void set_maybe_assigned() {
     bit_field_ = MaybeAssignedFlagField::update(bit_field_, kMaybeAssigned);
