@@ -81,6 +81,8 @@ class WasmImportWrapperCache {
   WasmCode* MaybeGet(compiler::WasmImportCallKind kind, const FunctionSig* sig,
                      int expected_arity, Suspend suspend) const;
 
+  WasmImportWrapperCache();
+
   ~WasmImportWrapperCache();
 
  private:
