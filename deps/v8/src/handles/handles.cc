@@ -32,6 +32,9 @@ ASSERT_TRIVIALLY_COPYABLE(MaybeHandle<Object>);
 
 #ifdef DEBUG
 bool HandleBase::IsDereferenceAllowed() const {
+  // FIXME disabling to support debugging from lldb. Surely there is a better way to do this.
+  return true;
+
   DCHECK_NOT_NULL(location_);
   Object object(*location_);
   if (object.IsSmi()) return true;
@@ -90,6 +93,10 @@ Address* HandleScope::Extend(Isolate* isolate) {
   DCHECK(result == current->limit);
   // Make sure there's at least one scope on the stack and that the
   // top of the scope stack isn't a barrier.
+  if (current->level == current->sealed_level) {
+    recordreplay::Diagnostic("Bad HandleScope level %d isolate %p",
+                             current->level, isolate);
+  }
   if (!Utils::ApiCheck(current->level != current->sealed_level,
                        "v8::HandleScope::CreateHandle()",
                        "Cannot create a handle without a HandleScope")) {
