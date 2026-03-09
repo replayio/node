@@ -78,13 +78,24 @@ bool SafeGetenv(const char* key,
                 std::shared_ptr<KVStore> env_vars,
                 v8::Isolate* isolate) {
 #if !defined(__CloudABI__) && !defined(_WIN32)
+  // Avoid interacting with the system when diverged from the recording.
+  // We can call getenv(), but can't figure out user IDs.
+  if (!v8::recordreplay::HasDivergedFromRecording()) {
 #if defined(__linux__)
-  if ((!HasOnly(CAP_NET_BIND_SERVICE) && linux_at_secure()) ||
-      getuid() != geteuid() || getgid() != getegid())
+    // HasOnly() asks the kernel for this process's capabilities with
+    // capget(), which the recorder doesn't support. When recording or
+    // replaying, behave as if the process has more than CAP_NET_BIND_SERVICE,
+    // which is how this fork behaved before upstream added the check; the ||
+    // short-circuits, so capget() is never reached.
+    if (((v8::recordreplay::IsRecordingOrReplaying() ||
+          !HasOnly(CAP_NET_BIND_SERVICE)) &&
+         linux_at_secure()) ||
+        getuid() != geteuid() || getgid() != getegid())
 #else
-  if (linux_at_secure() || getuid() != geteuid() || getgid() != getegid())
+    if (linux_at_secure() || getuid() != geteuid() || getgid() != getegid())
 #endif
-    goto fail;
+      goto fail;
+  }
 #endif
 
   if (env_vars != nullptr) {
