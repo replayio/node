@@ -984,6 +984,9 @@ bool ScopeIterator::VisitLocals(const Visitor& visitor, Mode mode,
                   index);
         value =
             indirect_handle(Context::Get(context_, index, isolate_), isolate_);
+        // This index is sometimes out of range when gathering state using
+        // the Record Replay driver.
+        if (index >= context_->length()) continue;
         break;
 
       case VariableLocation::MODULE: {
