@@ -40,7 +40,6 @@ class PreparseData;
 
 class Parser;
 
-
 struct ParserFormalParameters : FormalParametersBase {
   struct Parameter : public ZoneObject {
     Parameter(Expression* pattern, Expression* initializer, int position,
@@ -489,7 +488,8 @@ class V8_EXPORT_PRIVATE Parser : public NON_EXPORTED_BASE(ParserBase<Parser>) {
   void AddTemplateExpression(TemplateLiteralState* state,
                              Expression* expression);
   Expression* CloseTemplateLiteral(TemplateLiteralState* state, int start,
-                                   Expression* tag);
+                                   Expression* tag,
+                                   int call_head_token_position = 0);
 
   ArrayLiteral* ArrayLiteralFromListWithSpread(
       const ScopedPtrList<Expression>& list);
@@ -592,9 +592,8 @@ class V8_EXPORT_PRIVATE Parser : public NON_EXPORTED_BASE(ParserBase<Parser>) {
 
   V8_INLINE bool IsNative(Expression* expr) const {
     DCHECK_NOT_NULL(expr);
-    return expr->IsVariableProxy() &&
-           expr->AsVariableProxy()->raw_name() ==
-               ast_value_factory()->native_string();
+    return expr->IsVariableProxy() && expr->AsVariableProxy()->raw_name() ==
+                                          ast_value_factory()->native_string();
   }
 
   V8_INLINE static bool IsArrayIndex(const AstRawString* string,
@@ -1059,7 +1058,7 @@ class V8_EXPORT_PRIVATE Parser : public NON_EXPORTED_BASE(ParserBase<Parser>) {
   }
 
   // Parser's private field members.
-  friend class PreParserZoneScope;  // Uses reusable_preparser().
+  friend class PreParserZoneScope;   // Uses reusable_preparser().
   friend class PreparseDataBuilder;  // Uses preparse_data_buffer()
 
   ParseInfo* info_;
