@@ -1631,13 +1631,16 @@ class CallBase : public Expression {
   SpreadPosition spread_position() const {
     return SpreadPositionField::decode(bit_field_);
   }
+  int call_head_token_position() const { return call_head_token_position_; }
 
  protected:
   CallBase(Zone* zone, NodeType type, Expression* expression,
-           const ScopedPtrList<Expression>& arguments, int pos, bool has_spread)
+           const ScopedPtrList<Expression>& arguments, int pos, bool has_spread,
+           int call_head_token_position)
       : Expression(pos, type),
         expression_(expression),
-        arguments_(arguments.ToConstVector(), zone) {
+        arguments_(arguments.ToConstVector(), zone),
+        call_head_token_position_(call_head_token_position) {
     DCHECK(type == kCall || type == kCallNew);
     if (has_spread) {
       ComputeSpreadPosition();
@@ -1656,6 +1659,7 @@ class CallBase : public Expression {
 
   Expression* expression_;
   ZonePtrList<Expression> arguments_;
+  int call_head_token_position_;
 };
 
 class Call final : public CallBase {
@@ -1703,8 +1707,10 @@ class Call final : public CallBase {
 
   Call(Zone* zone, Expression* expression,
        const ScopedPtrList<Expression>& arguments, int pos, bool has_spread,
+       int call_head_token_position,
        PossiblyEval possibly_eval, bool optional_chain)
-      : CallBase(zone, kCall, expression, arguments, pos, has_spread) {
+      : CallBase(zone, kCall, expression, arguments, pos, has_spread,
+                 call_head_token_position) {
     bit_field_ |=
         IsPossiblyEvalField::encode(possibly_eval == IS_POSSIBLY_EVAL) |
         IsTaggedTemplateField::encode(false) |
@@ -1713,8 +1719,9 @@ class Call final : public CallBase {
 
   Call(Zone* zone, Expression* expression,
        const ScopedPtrList<Expression>& arguments, int pos,
-       TaggedTemplateTag tag)
-      : CallBase(zone, kCall, expression, arguments, pos, false) {
+       TaggedTemplateTag tag, int call_head_token_position)
+      : CallBase(zone, kCall, expression, arguments, pos, false,
+                 call_head_token_position) {
     bit_field_ |= IsPossiblyEvalField::encode(false) |
                   IsTaggedTemplateField::encode(true) |
                   IsOptionalChainLinkField::encode(false);
@@ -1731,8 +1738,10 @@ class CallNew final : public CallBase {
   friend Zone;
 
   CallNew(Zone* zone, Expression* expression,
-          const ScopedPtrList<Expression>& arguments, int pos, bool has_spread)
-      : CallBase(zone, kCallNew, expression, arguments, pos, has_spread) {}
+          const ScopedPtrList<Expression>& arguments, int pos, bool has_spread,
+          int call_head_token_position)
+      : CallBase(zone, kCallNew, expression, arguments, pos, has_spread,
+                 call_head_token_position) {}
 };
 
 // The CallRuntime class does not represent any official JavaScript
@@ -3059,23 +3068,28 @@ class AstNodeFactory final {
   Call* NewCall(Expression* expression,
                 const ScopedPtrList<Expression>& arguments, int pos,
                 bool has_spread,
+                int call_head_token_position = 0,
                 Call::PossiblyEval possibly_eval = Call::NOT_EVAL,
                 bool optional_chain = false) {
     DCHECK_IMPLIES(possibly_eval == Call::IS_POSSIBLY_EVAL, !optional_chain);
     return zone_->New<Call>(zone_, expression, arguments, pos, has_spread,
+                            call_head_token_position,
                             possibly_eval, optional_chain);
   }
 
   Call* NewTaggedTemplate(Expression* expression,
-                          const ScopedPtrList<Expression>& arguments, int pos) {
+                          const ScopedPtrList<Expression>& arguments, int pos,
+                          int call_head_token_position) {
     return zone_->New<Call>(zone_, expression, arguments, pos,
-                            Call::TaggedTemplateTag::kTrue);
+                            Call::TaggedTemplateTag::kTrue,
+                            call_head_token_position);
   }
 
   CallNew* NewCallNew(Expression* expression,
                       const ScopedPtrList<Expression>& arguments, int pos,
-                      bool has_spread) {
-    return zone_->New<CallNew>(zone_, expression, arguments, pos, has_spread);
+                      bool has_spread, int call_head_token_position = 0) {
+    return zone_->New<CallNew>(zone_, expression, arguments, pos, has_spread,
+                               call_head_token_position);
   }
 
   CallRuntime* NewCallRuntime(Runtime::FunctionId id,
