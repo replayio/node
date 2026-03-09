@@ -55,6 +55,8 @@ RUNTIME_FUNCTION(Runtime_CompileLazy) {
   DCHECK_EQ(1, args.length());
   Handle<JSFunction> function = args.at<JSFunction>(0);
 
+  CHECK(isolate == function->GetIsolate());
+
   Handle<SharedFunctionInfo> sfi(function->shared(), isolate);
 
 #ifdef DEBUG
