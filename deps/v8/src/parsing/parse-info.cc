@@ -21,6 +21,8 @@
 namespace v8 {
 namespace internal {
 
+extern bool RecordReplayIgnoreScript(Script script);
+
 UnoptimizedCompileFlags::UnoptimizedCompileFlags(Isolate* isolate,
                                                  int script_id)
     : flags_(0),
@@ -157,6 +159,9 @@ void UnoptimizedCompileFlags::SetFlagsForFunctionFromScript(
 
   set_block_coverage_enabled(block_coverage_enabled() &&
                              script->IsUserJavaScript());
+  if (RecordReplayIgnoreScript(script)) {
+    set_record_replay_ignore(true);
+  }
 }
 
 ReusableUnoptimizedCompileState::ReusableUnoptimizedCompileState(
