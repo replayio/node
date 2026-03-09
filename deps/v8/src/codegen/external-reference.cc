@@ -504,6 +504,17 @@ ExternalReference ExternalReference::address_of_pending_message(
 
 FUNCTION_REFERENCE(abort_with_reason, i::abort_with_reason)
 
+extern uint64_t* gProgressCounter;
+extern uint64_t gTargetProgress;
+
+ExternalReference ExternalReference::record_replay_progress_counter() {
+  return ExternalReference(gProgressCounter);
+}
+
+ExternalReference ExternalReference::record_replay_target_progress() {
+  return ExternalReference(&gTargetProgress);
+}
+
 ExternalReference ExternalReference::address_of_min_int() {
   return ExternalReference(reinterpret_cast<Address>(&double_min_int_constant));
 }
