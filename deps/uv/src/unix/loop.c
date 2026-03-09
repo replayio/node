@@ -94,6 +94,7 @@ int uv_loop_init(uv_loop_t* loop) {
   err = uv_mutex_init(&loop->wq_mutex);
   if (err)
     goto fail_mutex_init;
+  uv_mutex_mark_ordered(&loop->wq_mutex);
 
   err = uv_async_init(loop, &loop->wq_async, uv__work_done);
   if (err)
