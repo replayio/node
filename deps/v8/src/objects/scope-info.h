@@ -178,6 +178,13 @@ class ScopeInfo : public TorqueGeneratedScopeInfo<ScopeInfo, HeapObject> {
   // Return the initialization flag of the given context local.
   MaybeAssignedFlag ContextLocalMaybeAssignedFlag(int var) const;
 
+  // Whether a session other than Replay's own is looking at a context local
+  // that a recording doesn't have in a context (see
+  // Variable::RecordReplayIsForced), so that session doesn't see it there.
+  bool RecordReplayHidesContextLocal(int var) const;
+  // Whether that context local is on the stack when recording.
+  bool RecordReplayContextLocalIsMovedFromStack(int var) const;
+
   // Return true if this local was introduced by the compiler, and should not be
   // exposed to the user in a debugger.
   static bool VariableIsSynthetic(String name);
