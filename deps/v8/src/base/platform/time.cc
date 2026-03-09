@@ -135,6 +135,10 @@ V8_INLINE int64_t NanosecondsNow() {
 }
 
 inline bool IsHighResolutionTimer(clockid_t clk_id) {
+  // Avoid interacting with the system when recording/replaying.
+  // Testing IsRecordingOrReplaying() here leads to link errors...
+  return true;
+
   // Currently this is only needed for CLOCK_MONOTONIC. If other clocks need
   // to be checked, care must be taken to support all platforms correctly;
   // see ClockNow() above for precedent.
