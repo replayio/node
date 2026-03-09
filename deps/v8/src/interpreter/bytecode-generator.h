@@ -57,6 +57,10 @@ class BytecodeGenerator final : public AstVisitor<BytecodeGenerator> {
   void VisitDeclarations(Declaration::List* declarations);
   void VisitStatements(const ZonePtrList<Statement>* statments);
 
+  // [RUN-3317] Shift breakpoint from |stmt| to |expr|, if |expr| exists.
+  void ReplayExpressionShiftedSetStatementPosition(Statement* stmt,
+                                                   Expression* expr);
+
  private:
   class AccumulatorPreservingScope;
   class ContextScope;
