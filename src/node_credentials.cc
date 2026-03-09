@@ -78,13 +78,17 @@ bool SafeGetenv(const char* key,
                 std::shared_ptr<KVStore> env_vars,
                 v8::Isolate* isolate) {
 #if !defined(__CloudABI__) && !defined(_WIN32)
+  // Avoid interacting with the system when diverged from the recording.
+  // We can call getenv(), but can't figure out user IDs.
+  if (!v8::recordreplay::HasDivergedFromRecording()) {
 #if defined(__linux__)
-  if ((!HasOnly(CAP_NET_BIND_SERVICE) && linux_at_secure()) ||
-      getuid() != geteuid() || getgid() != getegid())
+    if ((!HasOnly(CAP_NET_BIND_SERVICE) && linux_at_secure()) ||
+        getuid() != geteuid() || getgid() != getegid())
 #else
-  if (linux_at_secure() || getuid() != geteuid() || getgid() != getegid())
+    if (linux_at_secure() || getuid() != geteuid() || getgid() != getegid())
 #endif
-    goto fail;
+      goto fail;
+  }
 #endif
 
   if (env_vars != nullptr) {
