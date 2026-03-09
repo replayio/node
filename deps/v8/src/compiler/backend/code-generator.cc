@@ -7,6 +7,7 @@
 #include <optional>
 
 #include "src/base/bounds.h"
+#include "include/replayio.h"
 #include "src/base/iterator.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/codegen/macro-assembler-inl.h"
@@ -508,6 +509,8 @@ base::OwnedVector<uint8_t> CodeGenerator::GetProtectedInstructionsData() {
 }
 
 MaybeHandle<Code> CodeGenerator::FinalizeCode() {
+  replayio::AutoDisallowEvents disallow("CodeGenerator::FinalizeCode");
+
   if (result_ != kSuccess) {
     masm()->AbortedCodeGeneration();
     return {};
