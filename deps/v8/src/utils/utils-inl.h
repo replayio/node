@@ -9,6 +9,7 @@
 // Include the non-inl header before the rest of the headers.
 
 #include "include/v8-platform.h"
+#include "include/replayio.h"
 #include "src/base/platform/time.h"
 #include "src/base/strings.h"
 #include "src/init/v8.h"
@@ -26,6 +27,7 @@ class V8_NODISCARD TimedScope {
 
  private:
   static inline double TimestampMs() {
+    replayio::AutoPassThroughEvents pt;
     return V8::GetCurrentPlatform()->MonotonicallyIncreasingTime() *
            static_cast<double>(base::Time::kMillisecondsPerSecond);
   }
