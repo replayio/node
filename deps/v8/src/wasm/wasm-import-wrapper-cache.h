@@ -80,6 +80,8 @@ class WasmImportWrapperCache {
   WasmCode* MaybeGet(ImportCallKind kind, uint32_t canonical_type_index,
                      int expected_arity, Suspend suspend) const;
 
+  WasmImportWrapperCache();
+
   ~WasmImportWrapperCache();
 
  private:
