@@ -32,7 +32,8 @@ DebugStackTraceIterator::DebugStackTraceIterator(Isolate* isolate, int index)
     : isolate_(isolate),
       iterator_(isolate, isolate->debug()->break_frame_id()),
       is_top_frame_(true),
-      resumable_fn_on_stack_(false) {
+      resumable_fn_on_stack_(false),
+      invalid_(false) {
   if (iterator_.done()) return;
   UpdateInlineFrameIndexAndResumableFnOnStack();
   Advance();
@@ -44,6 +45,9 @@ DebugStackTraceIterator::~DebugStackTraceIterator() = default;
 bool DebugStackTraceIterator::Done() const { return iterator_.done(); }
 
 void DebugStackTraceIterator::Advance() {
+  if (invalid_) {
+    return;
+  }
   while (true) {
     --inlined_frame_index_;
     for (; inlined_frame_index_ >= 0; --inlined_frame_index_) {
@@ -64,7 +68,12 @@ void DebugStackTraceIterator::Advance() {
     iterator_.Advance();
     if (iterator_.done()) break;
     UpdateInlineFrameIndexAndResumableFnOnStack();
+    if (invalid_) break;
   }
+}
+
+bool DebugStackTraceIterator::IsValid() const {
+  return !invalid_;
 }
 
 int DebugStackTraceIterator::GetContextId() const {
@@ -237,7 +246,13 @@ bool DebugStackTraceIterator::CanBeRestarted() const {
 void DebugStackTraceIterator::UpdateInlineFrameIndexAndResumableFnOnStack() {
   CHECK(!iterator_.done());
 
-  FrameSummaries summaries = iterator_.frame()->Summarize();
+  FrameSummaries summaries =
+      iterator_.frame()->Summarize(/* allow_invalid */ true);
+  if (summaries.frames.empty()) {
+    // The Record Replay driver can stop with frames that cannot be summarized.
+    invalid_ = true;
+    return;
+  }
   inlined_frame_index_ = static_cast<int>(summaries.size());
 
   if (resumable_fn_on_stack_) return;
@@ -276,6 +291,16 @@ void DebugStackTraceIterator::PrepareRestart() {
 
   isolate_->debug()->PrepareRestartFrame(iterator_.javascript_frame(),
                                          inlined_frame_index_);
+}
+
+StackFrameId DebugStackTraceIterator::FrameId() {
+  DCHECK(!Done());
+  return iterator_.frame()->id();
+}
+
+int DebugStackTraceIterator::InlineFrameIndex() {
+  DCHECK(!Done());
+  return inlined_frame_index_;
 }
 
 }  // namespace internal
