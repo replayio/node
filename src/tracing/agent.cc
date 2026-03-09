@@ -38,6 +38,9 @@ std::unique_ptr<Agent, Agent::Deleter> Agent::CreateDefault() {
   g_agent = agent;
   TraceEventHelper::SetTracingController(agent->GetTracingController());
   return std::unique_ptr<Agent, Agent::Deleter>(agent);
+  // For now we don't support tracing when recording/replaying,
+  // due to non-deterministic behavior it can introduce.
+  v8::recordreplay::InvalidateRecording("Event tracing enabled");
 }
 
 }  // namespace tracing
