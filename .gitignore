@@ -17,6 +17,7 @@
 !.eslintrc.yaml
 !.gitattributes
 !.github
+!.buildkite
 !.gitignore
 !.gitkeep
 !.gitpod.yml
