@@ -247,6 +247,9 @@ static void MemoryUsage(const FunctionCallbackInfo<Value>& args) {
       array_buffer_allocator == nullptr
           ? 0
           : static_cast<double>(array_buffer_allocator->total_mem_usage());
+
+  // Ensure memory usage measurements are consistent when replaying.
+  v8::recordreplay::RecordReplayBytes("MemoryUsage", fields, 5 * sizeof(double));
 }
 
 static void GetConstrainedMemory(const FunctionCallbackInfo<Value>& args) {
@@ -760,6 +763,10 @@ static void SetEmitWarningSync(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   env->set_process_emit_warning_sync(args[0].As<Function>());
 }
+// See node_recordreplay.cc.
+void InitializeRecordReplayMethods(Environment* env, Local<Object> target);
+void RegisterRecordReplayExternalReferences(
+    ExternalReferenceRegistry* registry);
 
 static void CreatePerIsolateProperties(IsolateData* isolate_data,
                                        Local<ObjectTemplate> target) {
@@ -809,6 +816,7 @@ static void CreatePerContextProperties(Local<Object> target,
                                        void* priv) {
   Realm* realm = Realm::GetCurrent(context);
   realm->AddBindingData<BindingData>(target);
+  InitializeRecordReplayMethods(realm->env(), target);
 }
 
 void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
@@ -848,6 +856,7 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(LoadEnvFile);
 
   registry->Register(SetEmitWarningSync);
+  RegisterRecordReplayExternalReferences(registry);
 }
 
 }  // namespace process
