@@ -24,6 +24,8 @@ class ScavengeJob::Task : public CancelableTask {
 
   Isolate* isolate() const { return isolate_; }
 
+  bool IsRecordReplayNonDeterministic() const override { return true; }
+
  private:
   Isolate* const isolate_;
   ScavengeJob* const job_;
