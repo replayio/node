@@ -401,10 +401,14 @@ bool Worker::CreateEnvMessagePort(Environment* env) {
 }
 
 void Worker::JoinThread() {
+  v8::recordreplay::Assert("Worker::JoinThread");
+
   if (!tid_.has_value())
     return;
   CHECK_EQ(uv_thread_join(&tid_.value()), 0);
   tid_.reset();
+
+  v8::recordreplay::Assert("Worker::JoinThread Joined");
 
   env()->remove_sub_worker_context(this);
 
@@ -428,6 +432,7 @@ void Worker::JoinThread() {
             : Null(env()->isolate()).As<Value>(),
     };
 
+    v8::recordreplay::Assert("Worker::JoinThread Callback");
     MakeCallback(env()->onexit_string(), arraysize(args), args);
   }
 

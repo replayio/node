@@ -84,6 +84,8 @@ StreamWriteResult StreamBase::Write(uv_buf_t* bufs,
                                     uv_stream_t* send_handle,
                                     v8::Local<v8::Object> req_wrap_obj,
                                     bool skip_try_write) {
+  v8::recordreplay::Assert("StreamBase::Write %zu", count);
+
   Environment* env = stream_env();
   int err;
 
@@ -449,6 +451,8 @@ MaybeLocal<Value> StreamBase::CallJSOnreadMethod(ssize_t nread,
                                                  StreamBaseJSChecks checks) {
   Environment* env = env_;
 
+  v8::recordreplay::Assert("StreamBase::CallJSOnreadMethod");
+
   DCHECK_EQ(static_cast<int32_t>(nread), nread);
   DCHECK_LE(offset, INT32_MAX);
 
@@ -705,6 +709,8 @@ void CustomBufferJSListener::OnStreamRead(ssize_t nread, const uv_buf_t& buf) {
 
 void ReportWritesToJSStreamListener::OnStreamAfterReqFinished(
     StreamReq* req_wrap, int status) {
+  v8::recordreplay::Assert("ReportWritesToJSStreamListener::OnStreamAfterReqFinished");
+
   StreamBase* stream = static_cast<StreamBase*>(stream_);
   Environment* env = stream->stream_env();
   if (!env->can_call_into_js()) return;
