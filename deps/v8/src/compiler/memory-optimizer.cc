@@ -235,6 +235,9 @@ void MemoryOptimizer::VisitNode(Node* node, AllocationState const* state) {
       return VisitStoreField(node, state);
     case IrOpcode::kStore:
       return VisitStore(node, state);
+    case IrOpcode::kIncrementAndCheckProgressCounter:
+      // Note: this is the default behavior in VisitCall when allocations are possible.
+      return EnqueueUses(node, empty_state());
     default:
       if (!CanAllocate(node)) {
         // These operations cannot trigger GC.
