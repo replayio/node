@@ -208,10 +208,21 @@ static ScriptOrigin GetScriptOriginForScript(i::Isolate* i_isolate,
 
 // --- E x c e p t i o n   B e h a v i o r ---
 
+static __attribute__((noinline)) void BusyWait() {
+  fprintf(stderr, "Busy-waiting ... (pid %d)\n", getpid());
+  volatile int x = 1;
+  while (x) {}
+}
+
 // When V8 cannot allocate memory FatalProcessOutOfMemory is called. The default
 // OOM error handler is called and execution is stopped.
 void i::V8::FatalProcessOutOfMemory(i::Isolate* i_isolate, const char* location,
                                     const OOMDetails& details) {
+  gCrashReason = location;
+  if (getenv("RECORD_REPLAY_WAIT_AT_FATAL_ERROR")) {
+    BusyWait();
+  }
+
   char last_few_messages[Heap::kTraceRingBufferSize + 1];
   char js_stacktrace[Heap::kStacktraceBufferSize + 1];
   i::HeapStats heap_stats;
@@ -325,6 +336,9 @@ void Utils::ReportApiFailure(const char* location, const char* message) {
   if (callback == nullptr) {
     base::OS::PrintError("\n#\n# Fatal error in %s\n# %s\n#\n\n", location,
                          message);
+    if (getenv("RECORD_REPLAY_WAIT_AT_FATAL_ERROR")) {
+      BusyWait();
+    }
     base::OS::Abort();
   } else {
     callback(location, message);
