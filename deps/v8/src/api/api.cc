@@ -10439,7 +10439,7 @@ void RecordReplayOnConsoleMessage(size_t bookmark) {
   gRecordReplayOnConsoleMessage(bookmark);
 }
 
-static Handle<Object>* gCurrentException;
+Handle<Object>* gCurrentException;
 
 extern "C" void V8RecordReplayGetCurrentException(MaybeLocal<Value>* exception) {
   CHECK(IsMainThread());
