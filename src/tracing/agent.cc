@@ -232,6 +232,10 @@ void TracingController::AddMetadataEvent(
     const uint64_t* arg_values,
     std::unique_ptr<v8::ConvertableToTraceFormat>* convertable_values,
     unsigned int flags) {
+  // For now we don't support tracing when recording/replaying,
+  // due to non-deterministic behavior it can introduce.
+  v8::recordreplay::InvalidateRecording("Event tracing enabled");
+
   std::unique_ptr<TraceObject> trace_event(new TraceObject);
   trace_event->Initialize(
       TRACE_EVENT_PHASE_METADATA, category_group_enabled, name,
