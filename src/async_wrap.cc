@@ -550,6 +550,13 @@ void AsyncWrap::EmitDestroy(Environment* env, double async_id) {
     return;
   }
 
+  // This is called non-deterministically due to GC activity. For now we no-op
+  // it when recording/replaying, but could record/replay the set of IDs to
+  // destroy instead.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
   if (env->destroy_async_id_list()->empty()) {
     env->SetImmediate(&DestroyAsyncIdsCallback, CallbackFlags::kUnrefed);
   }
