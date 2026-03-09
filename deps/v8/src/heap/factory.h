@@ -933,7 +933,8 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
       MessageTemplate message, DirectHandle<Object> argument,
       int start_position, int end_position,
       DirectHandle<SharedFunctionInfo> shared_info, int bytecode_offset,
-      DirectHandle<Script> script, DirectHandle<Object> stack_frames);
+      DirectHandle<Script> script, DirectHandle<Object> stack_frames,
+      int record_replay_bookmark);
 
   Handle<DebugInfo> NewDebugInfo(DirectHandle<SharedFunctionInfo> shared);
 
