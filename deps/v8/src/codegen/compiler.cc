@@ -65,6 +65,8 @@
 namespace v8 {
 namespace internal {
 
+extern bool RecordReplayIgnoreScriptByURL(const char* url);
+
 namespace {
 
 class CompilerTracer : public AllStatic {
@@ -2652,11 +2654,26 @@ Handle<Script> NewScript(
   return script;
 }
 
+static void SetRecordReplayIgnoreByURL(UnoptimizedCompileFlags& flags,
+                                       const ScriptDetails& script_details) {
+  if (recordreplay::IsRecordingOrReplaying()) {
+    Handle<Object> script_name;
+    if (script_details.name_obj.ToHandle(&script_name)) {
+      std::unique_ptr<char[]> name_cstr = String::cast(*script_name).ToCString();
+      if (RecordReplayIgnoreScriptByURL(name_cstr.get())) {
+        flags.set_record_replay_ignore(true);
+      }
+    }
+  }
+}
+
 MaybeHandle<SharedFunctionInfo> CompileScriptOnMainThread(
-    const UnoptimizedCompileFlags flags, Handle<String> source,
+    UnoptimizedCompileFlags flags, Handle<String> source,
     const ScriptDetails& script_details, NativesFlag natives,
     v8::Extension* extension, Isolate* isolate,
     IsCompiledScope* is_compiled_scope) {
+  SetRecordReplayIgnoreByURL(flags, script_details);
+
   UnoptimizedCompileState compile_state(isolate);
   ParseInfo parse_info(isolate, flags, &compile_state);
   parse_info.set_extension(extension);
@@ -2966,6 +2983,8 @@ MaybeHandle<JSFunction> Compiler::GetWrappedFunction(
     // being omitted.
     flags.set_collect_source_positions(true);
     // flags.set_eager(compile_options == ScriptCompiler::kEagerCompile);
+
+    SetRecordReplayIgnoreByURL(flags, script_details);
 
     UnoptimizedCompileState compile_state(isolate);
     ParseInfo parse_info(isolate, flags, &compile_state);
