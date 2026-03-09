@@ -1135,6 +1135,10 @@ bool CompileTurbofan_NotConcurrent(Isolate* isolate,
 
 bool CompileTurbofan_Concurrent(Isolate* isolate,
                                 std::unique_ptr<TurbofanCompilationJob> job) {
+  // Optimization jobs are generated non-deterministically and we don't
+  // support posting non-deterministic tasks to other threads yet.
+  CHECK(!recordreplay::IsRecordingOrReplaying());
+
   OptimizedCompilationInfo* const compilation_info = job->compilation_info();
   DCHECK_EQ(compilation_info->code_kind(), CodeKind::TURBOFAN_JS);
   DirectHandle<JSFunction> function = compilation_info->closure();
