@@ -452,7 +452,18 @@ int uv__io_uring_register(int fd, unsigned opcode, void* arg, unsigned nargs) {
 }
 
 
+extern int V8RecordReplayIsRecording(void);
+extern int V8RecordReplayIsReplaying(void);
+
 static int uv__use_io_uring(uint32_t flags) {
+  /* The recorder does not bind io_uring: the operations it carries are
+   * submitted and completed through rings shared with the kernel rather than
+   * through calls it can intercept, so neither their results nor their order
+   * would be recorded. Without it, libuv runs the same operations on the
+   * threadpool, whose read/write/stat calls the recorder does bind. */
+  if (V8RecordReplayIsRecording() || V8RecordReplayIsReplaying())
+    return 0;
+
 #if defined(__ANDROID_API__)
   return 0;  /* Possibly available but blocked by seccomp. */
 #elif defined(__arm__) && __SIZEOF_POINTER__ == 4
