@@ -35,10 +35,18 @@ using v8::Value;
 // Nanoseconds in a millisecond, as a float.
 #define NANOS_PER_MILLIS 1e6
 
-const uint64_t performance_process_start = PERFORMANCE_NOW();
-const double performance_process_start_timestamp =
-    GetCurrentTimeInMicroseconds();
+// https://w3c.github.io/hr-time/#dfn-time-origin
+uint64_t performance_process_start;
+// https://w3c.github.io/hr-time/#dfn-time-origin-timestamp
+double performance_process_start_timestamp;
 uint64_t performance_v8_start;
+
+void InitPerformance() {
+  // Don't initialize these statically so they will have consistent values when
+  // recording/replaying.
+  performance_process_start = PERFORMANCE_NOW();
+  performance_process_start_timestamp = GetCurrentTimeInMicroseconds();
+}
 
 PerformanceState::PerformanceState(Isolate* isolate,
                                    uint64_t time_origin,
@@ -263,6 +271,9 @@ void Notify(const FunctionCallbackInfo<Value>& args) {
   AliasedUint32Array& observers = env->performance_state()->observers;
   if (entry_type != NODE_PERFORMANCE_ENTRY_TYPE_INVALID &&
       observers[entry_type]) {
+    // Performance entries can be non-deterministic and are not currently
+    // supported when recording/replaying.
+    v8::recordreplay::InvalidateRecording("Performance entries observed");
     USE(env->performance_entry_callback()->
       Call(env->context(), Undefined(env->isolate()), 1, &entry));
   }

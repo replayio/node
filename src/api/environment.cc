@@ -123,6 +123,12 @@ void* NodeArrayBufferAllocator::Allocate(size_t size) {
 }
 
 void* NodeArrayBufferAllocator::AllocateUninitialized(size_t size) {
+  // Whatever malloc leaves here differs between recording and replaying, and
+  // Buffer.allocUnsafe reaches this now: it used to allocate through Allocate,
+  // which zero-filled unless a flag said otherwise.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return Allocate(size);
+  }
   COUNT_GENERIC_USAGE("NodeArrayBufferAllocator.Allocate.Uninitialized");
   void* ret = allocator_->AllocateUninitialized(size);
   if (ret != nullptr) [[likely]] {
@@ -1177,7 +1183,10 @@ ThreadId AllocateEnvironmentThreadId() {
   exit(static_cast<int>(exit_code));
 }
 
+extern void RecordReplayFinishRecording();
+
 void DefaultProcessExitHandlerInternal(Environment* env, ExitCode exit_code) {
+  RecordReplayFinishRecording();
   env->set_stopping(true);
   env->set_can_call_into_js(false);
   env->stop_sub_worker_contexts();
