@@ -8,6 +8,8 @@
 #include <time.h>
 
 #include "absl/time/time.h"
+#include "v8.h"
+#include "include/replayio.h"
 #include "src/base/platform/time.h"
 
 #if V8_OS_WIN
@@ -35,8 +37,17 @@ bool ConditionVariable::WaitFor(Mutex* mutex, const TimeDelta& rel_time) {
   absl::Duration duration = absl::Nanoseconds(time);
 
   mutex->AssertHeldAndUnmark();
-  bool timed_out =
-      native_handle_.WaitWithTimeout(&mutex->native_handle_, duration);
+  bool timed_out;
+  {
+    // The clock read the timeout needs is absl's own since V8 13.6, where V8
+    // read it here and only that read was passed through. A plain mutex's
+    // wait runs for real when replaying, so neither the read nor the wait is
+    // recorded; waits which the replay has to agree on take an ordered mutex,
+    // whose waits never wait at all (see FutexEmulation).
+    v8::replayio::AutoPassThroughEvents pt;
+    timed_out =
+        native_handle_.WaitWithTimeout(&mutex->native_handle_, duration);
+  }
 
   mutex->AssertUnheldAndMark();
 
