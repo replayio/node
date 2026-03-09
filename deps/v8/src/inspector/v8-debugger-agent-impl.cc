@@ -1714,6 +1714,62 @@ Response V8DebuggerAgentImpl::setBlackboxedRanges(
   return Response::Success();
 }
 
+Response V8DebuggerAgentImpl::getCallFrames(
+    std::unique_ptr<protocol::Array<protocol::Debugger::CallFrame>>* out_callFrames) {
+  return currentCallFrames(out_callFrames);
+}
+
+Response V8DebuggerAgentImpl::getFrameLocations(
+    Maybe<double> maxFrames,
+    std::unique_ptr<Array<protocol::Debugger::Location>>* result) {
+  if (!isPaused()) {
+    *result = std::make_unique<Array<protocol::Debugger::Location>>();
+    return Response::Success();
+  }
+  v8::HandleScope handles(m_isolate);
+  *result = std::make_unique<Array<protocol::Debugger::Location>>();
+  auto iterator = v8::debug::StackTraceIterator::Create(m_isolate);
+  int frameOrdinal = 0;
+  for (; !iterator->Done(); iterator->Advance(), frameOrdinal++) {
+    if (!iterator->IsValid()) {
+      *result = std::make_unique<Array<protocol::Debugger::Location>>();
+      return Response::Success();
+    }
+    v8::debug::Location loc = iterator->GetSourceLocation();
+
+    v8::Local<v8::debug::Script> script = iterator->GetScript();
+    std::unique_ptr<protocol::Debugger::Location> location =
+        protocol::Debugger::Location::create()
+            .setScriptId(String16::fromInteger(script->Id()))
+            .setLineNumber(loc.GetLineNumber())
+            .setColumnNumber(loc.GetColumnNumber())
+            .build();
+    (*result)->emplace_back(std::move(location));
+    if ((*result)->size() >= maxFrames.fromMaybe(std::numeric_limits<double>::max())) {
+      break;
+    }
+  }
+  return Response::Success();
+}
+
+extern "C" void V8RecordReplayGetCurrentException(v8::MaybeLocal<v8::Value>* exception);
+
+Response V8DebuggerAgentImpl::getPendingException(
+    std::unique_ptr<RemoteObject>* out_exception) {
+  v8::MaybeLocal<v8::Value> maybe_exception;
+  V8RecordReplayGetCurrentException(&maybe_exception);
+
+  CHECK(!maybe_exception.IsEmpty());
+
+  v8::Local<v8::Context> context = m_isolate->GetCurrentContext();
+  v8::Local<v8::Value> exception = maybe_exception.ToLocalChecked();
+  std::unique_ptr<RemoteObject> obj =
+    m_session->wrapObject(context, exception, String16(), false);
+
+  *out_exception = std::move(obj);
+  return Response::Success();
+}
+
 Response V8DebuggerAgentImpl::currentCallFrames(
     std::unique_ptr<Array<CallFrame>>* result) {
   if (!isPaused()) {
@@ -1725,6 +1781,18 @@ Response V8DebuggerAgentImpl::currentCallFrames(
   auto iterator = v8::debug::StackTraceIterator::Create(m_isolate);
   int frameOrdinal = 0;
   for (; !iterator->Done(); iterator->Advance(), frameOrdinal++) {
+    // When recording/replaying we can get into situations where the current
+    // stack cannot be read, e.g. when an exception is being thrown and frame
+    // data is not available for an optimized frame on the stack. For now we
+    // workaround this by detecting such cases and returning an empty array of
+    // frames to avoid crashing.
+    if (!iterator->IsValid()) {
+      v8::recordreplay::Print("V8DebuggerAgentImpl::currentCallFrames CantAdvance");
+      v8::recordreplay::Diagnostic("V8DebuggerAgentImpl::currentCallFrames CantAdvance");
+      *result = std::make_unique<Array<CallFrame>>();
+      return Response::Success();
+    }
+
     int contextId = iterator->GetContextId();
     InjectedScript* injectedScript = nullptr;
     if (contextId) m_session->findInjectedScript(contextId, injectedScript);
@@ -1819,6 +1887,13 @@ V8DebuggerAgentImpl::currentExternalStackTrace() {
 }
 
 bool V8DebuggerAgentImpl::isPaused() const {
+  // Replay's pause scripts inspect the stack (Debugger.getCallFrames,
+  // Debugger.evaluateOnCallFrame) at replay points where V8 isn't stopped in
+  // the debugger. The recording has to behave the same, or a session's
+  // Debugger events would differ between the recording and the replay.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return true;
+  }
   return m_debugger->isPausedInContextGroup(m_session->contextGroupId());
 }
 
@@ -2306,4 +2381,16 @@ void V8DebuggerAgentImpl::stop() {
   disable();
   m_enableState = kStopping;
 }
+
+std::unique_ptr<protocol::Runtime::RemoteObject>
+V8DebuggerAgentImpl::wrapObject(int context_id, v8::Local<v8::Value> val) {
+  InjectedScript* injectedScript = nullptr;
+  m_session->findInjectedScript(context_id, injectedScript);
+
+  std::unique_ptr<protocol::Runtime::RemoteObject> rv;
+  injectedScript->wrapObject(val, kBacktraceObjectGroup,
+                             WrapMode::kNoPreview, &rv);
+  return rv;
+}
+
 }  // namespace v8_inspector
