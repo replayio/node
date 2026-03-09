@@ -581,6 +581,7 @@ int FileHandle::DoShutdown(ShutdownWrap* req_wrap) {
 
 
 void FSReqCallback::Reject(Local<Value> reject) {
+  v8::recordreplay::Assert("FSReqCallback::Reject");
   MakeCallback(env()->oncomplete_string(), 1, &reject);
 }
 
@@ -589,6 +590,7 @@ void FSReqCallback::ResolveStat(const uv_stat_t* stat) {
 }
 
 void FSReqCallback::Resolve(Local<Value> value) {
+  v8::recordreplay::Assert("FSReqCallback::Resolve");
   Local<Value> argv[2] {
     Null(env()->isolate()),
     value
@@ -1008,6 +1010,9 @@ static void InternalModuleStat(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsString());
   node::Utf8Value path(env->isolate(), args[0]);
 
+  v8::recordreplay::Assert("fs::InternalModuleStat %zu", path.length());
+  v8::recordreplay::AssertBytes("fs::InternalModuleStat Path", *path, path.length());
+
   uv_fs_t req;
   int rc = uv_fs_stat(env->event_loop(), &req, *path, nullptr);
   if (rc == 0) {
@@ -1016,6 +1021,7 @@ static void InternalModuleStat(const FunctionCallbackInfo<Value>& args) {
   }
   uv_fs_req_cleanup(&req);
 
+  v8::recordreplay::Assert("fs::InternalModuleStat Result %d", rc);
   args.GetReturnValue().Set(rc);
 }
 
@@ -1855,6 +1861,11 @@ static void WriteBuffer(const FunctionCallbackInfo<Value>& args) {
 
   char* buf = buffer_data + off;
   uv_buf_t uvbuf = uv_buf_init(buf, len);
+
+  // https://github.com/RecordReplay/backend/issues/4792
+  v8::recordreplay::AssertScriptedCaller(args.GetIsolate(), "fs::WriteBuffer");
+  v8::recordreplay::Assert("fs::WriteBuffer %d %zu %zu %zu",
+                           fd, off, len, (size_t)pos);
 
   FSReqBase* req_wrap_async = GetReqWrap(args, 5);
   if (req_wrap_async != nullptr) {  // write(fd, buffer, off, len, pos, req)
