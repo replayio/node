@@ -1533,7 +1533,7 @@ class ParserBase {
 
   // Parser base's protected field members.
 
-  Scope* scope_;                   // Scope stack.
+  Scope* scope_;  // Scope stack.
   // Stack of scopes for object literals we're currently parsing.
   Scope* object_literal_scope_ = nullptr;
   Scope* original_scope_;  // The top scope for the current parsing item.
@@ -3140,9 +3140,14 @@ ParserBase<Impl>::ParseBinaryContinuation(ExpressionT x, int prec, int prec1) {
         // We have a comparison.
         Token::Value cmp = op;
         switch (op) {
-          case Token::NE: cmp = Token::EQ; break;
-          case Token::NE_STRICT: cmp = Token::EQ_STRICT; break;
-          default: break;
+          case Token::NE:
+            cmp = Token::EQ;
+            break;
+          case Token::NE_STRICT:
+            cmp = Token::EQ_STRICT;
+            break;
+          default:
+            break;
         }
         x = factory()->NewCompareOperation(cmp, x, y, pos);
         if (cmp != op) {
@@ -3367,6 +3372,7 @@ ParserBase<Impl>::ParseLeftHandSideContinuation(ExpressionT result) {
 
     ExpressionListT args(pointer_buffer());
     bool has_spread;
+    int call_head_token_position = peek_position();
     ParseArguments(&args, &has_spread, kMaybeArrowHead);
     if (V8_LIKELY(peek() == Token::ARROW)) {
       fni_.RemoveAsyncKeywordFromEnd();
@@ -3380,7 +3386,8 @@ ParserBase<Impl>::ParseLeftHandSideContinuation(ExpressionT result) {
       return result;
     }
 
-    result = factory()->NewCall(result, args, pos, has_spread);
+    result = factory()->NewCall(result, args, pos, has_spread,
+                                call_head_token_position);
 
     maybe_arrow.ValidateExpression();
 
@@ -3457,6 +3464,7 @@ ParserBase<Impl>::ParseLeftHandSideContinuation(ExpressionT result) {
         }
         bool has_spread;
         ExpressionListT args(pointer_buffer());
+        int call_head_token_position = peek_position();
         ParseArguments(&args, &has_spread);
 
         // Keep track of eval() calls since they disable all local variable
@@ -3470,7 +3478,8 @@ ParserBase<Impl>::ParseLeftHandSideContinuation(ExpressionT result) {
             CheckPossibleEvalCall(result, is_optional, scope());
 
         result = factory()->NewCall(result, args, pos, has_spread,
-                                    is_possibly_eval, is_optional);
+                                    call_head_token_position, is_possibly_eval,
+                                    is_optional);
 
         fni_.RemoveLastFunction();
         break;
@@ -3548,9 +3557,11 @@ ParserBase<Impl>::ParseMemberWithPresentNewPrefixesExpression() {
     {
       ExpressionListT args(pointer_buffer());
       bool has_spread;
+      int call_head_token_position = peek_position();
       ParseArguments(&args, &has_spread);
 
-      result = factory()->NewCallNew(result, args, new_pos, has_spread);
+      result = factory()->NewCallNew(result, args, new_pos, has_spread,
+                                     call_head_token_position);
     }
     // The expression can still continue with . or [ after the arguments.
     return ParseMemberExpressionContinuation(result);
@@ -4834,6 +4845,7 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseTemplateLiteral(
 
   Consume(Token::TEMPLATE_SPAN);
   int pos = position();
+  int call_head_token_position = pos;
   typename Impl::TemplateLiteralState ts = impl()->OpenTemplateLiteral(pos);
   bool is_valid = CheckTemplateEscapes(forbid_illegal_escapes);
   impl()->AddTemplateSpan(&ts, is_valid, false);
@@ -4869,7 +4881,8 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseTemplateLiteral(
 
   DCHECK_IMPLIES(!has_error(), next == Token::TEMPLATE_TAIL);
   // Once we've reached a TEMPLATE_TAIL, we can close the TemplateLiteral.
-  return impl()->CloseTemplateLiteral(&ts, start, tag);
+  return impl()->CloseTemplateLiteral(&ts, start, tag,
+                                      call_head_token_position);
 }
 
 template <typename Impl>
@@ -6408,9 +6421,9 @@ void ParserBase<Impl>::CheckClassMethodName(IdentifierT name,
     if (flags != ParseFunctionFlag::kIsNormal || IsAccessor(type)) {
       MessageTemplate msg = (flags & ParseFunctionFlag::kIsGenerator) != 0
                                 ? MessageTemplate::kConstructorIsGenerator
-                                : (flags & ParseFunctionFlag::kIsAsync) != 0
-                                      ? MessageTemplate::kConstructorIsAsync
-                                      : MessageTemplate::kConstructorIsAccessor;
+                            : (flags & ParseFunctionFlag::kIsAsync) != 0
+                                ? MessageTemplate::kConstructorIsAsync
+                                : MessageTemplate::kConstructorIsAccessor;
       ReportMessage(msg);
       return;
     }
