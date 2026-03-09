@@ -78,9 +78,6 @@ class BaselineAssembler {
   inline void JumpIfPointer(Condition cc, Register value, MemOperand operand,
                             Label* target,
                             Label::Distance distance = Label::kFar);
-  inline void JumpIfCondition(Condition cc, Label* target,
-                              Label::Distance distance = Label::kFar);
-  inline void ComparePointer(Register value, MemOperand operand);
   inline Condition CheckSmi(Register value);
   inline void JumpIfSmi(Condition cc, Register value, Tagged<Smi> smi,
                         Label* target, Label::Distance distance = Label::kFar);
@@ -218,7 +215,6 @@ class BaselineAssembler {
   inline void SmiUntag(Register output, Register value);
 
   inline void Word32And(Register output, Register lhs, int rhs);
-  inline void AddPointer(Register output, Immediate value);
 
   inline void Switch(Register reg, int case_value_base, Label** labels,
                      int num_labels);

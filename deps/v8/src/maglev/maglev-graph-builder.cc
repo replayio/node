@@ -10772,6 +10772,37 @@ void MaglevGraphBuilder::VisitIncBlockCounter() {
   BuildCallBuiltin<Builtin::kIncBlockCounter>({closure, coverage_array_slot});
 }
 
+// The record/replay bytecodes reach this builder because turboshaft's
+// maglev-graph-building-phase links against it, and Maglev itself would run
+// them once enabled. Each one makes the VM call its runtime function, as the
+// interpreter does: Maglev has no equivalent of TurboFan's inline progress
+// counter, and the instrumentation calls have to run on every tier.
+void MaglevGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
+  BuildCallRuntime(Runtime::kRecordReplayAssertExecutionProgress,
+                   {GetClosure()});
+}
+
+void MaglevGraphBuilder::VisitRecordReplayInstrumentation() {
+  ValueNode* index = GetSmiConstant(iterator_.GetIndexOperand(0));
+  BuildCallRuntime(Runtime::kRecordReplayInstrumentation,
+                   {GetClosure(), index});
+}
+
+void MaglevGraphBuilder::VisitRecordReplayInstrumentationGenerator() {
+  ValueNode* index = GetSmiConstant(iterator_.GetIndexOperand(0));
+  ValueNode* generator = LoadRegisterTagged(1);
+  BuildCallRuntime(Runtime::kRecordReplayInstrumentationGenerator,
+                   {GetClosure(), index, generator});
+}
+
+// Returns the accumulator, as the other tiers' calls do.
+void MaglevGraphBuilder::VisitRecordReplayAssertValue() {
+  ValueNode* index = GetSmiConstant(iterator_.GetIndexOperand(0));
+  ValueNode* value = GetAccumulatorTagged();
+  SetAccumulator(BuildCallRuntime(Runtime::kRecordReplayAssertValue,
+                                  {GetClosure(), index, value}));
+}
+
 void MaglevGraphBuilder::VisitAbort() {
   AbortReason reason = static_cast<AbortReason>(GetFlag8Operand(0));
   BuildAbort(reason);
