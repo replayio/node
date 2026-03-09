@@ -45,6 +45,7 @@ class Zone;
   V(is_toplevel, bool, 1, _)                             \
   V(is_eager, bool, 1, _)                                \
   V(is_eval, bool, 1, _)                                 \
+  V(record_replay_ignore, bool, 1, _)                    \
   V(outer_language_mode, LanguageMode, 1, _)             \
   V(parse_restriction, ParseRestriction, 1, _)           \
   V(is_module, bool, 1, _)                               \
