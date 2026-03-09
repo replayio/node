@@ -473,6 +473,7 @@
   V(FindOrderedHashMapEntry)            \
   V(FindOrderedHashMapEntryForInt32Key) \
   V(FindOrderedHashSetEntry)            \
+  V(IncrementAndCheckProgressCounter)   \
   V(InitializeImmutableInObject)        \
   V(LoadDataViewElement)                \
   V(LoadElement)                        \
