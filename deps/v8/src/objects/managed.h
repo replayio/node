@@ -98,6 +98,11 @@ class Managed : public Foreign {
   // to actually delete the shared pointer and decrement the shared refcount.
   static void Destructor(void* ptr) {
     auto shared_ptr_ptr = reinterpret_cast<std::shared_ptr<CppType>*>(ptr);
+    // Not the shared pointer's use count: other isolates share the object
+    // (e.g. a wasm NativeModule shared with workers) and release their
+    // references on their own threads, which nothing orders with this one,
+    // so the count differs when replaying.
+    recordreplay::Assert("Managed::Destructor");
     delete shared_ptr_ptr;
   }
 };
