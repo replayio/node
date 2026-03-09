@@ -517,6 +517,10 @@ bool UseAsmWasm(FunctionLiteral* literal, bool asm_wasm_broken) {
   // invalid module instantiation attempts are off limit forever.
   if (asm_wasm_broken) return false;
 
+  // Instrumentation added when recording/replaying requires that scripts be
+  // compiled in the regular way. (Chromium feature: no-asm-wasm)
+  if (recordreplay::IsRecordingOrReplaying()) return false;
+
   // In stress mode we want to run the validator on everything.
   if (FLAG_stress_validate_asm) return true;
 
