@@ -395,7 +395,13 @@ DebuggableStackFrameIterator::DebuggableStackFrameIterator(Isolate* isolate)
 DebuggableStackFrameIterator::DebuggableStackFrameIterator(Isolate* isolate,
                                                            StackFrameId id)
     : DebuggableStackFrameIterator(isolate) {
-  while (!done() && frame()->id() != id) Advance();
+  if (id == NO_ID) {
+    // Support stack trace iteration when stopped by the Record Replay driver,
+    // where there is no break frame.
+    if (!done() && !IsValidFrame(iterator_.frame())) Advance();
+  } else {
+    while (!done() && frame()->id() != id) Advance();
+  }
 }
 
 void DebuggableStackFrameIterator::Advance() {
@@ -1241,7 +1247,7 @@ void ExitFrame::FillState(Address fp, Address sp, State* state) {
   state->constant_pool_address = nullptr;
 }
 
-FrameSummaries BuiltinExitFrame::Summarize(bool never_allocate) const {
+FrameSummaries BuiltinExitFrame::Summarize(bool never_allocate, bool allow_invalid) const {
   DirectHandle<FixedArray> parameters = GetParameters(never_allocate);
   DisallowGarbageCollection no_gc;
   Tagged<Code> code;
@@ -1386,7 +1392,7 @@ DirectHandle<FixedArray> ApiCallbackExitFrame::GetParameters(
 }
 
 FrameSummaries ApiCallbackExitFrame::SummarizeApiFrame(
-    bool is_constructor, bool never_allocate) const {
+    bool is_constructor, bool never_allocate, bool allow_invalid) const {
   DirectHandle<JSFunction> function = GetFunction(never_allocate);
   if (function.is_null()) {
     // GetFunction() would need to instantiate the function, skip this frame.
@@ -1434,7 +1440,7 @@ static_assert(FC::kPropertyCallbackInfoSetterApiArgsLength ==
 
 }  // namespace ensure_PropertyCallbackInfo_layout
 
-FrameSummaries ApiAccessorExitFrame::Summarize(bool never_allocate) const {
+FrameSummaries ApiAccessorExitFrame::Summarize(bool never_allocate, bool allow_invalid) const {
   // Theses kinds of frames are not supposed to appear in exception stack
   // traces.
   DCHECK_IMPLIES(
@@ -1603,7 +1609,7 @@ void CommonFrame::ComputeCallerState(State* state) const {
       fp() + StandardFrameConstants::kConstantPoolOffset);
 }
 
-FrameSummaries CommonFrame::Summarize(bool never_allocate) const {
+FrameSummaries CommonFrame::Summarize(bool never_allocate, bool allow_invalid) const {
   // This should only be called on frames which override this method.
   UNREACHABLE();
 }
@@ -2465,7 +2471,7 @@ int StubFrame::LookupExceptionHandlerInTable() {
   return table.LookupReturn(pc_offset);
 }
 
-FrameSummaries StubFrame::Summarize(bool never_allocate) const {
+FrameSummaries StubFrame::Summarize(bool never_allocate, bool allow_invalid) const {
   FrameSummaries summaries;
 #if V8_ENABLE_WEBASSEMBLY
   Tagged<Code> code = LookupCode();
@@ -2563,7 +2569,7 @@ bool CommonFrameWithJSLinkage::IsConstructor() const {
   return IsConstructFrame(caller_fp());
 }
 
-FrameSummaries CommonFrameWithJSLinkage::Summarize(bool never_allocate) const {
+FrameSummaries CommonFrameWithJSLinkage::Summarize(bool never_allocate, bool allow_invalid) const {
   Tagged<GcSafeCode> gcsafe_code;
   int offset = -1;
   std::tie(gcsafe_code, offset) = GcSafeLookupCodeAndOffset();
@@ -3138,7 +3144,7 @@ FRAME_SUMMARY_DISPATCH(DirectHandle<StackFrameInfo>, CreateStackFrameInfo)
 #undef CASE_WASM_INTERPRETED
 #undef FRAME_SUMMARY_DISPATCH
 
-FrameSummaries OptimizedJSFrame::Summarize(bool never_allocate) const {
+FrameSummaries OptimizedJSFrame::Summarize(bool never_allocate, bool allow_invalid) const {
   DCHECK(is_optimized());
   FrameSummaries summaries;
 
@@ -3147,7 +3153,7 @@ FrameSummaries OptimizedJSFrame::Summarize(bool never_allocate) const {
   DirectHandle<Code> code(LookupCode(), isolate());
   if (code->kind() == CodeKind::BUILTIN ||
       code->kind() == CodeKind::FOR_TESTING_JS) {
-    return JavaScriptFrame::Summarize(never_allocate);
+    return JavaScriptFrame::Summarize(never_allocate, allow_invalid);
   }
   DCHECK_NE(code->kind(), CodeKind::FOR_TESTING);
 
@@ -3175,6 +3181,9 @@ FrameSummaries OptimizedJSFrame::Summarize(bool never_allocate) const {
     }
 
     CHECK(data.is_null());
+    if (allow_invalid) {
+      return {};
+    }
     FATAL(
         "Missing deoptimization information for OptimizedJSFrame::Summarize.");
   }
@@ -3548,7 +3557,7 @@ Tagged<Object> UnoptimizedJSFrame::ReadInterpreterRegister(
   return GetExpression(index + register_index);
 }
 
-FrameSummaries UnoptimizedJSFrame::Summarize(bool never_allocate) const {
+FrameSummaries UnoptimizedJSFrame::Summarize(bool never_allocate, bool allow_invalid) const {
   DirectHandle<AbstractCode> abstract_code(
       Cast<AbstractCode>(GetBytecodeArray()), isolate());
   DirectHandle<FixedArray> params = GetParameters(never_allocate);
@@ -3701,7 +3710,7 @@ Tagged<Object> WasmFrame::context() const {
   return trusted_instance_data()->native_context();
 }
 
-FrameSummaries WasmFrame::Summarize(bool never_allocate) const {
+FrameSummaries WasmFrame::Summarize(bool never_allocate, bool allow_invalid) const {
   FrameSummaries summaries;
   // The {WasmCode*} escapes this scope via the {FrameSummary}, which is fine,
   // since this code object is part of our stack.
@@ -4036,7 +4045,7 @@ void WasmInterpreterEntryFrame::Print(StringStream* accumulator, PrintMode mode,
   if (mode != OVERVIEW) accumulator->Add("\n");
 }
 
-FrameSummaries WasmInterpreterEntryFrame::Summarize(bool never_allocate) const {
+FrameSummaries WasmInterpreterEntryFrame::Summarize(bool never_allocate, bool allow_invalid) const {
   FrameSummaries summaries;
   Handle<WasmInstanceObject> instance(wasm_instance(), isolate());
   std::vector<WasmInterpreterStackEntry> interpreted_stack =
