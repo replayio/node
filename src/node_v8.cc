@@ -153,12 +153,19 @@ void CachedDataVersionTag(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(result);
 }
 
+static inline double RecordReplayDouble(const char* why, double d) {
+  v8::recordreplay::RecordReplayBytes("UpdateHeapStatisticsBuffer", &d, sizeof(d));
+  return d;
+}
+
 void UpdateHeapStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
   BindingData* data = Environment::GetBindingData<BindingData>(args);
   HeapStatistics s;
   args.GetIsolate()->GetHeapStatistics(&s);
   AliasedFloat64Array& buffer = data->heap_statistics_buffer;
-#define V(index, name, _) buffer[index] = static_cast<double>(s.name());
+#define V(index, name, _) \
+    buffer[index] = RecordReplayDouble("UpdateHeapStatisticsBuffer", \
+                                       static_cast<double>(s.name()));
   HEAP_STATISTICS_PROPERTIES(V)
 #undef V
 }
@@ -174,7 +181,9 @@ void UpdateHeapSpaceStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
 
   AliasedFloat64Array& buffer = data->heap_space_statistics_buffer;
 
-#define V(index, name, _) buffer[index] = static_cast<double>(s.name());
+#define V(index, name, _) \
+    buffer[index] = RecordReplayDouble("UpdateHeapSpaceStatisticsBuffer", \
+                                       static_cast<double>(s.name()));
   HEAP_SPACE_STATISTICS_PROPERTIES(V)
 #undef V
 }
@@ -185,7 +194,9 @@ void UpdateHeapCodeStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
   args.GetIsolate()->GetHeapCodeAndMetadataStatistics(&s);
   AliasedFloat64Array& buffer = data->heap_code_statistics_buffer;
 
-#define V(index, name, _) buffer[index] = static_cast<double>(s.name());
+#define V(index, name, _) \
+    buffer[index] = RecordReplayDouble("UpdateHeapCodeStatisticsBuffer", \
+                                       static_cast<double>(s.name()));
   HEAP_CODE_STATISTICS_PROPERTIES(V)
 #undef V
 }
