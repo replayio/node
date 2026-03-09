@@ -3,8 +3,12 @@
 
 // This file needs to be compatible with C compilers.
 #include <string.h>  // NOLINT(modernize-deprecated-headers)
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 #include "js_native_api_types.h"
 #include "js_native_api_v8_internals.h"
+#include "node_deferred_finalization.h"
 
 static napi_status napi_clear_last_error(napi_env env);
 
@@ -49,6 +53,10 @@ class RefTracker {
   RefList* prev_ = nullptr;
 };
 
+}  // end of namespace v8impl
+
+namespace v8impl {
+class Reference;
 }  // end of namespace v8impl
 
 struct napi_env__ {
@@ -116,6 +124,14 @@ struct napi_env__ {
   // have such a callback. See `~napi_env__()` above for details.
   v8impl::RefTracker::RefList reflist;
   v8impl::RefTracker::RefList finalizing_reflist;
+
+  // When recording/replaying, references the module can read, by their
+  // record/replay id. See v8impl::Reference::RecordReplayTrack.
+  int record_replay_last_ref_id = 0;
+  std::unordered_map<int, v8impl::Reference*> record_replay_refs;
+  // Ids of those references whose value the GC collected since they were last
+  // flushed to the recording, and which were not finalized or deleted since.
+  std::unordered_set<int> record_replay_cleared_refs;
   napi_extended_error_info last_error;
   int open_handle_scopes = 0;
   int open_callback_scopes = 0;
@@ -423,12 +439,18 @@ class Reference : public RefBase {
   uint32_t Unref();
   v8::Local<v8::Value> Get();
 
+  // Record/replay id, if this reference is tracked.
+  int RecordReplayId() const { return _record_replay_id; }
+  static void RecordReplayFlushClearedRefs(napi_env env);
+  void RecordReplayFinalize() override;
+
  protected:
   void Finalize(bool is_env_teardown = false) override;
 
  private:
   void ClearWeak();
   void SetWeak();
+  void RecordReplayTrack();
 
   static void FinalizeCallback(
       const v8::WeakCallbackInfo<SecondPassCallParameterRef>& data);
