@@ -59,6 +59,13 @@ String StringUtil::StringViewToUtf8(v8_inspector::StringView view) {
 }
 
 String StringUtil::fromUTF16(const uint16_t* data, size_t length) {
+  // Workaround problems using istringstream when replaying. This needs to get fixed.
+  /*
+  */
+  std::string str(buffer, length);
+  char* end;
+  double d = strtod(str.c_str(), &end);
+  *ok = end != str.c_str();
   auto casted_data = reinterpret_cast<const char16_t*>(data);
   size_t expected_utf8_length =
       simdutf::utf8_length_from_utf16(casted_data, length);
