@@ -158,7 +158,7 @@ class RequestQueueData {
   uv_async_t async_;
   InspectorSocketServer* server_ = nullptr;
   MessageQueue messages_;
-  Mutex state_lock_;  // Locked before mutating the queue.
+  Mutex state_lock_ { /* ordered */ true };  // Locked before mutating the queue.
   ConditionVariable incoming_message_cond_;
 };
 }  // namespace
@@ -187,7 +187,7 @@ class RequestQueue {
 
  private:
   RequestQueueData* data_;
-  Mutex lock_;
+  Mutex lock_ { /* ordered */ true };
 };
 
 class IoSessionDelegate : public InspectorSessionDelegate {
