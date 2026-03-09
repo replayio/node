@@ -478,6 +478,7 @@ class V8_EXPORT_PRIVATE StackTraceIterator {
 
   virtual bool Done() const = 0;
   virtual void Advance() = 0;
+  virtual bool IsValid() const = 0;
 
   virtual int GetContextId() const = 0;
   virtual v8::MaybeLocal<v8::Value> GetReceiver() const = 0;
@@ -490,6 +491,9 @@ class V8_EXPORT_PRIVATE StackTraceIterator {
 
   virtual v8::MaybeLocal<v8::Value> Evaluate(v8::Local<v8::String> source,
                                              bool throw_on_side_effect) = 0;
+
+  virtual internal::StackFrameId FrameId() = 0;
+  virtual int InlineFrameIndex() = 0;
 };
 
 class QueryObjectPredicate {
