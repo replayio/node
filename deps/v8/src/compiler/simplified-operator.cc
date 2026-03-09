@@ -952,7 +952,6 @@ bool operator==(AssertNotNullParameters const& lhs,
   V(StringCodePointAt, Operator::kNoProperties, 2, 1)     \
   V(StringFromCodePointAt, Operator::kNoProperties, 2, 1) \
   V(StringSubstring, Operator::kNoProperties, 3, 1)       \
-  V(DateNow, Operator::kNoProperties, 0, 1)               \
   V(DoubleArrayMax, Operator::kNoProperties, 1, 1)        \
   V(DoubleArrayMin, Operator::kNoProperties, 1, 1)
 
@@ -1035,6 +1034,13 @@ struct SimplifiedOperatorGlobalCache final {
   Name##Operator k##Name;
   EFFECT_DEPENDENT_OP_LIST(EFFECT_DEPENDENT)
 #undef EFFECT_DEPENDENT
+
+  struct DateNowOperator final : public Operator {
+    DateNowOperator()
+        : Operator(IrOpcode::kDateNow, Operator::kEliminatable, "DateNow", 0,
+                   1, 1, 1, 1, 0) {}
+  };
+  DateNowOperator kDateNow;
 
 #define CHECKED(Name, value_input_count, value_output_count)             \
   struct Name##Operator final : public Operator {                        \
@@ -2522,6 +2528,27 @@ const Operator* SimplifiedOperatorBuilder::TransitionAndStoreNumberElement(
       IrOpcode::kTransitionAndStoreNumberElement,
       Operator::kNoDeopt | Operator::kNoThrow,
       "TransitionAndStoreNumberElement", 3, 1, 1, 0, 1, 0, parameters);
+}
+
+// Every time read is recorded, so when recording or replaying, optimized code
+// has to read the time exactly as often as the bytecode does. Reading it counts
+// as a write here, so the checkpoint after it isn't dropped as redundant and an
+// eager deoptimization after it doesn't resume before it and read it again.
+const Operator* SimplifiedOperatorBuilder::DateNow() {
+  if (!recordreplay::IsRecordingOrReplaying()) return &cache_.kDateNow;
+  return zone()->New<Operator>(IrOpcode::kDateNow,
+                               Operator::kNoDeopt | Operator::kNoThrow,
+                               "DateNow", 0, 1, 1, 1, 1, 0);
+}
+
+const Operator* SimplifiedOperatorBuilder::IncrementAndCheckProgressCounter() {
+  // The value inputs are the frame state for after the progress bytecode,
+  // where the call at the target progress lazily deoptimizes to, and the
+  // context the call runs in.
+  return zone()->New<Operator>(IrOpcode::kIncrementAndCheckProgressCounter,
+                               Operator::kNoThrow,
+                               "IncrementAndCheckProgressCounter",
+                               2, 1, 0, 1, 1, 0);
 }
 
 const Operator* SimplifiedOperatorBuilder::TransitionAndStoreNonNumberElement(
