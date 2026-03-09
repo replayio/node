@@ -32,6 +32,10 @@
 
 namespace v8 {
 namespace internal {
+
+extern bool gRecordReplayAssertProgress;
+extern bool gRecordReplayInstrumentationEnabled;
+
 namespace compiler {
 
 class BytecodeGraphBuilder {
@@ -3571,6 +3575,82 @@ void BytecodeGraphBuilder::VisitIncBlockCounter() {
       javascript()->CallRuntime(Runtime::kInlineIncBlockCounter);
 
   NewNode(op, closure, coverage_array_slot);
+}
+
+void BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
+  PrepareEagerCheckpoint();
+
+  // Assertions on progress need the VM call. Otherwise, as in baseline code,
+  // update the counter inline and only call into the VM at the target
+  // progress, where the call lazily deoptimizes this code if what runs there
+  // (pausing, breakpoints, instrumentation changes, API interrupt callbacks)
+  // discards it.
+  //
+  // Unlike baseline code, optimized code doesn't run progress checks.
+  // Checking gRecordReplayCheckProgress here would make all optimized code
+  // use the VM call: it is enabled while events are disallowed on the main
+  // thread, which they are while optimizing (Compiler::CompileOptimized), and
+  // loading it in the inline update instead slows optimized code down too much.
+  if (gRecordReplayAssertProgress) {
+    Node* closure = GetFunctionClosure();
+    const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayAssertExecutionProgress);
+
+    Node* node = NewNode(op, closure);
+    environment()->RecordAfterState(node, Environment::kAttachFrameState);
+  } else {
+    const int offset = bytecode_iterator().current_offset();
+    Node* frame_state = environment()->Checkpoint(
+        BytecodeOffset(offset), OutputFrameStateCombine::Ignore(),
+        bytecode_analysis().GetOutLivenessFor(offset));
+    Node* node = NewNode(simplified()->IncrementAndCheckProgressCounter(),
+                         frame_state, environment()->Context());
+    environment()->RecordAfterState(node, Environment::kAttachFrameState);
+  }
+  CHECK(needs_eager_checkpoint());
+}
+
+void BytecodeGraphBuilder::VisitRecordReplayInstrumentation() {
+  // If instrumentation is disabled then calls can be skipped entirely.
+  // The optimized code will be discarded if instrumentation is enabled/disabled,
+  // see RecordReplayChangeInstrument.
+  if (!gRecordReplayInstrumentationEnabled) {
+    return;
+  }
+
+  PrepareEagerCheckpoint();
+  Node* closure = GetFunctionClosure();
+  uint32_t index = bytecode_iterator().GetIndexOperand(0);
+  Node* index_slot = jsgraph()->Constant(index);
+  const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayInstrumentation);
+
+  Node* node = NewNode(op, closure, index_slot);
+  environment()->RecordAfterState(node, Environment::kAttachFrameState);
+}
+
+void BytecodeGraphBuilder::VisitRecordReplayInstrumentationGenerator() {
+  // Note: we always need to call the InstrumentationGenerator function,
+  // see Runtime_RecordReplayInstrumentationGenerator.
+  PrepareEagerCheckpoint();
+  Node* closure = GetFunctionClosure();
+  uint32_t index = bytecode_iterator().GetIndexOperand(0);
+  Node* index_slot = jsgraph()->Constant(index);
+  Node* generator = environment()->LookupRegister(
+      bytecode_iterator().GetRegisterOperand(1));
+  const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayInstrumentationGenerator);
+
+  Node* node = NewNode(op, closure, index_slot, generator);
+  environment()->RecordAfterState(node, Environment::kAttachFrameState);
+}
+
+void BytecodeGraphBuilder::VisitRecordReplayAssertValue() {
+  PrepareEagerCheckpoint();
+  Node* closure = GetFunctionClosure();
+  Node* index_slot = jsgraph()->Constant(bytecode_iterator().GetIndexOperand(0));
+  Node* value = environment()->LookupAccumulator();
+  const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayAssertValue);
+
+  Node* node = NewNode(op, closure, index_slot, value);
+  environment()->BindAccumulator(node, Environment::kAttachFrameState);
 }
 
 void BytecodeGraphBuilder::VisitForInEnumerate() {
