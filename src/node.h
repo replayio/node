@@ -1587,7 +1587,18 @@ void RegisterSignalHandler(int signal,
 NODE_EXTERN void SetCppgcReference(v8::Isolate* isolate,
                                    v8::Local<v8::Object> object,
                                    void* wrappable);
+// Record/replay stuff.
+namespace recordreplay {
+bool IsRecordingFinished();
+void BeginCallbackRegion();
+void EndCallbackRegion();
 
+struct AutoCallbackRegion {
+  AutoCallbackRegion() { BeginCallbackRegion(); }
+  ~AutoCallbackRegion() { EndCallbackRegion(); }
+};
+
+} // namespace recordreplay
 }  // namespace node
 
 #endif  // SRC_NODE_H_
