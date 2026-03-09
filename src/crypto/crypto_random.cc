@@ -69,7 +69,12 @@ bool RandomBytesTraits::DeriveBits(Environment* env,
                                    const RandomBytesConfig& params,
                                    ByteSource* unused,
                                    CryptoJobMode mode) {
-  return ncrypto::CSPRNG(params.buffer, params.size);
+  bool rv = ncrypto::CSPRNG(params.buffer, params.size);
+
+  v8::recordreplay::AssertBytes("RandomBytesTraits::DeriveBits",
+                                params.buffer, params.size);
+
+  return rv;
 }
 
 void RandomPrimeConfig::MemoryInfo(MemoryTracker* tracker) const {
