@@ -9,6 +9,7 @@
 #include <queue>
 
 #include "include/v8-metrics.h"
+#include "include/replayio.h"
 #include "src/base/platform/mutex.h"
 #include "src/base/platform/time.h"
 #include "src/init/v8.h"
@@ -90,9 +91,13 @@ class V8_NODISCARD TimedScope {
   explicit TimedScope(T* event) : event_(event) { Start(); }
   ~TimedScope() { Stop(); }
 
-  void Start() { start_time_ = base::TimeTicks::Now(); }
+  void Start() {
+    replayio::AutoPassThroughEvents pt;
+    start_time_ = base::TimeTicks::Now();
+  }
 
   void Stop() {
+    replayio::AutoPassThroughEvents pt;
     if (start_time_.IsMin()) return;
     base::TimeDelta duration = base::TimeTicks::Now() - start_time_;
     event_->wall_clock_duration_in_us = (duration.*precision)();
