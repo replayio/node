@@ -4,6 +4,8 @@
 
 #include "src/heap/scavenger.h"
 
+#include "include/replayio.h"
+
 #include <algorithm>
 #include <atomic>
 #include <memory>
@@ -2036,7 +2038,7 @@ bool Scavenger::PromoteObject(Tagged<Map> map, THeapObjectSlot slot,
             Heap::kMinObjectSizeInTaggedWords * kTaggedSize);
   AllocationSpace target_space =
       promotion_heap_choice == kPromoteIntoLocalHeap ? OLD_SPACE : SHARED_SPACE;
-  return TryMigrateObject(
+  bool promoted = TryMigrateObject(
       map, slot, object, object_size, target_space,
       [this, map, object_fields, object_size](Tagged<HeapObject> target) {
         promoted_size_ += object_size.value();
@@ -2044,6 +2046,11 @@ bool Scavenger::PromoteObject(Tagged<Map> map, THeapObjectSlot slot,
           local_promoted_list_.Push({target, map, object_size});
         }
       });
+  if (!promoted) {
+    recordreplay::Diagnostic("Scavenger::PromoteObject failed %d",
+                             static_cast<int>(object_size.value()));
+  }
+  return promoted;
 }
 
 bool Scavenger::HandleLargeObject(Tagged<Map> map, Tagged<HeapObject> object,

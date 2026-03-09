@@ -125,6 +125,8 @@ class MinorGCJob::Task : public CancelableTask {
 
   Isolate* isolate() const { return isolate_; }
 
+  bool IsRecordReplayNonDeterministic() const override { return true; }
+
  private:
   Isolate* const isolate_;
   MinorGCJob* const job_;
