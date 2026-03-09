@@ -122,6 +122,21 @@ umtx_unlock(UMutex* mutex)
     mutex->unlock();
 }
 
+// Defined by V8. These stubs are for ICU's host tools, which are linked
+// without it. Weak definitions rather than weak references, which macOS's
+// linker would still require to be found.
+extern "C" __attribute__((weak)) int V8RecordReplayIsRecording(void) {
+    return 0;
+}
+extern "C" __attribute__((weak)) int V8RecordReplayIsReplaying(void) {
+    return 0;
+}
+
+U_CAPI UBool U_EXPORT2
+umtx_isRecordingOrReplaying() {
+    return V8RecordReplayIsRecording() || V8RecordReplayIsReplaying();
+}
+
 
 /*************************************************************************************************
  *
