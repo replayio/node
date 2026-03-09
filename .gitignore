@@ -13,6 +13,7 @@
 !.editorconfig
 !.gitattributes
 !.github
+!.buildkite
 !.gitignore
 !.gitkeep
 !.gitpod.yml
