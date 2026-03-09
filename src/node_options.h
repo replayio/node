@@ -351,6 +351,7 @@ class PerProcessOptions : public Options {
   bool print_version = false;
   std::string experimental_sea_config;
   std::string run;
+  bool print_build_id = false;
 
 #ifdef NODE_HAVE_I18N_SUPPORT
   std::string icu_data_dir;
