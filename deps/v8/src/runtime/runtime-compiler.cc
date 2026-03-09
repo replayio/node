@@ -147,6 +147,13 @@ namespace {
 
 void CompileOptimized(DirectHandle<JSFunction> function, ConcurrencyMode mode,
                       CodeKind target_kind, Isolate* isolate) {
+  // Only synchronous compilation is currently supported when recording or
+  // replaying. Each caller passes the mode its tiering request asks for, and
+  // the Maglev tiers ask for a concurrent one.
+  if (recordreplay::IsRecordingOrReplaying()) {
+    mode = ConcurrencyMode::kSynchronous;
+  }
+
   // Ensure that the tiering request is reset even if compilation fails.
   function->ResetTieringRequests(isolate);
 
