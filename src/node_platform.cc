@@ -547,6 +547,7 @@ NodePlatform::GetForegroundTaskRunner(Isolate* isolate) {
 
 double NodePlatform::MonotonicallyIncreasingTime() {
   // Convert nanos to seconds.
+  v8::recordreplay::AutoPassThroughEvents pt;
   return uv_hrtime() / 1e9;
 }
 
