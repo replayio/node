@@ -101,6 +101,7 @@ void Emit(Environment* env, double async_id, AsyncHooks::Fields type,
 
 
 void AsyncWrap::EmitPromiseResolve(Environment* env, double async_id) {
+  v8::recordreplay::Assert("AsyncWrap::EmitPromiseResolve");
   Emit(env, async_id, AsyncHooks::kPromiseResolve,
        env->async_hooks_promise_resolve_function());
 }
@@ -123,6 +124,7 @@ void AsyncWrap::EmitTraceEventBefore() {
 
 
 void AsyncWrap::EmitBefore(Environment* env, double async_id) {
+  v8::recordreplay::Assert("AsyncWrap::EmitBefore");
   Emit(env, async_id, AsyncHooks::kBefore,
        env->async_hooks_before_function());
 }
@@ -145,6 +147,7 @@ void AsyncWrap::EmitTraceEventAfter(ProviderType type, double async_id) {
 
 
 void AsyncWrap::EmitAfter(Environment* env, double async_id) {
+  v8::recordreplay::Assert("AsyncWrap::EmitAfter");
   // If the user's callback failed then the after() hooks will be called at the
   // end of _fatalException().
   Emit(env, async_id, AsyncHooks::kAfter,
@@ -640,6 +643,8 @@ void AsyncWrap::EmitAsyncInit(Environment* env,
                               Local<String> type,
                               double async_id,
                               double trigger_async_id) {
+  v8::recordreplay::Assert("AsyncWrap::EmitAsyncInit");
+
   CHECK(!object.IsEmpty());
   CHECK(!type.IsEmpty());
   AsyncHooks* async_hooks = env->async_hooks();
