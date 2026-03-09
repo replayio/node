@@ -9,6 +9,7 @@
 #include <memory>
 #include <queue>
 
+#include "include/replayio.h"
 #include "src/api/api-inl.h"
 #include "src/base/enum-set.h"
 #include "src/base/optional.h"
@@ -54,6 +55,54 @@
   } while (false)
 
 namespace v8::internal::wasm {
+
+struct AutoOrderedLock {
+  AutoOrderedLock(int id) : id_(id) { recordreplay::OrderedLock(id_); }
+  ~AutoOrderedLock() { recordreplay::OrderedUnlock(id_); }
+  int id_;
+};
+
+template <typename T>
+class OrderedAtomic {
+ public:
+  OrderedAtomic() {
+    ordered_lock_id_ = (int)recordreplay::CreateOrderedLock("atomic");
+  }
+
+  OrderedAtomic(T initial) : value_(initial) {
+    ordered_lock_id_ = (int)recordreplay::CreateOrderedLock("atomic");
+  }
+
+  T load(std::memory_order memory_order = std::memory_order_seq_cst) const {
+    AutoOrderedLock ordered(ordered_lock_id_);
+    return value_.load(memory_order);
+  }
+
+  void store(T v, std::memory_order memory_order = std::memory_order_seq_cst) {
+    AutoOrderedLock ordered(ordered_lock_id_);
+    value_.store(v, memory_order);
+  }
+
+  T fetch_add(T v, std::memory_order memory_order = std::memory_order_seq_cst) {
+    AutoOrderedLock ordered(ordered_lock_id_);
+    return value_.fetch_add(v, memory_order);
+  }
+
+  T fetch_sub(T v, std::memory_order memory_order = std::memory_order_seq_cst) {
+    AutoOrderedLock ordered(ordered_lock_id_);
+    return value_.fetch_sub(v, memory_order);
+  }
+
+  bool compare_exchange_weak(T& a, T b,
+                             std::memory_order memory_order = std::memory_order_seq_cst) {
+    AutoOrderedLock ordered(ordered_lock_id_);
+    return value_.compare_exchange_weak(a, b, memory_order);
+  }
+
+ private:
+  int ordered_lock_id_;
+  std::atomic<T> value_;
+};
 
 namespace {
 
@@ -118,7 +167,7 @@ class CompilationUnitQueues {
 #if !defined(__cpp_lib_atomic_value_initialization) || \
     __cpp_lib_atomic_value_initialization < 201911L
     for (auto& atomic_counter : num_units_) {
-      std::atomic_init(&atomic_counter, size_t{0});
+      atomic_counter.store(0);
     }
 #endif
 
@@ -1479,6 +1528,7 @@ void TriggerTierUp(Isolate* isolate,
                    int func_index) {
   NativeModule* native_module =
       trusted_instance_data->module_object()->native_module();
+  replayio::AutoDisallowEvents disallow("wasm::TriggerTierUp");
   CompilationStateImpl* compilation_state =
       Impl(native_module->compilation_state());
   WasmCompilationUnit tiering_unit{func_index, ExecutionTier::kTurbofan,
@@ -2636,6 +2686,8 @@ void AsyncCompileJob::PrepareRuntimeObjects() {
 // This function assumes that it is executed in a HandleScope, and that a
 // context is set on the isolate.
 void AsyncCompileJob::FinishCompile(bool is_after_cache_hit) {
+  recordreplay::Assert("AsyncCompileJob::FinishCompile Start");
+
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.wasm.detailed"),
                "wasm.FinishAsyncCompile");
   if (stream_) {
@@ -2727,6 +2779,8 @@ void AsyncCompileJob::FinishCompile(bool is_after_cache_hit) {
   native_module_->LogWasmCodes(isolate_, module_object_->script());
 
   FinishSuccessfully();
+
+  recordreplay::Assert("AsyncCompileJob::FinishCompile Done");
 }
 
 void AsyncCompileJob::Failed() {
@@ -3831,12 +3885,14 @@ void CompilationStateImpl::InitializeCompilationProgressAfterDeserialization(
 
 void CompilationStateImpl::AddCallback(
     std::unique_ptr<CompilationEventCallback> callback) {
+  recordreplay::Assert("CompilationStateImpl::AddCallback Start");
   base::MutexGuard callbacks_guard(&callbacks_mutex_);
   // Immediately trigger events that already happened.
   for (auto event : {CompilationEvent::kFinishedExportWrappers,
                      CompilationEvent::kFinishedBaselineCompilation,
                      CompilationEvent::kFailedCompilation}) {
     if (finished_events_.contains(event)) {
+      recordreplay::Assert("CompilationStateImpl::AddCallback #1");
       callback->call(event);
     }
   }
@@ -3845,6 +3901,7 @@ void CompilationStateImpl::AddCallback(
   if (!finished_events_.contains_any(kFinalEvents)) {
     callbacks_.emplace_back(std::move(callback));
   }
+  recordreplay::Assert("CompilationStateImpl::AddCallback Done");
 }
 
 void CompilationStateImpl::CommitCompilationUnits(
@@ -4097,6 +4154,9 @@ void CompilationStateImpl::TriggerCallbacks(
     DCHECK_NE(compilation_id_, kInvalidCompilationID);
     TRACE_EVENT1("v8.wasm", event.second, "id", compilation_id_);
     for (auto& callback : callbacks_) {
+      // https://github.com/RecordReplay/backend/issues/4886
+      recordreplay::Assert("CompilationStateImpl::TriggerCallbacks InvokeCallback");
+
       callback->call(event.first);
     }
   }
@@ -4294,7 +4354,10 @@ void CompilationStateImpl::SchedulePublishCompilationResults(
 
 size_t CompilationStateImpl::NumOutstandingCompilations(
     CompilationTier tier) const {
-  return compilation_unit_queues_.GetSizeForTier(tier);
+  size_t outstanding = compilation_unit_queues_.GetSizeForTier(tier);
+  recordreplay::Assert("CompilationStateImpl::NumOutstandingCompilations %d %lu",
+                       static_cast<int>(tier), outstanding);
+  return outstanding;
 }
 
 void CompilationStateImpl::SetError() {
