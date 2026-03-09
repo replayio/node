@@ -30,7 +30,8 @@ namespace internal {
 DebugStackTraceIterator::DebugStackTraceIterator(Isolate* isolate, int index)
     : isolate_(isolate),
       iterator_(isolate, isolate->debug()->break_frame_id()),
-      is_top_frame_(true) {
+      is_top_frame_(true),
+      invalid_(false) {
   if (iterator_.done()) return;
   std::vector<FrameSummary> frames;
   iterator_.frame()->Summarize(&frames);
@@ -44,6 +45,9 @@ DebugStackTraceIterator::~DebugStackTraceIterator() = default;
 bool DebugStackTraceIterator::Done() const { return iterator_.done(); }
 
 void DebugStackTraceIterator::Advance() {
+  if (invalid_) {
+    return;
+  }
   while (true) {
     --inlined_frame_index_;
     for (; inlined_frame_index_ >= 0; --inlined_frame_index_) {
@@ -64,9 +68,17 @@ void DebugStackTraceIterator::Advance() {
     iterator_.Advance();
     if (iterator_.done()) break;
     std::vector<FrameSummary> frames;
-    iterator_.frame()->Summarize(&frames);
+    iterator_.frame()->Summarize(&frames, /* allow_invalid */ true);
+    if (!frames.size()) {
+      invalid_ = true;
+      break;
+    }
     inlined_frame_index_ = static_cast<int>(frames.size());
   }
+}
+
+bool DebugStackTraceIterator::IsValid() const {
+  return !invalid_;
 }
 
 int DebugStackTraceIterator::GetContextId() const {
@@ -183,6 +195,16 @@ v8::MaybeLocal<v8::Value> DebugStackTraceIterator::Evaluate(
     return v8::MaybeLocal<v8::Value>();
   }
   return Utils::ToLocal(value);
+}
+
+StackFrameId DebugStackTraceIterator::FrameId() {
+  DCHECK(!Done());
+  return iterator_.frame()->id();
+}
+
+int DebugStackTraceIterator::InlineFrameIndex() {
+  DCHECK(!Done());
+  return inlined_frame_index_;
 }
 
 }  // namespace internal
