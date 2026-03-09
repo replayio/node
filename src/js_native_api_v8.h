@@ -1,8 +1,12 @@
 #ifndef SRC_JS_NATIVE_API_V8_H_
 #define SRC_JS_NATIVE_API_V8_H_
 
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 #include "js_native_api_types.h"
 #include "js_native_api_v8_internals.h"
+#include "node_deferred_finalization.h"
 
 inline napi_status napi_clear_last_error(node_api_nogc_env env);
 
@@ -48,6 +52,10 @@ class RefTracker {
 };
 
 class Finalizer;
+}  // end of namespace v8impl
+
+namespace v8impl {
+class Reference;
 }  // end of namespace v8impl
 
 struct napi_env__ {
@@ -158,6 +166,14 @@ struct napi_env__ {
   v8impl::RefTracker::RefList finalizing_reflist;
   // The invocation order of the finalizers is not determined.
   std::unordered_set<v8impl::RefTracker*> pending_finalizers;
+
+  // When recording/replaying, references the module can read, by their
+  // record/replay id. See v8impl::Reference::RecordReplayTrack.
+  int record_replay_last_ref_id = 0;
+  std::unordered_map<int, v8impl::Reference*> record_replay_refs;
+  // Ids of those references whose value the GC collected since they were last
+  // flushed to the recording, and which were not finalized or deleted since.
+  std::unordered_set<int> record_replay_cleared_refs;
   napi_extended_error_info last_error;
   int open_handle_scopes = 0;
   int open_callback_scopes = 0;
@@ -434,7 +450,7 @@ class RefBase : public TrackedFinalizer {
 };
 
 // Wrapper around v8impl::Persistent.
-class Reference : public RefBase {
+class Reference : public RefBase, public node::recordreplay::Finalizable {
  protected:
   template <typename... Args>
   Reference(napi_env env, v8::Local<v8::Value> value, Args&&... args);
@@ -453,6 +469,11 @@ class Reference : public RefBase {
   uint32_t Unref();
   v8::Local<v8::Value> Get();
 
+  // Record/replay id, if this reference is tracked.
+  int RecordReplayId() const { return _record_replay_id; }
+  static void RecordReplayFlushClearedRefs(napi_env env);
+  void RecordReplayFinalize() override;
+
  protected:
   void Finalize() override;
 
@@ -460,9 +481,17 @@ class Reference : public RefBase {
   static void WeakCallback(const v8::WeakCallbackInfo<Reference>& data);
 
   void SetWeak();
+  void RecordReplayTrack();
 
   v8impl::Persistent<v8::Value> persistent_;
   bool can_be_weak_;
+  int _record_replay_id = 0;
+  // The finalization of a tracked reference is deferred to a point which
+  // replays, see RecordReplayTrack.
+  node::recordreplay::DeferredFinalization* _record_replay_finalization =
+      nullptr;
+  int _record_replay_finalize_id = 0;
+  bool _record_replay_has_finalizer = false;
 };
 
 }  // end of namespace v8impl
