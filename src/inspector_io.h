@@ -65,7 +65,7 @@ class InspectorIo {
   uv_thread_t thread_;
 
   // For setting up interthread communications
-  Mutex thread_start_lock_;
+  Mutex thread_start_lock_ { /* ordered */ true };
   ConditionVariable thread_start_condition_;
   std::string script_name_;
   // May be accessed from any thread
