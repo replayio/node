@@ -1,8 +1,12 @@
 #ifndef SRC_JS_NATIVE_API_V8_H_
 #define SRC_JS_NATIVE_API_V8_H_
 
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 #include "js_native_api_types.h"
 #include "js_native_api_v8_internals.h"
+#include "node_deferred_finalization.h"
 
 inline napi_status napi_clear_last_error(node_api_basic_env env);
 
@@ -48,6 +52,10 @@ class RefTracker {
   RefList* prev_ = nullptr;
 };
 
+}  // end of namespace v8impl
+
+namespace v8impl {
+class Reference;
 }  // end of namespace v8impl
 
 struct napi_env__ {
@@ -154,6 +162,14 @@ struct napi_env__ {
   v8impl::RefTracker::RefList finalizing_reflist;
   // The invocation order of the finalizers is not determined.
   std::unordered_set<v8impl::RefTracker*> pending_finalizers;
+
+  // When recording/replaying, references the module can read, by their
+  // record/replay id. See v8impl::Reference::RecordReplayTrack.
+  int record_replay_last_ref_id = 0;
+  std::unordered_map<int, v8impl::Reference*> record_replay_refs;
+  // Ids of those references whose value the GC collected since they were last
+  // flushed to the recording, and which were not finalized or deleted since.
+  std::unordered_set<int> record_replay_cleared_refs;
   napi_extended_error_info last_error;
   int open_handle_scopes = 0;
   int open_callback_scopes = 0;
@@ -336,6 +352,11 @@ class Finalizer {
   void ResetFinalizer();
   void CallFinalizer();
 
+  // Record/replay: whether the module gave a finalizer, and installing the
+  // stub a replayed call may need in its place (see Reference).
+  bool has_finalizer() const { return finalize_callback_ != nullptr; }
+  void set_finalizer(napi_finalize cb) { finalize_callback_ = cb; }
+
  private:
   napi_env env_;
   napi_finalize finalize_callback_;
@@ -390,7 +411,7 @@ enum class ReferenceOwnership : uint8_t {
 };
 
 // Wrapper around v8impl::Persistent.
-class Reference : public RefTracker {
+class Reference : public RefTracker, public node::recordreplay::Finalizable {
  public:
   static Reference* New(napi_env env,
                         v8::Local<v8::Value> value,
@@ -408,6 +429,16 @@ class Reference : public RefTracker {
   uint32_t refcount() const { return refcount_; }
   ReferenceOwnership ownership() { return ownership_; }
 
+  // Record/replay id, if this reference is tracked.
+  int RecordReplayId() const { return _record_replay_id; }
+  // Node 20 keeps the env and the user finalizer off Reference, so the
+  // record/replay bookkeeping carries its own env and asks the subclass that
+  // owns the finalizer about it.
+  virtual bool RecordReplayHasUserFinalizer() const { return false; }
+  virtual void RecordReplaySetFinalizerStub() {}
+  static void RecordReplayFlushClearedRefs(napi_env env);
+  void RecordReplayFinalize() override;
+
  protected:
   Reference(napi_env env,
             v8::Local<v8::Value> value,
@@ -415,6 +446,8 @@ class Reference : public RefTracker {
             ReferenceOwnership ownership);
   virtual void CallUserFinalizer() {}
   virtual void InvokeFinalizerFromGC();
+  // Each subclass's New() tracks its reference, as node 18's single New() did.
+  void RecordReplayTrack();
 
  private:
   static void WeakCallback(const v8::WeakCallbackInfo<Reference>& data);
@@ -426,6 +459,14 @@ class Reference : public RefTracker {
   uint32_t refcount_;
   ReferenceOwnership ownership_;
   bool can_be_weak_;
+  napi_env _record_replay_env = nullptr;
+  int _record_replay_id = 0;
+  // The finalization of a tracked reference is deferred to a point which
+  // replays, see RecordReplayTrack.
+  node::recordreplay::DeferredFinalization* _record_replay_finalization =
+      nullptr;
+  int _record_replay_finalize_id = 0;
+  bool _record_replay_has_finalizer = false;
 };
 
 // Reference that can store additional data.
@@ -463,6 +504,10 @@ class ReferenceWithFinalizer final : public Reference {
   ~ReferenceWithFinalizer() override;
 
   void ResetFinalizer() override { finalizer_.ResetFinalizer(); }
+  bool RecordReplayHasUserFinalizer() const override {
+    return finalizer_.has_finalizer();
+  }
+  void RecordReplaySetFinalizerStub() override;
   void* Data() override { return finalizer_.data(); }
 
  private:
