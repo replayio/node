@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "include/replayio.h"
 #include "src/api/api-inl.h"
 #include "src/asmjs/asm-js.h"
 #include "src/ast/prettyprinter.h"
@@ -2469,6 +2470,9 @@ bool Compiler::Compile(Isolate* isolate, Handle<SharedFunctionInfo> shared_info,
   // We should never reach here if the function is already compiled.
   DCHECK(!shared_info->is_compiled());
   DCHECK(!is_compiled_scope->is_compiled());
+
+  replayio::AutoDisallowEvents disallow;
+
   DCHECK(AllowCompilation::IsAllowed(isolate));
   DCHECK_EQ(ThreadId::Current(), isolate->thread_id());
   DCHECK(!isolate->has_pending_exception());
@@ -2725,6 +2729,10 @@ bool Compiler::FinalizeBackgroundCompileTask(BackgroundCompileTask* task,
 // static
 void Compiler::CompileOptimized(Isolate* isolate, Handle<JSFunction> function,
                                 ConcurrencyMode mode, CodeKind code_kind) {
+  // The point at which optimized compilations occur can vary between recording
+  // and replaying.
+  replayio::AutoDisallowEvents disallow("Compiler::CompileOptimized");
+
   DCHECK(CodeKindIsOptimizedJSFunction(code_kind));
   DCHECK(AllowCompilation::IsAllowed(isolate));
 
@@ -3854,6 +3862,10 @@ MaybeHandle<Code> Compiler::CompileOptimizedOSR(Isolate* isolate,
                                                 Handle<JSFunction> function,
                                                 BytecodeOffset osr_offset,
                                                 ConcurrencyMode mode) {
+  // The point at which optimized compilations occur can vary between recording
+  // and replaying. Same label as Chromium Compiler::CompileOptimizedOSR.
+  replayio::AutoDisallowEvents disallow("Compiler::CompileOptimizedOSR");
+
   DCHECK(IsOSR(osr_offset));
 
   if (V8_UNLIKELY(isolate->serializer_enabled())) return {};
