@@ -177,6 +177,8 @@ void StreamPipe::ProcessData(size_t nread,
 
 void StreamPipe::WritableListener::OnStreamAfterWrite(WriteWrap* w,
                                                       int status) {
+  v8::recordreplay::Assert("StreamPipe::WritableListener::OnStreamAfterWrite");
+
   StreamPipe* pipe = ContainerOf(&StreamPipe::writable_listener_, this);
   pipe->pending_writes_--;
   if (pipe->is_closed_) {
