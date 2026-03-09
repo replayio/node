@@ -163,6 +163,7 @@ CopyAndForwardResult Scavenger::PromoteObject(Tagged<Map> map,
     promoted_size_ += object_size;
     return CopyAndForwardResult::SUCCESS_OLD_GENERATION;
   }
+  recordreplay::Diagnostic("Scavenger::PromoteObject failed %d", object_size);
   return CopyAndForwardResult::FAILURE;
 }
 
