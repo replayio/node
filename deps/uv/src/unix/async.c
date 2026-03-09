@@ -70,6 +70,11 @@ static void uv__async_send(uv_loop_t* loop);
 static int uv__async_start(uv_loop_t* loop);
 static void uv__cpu_relax(void);
 
+extern void V8RecordReplayAssert(const char* format, ...);
+extern size_t V8RecordReplayCreateOrderedLock(const char* name);
+extern void V8RecordReplayOrderedLock(int lock);
+extern void V8RecordReplayOrderedUnlock(int lock);
+
 
 int uv_async_init(uv_loop_t* loop, uv_async_t* handle, uv_async_cb async_cb) {
   int err;
@@ -82,6 +87,7 @@ int uv_async_init(uv_loop_t* loop, uv_async_t* handle, uv_async_cb async_cb) {
   handle->async_cb = async_cb;
   handle->pending = 0;
   handle->u.fd = 0; /* This will be used as a busy flag. */
+  handle->ordered_lock_id = V8RecordReplayCreateOrderedLock("uv_async_t");
 
   uv__queue_insert_tail(&loop->async_handles, &handle->queue);
   uv__handle_start(handle);
@@ -97,9 +103,12 @@ int uv_async_send(uv_async_t* handle) {
   pending = (_Atomic int*) &handle->pending;
   busy = (_Atomic int*) &handle->u.fd;
 
+  V8RecordReplayOrderedLock(handle->ordered_lock_id);
   /* Do a cheap read first. */
-  if (atomic_load_explicit(pending, memory_order_relaxed) != 0)
+  if (atomic_load_explicit(pending, memory_order_relaxed) != 0) {
+    V8RecordReplayOrderedUnlock(handle->ordered_lock_id);
     return 0;
+  }
 
   /* Set the loop to busy. */
   atomic_fetch_add(busy, 1);
@@ -111,6 +120,7 @@ int uv_async_send(uv_async_t* handle) {
   /* Set the loop to not-busy. */
   atomic_fetch_add(busy, -1);
 
+  V8RecordReplayOrderedUnlock(handle->ordered_lock_id);
   return 0;
 }
 
@@ -128,6 +138,8 @@ static void uv__async_spin(uv_async_t* handle) {
   /* Set the pending flag first, so no new events will be added by other
    * threads after this function returns. */
   atomic_store(pending, 1);
+
+  V8RecordReplayOrderedLock(handle->ordered_lock_id);
 
   for (;;) {
     /* 997 is not completely chosen at random. It's a prime number, acyclic by
@@ -147,6 +159,12 @@ static void uv__async_spin(uv_async_t* handle) {
      */
     sched_yield();
   }
+
+done:
+  V8RecordReplayOrderedUnlock(handle->ordered_lock_id);
+
+  V8RecordReplayAssert("uv__async_spin %d", rc);
+  return rc;
 }
 
 
@@ -165,6 +183,8 @@ static void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
   uv_async_t* h;
   _Atomic int *pending;
 
+  V8RecordReplayAssert("uv__async_io");
+
   assert(w == &loop->async_io_watcher);
 
 #if UV__KQUEUE_EVFILT_USER
@@ -173,6 +193,8 @@ static void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
   for (;;) {
 #endif
     r = read(w->fd, buf, sizeof(buf));
+
+    //V8RecordReplayAssert("uv__async_io #1 %d", r);
 
     if (r == sizeof(buf))
       continue;
@@ -193,20 +215,27 @@ static void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
   while (!uv__queue_empty(&queue)) {
     q = uv__queue_head(&queue);
     h = uv__queue_data(q, uv_async_t, queue);
+    V8RecordReplayAssert("uv__async_io #2");
 
     uv__queue_remove(q);
     uv__queue_insert_tail(&loop->async_handles, q);
 
     /* Atomically fetch and clear pending flag */
     pending = (_Atomic int*) &h->pending;
-    if (atomic_exchange(pending, 0) == 0)
-      continue;
+    if (atomic_exchange(pending, 0) == 0) {
+      V8RecordReplayAssert("uv__async_io #3");
+      continue;  /* Not pending. */
+    }
+
+    V8RecordReplayAssert("uv__async_io #4");
 
     if (h->async_cb == NULL)
       continue;
 
     h->async_cb(h);
   }
+
+  V8RecordReplayAssert("uv__async_io Done");
 }
 
 
