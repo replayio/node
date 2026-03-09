@@ -1106,6 +1106,7 @@ class V8_EXPORT_PRIVATE SimplifiedOperatorBuilder final
   const Operator* VerifyType();
 
   const Operator* DateNow();
+  const Operator* IncrementAndCheckProgressCounter();
 
   // Represents the inputs necessary to construct a fast and a slow API call.
   const Operator* FastApiCall(
