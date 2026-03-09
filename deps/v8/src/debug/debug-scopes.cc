@@ -991,6 +991,10 @@ bool ScopeIterator::VisitLocals(const Visitor& visitor, Mode mode,
           break;
         }
         DCHECK(var->IsContextSlot());
+        // This index is sometimes out of range when gathering state using
+        // the Record Replay driver.
+        if (index >= context_->length()) continue;
+
 
         DCHECK_EQ(context_->scope_info()->ContextSlotIndex(var->name()), index);
         value = handle(context_->get(index), isolate_);
