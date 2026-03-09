@@ -204,6 +204,9 @@ static void MemoryUsage(const FunctionCallbackInfo<Value>& args) {
       array_buffer_allocator == nullptr
           ? 0
           : static_cast<double>(array_buffer_allocator->total_mem_usage());
+
+  // Ensure memory usage measurements are consistent when replaying.
+  v8::recordreplay::RecordReplayBytes("MemoryUsage", fields, 5 * sizeof(double));
 }
 
 void RawDebug(const FunctionCallbackInfo<Value>& args) {
@@ -550,6 +553,11 @@ void BindingData::Deserialize(Local<Context> context,
   CHECK_NOT_NULL(binding);
 }
 
+// See node_recordreplay.cc.
+void InitializeRecordReplayMethods(Environment* env, Local<Object> target);
+void RegisterRecordReplayExternalReferences(
+    ExternalReferenceRegistry* registry);
+
 static void Initialize(Local<Object> target,
                        Local<Value> unused,
                        Local<Context> context,
@@ -587,6 +595,7 @@ static void Initialize(Local<Object> target,
   env->SetMethod(target, "reallyExit", ReallyExit);
   env->SetMethodNoSideEffect(target, "uptime", Uptime);
   env->SetMethod(target, "patchProcessObject", PatchProcessObject);
+  InitializeRecordReplayMethods(env, target);
 }
 
 void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
@@ -616,6 +625,7 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(ReallyExit);
   registry->Register(Uptime);
   registry->Register(PatchProcessObject);
+  RegisterRecordReplayExternalReferences(registry);
 }
 
 }  // namespace process
