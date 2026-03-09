@@ -206,6 +206,16 @@ MainThreadInterface::~MainThreadInterface() {
 
 void MainThreadInterface::Post(std::unique_ptr<Request> request) {
   CHECK_NOT_NULL(agent_);
+
+  // When recording/replaying this is single threaded, and we don't want to
+  // interrupt V8 because that will invalidate the recording.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    CHECK(v8::IsMainThread());
+    requests_.push_back(std::move(request));
+    DispatchMessages();
+    return;
+  }
+
   Mutex::ScopedLock scoped_lock(requests_lock_);
   bool needs_notify = requests_.empty();
   requests_.push_back(std::move(request));
@@ -251,6 +261,21 @@ void MainThreadInterface::DispatchMessages() {
     }
   } while (had_messages);
   dispatching_messages_ = false;
+}
+
+void MainThreadInterface::DispatchMainThreadRequests() {
+  if (dispatching_main_thread_requests_)
+    return;
+  dispatching_main_thread_requests_ = true;
+  while (!main_thread_requests_.empty()) {
+    MessageQueue::value_type task;
+    std::swap(main_thread_requests_.front(), task);
+    main_thread_requests_.pop_front();
+
+    v8::SealHandleScope seal_handle_scope(agent_->env()->isolate());
+    task->Call(this);
+  }
+  dispatching_main_thread_requests_ = false;
 }
 
 std::shared_ptr<MainThreadHandle> MainThreadInterface::GetHandle() {

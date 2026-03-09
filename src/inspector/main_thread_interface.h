@@ -89,14 +89,18 @@ class MainThreadInterface :
 
  private:
   MessageQueue requests_;
-  Mutex requests_lock_;   // requests_ live across threads
+  Mutex requests_lock_ { /* ordered */ true };  // requests_ live across threads
   // This queue is to maintain the order of the messages for the cases
   // when we reenter the DispatchMessages function.
   MessageQueue dispatching_message_queue_;
   bool dispatching_messages_ = false;
+  // Requests made on the main thread when recording/replaying, see Post().
+  MessageQueue main_thread_requests_;
+  bool dispatching_main_thread_requests_ = false;
   ConditionVariable incoming_message_cond_;
   // Used from any thread
   Agent* const agent_;
+  const bool is_main_thread_;
   std::shared_ptr<MainThreadHandle> handle_;
   std::unordered_map<int, std::unique_ptr<Deletable>> managed_objects_;
 };
