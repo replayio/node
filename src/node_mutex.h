@@ -68,12 +68,15 @@ class ExclusiveAccess {
 template <typename Traits>
 class MutexBase {
  public:
-  inline MutexBase();
+  inline MutexBase(bool ordered = false);
   inline ~MutexBase();
   inline void Lock();
   inline void Unlock();
   inline void RdLock();
   inline void RdUnlock();
+  // Orders a mutex constructed before record/replay was initialized, e.g. a
+  // static one. Call it before any other thread can use the mutex.
+  inline void MarkOrdered();
 
   MutexBase(const MutexBase&) = delete;
   MutexBase& operator=(const MutexBase&) = delete;
@@ -195,6 +198,10 @@ struct LibuvMutexTraits {
     uv_mutex_unlock(mutex);
   }
 
+  static inline void mutex_mark_ordered(MutexT* mutex) {
+    uv_mutex_mark_ordered(mutex);
+  }
+
   static inline void mutex_rdlock(MutexT* mutex) {
     uv_mutex_lock(mutex);
   }
@@ -221,6 +228,11 @@ struct LibuvRwlockTraits {
 
   static inline void mutex_unlock(MutexT* mutex) {
     uv_rwlock_wrunlock(mutex);
+  }
+
+  static inline void mutex_mark_ordered(MutexT* mutex) {
+    // Ordered rw locks are not supported.
+    CHECK(0);
   }
 
   static inline void mutex_rdlock(MutexT* mutex) {
@@ -264,8 +276,11 @@ int ConditionVariableBase<Traits>::TimedWait(const ScopedLock& scoped_lock,
 }
 
 template <typename Traits>
-MutexBase<Traits>::MutexBase() {
+MutexBase<Traits>::MutexBase(bool ordered) {
   CHECK_EQ(0, Traits::mutex_init(&mutex_));
+  if (ordered) {
+    Traits::mutex_mark_ordered(&mutex_);
+  }
 }
 
 template <typename Traits>
@@ -291,6 +306,11 @@ void MutexBase<Traits>::RdLock() {
 template <typename Traits>
 void MutexBase<Traits>::RdUnlock() {
   Traits::mutex_rdunlock(&mutex_);
+}
+
+template <typename Traits>
+void MutexBase<Traits>::MarkOrdered() {
+  Traits::mutex_mark_ordered(&mutex_);
 }
 
 template <typename Traits>
@@ -329,6 +349,70 @@ template <typename Traits>
 MutexBase<Traits>::ScopedUnlock::~ScopedUnlock() {
   Traits::mutex_lock(&mutex_.mutex_);
 }
+
+// A RwLock, except when recording/replaying, where it is an ordered Mutex, as
+// ordered rw locks aren't supported: readers are serialized then.
+class RecordReplayOrderedRwLock {
+ public:
+  RecordReplayOrderedRwLock() {
+    if (v8::recordreplay::IsRecordingOrReplaying())
+      ordered_.reset(new Mutex(/* ordered */ true));
+  }
+
+  RecordReplayOrderedRwLock(const RecordReplayOrderedRwLock&) = delete;
+  RecordReplayOrderedRwLock& operator=(const RecordReplayOrderedRwLock&) =
+      delete;
+
+  class ScopedReadLock {
+   public:
+    explicit ScopedReadLock(const RecordReplayOrderedRwLock& lock)
+        : lock_(lock) {
+      if (lock_.ordered_)
+        lock_.ordered_->Lock();
+      else
+        lock_.rwlock_.RdLock();
+    }
+    ~ScopedReadLock() {
+      if (lock_.ordered_)
+        lock_.ordered_->Unlock();
+      else
+        lock_.rwlock_.RdUnlock();
+    }
+
+    ScopedReadLock(const ScopedReadLock&) = delete;
+    ScopedReadLock& operator=(const ScopedReadLock&) = delete;
+
+   private:
+    const RecordReplayOrderedRwLock& lock_;
+  };
+
+  class ScopedWriteLock {
+   public:
+    explicit ScopedWriteLock(const RecordReplayOrderedRwLock& lock)
+        : lock_(lock) {
+      if (lock_.ordered_)
+        lock_.ordered_->Lock();
+      else
+        lock_.rwlock_.Lock();
+    }
+    ~ScopedWriteLock() {
+      if (lock_.ordered_)
+        lock_.ordered_->Unlock();
+      else
+        lock_.rwlock_.Unlock();
+    }
+
+    ScopedWriteLock(const ScopedWriteLock&) = delete;
+    ScopedWriteLock& operator=(const ScopedWriteLock&) = delete;
+
+   private:
+    const RecordReplayOrderedRwLock& lock_;
+  };
+
+ private:
+  mutable RwLock rwlock_;
+  std::unique_ptr<Mutex> ordered_;
+};
 
 }  // namespace node
 
