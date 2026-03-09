@@ -4082,6 +4082,22 @@ class AssemblerOpInterface : public Next {
   }
 #endif
 
+  V<Object> CallRuntime_TerminateExecution(
+      Isolate* isolate, V<turboshaft::FrameState> frame_state,
+      V<Context> context) {
+    return CallRuntime<typename RuntimeCallDescriptor::TerminateExecution>(
+        isolate, frame_state, context, LazyDeoptOnThrow::kNo, {});
+  }
+  V<Object> CallRuntime_RecordReplayTargetProgressReached(
+      Isolate* isolate, V<turboshaft::FrameState> frame_state,
+      V<Context> context) {
+    return CallRuntime<
+        typename RuntimeCallDescriptor::RecordReplayTargetProgressReached>(
+        isolate, frame_state, context, {});
+  }
+  }
+#endif
+
   void TailCall(V<CallTarget> callee, base::Vector<const OpIndex> arguments,
                 const TSCallDescriptor* descriptor) {
     ReduceIfReachableTailCall(callee, arguments, descriptor);

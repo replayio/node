@@ -571,6 +571,7 @@
   V(TypeOf)                                 \
   V(Unsigned32Divide)                       \
   V(VerifyType)                             \
+  V(IncrementAndCheckProgressCounter)   \
   SIMPLIFIED_CPED_OP_LIST(V)
 
 #define SIMPLIFIED_SPECULATIVE_BIGINT_BINOP_LIST(V) \

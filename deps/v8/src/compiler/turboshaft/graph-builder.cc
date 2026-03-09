@@ -2806,7 +2806,33 @@ OpIndex GraphBuilder::Process(
     }
 
 #endif  // V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
+    case IrOpcode::kIncrementAndCheckProgressCounter: {
+      // The record/replay progress counter, as the effect control linearizer
+      // lowered it before turboshaft took over the backend: update the counter
+      // inline and only call into the VM at the target progress, where the
+      // call lazily deoptimizes this code if what runs there (pausing,
+      // breakpoints, instrumentation changes, API interrupt callbacks)
+      // discards it.
+      OpIndex counter = __ ExternalConstant(
+          ExternalReference::record_replay_progress_counter());
+      V<Word64> value =
+          __ LoadOffHeap(counter, MemoryRepresentation::Uint64());
+      V<Word64> incremented = __ Word64Add(value, 1);
+      __ StoreOffHeap(counter, incremented, MemoryRepresentation::Uint64());
+      OpIndex target = __ ExternalConstant(
+          ExternalReference::record_replay_target_progress());
+      V<Word64> target_value =
+          __ LoadOffHeap(target, MemoryRepresentation::Uint64());
 
+      IF (UNLIKELY(__ Word64Equal(incremented, target_value))) {
+        __ template CallRuntime<runtime::RecordReplayTargetProgressReached>(
+            V<turboshaft::FrameState>::Cast(Map(node->InputAt(0))),
+            V<Context>::Cast(Map(node->InputAt(1))), {},
+            LazyDeoptOnThrow::kNo);
+      }
+      // The bytecode's handler has no value to bind.
+      return OpIndex::Invalid();
+    }
     default:
       std::cerr << "unsupported node type: " << *node->op() << "\n";
       node->Print(std::cerr);

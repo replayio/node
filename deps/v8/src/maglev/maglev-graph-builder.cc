@@ -16883,6 +16883,44 @@ ReduceResult MaglevGraphBuilder::VisitAbort() {
   return BuildAbort(reason);
 }
 
+// The record/replay bytecodes reach this builder because turboshaft's
+// maglev-graph-building-phase links against it, and Maglev itself would run
+// them once enabled. Each one makes the VM call its runtime function, as the
+// interpreter does: Maglev has no equivalent of TurboFan's inline progress
+// counter, and the instrumentation calls have to run on every tier.
+ReduceResult MaglevGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
+  RETURN_IF_ABORT(BuildCallRuntime(
+      Runtime::kRecordReplayAssertExecutionProgress, {GetClosure()}));
+  return ReduceResult::Done();
+}
+
+ReduceResult MaglevGraphBuilder::VisitRecordReplayInstrumentation() {
+  ValueNode* index = GetSmiConstant(iterator_.GetConstantPoolIndexOperand(0));
+  RETURN_IF_ABORT(BuildCallRuntime(Runtime::kRecordReplayInstrumentation,
+                                   {GetClosure(), index}));
+  return ReduceResult::Done();
+}
+
+ReduceResult MaglevGraphBuilder::VisitRecordReplayInstrumentationGenerator() {
+  ValueNode* index = GetSmiConstant(iterator_.GetConstantPoolIndexOperand(0));
+  ValueNode* generator = LoadRegister(1);
+  RETURN_IF_ABORT(
+      BuildCallRuntime(Runtime::kRecordReplayInstrumentationGenerator,
+                       {GetClosure(), index, generator}));
+  return ReduceResult::Done();
+}
+
+// Returns the accumulator, as the other tiers' calls do.
+ReduceResult MaglevGraphBuilder::VisitRecordReplayAssertValue() {
+  ValueNode* index = GetSmiConstant(iterator_.GetConstantPoolIndexOperand(0));
+  ValueNode* value = GetAccumulator();
+  ReduceResult result = BuildCallRuntime(Runtime::kRecordReplayAssertValue,
+                                         {GetClosure(), index, value});
+  RETURN_IF_ABORT(result);
+  SetAccumulator(result.value());
+  return ReduceResult::Done();
+}
+
 ReduceResult MaglevGraphBuilder::VisitWide() { UNREACHABLE(); }
 ReduceResult MaglevGraphBuilder::VisitExtraWide() { UNREACHABLE(); }
 #define DEBUG_BREAK(Name, ...) \
