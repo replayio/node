@@ -25,6 +25,8 @@ void ERR_print_errors_cb(int (*cb) (const char *str, size_t len, void *u),
      * We don't know what kind of thing CRYPTO_THREAD_ID is. Here is our best
      * attempt to convert it into something we can print.
      */
+    // For recording/replaying omit the tid, which currently varies when replaying.
+    /*
     union {
         CRYPTO_THREAD_ID tid;
         unsigned long ltid;
@@ -32,10 +34,11 @@ void ERR_print_errors_cb(int (*cb) (const char *str, size_t len, void *u),
 
     tid.ltid = 0;
     tid.tid = CRYPTO_THREAD_get_current_id();
+    */
 
     while ((l = ERR_get_error_line_data(&file, &line, &data, &flags)) != 0) {
         ERR_error_string_n(l, buf, sizeof(buf));
-        BIO_snprintf(buf2, sizeof(buf2), "%lu:%s:%s:%d:%s\n", tid.ltid, buf,
+        BIO_snprintf(buf2, sizeof(buf2), "%s:%s:%d:%s\n", buf,
                      file, line, (flags & ERR_TXT_STRING) ? data : "");
         if (cb(buf2, strlen(buf2), u) <= 0)
             break;              /* abort outputting the error report */
