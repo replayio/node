@@ -12,6 +12,7 @@
 #include "include/v8-microtask-queue.h"
 #include "include/v8-profiler.h"
 #include "include/v8-util.h"
+#include "include/v8.h"  // For replay.
 #include "src/inspector/inspected-context.h"
 #include "src/inspector/protocol/Protocol.h"
 #include "src/inspector/string-util.h"
@@ -148,7 +149,15 @@ void V8Debugger::disable() {
   m_pauseOnNextCallRequested = false;
   m_pauseOnAsyncCall = false;
 #if V8_ENABLE_WEBASSEMBLY
-  v8::debug::LeaveDebuggingForIsolate(m_isolate);
+  // When recording or replaying, Node's Replay session keeps the debugger
+  // enabled until it is destroyed at exit, so there is nothing to leave
+  // debugging for. LeaveDebuggingForIsolate walks the isolate's native modules
+  // in an order that depends on their addresses, which differ when replaying,
+  // and frees each one's debug code, which the wasm code GC then collects at
+  // points that differ from the recording's.
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    v8::debug::LeaveDebuggingForIsolate(m_isolate);
+  }
 #endif  // V8_ENABLE_WEBASSEMBLY
   v8::debug::SetDebugDelegate(m_isolate, nullptr);
   m_isolate->RemoveNearHeapLimitCallback(&V8Debugger::nearHeapLimitCallback,
