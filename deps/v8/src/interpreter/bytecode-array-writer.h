@@ -75,7 +75,7 @@ class V8_EXPORT_PRIVATE BytecodeArrayWriter final {
   bool RemainderOfBlockIsDead() const { return exit_seen_in_block_; }
 
   size_t current_bytecode_size() const { return bytecodes_.size(); }
-
+  int size() const { return bytecodes_.size(); }
  private:
   // Maximum sized packed bytecode is comprised of a prefix bytecode,
   // plus the actual bytecode, plus the maximum number of operands times

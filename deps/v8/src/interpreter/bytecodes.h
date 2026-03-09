@@ -500,6 +500,15 @@ namespace interpreter {
   /* Block Coverage */                                                         \
   V(IncBlockCounter, ImplicitRegisterUse::kNone, OperandType::kCoverageSlot)   \
                                                                                \
+  /* Record Replay */                                                          \
+  V(RecordReplayIncExecutionProgressCounter, ImplicitRegisterUse::kNone)       \
+  V(RecordReplayInstrumentation, ImplicitRegisterUse::kNone,                   \
+    OperandType::kConstantPoolIndex)                                           \
+  V(RecordReplayInstrumentationGenerator, ImplicitRegisterUse::kNone,          \
+    OperandType::kConstantPoolIndex, OperandType::kReg)                        \
+  V(RecordReplayAssertValue, ImplicitRegisterUse::kReadWriteAccumulator,       \
+    OperandType::kConstantPoolIndex)                                           \
+                                                                               \
   /* Execution Abort (internal error) */                                       \
   V(Abort, ImplicitRegisterUse::kNone, OperandType::kAbortReason)
 
