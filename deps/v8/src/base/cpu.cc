@@ -53,6 +53,8 @@
 #include "src/base/win32-headers.h"
 #endif
 
+#include "v8.h"
+
 namespace v8 {
 namespace base {
 
@@ -80,6 +82,11 @@ static V8_INLINE void __cpuid(int cpu_info[4], int info_type) {
                      "=d"(cpu_info[3])
                    : "a"(info_type), "c"(0));
 #endif  // defined(__i386__) && defined(__pic__)
+
+  // When recording/replaying we might replay on a different CPU than we
+  // recorded on. Force the CPU info to match.
+  recordreplay::Assert("__cpuid %d", info_type);
+  recordreplay::RecordReplayBytes("__cpuid", cpu_info, 4 * sizeof(int));
 }
 
 #endif  // !V8_LIBC_MSVCRT
