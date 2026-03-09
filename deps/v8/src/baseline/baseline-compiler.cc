@@ -54,6 +54,9 @@
 
 namespace v8 {
 namespace internal {
+
+extern bool gRecordReplayAssertValues;
+
 namespace baseline {
 
 template <typename IsolateT>
@@ -2221,6 +2224,47 @@ void BaselineCompiler::VisitIncBlockCounter() {
   SaveAccumulatorScope accumulator_scope(&basm_);
   CallBuiltin<Builtin::kIncBlockCounter>(__ FunctionOperand(),
                                          IndexAsSmi(0));  // coverage array slot
+}
+
+void BaselineCompiler::VisitRecordReplayIncExecutionProgressCounter() {
+  if (gRecordReplayAssertValues) {
+    CallRuntime(Runtime::kRecordReplayAssertExecutionProgress,
+                __ FunctionOperand());
+  } else {
+    BaselineAssembler::ScratchRegisterScope scratch_scope(&basm_);
+    Register reg1 = scratch_scope.AcquireScratch();
+    Register reg2 = scratch_scope.AcquireScratch();
+    __ Move(reg1, ExternalReference::record_replay_progress_counter());
+    __ Move(reg2, MemOperand(reg1, 0));
+    __ AddPointer(reg2, Immediate(1));
+    __ Move(MemOperand(reg1, 0), reg2);
+    __ Move(reg1, ExternalReference::record_replay_target_progress());
+    __ ComparePointer(reg2, MemOperand(reg1, 0));
+    Label done;
+    __ JumpIfCondition(Condition::kNotEqual, &done, Label::kNear);
+    CallRuntime(Runtime::kRecordReplayTargetProgressReached);
+    __ Bind(&done);
+  }
+}
+
+void BaselineCompiler::VisitRecordReplayInstrumentation() {
+  uint32_t index = Index(0);
+  SaveAccumulatorScope accumulator_scope(&basm_);
+  CallRuntime(Runtime::kRecordReplayInstrumentation,
+              __ FunctionOperand(), Smi::FromInt(index));
+}
+
+void BaselineCompiler::VisitRecordReplayInstrumentationGenerator() {
+  uint32_t index = Index(0);
+  SaveAccumulatorScope accumulator_scope(&basm_);
+  CallRuntime(Runtime::kRecordReplayInstrumentationGenerator,
+              __ FunctionOperand(), Smi::FromInt(index), RegisterOperand(1));
+}
+
+void BaselineCompiler::VisitRecordReplayAssertValue() {
+  CallRuntime(Runtime::kRecordReplayAssertValue,
+              __ FunctionOperand(), Smi::FromInt(Index(0)),
+              kInterpreterAccumulatorRegister);
 }
 
 void BaselineCompiler::VisitAbort() {
