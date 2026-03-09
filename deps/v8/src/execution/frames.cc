@@ -189,7 +189,13 @@ StackTraceFrameIterator::StackTraceFrameIterator(Isolate* isolate)
 StackTraceFrameIterator::StackTraceFrameIterator(Isolate* isolate,
                                                  StackFrameId id)
     : StackTraceFrameIterator(isolate) {
-  while (!done() && frame()->id() != id) Advance();
+  if (id == NO_ID) {
+    // Support stack trace iteration when stopped by the Record Replay driver,
+    // where there is no break frame.
+    if (!done() && !IsValidFrame(iterator_.frame())) Advance();
+  } else {
+    while (!done() && frame()->id() != id) Advance();
+  }
 }
 
 void StackTraceFrameIterator::Advance() {
@@ -923,7 +929,7 @@ void CommonFrame::ComputeCallerState(State* state) const {
       reinterpret_cast<Address*>(ComputeConstantPoolAddress(fp()));
 }
 
-void CommonFrame::Summarize(std::vector<FrameSummary>* functions) const {
+void CommonFrame::Summarize(std::vector<FrameSummary>* functions, bool allow_invalid) const {
   // This should only be called on frames which override this method.
   UNREACHABLE();
 }
@@ -1186,7 +1192,7 @@ bool CommonFrameWithJSLinkage::IsConstructor() const {
 }
 
 void CommonFrameWithJSLinkage::Summarize(
-    std::vector<FrameSummary>* functions) const {
+    std::vector<FrameSummary>* functions, bool allow_invalid) const {
   DCHECK(functions->empty());
   Code code = LookupCode();
   int offset = code.GetOffsetFromInstructionStart(isolate(), pc());
@@ -1557,7 +1563,7 @@ FRAME_SUMMARY_DISPATCH(Handle<Context>, native_context)
 
 #undef FRAME_SUMMARY_DISPATCH
 
-void OptimizedFrame::Summarize(std::vector<FrameSummary>* frames) const {
+void OptimizedFrame::Summarize(std::vector<FrameSummary>* frames, bool allow_invalid) const {
   DCHECK(frames->empty());
   DCHECK(is_optimized());
 
@@ -1572,6 +1578,9 @@ void OptimizedFrame::Summarize(std::vector<FrameSummary>* frames) const {
   DeoptimizationData const data = GetDeoptimizationData(&deopt_index);
   if (deopt_index == Safepoint::kNoDeoptimizationIndex) {
     CHECK(data.is_null());
+    if (allow_invalid) {
+      return;
+    }
     FATAL("Missing deoptimization information for OptimizedFrame::Summarize.");
   }
 
@@ -1680,6 +1689,7 @@ DeoptimizationData OptimizedFrame::GetDeoptimizationData(
     *deopt_index = safepoint_entry.deoptimization_index();
     return DeoptimizationData::cast(code.deoptimization_data());
   }
+  recordreplay::Diagnostic("OptimizedFrame::GetDeoptimizationData NoIndex");
   *deopt_index = Safepoint::kNoDeoptimizationIndex;
   return DeoptimizationData();
 }
@@ -1699,8 +1709,8 @@ void OptimizedFrame::GetFunctions(
   DisallowGarbageCollection no_gc;
   int deopt_index = Safepoint::kNoDeoptimizationIndex;
   DeoptimizationData const data = GetDeoptimizationData(&deopt_index);
-  DCHECK(!data.is_null());
-  DCHECK_NE(Safepoint::kNoDeoptimizationIndex, deopt_index);
+  CHECK(!data.is_null());
+  CHECK_NE(Safepoint::kNoDeoptimizationIndex, deopt_index);
   FixedArray const literal_array = data.LiteralArray();
 
   TranslationArrayIterator it(data.TranslationByteArray(),
@@ -1772,7 +1782,7 @@ Object UnoptimizedFrame::ReadInterpreterRegister(int register_index) const {
   return GetExpression(index + register_index);
 }
 
-void UnoptimizedFrame::Summarize(std::vector<FrameSummary>* functions) const {
+void UnoptimizedFrame::Summarize(std::vector<FrameSummary>* functions, bool allow_invalid) const {
   DCHECK(functions->empty());
   Handle<AbstractCode> abstract_code(AbstractCode::cast(GetBytecodeArray()),
                                      isolate());
@@ -1922,7 +1932,7 @@ bool WasmFrame::is_inspectable() const {
 
 Object WasmFrame::context() const { return wasm_instance().native_context(); }
 
-void WasmFrame::Summarize(std::vector<FrameSummary>* functions) const {
+void WasmFrame::Summarize(std::vector<FrameSummary>* functions, bool allow_invalid) const {
   DCHECK(functions->empty());
   // The {WasmCode*} escapes this scope via the {FrameSummary}, which is fine,
   // since this code object is part of our stack.
