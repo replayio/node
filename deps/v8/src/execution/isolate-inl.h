@@ -110,6 +110,10 @@ Tagged<Object> Isolate::exception() {
 void Isolate::set_exception(Tagged<Object> exception_obj) {
   DCHECK(!IsExceptionHole(exception_obj, this));
   thread_local_top()->exception_ = exception_obj;
+  // Parenthesized against turboshaft's function-like Assert macro, which is in
+  // effect over the headers define-assembler-macros.inc includes (this one
+  // among them, through factory-inl.h).
+  (recordreplay::Assert)("Isolate::set_pending_exception");
 }
 
 void Isolate::clear_internal_exception() {
