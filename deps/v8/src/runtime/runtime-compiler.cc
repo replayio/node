@@ -63,6 +63,7 @@ RUNTIME_FUNCTION(Runtime_CompileLazy) {
   }
 
   DirectHandle<SharedFunctionInfo> sfi(function->shared(), isolate);
+  CHECK(isolate == function->GetIsolate());
 
   DCHECK(!function->is_compiled(isolate));
 #ifdef DEBUG
