@@ -495,7 +495,7 @@ class CommonFrame : public StackFrame {
   // Build a list with summaries for this frame including all inlined frames.
   // The functions are ordered bottom-to-top (i.e. summaries.last() is the
   // top-most activation; caller comes before callee).
-  virtual void Summarize(std::vector<FrameSummary>* frames) const;
+  virtual void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const;
 
   static CommonFrame* cast(StackFrame* frame) {
     // It is always safe to cast to common.
@@ -569,7 +569,7 @@ class CommonFrameWithJSLinkage : public CommonFrame {
   virtual bool IsConstructor() const;
 
   // Summarize Frame
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const override;
 
  protected:
   inline explicit CommonFrameWithJSLinkage(StackFrameIteratorBase* iterator);
@@ -817,7 +817,7 @@ class OptimizedFrame : public JavaScriptFrame {
   // is the top-most activation)
   void GetFunctions(std::vector<SharedFunctionInfo>* functions) const override;
 
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const override;
 
   // Lookup exception handler for current {pc}, returns -1 if none found.
   int LookupExceptionHandlerInTable(
@@ -860,7 +860,7 @@ class UnoptimizedFrame : public JavaScriptFrame {
   Object ReadInterpreterRegister(int register_index) const;
 
   // Build a list with summaries for this frame including all inlined frames.
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const override;
 
   static UnoptimizedFrame* cast(StackFrame* frame) {
     DCHECK(frame->is_unoptimized());
@@ -979,7 +979,7 @@ class WasmFrame : public TypedFrame {
   int byte_offset() const;
   bool is_inspectable() const;
 
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames, bool allow_invalid = false) const override;
 
   static WasmFrame* cast(StackFrame* frame) {
     DCHECK(frame->is_wasm());
