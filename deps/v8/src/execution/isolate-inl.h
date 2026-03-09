@@ -111,6 +111,7 @@ Tagged<Object> Isolate::exception() {
 void Isolate::set_exception(Tagged<Object> exception_obj) {
   DCHECK(!IsException(exception_obj, this));
   thread_local_top()->exception_ = exception_obj;
+  recordreplay::Assert("Isolate::set_pending_exception");
 }
 
 void Isolate::clear_internal_exception() {
