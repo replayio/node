@@ -977,7 +977,6 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
 }
 
 static void (*gRecordReplayAttach)(const char* dispatchAddress, const char* buildId);
-static void (*gRecordReplaySetApiKey)(const char* apiKey);
 static void (*gRecordReplayRecordCommandLineArguments)(int*, char***);
 static void (*gRecordReplaySaveRecording)(const char* dir);
 static void (*gRecordReplayRememberRecording)();
@@ -1129,13 +1128,6 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
     return;
   }
 
-  const char* dispatchAddress = getenv("RECORD_REPLAY_SERVER");
-  if (!dispatchAddress) {
-    // 4/21/2021: For backwards compatibility we also check an older env
-    // var used to indicate the dispatch server.
-    dispatchAddress = getenv("RECORD_REPLAY_DISPATCH");
-  }
-
   void* handle = OpenDriverHandle();
 
   if (!handle) {
@@ -1143,30 +1135,7 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
     return;
   }
 
-  size_t keySize = 100;
-  std::vector<char> apiKeyData(keySize, '\0');
-  int ret = uv_os_getenv("RECORD_REPLAY_API_KEY", apiKeyData.data(), &keySize);
-
-  if (ret == UV_ENOBUFS) {
-    apiKeyData.resize(keySize, '\0');
-    ret = uv_os_getenv("RECORD_REPLAY_API_KEY", apiKeyData.data(), &keySize);
-  }
-
-  bool hasApiKey = false;
-  std::string apiKey;
-  if (ret >= 0) {
-    hasApiKey = true;
-    apiKey = std::string(apiKeyData.data(), keySize);
-    // Unsetting the env var will make the variable unavailable via
-    // uv_os_getenv and such, and also mutates the 'environ' global, so
-    // by the time gRecordReplayAttach runs, it will have no idea that
-    // this value existed and won't capture it in the recording itself,
-    // which is ideal for security.
-    CHECK(!uv_os_unsetenv("RECORD_REPLAY_API_KEY"));
-  }
-
   RecordReplayLoadSymbol(handle, "RecordReplayAttach", gRecordReplayAttach);
-  RecordReplayLoadSymbol(handle, "RecordReplaySetApiKey", gRecordReplaySetApiKey);
   RecordReplayLoadSymbol(handle, "RecordReplayRecordCommandLineArguments",
                          gRecordReplayRecordCommandLineArguments);
   RecordReplayLoadSymbol(handle, "RecordReplaySaveRecording", gRecordReplaySaveRecording);
@@ -1183,12 +1152,8 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   RecordReplayLoadSymbol(handle, "RecordReplayJSONToString", gJSONToString);
   RecordReplayLoadSymbol(handle, "RecordReplayJSONFree", gJSONFree);
 
-  if (gRecordReplaySetApiKey && hasApiKey) {
-    gRecordReplaySetApiKey(apiKey.c_str());
-  }
-
   if (gRecordReplayAttach && gRecordReplayFinishRecording) {
-    gRecordReplayAttach(dispatchAddress, gBuildId);
+    gRecordReplayAttach(nullptr, gBuildId);
     gRecordReplayRecordCommandLineArguments(pargc, pargv);
     v8::recordreplay::SetRecordingOrReplaying(handle);
 
