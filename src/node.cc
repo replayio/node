@@ -976,7 +976,7 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
   return 0;
 }
 
-static void (*gRecordReplayAttach)(const char* dispatchAddress, const char* buildId);
+static void (*gRecordReplayAttach)(const char* buildId);
 static void (*gRecordReplayRecordCommandLineArguments)(int*, char***);
 static void (*gRecordReplaySaveRecording)(const char* dir);
 static void (*gRecordReplayRememberRecording)();
@@ -1153,7 +1153,7 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   RecordReplayLoadSymbol(handle, "RecordReplayJSONFree", gJSONFree);
 
   if (gRecordReplayAttach && gRecordReplayFinishRecording) {
-    gRecordReplayAttach(nullptr, gBuildId);
+    gRecordReplayAttach(gBuildId);
     gRecordReplayRecordCommandLineArguments(pargc, pargv);
     v8::recordreplay::SetRecordingOrReplaying(handle);
 
