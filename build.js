@@ -1,24 +1,44 @@
 const fs = require("fs");
 const os = require("os");
+const path = require("path");
 const { spawnSync } = require("child_process");
 const node = __dirname;
+const OutDir = path.join(node, "out");
 
-// Download the record/replay driver archive, using the latest version unless
-//it was overridden via the environment.
-let driverArchive = `${currentPlatform()}-recordreplay.tgz`;
-let downloadDriverRevision = process.env.DRIVER_REVISION ? process.env.DRIVER_REVISION : fs.readFileSync("REPLAY_BACKEND_REV", "utf8");
-let downloadArchive = `${currentPlatform()}-recordreplay-${downloadDriverRevision.trim().substring(0,12)}.tgz`;
+// Use local driver directory if provided, otherwise download from S3.
+const localDriverDir = process.env.REPLAY_LOCAL_DRIVER_DIR;
 const driverFile = `${currentPlatform()}-recordreplay.${driverExtension()}`;
 const driverJSON = `${currentPlatform()}-recordreplay.json`;
-spawnChecked("curl", [`https://static.replay.io/downloads/${downloadArchive}`, "-o", driverArchive], { stdio: "inherit" });
-spawnChecked("tar", ["xf", driverArchive]);
-fs.unlinkSync(driverArchive);
 
-// Embed the driver in the source.
-const driverContents = fs.readFileSync(driverFile);
-const { revision: driverRevision, date: driverDate } = JSON.parse(fs.readFileSync(driverJSON, "utf8"));
-fs.unlinkSync(driverFile);
-fs.unlinkSync(driverJSON);
+let driverContents;
+let driverRevision;
+let driverDate;
+
+if (localDriverDir) {
+  console.log("[build] Loading driver from local directory:", localDriverDir);
+  driverContents = fs.readFileSync(path.join(localDriverDir, driverFile));
+  const driverInfo = JSON.parse(fs.readFileSync(path.join(localDriverDir, driverJSON), "utf8"));
+  driverRevision = driverInfo.revision;
+  driverDate = driverInfo.date;
+} else {
+  console.log("[build] Downloading driver from S3...");
+  let driverArchive = `${currentPlatform()}-recordreplay.tgz`;
+  let downloadDriverRevision = process.env.DRIVER_REVISION ? process.env.DRIVER_REVISION : fs.readFileSync("REPLAY_BACKEND_REV", "utf8");
+  let downloadArchive = `${currentPlatform()}-recordreplay-${downloadDriverRevision.trim().substring(0, 12)}.tgz`;
+  const driverArchivePath = path.join(OutDir, driverArchive);
+  spawnChecked("curl", [`https://static.replay.io/downloads/${downloadArchive}`, "-o", driverArchivePath], { stdio: "inherit" });
+  spawnChecked("tar", ["xf", driverArchivePath, "-C", OutDir]);
+  fs.unlinkSync(driverArchivePath);
+
+  driverContents = fs.readFileSync(path.join(OutDir, driverFile));
+  const driverInfo = JSON.parse(fs.readFileSync(path.join(OutDir, driverJSON), "utf8"));
+  driverRevision = driverInfo.revision;
+  driverDate = driverInfo.date;
+  fs.unlinkSync(path.join(OutDir, driverFile));
+  fs.unlinkSync(path.join(OutDir, driverJSON));
+  fs.unlinkSync(path.join(OutDir, `${driverFile}.symbols.json`));
+}
+console.log("[build] Generating driver source file...");
 let driverString = "";
 for (let i = 0; i < driverContents.length; i++) {
   driverString += `\\${driverContents[i].toString(8)}`;
@@ -36,15 +56,28 @@ namespace node {
 
 const numCPUs = os.cpus().length;
 
-if (process.env.CONFIGURE_NODE) {
-  spawnChecked(`${node}/configure`, [], { cwd: node, stdio: "inherit" });
+function getSanitizedEnv() {
+  const env = { ...process.env };
+  if (env.PATH) {
+    env.PATH = env.PATH.split(":").filter(p => !p.includes("/nix/")).join(":");
+  }
+  delete env.NIX_PROFILES;
+  delete env.NIX_SSL_CERT_FILE;
+  return env;
 }
-spawnChecked("make", [`-j${numCPUs}`, "-C", "out", "BUILDTYPE=Release"], {
+
+const buildEnv = getSanitizedEnv();
+
+if (process.env.CONFIGURE_NODE) {
+  console.log("[build] Running configure...");
+  spawnChecked(`${node}/configure`, [], { cwd: node, stdio: "inherit", env: buildEnv });
+}
+console.log("[build] Running make...");
+spawnChecked("make", [`-j${numCPUs}`, "-C", OutDir, "BUILDTYPE=Release"], {
   cwd: node,
   stdio: "inherit",
   env: {
-    ...process.env,
-    // Disable recording when node runs as part of its compilation process.
+    ...buildEnv,
     RECORD_REPLAY_DONT_RECORD: "1",
   },
 });
