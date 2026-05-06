@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../kb-playground"
+		},
+		{
+			"path": "../backend"
+		}
+	],
+	"settings": {}
+}
