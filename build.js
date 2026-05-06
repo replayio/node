@@ -63,7 +63,6 @@ function getSanitizedEnv() {
   }
   delete env.NIX_PROFILES;
   delete env.NIX_SSL_CERT_FILE;
-  env.RECORD_REPLAY_DONT_RECORD = "1";
   return env;
 }
 
@@ -77,7 +76,10 @@ console.log("[build] Running make...");
 spawnChecked("make", [`-j${numCPUs}`, "-C", OutDir, "BUILDTYPE=Release"], {
   cwd: node,
   stdio: "inherit",
-  env: buildEnv,
+  env: {
+    ...buildEnv,
+    RECORD_REPLAY_DONT_RECORD: "1",
+  },
 });
 
 function spawnChecked(cmd, args, options) {
