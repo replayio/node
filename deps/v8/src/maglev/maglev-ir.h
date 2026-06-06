@@ -45,6 +45,11 @@
 #include "src/maglev/maglev-regalloc-node-info.h"
 #include "src/objects/arguments.h"
 #include "src/objects/heap-number.h"
+#include "src/objects/js-array-buffer.h"
+#include "src/objects/js-collection.h"
+#include "src/objects/js-generator.h"
+#include "src/objects/js-promise.h"
+#include "src/objects/js-proxy.h"
 #include "src/objects/property-details.h"
 #include "src/objects/smi.h"
 #include "src/objects/tagged-index.h"
@@ -70,6 +75,8 @@
 
 namespace v8 {
 namespace internal {
+
+class AsyncResumeTask;
 
 enum Condition : int;
 
@@ -157,11 +164,12 @@ class ExceptionHandlerInfo;
   V(Float64Exponentiate)                \
   V(Float64Modulus)                     \
   V(Float64Negate)                      \
+  V(Float64Max)                         \
+  V(Float64Min)                         \
+  V(Float64RoundToFloat32)              \
   V(Float64Round)                       \
   V(Float64Compare)                     \
   V(Float64ToBoolean)                   \
-  V(Float64Min)                         \
-  V(Float64Max)                         \
   V(Float64Ieee754Unary)                \
   V(Float64Ieee754Binary)               \
   V(Float64Sqrt)
@@ -172,7 +180,7 @@ class ExceptionHandlerInfo;
 
 // LINT.IfChange
 #define CONSTANT_VALUE_NODE_LIST(V) \
-  V(Constant)                       \
+  V(HeapConstant)                   \
   V(Float64Constant)                \
   V(HoleyFloat64Constant)           \
   V(Int32Constant)                  \
@@ -197,7 +205,9 @@ class ExceptionHandlerInfo;
   V(MapPrototypeGet)                \
   V(MapPrototypeGetInt32Key)        \
   V(SetPrototypeHas)                \
-  V(ObjectIsArray)
+  V(WeakMapPrototypeGet)            \
+  V(ObjectIsArray)                  \
+  V(ProcessWasmArgument)
 
 #define TURBOLEV_NON_VALUE_NODE_LIST(V) \
   V(TransitionAndStoreArrayElement)     \
@@ -212,12 +222,15 @@ class ExceptionHandlerInfo;
   V(ChangeUint32ToHoleyFloat64)         \
   V(ChangeFloat64ToHoleyFloat64)        \
   V(CheckedFloat64ToInt32)              \
+  V(CheckedFloat64ToUint32)             \
   V(CheckedFloat64ToSmiSizedInt32)      \
   V(CheckedHoleyFloat64ToSmiSizedInt32) \
   V(CheckedHoleyFloat64ToInt32)         \
+  V(CheckedHoleyFloat64ToUint32)        \
   V(CheckedHoleyFloat64ToFloat64)       \
   V(CheckedInt32ToUint32)               \
   V(CheckedIntPtrToInt32)               \
+  V(CheckedIntPtrToUint32)              \
   V(CheckedObjectToIndex)               \
   V(CheckedNumberToInt32)               \
   V(CheckedNumberToFloat64)             \
@@ -239,12 +252,15 @@ class ExceptionHandlerInfo;
   V(UnsafeInt32ToUint32)                \
   V(UnsafeNumberToFloat64)              \
   V(UnsafeSmiTagInt32)                  \
+  V(UnsafeSmiTagFloat64)                \
+  V(UnsafeSmiTagHoleyFloat64)           \
   V(UnsafeSmiTagIntPtr)                 \
   V(UnsafeSmiTagUint32)                 \
   V(UnsafeSmiUntag)
 
 #define VALUE_NODE_LIST(V)                                            \
   V(Identity)                                                         \
+  V(DeadValue)                                                        \
   V(AllocationBlock)                                                  \
   V(ArgumentsElements)                                                \
   V(ArgumentsLength)                                                  \
@@ -256,6 +272,7 @@ class ExceptionHandlerInfo;
   V(CallWithArrayLike)                                                \
   V(CallWithSpread)                                                   \
   V(CallKnownApiFunction)                                             \
+  V(CallKnownBuiltin)                                                 \
   V(CallKnownJSFunction)                                              \
   V(CallSelf)                                                         \
   V(Construct)                                                        \
@@ -311,6 +328,7 @@ class ExceptionHandlerInfo;
   V(LoadGlobal)                                                       \
   V(LoadNamedGeneric)                                                 \
   V(LoadNamedFromSuperGeneric)                                        \
+  V(LoadDictionaryField)                                              \
   V(MaybeGrowFastElements)                                            \
   V(MigrateMapIfNeeded)                                               \
   V(SetNamedGeneric)                                                  \
@@ -334,12 +352,11 @@ class ExceptionHandlerInfo;
   V(Int32ToUint8Clamped)                                              \
   V(Uint32ToUint8Clamped)                                             \
   V(Float64ToUint8Clamped)                                            \
-  V(CheckedNumberToUint8Clamped)                                      \
+  V(CheckedNumberOrOddballToUint8Clamped)                             \
   V(Int32CountLeadingZeros)                                           \
   V(TaggedCountLeadingZeros)                                          \
   V(Float64CountLeadingZeros)                                         \
   V(IntPtrToBoolean)                                                  \
-  V(Float64ToHeapNumberForField)                                      \
   V(CheckedNumberOrOddballToFloat64)                                  \
   V(CheckedNumberOrOddballToHoleyFloat64)                             \
   V(UnsafeNumberOrOddballToFloat64)                                   \
@@ -357,6 +374,8 @@ class ExceptionHandlerInfo;
   V(StringEqual)                                                      \
   V(StringLength)                                                     \
   V(StringConcat)                                                     \
+  V(StringIndexOf)                                                    \
+  IF_INTL(V, StringLocaleCompareIntl)                                 \
   V(SeqOneByteStringAt)                                               \
   V(ConsStringMap)                                                    \
   V(UnwrapStringWrapper)                                              \
@@ -382,6 +401,7 @@ class ExceptionHandlerInfo;
   V(GetContinuationPreservedEmbedderData)                             \
   V(ReturnedValue)                                                    \
   V(StringSlice)                                                      \
+  V(StringSubstring)                                                  \
   CONSTANT_VALUE_NODE_LIST(V)                                         \
   CONVERSION_NODE_LIST(V)                                             \
   INT32_OPERATIONS_NODE_LIST(V)                                       \
@@ -412,12 +432,14 @@ class ExceptionHandlerInfo;
   V(CheckTypedArrayBounds)                    \
   V(CheckTypedArrayValid)                     \
   V(CheckMaps)                                \
+  V(CheckHomomorphicMap)                      \
   V(CheckMapsWithMigrationAndDeopt)           \
   V(CheckMapsWithMigration)                   \
   V(CheckMapsWithAlreadyLoadedMap)            \
   V(CheckDetectableCallable)                  \
   V(CheckJSReceiverOrNullOrUndefined)         \
   V(CheckNotHole)                             \
+  V(CheckNotUndefined)                        \
   V(CheckHoleyFloat64NotHoleOrUndefined)      \
   V(CheckNumber)                              \
   V(CheckSmi)                                 \
@@ -469,6 +491,7 @@ class ExceptionHandlerInfo;
   V(SetContinuationPreservedEmbedderData)     \
   V(FulfillPromise)                           \
   V(CheckMaglevType)                          \
+  V(Trap)                                     \
   GAP_MOVE_NODE_LIST(V)                       \
   TURBOLEV_NON_VALUE_NODE_LIST(V)
 
@@ -674,7 +697,11 @@ constexpr bool IsSimpleFieldStore(Opcode opcode) {
          opcode == Opcode::kStoreFixedArrayElementWithWriteBarrier ||
          opcode == Opcode::kStoreFixedArrayElementNoWriteBarrier ||
          opcode == Opcode::kStoreFixedDoubleArrayElement ||
-         opcode == Opcode::kStoreTrustedPointerFieldWithWriteBarrier;
+         opcode == Opcode::kStoreTrustedPointerFieldWithWriteBarrier ||
+         opcode == Opcode::kStoreContextSlotWithWriteBarrier ||
+         opcode == Opcode::kStoreSmiContextCell ||
+         opcode == Opcode::kStoreInt32ContextCell ||
+         opcode == Opcode::kStoreFloat64ContextCell;
 }
 constexpr bool IsElementsArrayWrite(Opcode opcode) {
   return opcode == Opcode::kMaybeGrowFastElements ||
@@ -738,6 +765,7 @@ constexpr bool CanBeTheHoleValue(Opcode opcode) {
     case Opcode::kCallBuiltin:
     case Opcode::kCallRuntime:
     case Opcode::kGeneratorRestoreRegister:
+    case Opcode::kIdentity:
     case Opcode::kInitialValue:
     case Opcode::kLoadContextSlot:
     case Opcode::kLoadContextSlotNoCells:
@@ -973,6 +1001,7 @@ inline std::ostream& operator<<(std::ostream& os,
     case ValueRepresentation::kNone:
       return os << "None";
   }
+  UNREACHABLE();
 }
 
 inline std::ostream& operator<<(
@@ -987,6 +1016,7 @@ inline std::ostream& operator<<(
     case TaggedToFloat64ConversionType::kNumberOrOddball:
       return os << "NumberOrOddball";
   }
+  UNREACHABLE();
 }
 
 inline bool HasOnlyJSTypedArrayMaps(base::Vector<const compiler::MapRef> maps) {
@@ -1152,16 +1182,21 @@ class OpProperties {
   }
   constexpr bool is_any_call() const { return is_call() || is_deferred_call(); }
   constexpr bool can_eager_deopt() const {
-    return kAttachedDeoptInfoBits::decode(bitfield_) ==
-           AttachedDeoptInfo::kEager;
+    AttachedDeoptInfo info = kAttachedDeoptInfoBits::decode(bitfield_);
+    return info == AttachedDeoptInfo::kEager ||
+           info == AttachedDeoptInfo::kEagerAndLazy;
   }
   constexpr bool can_lazy_deopt() const {
-    return kAttachedDeoptInfoBits::decode(bitfield_) ==
-           AttachedDeoptInfo::kLazy;
+    AttachedDeoptInfo info = kAttachedDeoptInfoBits::decode(bitfield_);
+    return info == AttachedDeoptInfo::kLazy ||
+           info == AttachedDeoptInfo::kEagerAndLazy;
   }
   constexpr bool is_deopt_checkpoint() const {
     return kAttachedDeoptInfoBits::decode(bitfield_) ==
            AttachedDeoptInfo::kCheckpoint;
+  }
+  constexpr bool has_eager_deopt_info() const {
+    return can_eager_deopt() || is_deopt_checkpoint();
   }
   constexpr bool can_deopt() const {
     return can_eager_deopt() || can_lazy_deopt();
@@ -1326,9 +1361,15 @@ class OpProperties {
   }
 
  private:
-  enum class AttachedDeoptInfo { kNone, kEager, kLazy, kCheckpoint };
+  enum class AttachedDeoptInfo {
+    kNone,
+    kEager,
+    kLazy,
+    kEagerAndLazy,
+    kCheckpoint
+  };
   using kIsCallBit = base::BitField<bool, 0, 1>;
-  using kAttachedDeoptInfoBits = kIsCallBit::Next<AttachedDeoptInfo, 2>;
+  using kAttachedDeoptInfoBits = kIsCallBit::Next<AttachedDeoptInfo, 3>;
   using kCanThrowBit = kAttachedDeoptInfoBits::Next<bool, 1>;
   using kCanReadBit = kCanThrowBit::Next<bool, 1>;
   using kCanWriteBit = kCanReadBit::Next<bool, 1>;
@@ -1682,6 +1723,7 @@ inline bool DeoptFrame::IsJsFrame() const {
     case FrameType::kInlinedArgumentsFrame:
       return false;
   }
+  UNREACHABLE();
 }
 
 inline const MaglevCompilationUnit& DeoptFrame::GetCompilationUnit() const {
@@ -1695,6 +1737,7 @@ inline const MaglevCompilationUnit& DeoptFrame::GetCompilationUnit() const {
     case DeoptFrame::FrameType::kBuiltinContinuationFrame:
       return parent()->GetCompilationUnit();
   }
+  UNREACHABLE();
 }
 
 inline BytecodeOffset DeoptFrame::GetBytecodeOffset() const {
@@ -1710,6 +1753,7 @@ inline BytecodeOffset DeoptFrame::GetBytecodeOffset() const {
       return Builtins::GetContinuationBytecodeOffset(
           as_builtin_continuation().builtin_id());
   }
+  UNREACHABLE();
 }
 
 inline SourcePosition DeoptFrame::GetSourcePosition() const {
@@ -1725,6 +1769,7 @@ inline SourcePosition DeoptFrame::GetSourcePosition() const {
       DCHECK_NOT_NULL(parent());
       return parent()->GetSourcePosition();
   }
+  UNREACHABLE();
 }
 
 inline compiler::SharedFunctionInfoRef DeoptFrame::GetSharedFunctionInfo()
@@ -1850,6 +1895,11 @@ class LazyDeoptInfo : public DeoptInfo {
 
   inline void Unwrap();
 
+  std::tuple<DeoptFrame*, interpreter::Register, int> GetFrameForCloning() {
+    return {&top_frame(), result_location_,
+            ResultSizeField::decode(bitfield_)};
+  }
+
  private:
 #ifdef DEBUG
   bool IsConsideredForResultLocation() const {
@@ -1868,11 +1918,14 @@ class LazyDeoptInfo : public DeoptInfo {
           case Builtin::kGenericLazyDeoptContinuation:
           case Builtin::kGetIteratorWithFeedbackLazyDeoptContinuation:
           case Builtin::kCallIteratorWithFeedbackLazyDeoptContinuation:
+          case Builtin::kForOfNextLoadDoneLazyDeoptContinuation:
+          case Builtin::kForOfNextLoadValueLazyDeoptContinuation:
             return true;
           default:
             return false;
         }
     }
+    UNREACHABLE();
   }
 #endif  // DEBUG
 
@@ -2180,16 +2233,16 @@ class NodeBase : public ZoneObject {
   void Print() const;
 
   EagerDeoptInfo* eager_deopt_info() {
-    DCHECK(properties().can_eager_deopt() ||
-           properties().is_deopt_checkpoint());
-    DCHECK(!properties().can_lazy_deopt());
+    DCHECK(properties().has_eager_deopt_info());
     return reinterpret_cast<EagerDeoptInfo*>(deopt_info_address());
   }
 
   LazyDeoptInfo* lazy_deopt_info() {
     DCHECK(properties().can_lazy_deopt());
-    DCHECK(!properties().can_eager_deopt());
-    return reinterpret_cast<LazyDeoptInfo*>(deopt_info_address());
+    size_t offset = properties().has_eager_deopt_info()
+                        ? EagerDeoptInfoSize(properties())
+                        : 0;
+    return reinterpret_cast<LazyDeoptInfo*>(deopt_info_address() + offset);
   }
 
   const RegisterSnapshot& register_snapshot() const {
@@ -2227,8 +2280,7 @@ class NodeBase : public ZoneObject {
   void SetEagerDeoptInfo(Zone* zone, DeoptFrame* deopt_frame,
                          compiler::FeedbackSource feedback_to_update =
                              compiler::FeedbackSource()) {
-    DCHECK(properties().can_eager_deopt() ||
-           properties().is_deopt_checkpoint());
+    DCHECK(properties().has_eager_deopt_info());
     new (eager_deopt_info())
         EagerDeoptInfo(zone, deopt_frame, feedback_to_update);
   }
@@ -2362,13 +2414,6 @@ class NodeBase : public ZoneObject {
 
   template <class Derived, typename... Args>
   static Derived* Allocate(Zone* zone, size_t input_count, Args&&... args) {
-    static_assert(
-        !Derived::kProperties.can_eager_deopt() ||
-            !Derived::kProperties.can_lazy_deopt(),
-        "The current deopt info representation, at the end of inputs, requires "
-        "that we cannot have both lazy and eager deopts on a node. If we ever "
-        "need this, we have to update accessors to check node->properties() "
-        "for which deopts are active.");
     constexpr size_t size_before_inputs =
         ExceptionHandlerInfoSize(Derived::kProperties) +
         RegisterSnapshotSize(Derived::kProperties) +
@@ -2414,9 +2459,7 @@ class NodeBase : public ZoneObject {
 
   static constexpr size_t EagerDeoptInfoSize(OpProperties properties) {
     return RoundUp<alignof(ValueNode*)>(
-        (properties.can_eager_deopt() || properties.is_deopt_checkpoint())
-            ? sizeof(EagerDeoptInfo)
-            : 0);
+        (properties.has_eager_deopt_info()) ? sizeof(EagerDeoptInfo) : 0);
   }
 
   static constexpr size_t LazyDeoptInfoSize(OpProperties properties) {
@@ -2427,7 +2470,6 @@ class NodeBase : public ZoneObject {
   // Returns the position of deopt info if it exists, otherwise returns
   // its position as if DeoptInfo size were zero.
   Address deopt_info_address() const {
-    DCHECK(!properties().can_eager_deopt() || !properties().can_lazy_deopt());
     size_t extra =
         EagerDeoptInfoSize(properties()) + LazyDeoptInfoSize(properties());
     return last_input_address() - extra;
@@ -2546,8 +2588,12 @@ class ValueNode : public Node {
   bool is_used() const { return use_count_ > 0; }
   bool unused_inputs_were_visited() const { return use_count_ == -1; }
   void add_use() {
-    // Make sure a saturated use count won't overflow.
-    DCHECK_LT(use_count_, kMaxInt);
+    // Make sure a saturated use count won't overflow. Note that this is a CHECK
+    // rather than a DCHECK: hitting this requires building a huge maglev graph
+    // with a huge amount of deopt, and hitting this in a legitimate graph seems
+    // highly unlikely. If we see this CHECK failing, then we should instead use
+    // a proper saturated counter (like turboshaft::SaturatedUint8).
+    CHECK_LT(use_count_, kMaxInt);
     use_count_++;
   }
   inline void remove_use();
@@ -2565,8 +2611,6 @@ class ValueNode : public Node {
   // For constants only.
   void LoadToRegister(MaglevAssembler*, Register) const;
   void LoadToRegister(MaglevAssembler*, DoubleRegister) const;
-  void DoLoadToRegister(MaglevAssembler*, Register) const;
-  void DoLoadToRegister(MaglevAssembler*, DoubleRegister) const;
   DirectHandle<Object> Reify(LocalIsolate* isolate) const;
 
   bool has_valid_live_range() const {
@@ -2660,6 +2704,7 @@ class ValueNode : public Node {
       case ValueRepresentation::kNone:
         UNREACHABLE();
     }
+    UNREACHABLE();
   }
 
   compiler::OptionalHeapObjectRef TryGetConstant(
@@ -2825,6 +2870,10 @@ class NodeTMixin : public BaseNode {
  public:
   // Enable concise base access in derived nodes.
   using Base = NodeTMixin;
+
+  // Checking that the opcodes of ValueNodes are indeed declared as ValueNodes.
+  static_assert(!std::is_same_v<BaseNode, ValueNode> ||
+                IsValueNode(NodeBase::opcode_of<Derived>));
 
   // Shadowing for static knowledge.
   constexpr Opcode opcode() const { return NodeBase::opcode_of<Derived>; }
@@ -3074,6 +3123,17 @@ class Identity : public FixedInputValueNodeT<1, Identity> {
     // Node::SetTaggedResultNeedsDecompress pass through phis.
   }
 #endif
+  void SetValueLocationConstraints() { UNREACHABLE(); }
+  void GenerateCode(MaglevAssembler*, const ProcessingState&) { UNREACHABLE(); }
+};
+
+class DeadValue : public FixedInputValueNodeT<0, DeadValue> {
+ public:
+  static constexpr OpProperties kProperties =
+      OpProperties::ForValueRepresentation(ValueRepresentation::kTagged);
+
+  explicit DeadValue(uint64_t bitfield) : Base(bitfield) {}
+
   void SetValueLocationConstraints() { UNREACHABLE(); }
   void GenerateCode(MaglevAssembler*, const ProcessingState&) { UNREACHABLE(); }
 };
@@ -3348,6 +3408,9 @@ class Int32ToBoolean : public FixedInputValueNodeT<1, Int32ToBoolean> {
   DECLARE_UNOP(Int32)
 
   constexpr bool flip() const { return FlipBitField::decode(bitfield()); }
+  void set_flip(bool value) {
+    set_bitfield(FlipBitField::update(bitfield(), value));
+  }
 
   void SetValueLocationConstraints();
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
@@ -3519,6 +3582,9 @@ class Float64ToBoolean : public FixedInputValueNodeT<1, Float64ToBoolean> {
   DECLARE_UNOP(Float64)
 
   constexpr bool flip() const { return FlipBitField::decode(bitfield()); }
+  void set_flip(bool value) {
+    set_bitfield(FlipBitField::update(bitfield(), value));
+  }
 
   void SetValueLocationConstraints();
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
@@ -3890,31 +3956,16 @@ class Float64ToUint8Clamped
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
 };
 
-class CheckedNumberToUint8Clamped
-    : public FixedInputValueNodeT<1, CheckedNumberToUint8Clamped> {
+class CheckedNumberOrOddballToUint8Clamped
+    : public FixedInputValueNodeT<1, CheckedNumberOrOddballToUint8Clamped> {
  public:
-  explicit CheckedNumberToUint8Clamped(uint64_t bitfield) : Base(bitfield) {}
+  explicit CheckedNumberOrOddballToUint8Clamped(uint64_t bitfield)
+      : Base(bitfield) {}
 
   static constexpr OpProperties kProperties =
       OpProperties::EagerDeopt() | OpProperties::Int32();
   DECLARE_UNOP(Tagged)
 
-  void SetValueLocationConstraints();
-  void GenerateCode(MaglevAssembler*, const ProcessingState&);
-};
-
-// Essentially the same as Float64ToTagged but the result cannot be shared as it
-// will be used as a mutable heap number by a store.
-class Float64ToHeapNumberForField
-    : public FixedInputValueNodeT<1, Float64ToHeapNumberForField> {
- public:
-  explicit Float64ToHeapNumberForField(uint64_t bitfield) : Base(bitfield) {}
-  static constexpr OpProperties kProperties = OpProperties::NotIdempotent() |
-                                              OpProperties::CanAllocate() |
-                                              OpProperties::DeferredCall();
-  DECLARE_UNOP(Float64)
-
-  int MaxCallStackArgs() const { return 0; }
   void SetValueLocationConstraints();
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
 };
@@ -3981,9 +4032,23 @@ class Float64CountLeadingZeros
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
 };
 
+class Float64RoundToFloat32
+    : public FixedInputValueNodeT<1, Float64RoundToFloat32> {
+ public:
+  explicit Float64RoundToFloat32(uint64_t bitfield) : Base(bitfield) {}
+
+  static constexpr Opcode kOpcode = Opcode::kFloat64RoundToFloat32;
+  static constexpr OpProperties kProperties = OpProperties::Float64();
+  DECLARE_UNOP(Float64)
+
+  void SetValueLocationConstraints();
+  void GenerateCode(MaglevAssembler*, const ProcessingState&);
+  void PrintParams(std::ostream&) const {}
+};
+
 class Float64Round : public FixedInputValueNodeT<1, Float64Round> {
  public:
-  enum class Kind { kFloor, kCeil, kNearest };
+  enum class Kind { kFloor, kCeil, kNearest, kTrunc };
 
   static Builtin continuation(Kind kind) {
     switch (kind) {
@@ -3993,7 +4058,10 @@ class Float64Round : public FixedInputValueNodeT<1, Float64Round> {
         return Builtin::kMathFloorContinuation;
       case Kind::kNearest:
         return Builtin::kMathRoundContinuation;
+      case Kind::kTrunc:
+        return Builtin::kMathTrunc;
     }
+    UNREACHABLE();
   }
 
   Float64Round(uint64_t bitfield, Kind kind) : Base(bitfield), kind_(kind) {}
@@ -4102,19 +4170,24 @@ DEFINE_PURE_CONV(UnsafeFloat64ToInt32, Float64, Int32, Number)
 DEFINE_PURE_CONV(UnsafeHoleyFloat64ToInt32, HoleyFloat64, Int32, Number)
 DEFINE_PURE_CONV(UnsafeInt32ToUint32, Int32, Uint32, Number)
 DEFINE_PURE_CONV(UnsafeSmiTagInt32, Int32, TaggedValue, Smi)
+DEFINE_PURE_CONV(UnsafeSmiTagFloat64, Float64, TaggedValue, Smi)
+DEFINE_PURE_CONV(UnsafeSmiTagHoleyFloat64, HoleyFloat64, TaggedValue, Smi)
 DEFINE_PURE_CONV(UnsafeSmiTagIntPtr, IntPtr, TaggedValue, Smi)
 DEFINE_PURE_CONV(UnsafeSmiTagUint32, Uint32, TaggedValue, Smi)
 DEFINE_PURE_CONV(UnsafeSmiUntag, Tagged, Int32, Smi, DONT_DECOMPRESS_INPUTS)
 DEFINE_PURE_CONV(UnsafeNumberToFloat64, Tagged, Float64, Number)
 
 DEFINE_CHECKED_CONV(CheckedFloat64ToInt32, Float64, Int32, Number)
+DEFINE_CHECKED_CONV(CheckedFloat64ToUint32, Float64, Uint32, Number)
 DEFINE_CHECKED_CONV(CheckedHoleyFloat64ToInt32, HoleyFloat64, Int32, Number)
+DEFINE_CHECKED_CONV(CheckedHoleyFloat64ToUint32, HoleyFloat64, Uint32, Number)
 DEFINE_CHECKED_CONV(CheckedFloat64ToSmiSizedInt32, Float64, Int32, Smi)
 DEFINE_CHECKED_CONV(CheckedHoleyFloat64ToSmiSizedInt32, HoleyFloat64, Int32,
                     Smi)
 DEFINE_CHECKED_CONV(CheckedHoleyFloat64ToFloat64, HoleyFloat64, Float64, Number)
 DEFINE_CHECKED_CONV(CheckedInt32ToUint32, Int32, Uint32, Number)
 DEFINE_CHECKED_CONV(CheckedIntPtrToInt32, IntPtr, Int32, Number)
+DEFINE_CHECKED_CONV(CheckedIntPtrToUint32, IntPtr, Uint32, Number)
 DEFINE_CHECKED_CONV(CheckedNumberToInt32, Tagged, Int32, Number)
 DEFINE_CHECKED_CONV(CheckedNumberToFloat64, Tagged, Float64, Number)
 DEFINE_CHECKED_CONV(CheckedSmiTagFloat64, Float64, TaggedValue, Smi)
@@ -4234,6 +4307,7 @@ class CheckedNumberOrOddballToHoleyFloat64
       case TaggedToFloat64ConversionType::kNumberOrOddball:
         return DeoptimizeReason::kNotANumberOrOddball;
     }
+    UNREACHABLE();
   }
 
   void SetValueLocationConstraints();
@@ -4541,6 +4615,10 @@ class ToBoolean : public FixedInputValueNodeT<1, ToBoolean> {
   auto options() const { return std::tuple{check_type()}; }
   NodeType type() const { return NodeType::kBoolean; }
 
+  void set_check_type(CheckType check_type) {
+    set_bitfield(CheckTypeBitField::update(bitfield(), check_type));
+  }
+
  private:
   using CheckTypeBitField = NextBitField<CheckType, 1>;
 };
@@ -4559,6 +4637,10 @@ class ToBooleanLogicalNot
 
   auto options() const { return std::tuple{check_type()}; }
   NodeType type() const { return NodeType::kBoolean; }
+
+  void set_check_type(CheckType check_type) {
+    set_bitfield(CheckTypeBitField::update(bitfield(), check_type));
+  }
 
  private:
   using CheckTypeBitField = NextBitField<CheckType, 1>;
@@ -5092,11 +5174,11 @@ class TaggedIndexConstant
   const Tagged<TaggedIndex> value_;
 };
 
-class Constant : public FixedInputValueNodeT<0, Constant> {
+class HeapConstant : public FixedInputValueNodeT<0, HeapConstant> {
  public:
   using OutputRegister = Register;
 
-  explicit Constant(uint64_t bitfield, compiler::HeapObjectRef object)
+  explicit HeapConstant(uint64_t bitfield, compiler::HeapObjectRef object)
       : Base(bitfield), object_(object) {}
 
   bool ToBoolean(LocalIsolate* local_isolate) const {
@@ -5130,7 +5212,20 @@ class RootConstant : public FixedInputValueNodeT<0, RootConstant> {
   using OutputRegister = Register;
 
   explicit RootConstant(uint64_t bitfield, RootIndex index)
-      : Base(bitfield), index_(index) {}
+      : Base(bitfield), index_(index) {
+#ifdef DEBUG
+    // Making sure that this is a HeapConstant and not a Smi.
+    switch (index) {
+#define CASE(type, name, label) case RootIndex::k##label:
+      SMI_ROOT_LIST(CASE)
+      FATAL(
+          "SmiConstant should be used for Smi roots instead of RootConstant.");
+#undef CASE
+      default:
+        break;
+    }
+#endif
+  }
 
   bool ToBoolean(LocalIsolate* local_isolate) const;
 
@@ -5333,6 +5428,8 @@ enum class ObjectType {
   kDefault,
   kConsString,
   kHeapNumber,
+  // TODO(375937549): only needed for TF compatibility.
+  kFixedArray,
 };
 
 // The type of a VirtualObject field. Extend as needed.
@@ -5343,6 +5440,11 @@ enum class FieldType {
   kTrustedPointer,
   kInt32,
   kFloat64,
+};
+
+enum class FieldConstness {
+  kMutable,
+  kConstAfterInit,
 };
 
 constexpr int FieldSizeOf(FieldType type) {
@@ -5358,20 +5460,30 @@ constexpr int FieldSizeOf(FieldType type) {
     case FieldType::kNone:
       UNREACHABLE();
   }
+  UNREACHABLE();
 }
 
 // Describes a single field within an object, consisting of the field offset and
 // type. For convenience, we also maintain the link to the VirtualObject's
 // corresponding slot index.
 struct Field {
-  constexpr Field(int offset, FieldType type)
-      : slot_index(kNoSlotIndex), offset(offset), type(type) {}
-  constexpr Field(int slot_index, int offset, FieldType type)
-      : slot_index(slot_index), offset(offset), type(type) {}
+  constexpr Field(int offset, FieldType type,
+                  FieldConstness constness = FieldConstness::kMutable)
+      : slot_index(kNoSlotIndex),
+        offset(offset),
+        type(type),
+        constness(constness) {}
+  constexpr Field(int slot_index, int offset, FieldType type,
+                  FieldConstness constness = FieldConstness::kMutable)
+      : slot_index(slot_index),
+        offset(offset),
+        type(type),
+        constness(constness) {}
   static constexpr int kNoSlotIndex = -1;
   int slot_index;
   int offset;
   FieldType type;
+  FieldConstness constness;
 };
 
 // Describes the layout of an entire object. This can be seen as a set of header
@@ -5460,14 +5572,21 @@ constexpr auto MakeOffsetToSlotMap(const std::array<Field, N>& fields) {
 
 // Helper macros for Shape class definitions. They are undef'd at the end of
 // this file.
-#define DEF_SHAPE_FIELD_ENUM(NAME, OFFSET, TYPE) NAME##_slot,
+#define DEF_SHAPE_FIELD_ENUM(NAME, ...) NAME##_slot,
 
-#define DEF_SHAPE_FIELD_DESC(NAME, OFFSET, TYPE) \
+#define DEF_SHAPE_FIELD_DESC_3(NAME, OFFSET, TYPE) \
   static constexpr vobj::Field NAME##_desc = {NAME##_slot, OFFSET, TYPE};
+#define DEF_SHAPE_FIELD_DESC_4(NAME, OFFSET, TYPE, CONSTNESS)            \
+  static constexpr vobj::Field NAME##_desc = {NAME##_slot, OFFSET, TYPE, \
+                                              CONSTNESS};
+#define GET_DEF_SHAPE_FIELD_DESC_MACRO(_1, _2, _3, _4, NAME, ...) NAME
+#define DEF_SHAPE_FIELD_DESC(...)                                     \
+  GET_DEF_SHAPE_FIELD_DESC_MACRO(__VA_ARGS__, DEF_SHAPE_FIELD_DESC_4, \
+                                 DEF_SHAPE_FIELD_DESC_3)(__VA_ARGS__)
 
-#define DEF_SHAPE_FIELD_LIST(NAME, OFFSET, TYPE) , NAME##_desc
+#define DEF_SHAPE_FIELD_LIST(NAME, ...) , NAME##_desc
 
-#define DEF_SHAPE_STATIC_ASSERTS(NAME, OFFSET, TYPE)        \
+#define DEF_SHAPE_STATIC_ASSERTS(NAME, OFFSET, TYPE, ...)   \
   static_assert(NAME##_slot == NAME##_desc.slot_index);     \
   static_assert(FieldSizeOf(NAME##_desc.type) >=            \
                 vobj::detail::kOffsetToSlotMapElementSize); \
@@ -5514,7 +5633,8 @@ struct VirtualHeapObjectShape {
   static constexpr bool kInstancesHaveStaticSize = true;
   static constexpr vobj::ObjectType kObjectType = vobj::ObjectType::kDefault;
   static constexpr vobj::FieldType kBodyFieldType = vobj::FieldType::kNone;
-#define FIELD_LIST(V) V(map, HeapObject::kMapOffset, vobj::FieldType::kTagged)
+#define FIELD_LIST(V) \
+  V(map, offsetof(HeapObject, map_), vobj::FieldType::kTagged)
   DEF_SHAPE(vobj::VirtualHeapObjectShapeBase, FIELD_LIST);
 #undef FIELD_LIST
 };
@@ -5615,11 +5735,11 @@ class VirtualObject : public FixedInputValueNodeT<0, VirtualObject> {
       if (object_type() == vobj::ObjectType::kConsString) {
         // ConsString materialization uses a custom opcode that only cares about
         // these two fields.
-        vobj::Field fst = FieldForOffset(ConsString::kFirstOffset);
+        vobj::Field fst = FieldForOffset(offsetof(ConsString, first_));
         if (!callback(slots_[fst.slot_index], fst)) {
           return false;
         }
-        vobj::Field snd = FieldForOffset(ConsString::kSecondOffset);
+        vobj::Field snd = FieldForOffset(offsetof(ConsString, second_));
         return callback(slots_[snd.slot_index], snd);
       }
       if (object_type() == vobj::ObjectType::kHeapNumber) {
@@ -5629,7 +5749,17 @@ class VirtualObject : public FixedInputValueNodeT<0, VirtualObject> {
       }
     }
     for (int i = 0; i < slot_count(); i++) {
-      if (!callback(slots_[i], FieldForSlot(i))) {
+      vobj::Field field = FieldForSlot(i);
+#if TAGGED_SIZE_8_BYTES
+      // To keep the deoptimization data in sync with TF (which represents
+      // length and padding in a single Uint64), we skip the padding.
+      if (mode == ForEachSlotIterationMode::kForDeopt &&
+          object_type() == vobj::ObjectType::kFixedArray &&
+          field.offset == FixedArrayBase::kPaddingOffset) {
+        continue;
+      }
+#endif  // TAGGED_SIZE_8_BYTES
+      if (!callback(slots_[i], field)) {
         return false;
       }
     }
@@ -5718,7 +5848,8 @@ class VirtualObject : public FixedInputValueNodeT<0, VirtualObject> {
   vobj::Field FieldForSlot(int i) const {
     DCHECK_LT(i, slot_count());
     if (i < header_slot_count()) {
-      return object_layout_->header_fields[i];
+      vobj::Field f = object_layout_->header_fields[i];
+      return f;
     }
     int offset = header_size() + (i - header_slot_count()) * body_field_size();
     return vobj::Field{i, offset, object_layout_->body_field_type};
@@ -5764,8 +5895,8 @@ class VirtualObject : public FixedInputValueNodeT<0, VirtualObject> {
 };
 
 struct VirtualJSReceiverShape : VirtualHeapObjectShape {
-#define FIELD_LIST(V)                                        \
-  V(properties_or_hash, JSReceiver::kPropertiesOrHashOffset, \
+#define FIELD_LIST(V)                                              \
+  V(properties_or_hash, offsetof(JSReceiver, properties_or_hash_), \
     vobj::FieldType::kTagged)
   DEF_SHAPE(VirtualHeapObjectShape, FIELD_LIST);
 #undef FIELD_LIST
@@ -5775,33 +5906,41 @@ struct VirtualJSObjectShape : VirtualJSReceiverShape {
   static constexpr bool kInstancesHaveStaticSize = false;
   static constexpr vobj::FieldType kBodyFieldType = vobj::FieldType::kTagged;
 #define FIELD_LIST(V) \
-  V(elements, JSObject::kElementsOffset, vobj::FieldType::kTagged)
+  V(elements, offsetof(JSObject, elements_), vobj::FieldType::kTagged)
   DEF_SHAPE(VirtualJSReceiverShape, FIELD_LIST);
 #undef FIELD_LIST
 };
 
 struct VirtualJSArrayShape : VirtualJSObjectShape {
 #define FIELD_LIST(V) \
-  V(length, JSArray::kLengthOffset, vobj::FieldType::kTagged)
+  V(length, offsetof(JSArray, length_), vobj::FieldType::kTagged)
   DEF_SHAPE(VirtualJSObjectShape, FIELD_LIST);
 #undef FIELD_LIST
 };
 
+// We never modify the [[IteratedObject]] of a JSArrayIterator. This is
+// different from what the specification says, which is changing the
+// [[IteratedObject]] field to undefined when the iteration ends. Keeping it
+// constant allows for generating more efficient code, since we don't need to
+// re-read the iterated_object inside loops.
+
 struct VirtualJSArrayIteratorShape : VirtualJSObjectShape {
   using T = JSArrayIterator;
-#define FIELD_LIST(V)                                                    \
-  V(iterated_object, T::kIteratedObjectOffset, vobj::FieldType::kTagged) \
-  V(next_index, T::kNextIndexOffset, vobj::FieldType::kTagged)           \
-  V(kind, T::kKindOffset, vobj::FieldType::kTagged)
+#define FIELD_LIST(V)                                                         \
+  V(iterated_object, offsetof(T, iterated_object_), vobj::FieldType::kTagged, \
+    vobj::FieldConstness::kConstAfterInit)                                    \
+  V(next_index, offsetof(T, next_index_), vobj::FieldType::kTagged)           \
+  V(kind, offsetof(T, kind_), vobj::FieldType::kTagged,                       \
+    vobj::FieldConstness::kConstAfterInit)
   DEF_SHAPE(VirtualJSObjectShape, FIELD_LIST);
 #undef FIELD_LIST
 };
 
 struct VirtualJSStringIteratorShape : VirtualJSObjectShape {
   using T = JSStringIterator;
-#define FIELD_LIST(V)                                   \
-  V(string, T::kStringOffset, vobj::FieldType::kTagged) \
-  V(index, T::kIndexOffset, vobj::FieldType::kTagged)
+#define FIELD_LIST(V)                                       \
+  V(string, offsetof(T, string_), vobj::FieldType::kTagged) \
+  V(index, offsetof(T, index_), vobj::FieldType::kTagged)
   DEF_SHAPE(VirtualJSObjectShape, FIELD_LIST);
 #undef FIELD_LIST
 };
@@ -5817,7 +5956,7 @@ struct VirtualJSIteratorResultShape : VirtualJSObjectShape {
 
 struct VirtualJSPrimitiveWrapperShape : VirtualJSObjectShape {
   using T = JSPrimitiveWrapper;
-#define FIELD_LIST(V) V(value, T::kValueOffset, vobj::FieldType::kTagged)
+#define FIELD_LIST(V) V(value, offsetof(T, value_), vobj::FieldType::kTagged)
   DEF_SHAPE(VirtualJSObjectShape, FIELD_LIST);
 #undef FIELD_LIST
 };
@@ -5825,25 +5964,25 @@ struct VirtualJSPrimitiveWrapperShape : VirtualJSObjectShape {
 struct VirtualJSRegExpShape : VirtualJSObjectShape {
   using T = JSRegExp;
 #define FIELD_LIST(V)                                         \
-  V(data, T::kDataOffset,                                     \
+  V(data, offsetof(T, data_),                                 \
     V8_ENABLE_SANDBOX_BOOL ? vobj::FieldType::kTrustedPointer \
                            : vobj::FieldType::kTagged)        \
-  V(source, T::kSourceOffset, vobj::FieldType::kTagged)       \
-  V(flags, T::kFlagsOffset, vobj::FieldType::kTagged)
+  V(flags, offsetof(T, flags_), vobj::FieldType::kTagged)
   DEF_SHAPE(VirtualJSObjectShape, FIELD_LIST);
 #undef FIELD_LIST
 };
 
 struct VirtualJSGeneratorObjectShape : VirtualJSObjectShape {
   using T = JSGeneratorObject;
-#define FIELD_LIST(V)                                                        \
-  V(function, T::kFunctionOffset, vobj::FieldType::kTagged)                  \
-  V(context, T::kContextOffset, vobj::FieldType::kTagged)                    \
-  V(receiver, T::kReceiverOffset, vobj::FieldType::kTagged)                  \
-  V(input_or_debug_pos, T::kInputOrDebugPosOffset, vobj::FieldType::kTagged) \
-  V(resume_mode, T::kResumeModeOffset, vobj::FieldType::kTagged)             \
-  V(continuation, T::kContinuationOffset, vobj::FieldType::kTagged)          \
-  V(parameters_and_registers, T::kParametersAndRegistersOffset,              \
+#define FIELD_LIST(V)                                                   \
+  V(function, offsetof(T, function_), vobj::FieldType::kTagged)         \
+  V(context, offsetof(T, context_), vobj::FieldType::kTagged)           \
+  V(receiver, offsetof(T, receiver_), vobj::FieldType::kTagged)         \
+  V(input_or_debug_pos, offsetof(T, input_or_debug_pos_),               \
+    vobj::FieldType::kTagged)                                           \
+  V(resume_mode, offsetof(T, resume_mode_), vobj::FieldType::kTagged)   \
+  V(continuation, offsetof(T, continuation_), vobj::FieldType::kTagged) \
+  V(parameters_and_registers, offsetof(T, parameters_and_registers_),   \
     vobj::FieldType::kTagged)
   DEF_SHAPE(VirtualJSObjectShape, FIELD_LIST);
 #undef FIELD_LIST
@@ -5851,29 +5990,30 @@ struct VirtualJSGeneratorObjectShape : VirtualJSObjectShape {
 
 struct VirtualJSAsyncGeneratorObjectShape : VirtualJSGeneratorObjectShape {
   using T = JSAsyncGeneratorObject;
-#define FIELD_LIST(V)                                 \
-  V(queue, T::kQueueOffset, vobj::FieldType::kTagged) \
-  V(is_awaiting, T::kIsAwaitingOffset, vobj::FieldType::kTagged)
+#define FIELD_LIST(V)                                     \
+  V(queue, offsetof(T, queue_), vobj::FieldType::kTagged) \
+  V(is_awaiting, offsetof(T, is_awaiting_), vobj::FieldType::kTagged)
   DEF_SHAPE(VirtualJSGeneratorObjectShape, FIELD_LIST);
 #undef FIELD_LIST
-  static_assert(kHeaderSize == T::kHeaderSize);
+  static_assert(kHeaderSize == sizeof(T));
 };
 
 struct VirtualJSAsyncFunctionObjectShape : VirtualJSObjectShape {
   using T = JSAsyncFunctionObject;
-#define FIELD_LIST(V)                                                        \
-  V(function, T::kFunctionOffset, vobj::FieldType::kTagged)                  \
-  V(context, T::kContextOffset, vobj::FieldType::kTagged)                    \
-  V(receiver, T::kReceiverOffset, vobj::FieldType::kTagged)                  \
-  V(input_or_debug_pos, T::kInputOrDebugPosOffset, vobj::FieldType::kTagged) \
-  V(resume_mode, T::kResumeModeOffset, vobj::FieldType::kTagged)             \
-  V(continuation, T::kContinuationOffset, vobj::FieldType::kTagged)          \
-  V(parameters_and_registers, T::kParametersAndRegistersOffset,              \
-    vobj::FieldType::kTagged)                                                \
-  V(promise, T::kPromiseOffset, vobj::FieldType::kTagged)                    \
-  V(await_resolve_closure, T::kAwaitResolveClosureOffset,                    \
-    vobj::FieldType::kTagged)                                                \
-  V(await_reject_closure, T::kAwaitRejectClosureOffset,                      \
+#define FIELD_LIST(V)                                                   \
+  V(function, offsetof(T, function_), vobj::FieldType::kTagged)         \
+  V(context, offsetof(T, context_), vobj::FieldType::kTagged)           \
+  V(receiver, offsetof(T, receiver_), vobj::FieldType::kTagged)         \
+  V(input_or_debug_pos, offsetof(T, input_or_debug_pos_),               \
+    vobj::FieldType::kTagged)                                           \
+  V(resume_mode, offsetof(T, resume_mode_), vobj::FieldType::kTagged)   \
+  V(continuation, offsetof(T, continuation_), vobj::FieldType::kTagged) \
+  V(parameters_and_registers, offsetof(T, parameters_and_registers_),   \
+    vobj::FieldType::kTagged)                                           \
+  V(promise, offsetof(T, promise_), vobj::FieldType::kTagged)           \
+  V(await_resolve_closure, offsetof(T, await_resolve_closure_),         \
+    vobj::FieldType::kTagged)                                           \
+  V(await_reject_closure, offsetof(T, await_reject_closure_),           \
     vobj::FieldType::kTagged)
   DEF_SHAPE(VirtualJSObjectShape, FIELD_LIST);
 #undef FIELD_LIST
@@ -5889,14 +6029,54 @@ struct VirtualJSPromiseObjectShape : VirtualJSObjectShape {
 #undef FIELD_LIST
 };
 
+struct VirtualAsyncResumeTaskShape : VirtualHeapObjectShape {
+  using T = AsyncResumeTask;
+#ifdef V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA
+#define FIELD_LIST(V)                                                       \
+  V(continuation_preserved_embedder_data,                                   \
+    ObjectTraits<Microtask>::kContinuationPreservedEmbedderDataOffset,      \
+    vobj::FieldType::kTagged)                                               \
+  V(generator, ObjectTraits<T>::kGeneratorOffset, vobj::FieldType::kTagged) \
+  V(value, ObjectTraits<T>::kValueOffset, vobj::FieldType::kTagged)         \
+  V(kind, ObjectTraits<T>::kKindOffset, vobj::FieldType::kTagged)
+#else
+#define FIELD_LIST(V)                                                       \
+  V(generator, ObjectTraits<T>::kGeneratorOffset, vobj::FieldType::kTagged) \
+  V(value, ObjectTraits<T>::kValueOffset, vobj::FieldType::kTagged)         \
+  V(kind, ObjectTraits<T>::kKindOffset, vobj::FieldType::kTagged)
+#endif
+  DEF_SHAPE(VirtualHeapObjectShape, FIELD_LIST);
+#undef FIELD_LIST
+};
+
 struct VirtualFixedArrayShape : VirtualHeapObjectShape {
   // The instance size is determined by array length, and array elements are
+  // tagged.
+  static constexpr bool kInstancesHaveStaticSize = false;
+  static constexpr vobj::ObjectType kObjectType = vobj::ObjectType::kFixedArray;
+  static constexpr vobj::FieldType kBodyFieldType = vobj::FieldType::kTagged;
+#if TAGGED_SIZE_8_BYTES
+#define OPTIONAL_PADDING(V) \
+  V(optional_padding, FixedArrayBase::kPaddingOffset, vobj::FieldType::kInt32)
+#else
+#define OPTIONAL_PADDING(V)
+#endif  // TAGGED_SIZE_8_BYTES
+#define FIELD_LIST(V)                                               \
+  V(length, FixedArrayBase::kLengthOffset, vobj::FieldType::kInt32) \
+  OPTIONAL_PADDING(V)
+  DEF_SHAPE(VirtualHeapObjectShape, FIELD_LIST);
+#undef OPTIONAL_PADDING
+#undef FIELD_LIST
+};
+
+struct ContextShape : VirtualHeapObjectShape {
+  // The instance size is determined by context length, and context elements are
   // tagged.
   static constexpr bool kInstancesHaveStaticSize = false;
   static constexpr vobj::FieldType kBodyFieldType = vobj::FieldType::kTagged;
 
 #define FIELD_LIST(V) \
-  V(length, FixedArrayBase::kLengthOffset, vobj::FieldType::kTagged)
+  V(length, offsetof(Context, length_), vobj::FieldType::kTagged)
 
   DEF_SHAPE(VirtualHeapObjectShape, FIELD_LIST);
 #undef FIELD_LIST
@@ -5920,7 +6100,7 @@ struct VirtualHeapNumberShape : VirtualPrimitiveHeapObjectShape {
   // Special handling needed; deopt materialization uses a special path.
   // TODO(jgruber): .. but could it take the standard path instead?
   static constexpr vobj::ObjectType kObjectType = vobj::ObjectType::kHeapNumber;
-#define FIELD_LIST(V) V(value, T::kValueOffset, vobj::FieldType::kFloat64)
+#define FIELD_LIST(V) V(value, offsetof(T, value_), vobj::FieldType::kFloat64)
   DEF_SHAPE(VirtualPrimitiveHeapObjectShape, FIELD_LIST);
 #undef FIELD_LIST
 };
@@ -5945,19 +6125,28 @@ struct VirtualConsStringShape : VirtualNameShape {
   // Special handling needed; the map may be non-constant, and deopt
   // materialization uses a special path.
   static constexpr vobj::ObjectType kObjectType = vobj::ObjectType::kConsString;
-#define FIELD_LIST(V)                                 \
-  V(first, T::kFirstOffset, vobj::FieldType::kTagged) \
-  V(second, T::kSecondOffset, vobj::FieldType::kTagged)
+#define FIELD_LIST(V)                                     \
+  V(first, offsetof(T, first_), vobj::FieldType::kTagged) \
+  V(second, offsetof(T, second_), vobj::FieldType::kTagged)
   DEF_SHAPE(VirtualStringShape, FIELD_LIST);
 #undef FIELD_LIST
 };
 
 struct VirtualFixedDoubleArrayShape : VirtualHeapObjectShape {
   static constexpr bool kInstancesHaveStaticSize = false;
+  static constexpr vobj::ObjectType kObjectType = vobj::ObjectType::kFixedArray;
   static constexpr vobj::FieldType kBodyFieldType = vobj::FieldType::kFloat64;
-#define FIELD_LIST(V) \
-  V(length, FixedArrayBase::kLengthOffset, vobj::FieldType::kTagged)
+#if TAGGED_SIZE_8_BYTES
+#define OPTIONAL_PADDING(V) \
+  V(optional_padding, FixedArrayBase::kPaddingOffset, vobj::FieldType::kInt32)
+#else
+#define OPTIONAL_PADDING(V)
+#endif  // TAGGED_SIZE_8_BYTES
+#define FIELD_LIST(V)                                               \
+  V(length, FixedArrayBase::kLengthOffset, vobj::FieldType::kInt32) \
+  OPTIONAL_PADDING(V)
   DEF_SHAPE(VirtualHeapObjectShape, FIELD_LIST);
+#undef OPTIONAL_PADDING
 #undef FIELD_LIST
 };
 
@@ -6119,7 +6308,7 @@ class InlinedAllocation : public FixedInputValueNodeT<1, InlinedAllocation> {
     DCHECK(!HasBeenAnalysed());
     non_escaping_use_count_ += n;
   }
-  bool IsEscaping() const {
+  bool HasEscapingUses() const {
     DCHECK(!HasBeenAnalysed());
     return use_count_ > non_escaping_use_count_;
   }
@@ -6612,6 +6801,48 @@ class AssertRangeFloat64 : public FixedInputNodeT<1, AssertRangeFloat64> {
 
  private:
   Range range_;
+};
+
+class CheckHomomorphicMap : public FixedInputNodeT<1, CheckHomomorphicMap> {
+  using Base = FixedInputNodeT<1, CheckHomomorphicMap>;
+
+ public:
+  explicit CheckHomomorphicMap(
+      uint64_t bitfield, compiler::NameRef name,
+      compiler::WeakHomomorphicFixedArrayRef homomorphic_array,
+      int handler_value, CheckType check_type)
+      : Base(CheckTypeBitField::update(bitfield, check_type)),
+        name_(name),
+        homomorphic_array_(homomorphic_array),
+        handler_value_(handler_value) {}
+
+  static constexpr OpProperties kProperties = OpProperties::EagerDeopt() |
+                                              OpProperties::CanRead() |
+                                              OpProperties::DeferredCall();
+  DECLARE_INPUTS(Object)
+  DECLARE_INPUT_TYPES(Tagged)
+
+  int handler_value() const { return handler_value_; }
+  compiler::NameRef name() const { return name_; }
+  compiler::WeakHomomorphicFixedArrayRef homomorphic_array() const {
+    return homomorphic_array_;
+  }
+  CheckType check_type() const { return CheckTypeBitField::decode(bitfield()); }
+
+  auto options() const {
+    return std::tuple{name_, homomorphic_array_, handler_value_, check_type()};
+  }
+
+  int MaxCallStackArgs() const;
+  void SetValueLocationConstraints();
+  void GenerateCode(MaglevAssembler*, const ProcessingState&);
+  void PrintParams(std::ostream&) const;
+
+ private:
+  using CheckTypeBitField = NextBitField<CheckType, 1>;
+  const compiler::NameRef name_;
+  const compiler::WeakHomomorphicFixedArrayRef homomorphic_array_;
+  const int handler_value_;
 };
 
 class CheckMaps : public FixedInputNodeT<1, CheckMaps> {
@@ -7121,6 +7352,9 @@ class CheckMaglevType : public FixedInputNodeT<1, CheckMaglevType> {
   DECLARE_INPUT_TYPES(Tagged)
 
   NodeType expected_type() const { return expected_type_; }
+  void set_expected_type(NodeType expected_type) {
+    expected_type_ = expected_type;
+  }
 
   int MaxCallStackArgs() const;
   void SetValueLocationConstraints();
@@ -7130,7 +7364,7 @@ class CheckMaglevType : public FixedInputNodeT<1, CheckMaglevType> {
   auto options() const { return std::tuple{expected_type_}; }
 
  private:
-  const NodeType expected_type_;
+  NodeType expected_type_;
 };
 
 class CheckJSDataViewBounds : public FixedInputNodeT<2, CheckJSDataViewBounds> {
@@ -7592,6 +7826,23 @@ class SetPrototypeHas : public FixedInputValueNodeT<2, SetPrototypeHas> {
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
 };
 
+class WeakMapPrototypeGet
+    : public FixedInputValueNodeT<2, WeakMapPrototypeGet> {
+ public:
+  explicit WeakMapPrototypeGet(uint64_t bitfield) : Base(bitfield) {}
+
+  static constexpr OpProperties kProperties = OpProperties::Call() |
+                                              OpProperties::CanRead() |
+                                              OpProperties::TaggedValue();
+  DECLARE_INPUTS(Receiver, Key)
+  DECLARE_INPUT_TYPES(Tagged, Tagged)
+
+  int MaxCallStackArgs() const { UNREACHABLE(); }
+
+  void SetValueLocationConstraints();
+  void GenerateCode(MaglevAssembler*, const ProcessingState&);
+};
+
 class StringSlice : public FixedInputValueNodeT<3, StringSlice> {
  public:
   explicit StringSlice(uint64_t bitfield) : Base(bitfield) {}
@@ -7603,6 +7854,25 @@ class StringSlice : public FixedInputValueNodeT<3, StringSlice> {
   int MaxCallStackArgs() const { return 0; }
 
   DECLARE_INPUTS(String, StartIndex, EndIndex)
+  DECLARE_INPUT_TYPES(Tagged, Int32, Int32)
+
+  NodeType type() const { return NodeType::kString; }
+
+  void SetValueLocationConstraints();
+  void GenerateCode(MaglevAssembler*, const ProcessingState&);
+};
+
+class StringSubstring : public FixedInputValueNodeT<3, StringSubstring> {
+ public:
+  explicit StringSubstring(uint64_t bitfield) : Base(bitfield) {}
+
+  static constexpr OpProperties kProperties =
+      OpProperties::Call() | OpProperties::CanAllocate() |
+      OpProperties::CanRead() | OpProperties::TaggedValue();
+
+  int MaxCallStackArgs() const { return 0; }
+
+  DECLARE_INPUTS(String, From, To)
   DECLARE_INPUT_TYPES(Tagged, Int32, Int32)
 
   NodeType type() const { return NodeType::kString; }
@@ -7629,6 +7899,32 @@ class ObjectIsArray : public FixedInputValueNodeT<1, ObjectIsArray> {
   DECLARE_INPUT_TYPES(Tagged)
 
   NodeType type() const { return NodeType::kBoolean; }
+
+  void SetValueLocationConstraints();
+  void GenerateCode(MaglevAssembler*, const ProcessingState&);
+};
+
+// Identity node that carries an EagerDeoptInfo for JS-to-Wasm wrapper inlining.
+// When a JS call targets a Wasm function with numeric parameters, the
+// conversion builtins cannot lazy-deopt because the frame state would be a
+// JSToWasmBuiltinContinuation that the deoptimizer cannot handle
+// (crbug.com/493307329). To avoid this, we eagerly deopt if a numeric
+// argument is a JSReceiver (since only JSReceivers can trigger user JS via
+// valueOf/Symbol.toPrimitive during conversion). This node is emitted before
+// the call so that Maglev's generic frame state traversal handles the eager
+// deopt frame correctly. The turbolev-graph-builder translates it into a
+// Turboshaft ProcessWasmArgumentOp, from which the wasm-in-js-inlining
+// reducer extracts the frame state and uses it for the eager deopt guard.
+class ProcessWasmArgument
+    : public FixedInputValueNodeT<1, ProcessWasmArgument> {
+ public:
+  explicit ProcessWasmArgument(uint64_t bitfield) : Base(bitfield) {}
+
+  static constexpr OpProperties kProperties =
+      OpProperties::EagerDeopt() | OpProperties::TaggedValue();
+
+  DECLARE_INPUTS(Value)
+  DECLARE_INPUT_TYPES(Tagged)
 
   void SetValueLocationConstraints();
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
@@ -7793,33 +8089,32 @@ class PolymorphicAccessInfo {
         return data_load_.holder_.equals(other.data_load_.holder_) &&
                data_load_.field_index_ == other.data_load_.field_index_;
     }
+    UNREACHABLE();
   }
 
   size_t hash_value() const {
-    size_t hash = base::hash_value(kind_);
-    hash = base::hash_combine(hash, base::hash_value(representation_.kind()));
-    for (auto map : maps()) {
-      hash = base::hash_combine(hash, map.hash_value());
-    }
+    base::Hasher hasher;
+    hasher.Add(kind_);
+    hasher.Add(representation_.kind());
+    hasher.AddRange(maps());
+
     switch (kind_) {
       case kNotFound:
       case kStringLength:
         break;
       case kModuleExport:
       case kConstant:
-        hash = base::hash_combine(hash, constant_.hash_value());
+        hasher.Add(constant_);
         break;
       case kConstantDouble:
-        hash = base::hash_combine(hash, base::hash_value(constant_double_));
+        hasher.Add(constant_double_);
         break;
       case kDataLoad:
-        hash = base::hash_combine(
-            hash, base::hash_value(data_load_.holder_.hash_value()));
-        hash = base::hash_combine(
-            hash, base::hash_value(data_load_.field_index_.index()));
+        hasher.Add(data_load_.holder_);
+        hasher.Add(data_load_.field_index_.bit_field());
         break;
     }
-    return hash;
+    return hasher.hash();
   }
 
  private:
@@ -7882,7 +8177,7 @@ enum class LoadType {
   kInternalizedString,
   kContext,
   kAnyHeapObject,  // Can be a HeapNumber
-  kLastLoadType = kContext,
+  kLastLoadType = kAnyHeapObject,
 };
 constexpr int kLoadTypeBitSize =
     std::bit_width(static_cast<unsigned>(LoadType::kLastLoadType));
@@ -7931,6 +8226,7 @@ constexpr inline NodeType NodeTypeFromLoadType(LoadType type) {
     case LoadType::kAnyHeapObject:
       return NodeType::kAnyHeapObject;
   }
+  UNREACHABLE();
 }
 
 // This is either a NameRef, or an enum value.
@@ -8068,31 +8364,32 @@ class LoadContextSlotNoCells
     : public FixedInputValueNodeT<1, LoadContextSlotNoCells> {
  public:
   explicit LoadContextSlotNoCells(uint64_t bitfield, const int offset,
-                                  bool is_const)
-      : Base(bitfield | IsConstantLoadField::encode(is_const)),
+                                  MaybeAssignedFlag assigned)
+      : Base(bitfield | MaybeAssignedField::encode(assigned)),
         offset_(offset) {}
   static constexpr OpProperties kProperties = OpProperties::CanRead();
   DECLARE_UNOP(Tagged)
 
   int offset() const { return offset_; }
-  bool is_const() const { return IsConstantLoadField::decode(bitfield()); }
+  MaybeAssignedFlag maybe_assigned() const {
+    return MaybeAssignedField::decode(bitfield());
+  }
 
   void SetValueLocationConstraints();
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
   void PrintParams(std::ostream&) const;
 
-  auto options() const { return std::tuple{offset(), is_const()}; }
+  auto options() const { return std::tuple{offset(), maybe_assigned()}; }
 
  private:
   const int offset_;
-  using IsConstantLoadField = NextBitField<bool, 1>;
+  using MaybeAssignedField = NextBitField<MaybeAssignedFlag, 1>;
 };
 
 class LoadContextSlot : public FixedInputValueNodeT<1, LoadContextSlot> {
  public:
-  explicit LoadContextSlot(uint64_t bitfield, const int offset, bool is_const)
-      : Base(bitfield | IsConstantLoadField::encode(is_const)),
-        offset_(offset) {}
+  explicit LoadContextSlot(uint64_t bitfield, const int offset)
+      : Base(bitfield), offset_(offset) {}
 
   static constexpr OpProperties kProperties = OpProperties::CanRead() |
                                               OpProperties::CanAllocate() |
@@ -8101,18 +8398,17 @@ class LoadContextSlot : public FixedInputValueNodeT<1, LoadContextSlot> {
   DECLARE_INPUT_TYPES(Tagged)
 
   int offset() const { return offset_; }
-  bool is_const() const { return IsConstantLoadField::decode(bitfield()); }
+  MaybeAssignedFlag maybe_assigned() const { return kMaybeAssigned; }
 
   int MaxCallStackArgs() const { return 0; }
   void SetValueLocationConstraints();
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
   void PrintParams(std::ostream&) const;
 
-  auto options() const { return std::tuple{offset(), is_const()}; }
+  auto options() const { return std::tuple{offset()}; }
 
  private:
   const int offset_;
-  using IsConstantLoadField = NextBitField<bool, 1>;
 };
 
 class LoadFloat64 : public FixedInputValueNodeT<1, LoadFloat64> {
@@ -8716,12 +9012,14 @@ class StoreTaggedFieldNoWriteBarrier
  public:
   explicit StoreTaggedFieldNoWriteBarrier(
       uint64_t bitfield, int offset, StoreTaggedMode store_mode,
-      PropertyKey property_key = PropertyKey::None())
+      PropertyKey property_key = PropertyKey::None(),
+      MaybeAssignedFlag maybe_assigned = kMaybeAssigned)
       : Base(
             bitfield |
             InitializingOrTransitioningField::encode(
                 IsInitializingOrTransitioning(store_mode)) |
-            IsStoreToContextField::encode(IsDefaultStoreToContext(store_mode))),
+            IsStoreToContextField::encode(IsDefaultStoreToContext(store_mode)) |
+            MaybeAssignedField::encode(maybe_assigned)),
         offset_(offset),
         property_key_(property_key) {}
 
@@ -8742,6 +9040,9 @@ class StoreTaggedFieldNoWriteBarrier
   }
   bool is_store_to_context() const {
     return IsStoreToContextField::decode(bitfield());
+  }
+  MaybeAssignedFlag maybe_assigned() const {
+    return MaybeAssignedField::decode(bitfield());
   }
 
 #ifdef V8_COMPRESS_POINTERS
@@ -8766,6 +9067,7 @@ class StoreTaggedFieldNoWriteBarrier
  private:
   using InitializingOrTransitioningField = NextBitField<bool, 1>;
   using IsStoreToContextField = InitializingOrTransitioningField::Next<bool, 1>;
+  using MaybeAssignedField = IsStoreToContextField::Next<MaybeAssignedFlag, 1>;
 
   const int offset_;
   const PropertyKey property_key_;
@@ -8796,6 +9098,7 @@ class StoreMap : public FixedInputNodeT<1, StoreMap> {
       case Kind::kTransitioning:
         return true;
     }
+    UNREACHABLE();
   }
 
   int MaxCallStackArgs() const;
@@ -8812,15 +9115,16 @@ std::ostream& operator<<(std::ostream& os, StoreMap::Kind);
 class StoreTaggedFieldWithWriteBarrier
     : public FixedInputNodeT<2, StoreTaggedFieldWithWriteBarrier> {
  public:
-  explicit StoreTaggedFieldWithWriteBarrier(uint64_t bitfield, int offset,
-                                            StoreTaggedMode store_mode,
-                                            bool value_can_be_smi,
-                                            PropertyKey property_key)
+  explicit StoreTaggedFieldWithWriteBarrier(
+      uint64_t bitfield, int offset, StoreTaggedMode store_mode,
+      bool value_can_be_smi, PropertyKey property_key = PropertyKey::None(),
+      MaybeAssignedFlag maybe_assigned = kMaybeAssigned)
       : Base(
             bitfield |
             InitializingOrTransitioningField::encode(
                 IsInitializingOrTransitioning(store_mode)) |
             IsStoreToContextField::encode(IsDefaultStoreToContext(store_mode)) |
+            MaybeAssignedField::encode(maybe_assigned) |
             ValueCanBeSmiField::encode(value_can_be_smi)),
         offset_(offset),
         property_key_(property_key) {}
@@ -8836,6 +9140,9 @@ class StoreTaggedFieldWithWriteBarrier
   }
   bool is_store_to_context() const {
     return IsStoreToContextField::decode(bitfield());
+  }
+  MaybeAssignedFlag maybe_assigned() const {
+    return MaybeAssignedField::decode(bitfield());
   }
 
 #ifdef V8_COMPRESS_POINTERS
@@ -8862,7 +9169,8 @@ class StoreTaggedFieldWithWriteBarrier
  private:
   using InitializingOrTransitioningField = NextBitField<bool, 1>;
   using IsStoreToContextField = InitializingOrTransitioningField::Next<bool, 1>;
-  using ValueCanBeSmiField = IsStoreToContextField::Next<bool, 1>;
+  using MaybeAssignedField = IsStoreToContextField::Next<MaybeAssignedFlag, 1>;
+  using ValueCanBeSmiField = MaybeAssignedField::Next<bool, 1>;
 
   const int offset_;
   const PropertyKey property_key_;
@@ -8872,9 +9180,7 @@ class StoreSmiContextCell : public FixedInputNodeT<2, StoreSmiContextCell> {
  public:
   explicit StoreSmiContextCell(uint64_t bitfield, compiler::ContextRef context,
                                int slot_offset)
-      : Base(bitfield),
-        context_(context),
-        slot_offset_(slot_offset) {}
+      : Base(bitfield), context_(context), slot_offset_(slot_offset) {}
 
   static constexpr OpProperties kProperties =
       OpProperties::CanWrite() | OpProperties::DeferredCall();
@@ -8883,6 +9189,7 @@ class StoreSmiContextCell : public FixedInputNodeT<2, StoreSmiContextCell> {
 
   compiler::ContextRef context() const { return context_; }
   int slot_offset() const { return slot_offset_; }
+  MaybeAssignedFlag maybe_assigned() const { return kMaybeAssigned; }
 
   int offset() const { return offsetof(ContextCell, tagged_value_); }
 
@@ -8899,6 +9206,7 @@ class StoreSmiContextCell : public FixedInputNodeT<2, StoreSmiContextCell> {
   }
   void SetValueLocationConstraints();
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
+  void PrintParams(std::ostream&) const;
 
  private:
   const compiler::ContextRef context_;
@@ -8908,11 +9216,8 @@ class StoreSmiContextCell : public FixedInputNodeT<2, StoreSmiContextCell> {
 class StoreInt32ContextCell : public FixedInputNodeT<2, StoreInt32ContextCell> {
  public:
   explicit StoreInt32ContextCell(uint64_t bitfield,
-                                 compiler::ContextRef context,
-                                 int slot_offset)
-      : Base(bitfield),
-        context_(context),
-        slot_offset_(slot_offset) {}
+                                 compiler::ContextRef context, int slot_offset)
+      : Base(bitfield), context_(context), slot_offset_(slot_offset) {}
 
   static constexpr OpProperties kProperties = OpProperties::CanWrite();
   DECLARE_INPUTS(Cell, Value)
@@ -8920,11 +9225,13 @@ class StoreInt32ContextCell : public FixedInputNodeT<2, StoreInt32ContextCell> {
 
   compiler::ContextRef context() const { return context_; }
   int slot_offset() const { return slot_offset_; }
+  MaybeAssignedFlag maybe_assigned() const { return kMaybeAssigned; }
 
   int offset() const { return offsetof(ContextCell, double_value_); }
 
   void SetValueLocationConstraints();
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
+  void PrintParams(std::ostream&) const;
 
  private:
   const compiler::ContextRef context_;
@@ -8937,9 +9244,7 @@ class StoreFloat64ContextCell
   explicit StoreFloat64ContextCell(uint64_t bitfield,
                                    compiler::ContextRef context,
                                    int slot_offset)
-      : Base(bitfield),
-        context_(context),
-        slot_offset_(slot_offset) {}
+      : Base(bitfield), context_(context), slot_offset_(slot_offset) {}
 
   static constexpr OpProperties kProperties = OpProperties::CanWrite();
   DECLARE_INPUTS(Cell, Value)
@@ -8947,11 +9252,13 @@ class StoreFloat64ContextCell
 
   compiler::ContextRef context() const { return context_; }
   int slot_offset() const { return slot_offset_; }
+  MaybeAssignedFlag maybe_assigned() const { return kMaybeAssigned; }
 
   int offset() const { return offsetof(ContextCell, double_value_); }
 
   void SetValueLocationConstraints();
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
+  void PrintParams(std::ostream&) const;
 
  private:
   const compiler::ContextRef context_;
@@ -8972,6 +9279,7 @@ class StoreContextSlotWithWriteBarrier
 
   int offset() const { return Context::OffsetOfElementAt(index()); }
   int index() const { return index_; }
+  MaybeAssignedFlag maybe_assigned() const { return kMaybeAssigned; }
 
 #ifdef V8_COMPRESS_POINTERS
   void MarkTaggedInputsAsDecompressing() {
@@ -9151,6 +9459,44 @@ class LoadNamedFromSuperGeneric
   const compiler::FeedbackSource feedback_;
 };
 
+class LoadDictionaryField
+    : public FixedInputValueNodeT<2, LoadDictionaryField> {
+ public:
+  explicit LoadDictionaryField(uint64_t bitfield, compiler::NameRef name,
+                               int dictionary_index,
+                               compiler::FeedbackSource feedback)
+      : Base(bitfield),
+        name_(name),
+        dictionary_index_(dictionary_index),
+        feedback_(feedback) {
+    set_temporaries_needed(3);
+  }
+
+  static constexpr OpProperties kProperties =
+      OpProperties::JSCall() | OpProperties::DeferredCall();
+
+  DECLARE_INPUTS(Context, Object)
+  DECLARE_INPUT_TYPES(Tagged, Tagged)
+
+  int MaxCallStackArgs() const;
+  void SetValueLocationConstraints();
+  void GenerateCode(MaglevAssembler* masm, const ProcessingState& state);
+  void PrintParams(std::ostream& os) const;
+
+  compiler::NameRef name() const { return name_; }
+  int dictionary_index() const { return dictionary_index_; }
+  compiler::FeedbackSource feedback() const { return feedback_; }
+
+  auto options() const {
+    return std::tuple{name_, dictionary_index_, feedback_};
+  }
+
+ private:
+  const compiler::NameRef name_;
+  const int dictionary_index_;
+  const compiler::FeedbackSource feedback_;
+};
+
 class SetNamedGeneric : public FixedInputValueNodeT<3, SetNamedGeneric> {
  public:
   explicit SetNamedGeneric(uint64_t bitfield, compiler::NameRef name,
@@ -9235,6 +9581,46 @@ class StringLength : public FixedInputValueNodeT<1, StringLength> {
   void SetValueLocationConstraints();
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
 };
+
+class StringIndexOf : public FixedInputValueNodeT<3, StringIndexOf> {
+ public:
+  explicit StringIndexOf(uint64_t bitfield) : Base(bitfield) {}
+
+  static constexpr OpProperties kProperties = OpProperties::Call() |
+                                              OpProperties::CanAllocate() |
+                                              OpProperties::CanRead();
+
+  int MaxCallStackArgs() const { return 0; }
+
+  DECLARE_INPUTS(String, SearchString, Position)
+  DECLARE_INPUT_TYPES(Tagged, Tagged, Tagged)
+
+  void SetValueLocationConstraints();
+  void GenerateCode(MaglevAssembler*, const ProcessingState&);
+};
+
+#ifdef V8_INTL_SUPPORT
+class StringLocaleCompareIntl
+    : public FixedInputValueNodeT<4, StringLocaleCompareIntl> {
+ public:
+  explicit StringLocaleCompareIntl(uint64_t bitfield) : Base(bitfield) {}
+
+  // CanCallUserCode covers ToString conversion of receiver/compareString
+  // performed by the localeCompare builtin on bailout.
+  static constexpr OpProperties kProperties =
+      OpProperties::Call() | OpProperties::CanCallUserCode() |
+      OpProperties::CanAllocate() | OpProperties::LazyDeopt() |
+      OpProperties::CanThrow();
+
+  int MaxCallStackArgs() const { return 0; }
+
+  DECLARE_INPUTS(LocaleCompareFn, Left, Right, Locales)
+  DECLARE_INPUT_TYPES(Tagged, Tagged, Tagged, Tagged)
+
+  void SetValueLocationConstraints();
+  void GenerateCode(MaglevAssembler*, const ProcessingState&);
+};
+#endif  // V8_INTL_SUPPORT
 
 class StringConcat : public FixedInputValueNodeT<2, StringConcat> {
  public:
@@ -9515,16 +9901,13 @@ class Phi : public ValueNodeT<Phi> {
 
   NodeType post_loop_type() const { return post_loop_type_; }
   void merge_post_loop_type(NodeType type) {
-    DCHECK(!has_key());
     post_loop_type_ = UnionType(post_loop_type_, type);
   }
   void set_post_loop_type(NodeType type) {
-    DCHECK(!has_key());
     DCHECK(is_unmerged_loop_phi());
     post_loop_type_ = type;
   }
   void promote_post_loop_type() {
-    DCHECK(!has_key());
     DCHECK(is_unmerged_loop_phi());
     // TODO(428667907): Ideally we should bail out early for the kNone type.
     DCHECK(NodeTypeIs(post_loop_type_, type_, NodeTypeIsVariant::kAllowNone));
@@ -9532,46 +9915,13 @@ class Phi : public ValueNodeT<Phi> {
   }
 
   void merge_type(NodeType type) {
-    DCHECK(!has_key());
     type_ = UnionType(type_, type);
   }
   void set_type(NodeType type) {
-    DCHECK(!has_key());
     type_ = type;
   }
   NodeType type() const {
-    DCHECK(!has_key());
     return type_;
-  }
-
-  using Key = compiler::turboshaft::SnapshotTable<ValueNode*>::Key;
-  Key key() const {
-    DCHECK(has_key());
-    return key_;
-  }
-  void set_key(Key key) {
-    set_bitfield(bitfield() | HasKeyFlag::encode(true));
-    key_ = key;
-  }
-
-  // True if the {key_} field has been initialized.
-  bool has_key() const { return HasKeyFlag::decode(bitfield()); }
-
-  // Remembers if a use is unsafely untagged. If that happens we must ensure to
-  // stay within the smi range, even when untagging.
-  void SetUseRequires31BitValue();
-  bool uses_require_31_bit_value() const {
-    return Requires31BitValueFlag::decode(bitfield());
-  }
-  void set_uses_require_31_bit_value() {
-    set_bitfield(bitfield() | Requires31BitValueFlag::encode(true));
-  }
-  void SetUseRequiresHeapObject();
-  bool uses_require_heap_object() const {
-    return RequiresHeapObjectFlag::decode(bitfield());
-  }
-  void set_uses_require_heap_object() {
-    set_bitfield(bitfield() | RequiresHeapObjectFlag::encode(true));
   }
 
   // Check if a phi has cleared the loop.
@@ -9579,11 +9929,6 @@ class Phi : public ValueNodeT<Phi> {
 
  private:
   Phi** next() { return &next_; }
-
-  using HasKeyFlag = NextBitField<bool, 1>;
-  using Requires31BitValueFlag = HasKeyFlag::Next<bool, 1>;
-  using RequiresHeapObjectFlag = Requires31BitValueFlag::Next<bool, 1>;
-  using LoopPhiAfterLoopFlag = RequiresHeapObjectFlag::Next<bool, 1>;
 
   const interpreter::Register owner_;
 
@@ -9593,24 +9938,16 @@ class Phi : public ValueNodeT<Phi> {
   Phi* next_ = nullptr;
   MergePointInterpreterFrameState* const merge_state_;
 
-  union {
-    struct {
-      // The type of this Phi based on its predecessors' types.
-      NodeType type_;
-      // {type_} for loop Phis should always be Unknown until their backedge has
-      // been bound (because we don't know what will be the type of the
-      // backedge). However, once the backedge is bound, we might be able to
-      // refine it. {post_loop_type_} is thus used to keep track of loop Phi
-      // types: for loop Phis, we update {post_loop_type_} when we merge
-      // predecessors, but keep {type_} as Unknown. Once the backedge is bound,
-      // we set {type_} as {post_loop_type_}.
-      NodeType post_loop_type_;
-    };
-    // After graph building, {type_} and {post_loop_type_} are not used anymore,
-    // so we reuse this memory to store the SnapshotTable Key for this Phi for
-    // phi untagging.
-    Key key_;
-  };
+  // The type of this Phi based on its predecessors' types.
+  NodeType type_;
+  // {type_} for loop Phis should always be Unknown until their backedge has
+  // been bound (because we don't know what will be the type of the
+  // backedge). However, once the backedge is bound, we might be able to
+  // refine it. {post_loop_type_} is thus used to keep track of loop Phi
+  // types: for loop Phis, we update {post_loop_type_} when we merge
+  // predecessors, but keep {type_} as Unknown. Once the backedge is bound,
+  // we set {type_} as {post_loop_type_}.
+  NodeType post_loop_type_;
 
   friend base::ThreadedListTraits<Phi>;
 };
@@ -9622,13 +9959,20 @@ class Call : public VarargsValueNodeT<2, Call> {
   // This ctor is used when for variable input counts.
   // Inputs must be initialized manually.
   Call(uint64_t bitfield, ConvertReceiverMode mode, TargetType target_type,
-       ValueNode* function, ValueNode* context)
-      : Base(bitfield), receiver_mode_(mode), target_type_(target_type) {
+       ValueNode* function, ValueNode* context,
+       const compiler::FeedbackSource& feedback = {})
+      : Base(bitfield),
+        receiver_mode_(mode),
+        target_type_(target_type),
+        feedback_(feedback) {
     set_input(kTargetIndex, function);
     set_input(kContextIndex, context);
   }
 
-  static constexpr OpProperties kProperties = OpProperties::JSCall();
+  // Eager deopt frame is attached, since this might be a call to a
+  // builtin that could be reduced during MaglevGraphOptimizer.
+  static constexpr OpProperties kProperties =
+      OpProperties::EagerDeopt() | OpProperties::JSCall();
   DECLARE_INPUTS(Target, Context)
 
   int MaxCallStackArgs() const;
@@ -9638,10 +9982,12 @@ class Call : public VarargsValueNodeT<2, Call> {
 
   ConvertReceiverMode receiver_mode() const { return receiver_mode_; }
   TargetType target_type() const { return target_type_; }
+  const compiler::FeedbackSource& feedback() const { return feedback_; }
 
  private:
   ConvertReceiverMode receiver_mode_;
   TargetType target_type_;
+  compiler::FeedbackSource feedback_;
 };
 
 class Construct : public VarargsValueNodeT<3, Construct> {
@@ -10183,6 +10529,48 @@ class ReturnedValue : public ValueNodeT<ReturnedValue> {
 };
 static_assert(sizeof(ReturnedValue) <= sizeof(CallKnownJSFunction));
 
+// A call to a known JS builtin whose builtin id is in MAGLEV_REDUCED_BUILTIN.
+// Carries an EagerDeoptInfo* so the optimizer can speculate.
+class CallKnownBuiltin : public VarargsValueNodeT<4, CallKnownBuiltin> {
+ public:
+  // This ctor is used when for variable input counts.
+  // Inputs must be initialized manually.
+  inline CallKnownBuiltin(uint64_t bitfield, Builtin builtin_id,
+                          JSDispatchHandle dispatch_handle,
+                          compiler::SharedFunctionInfoRef shared_function_info,
+                          ValueNode* closure, ValueNode* context,
+                          ValueNode* receiver, ValueNode* new_target,
+                          const compiler::FeedbackSource& feedback_source);
+
+  static constexpr OpProperties kProperties = OpProperties::EagerDeopt() |
+                                              OpProperties::JSCall() |
+                                              OpProperties::DeferredCall();
+  DECLARE_INPUTS(Target, Context, Receiver, NewTarget)
+
+  Builtin builtin_id() const { return builtin_id_; }
+
+  compiler::SharedFunctionInfoRef shared_function_info() const {
+    return shared_function_info_;
+  }
+
+  const compiler::FeedbackSource& feedback_source() const {
+    return feedback_source_;
+  }
+
+  int expected_parameter_count() const { return expected_parameter_count_; }
+
+  int MaxCallStackArgs() const;
+  void SetValueLocationConstraints();
+  void GenerateCode(MaglevAssembler*, const ProcessingState&);
+  void PrintParams(std::ostream&) const;
+
+ private:
+  Builtin builtin_id_;
+  const compiler::SharedFunctionInfoRef shared_function_info_;
+  int expected_parameter_count_;
+  compiler::FeedbackSource feedback_source_;
+};
+
 class CallKnownApiFunction : public VarargsValueNodeT<1, CallKnownApiFunction> {
  public:
   enum Mode {
@@ -10320,6 +10708,8 @@ class CheckConstructResult
   DECLARE_INPUTS(ConstructResult, ImplicitReceiver)
   DECLARE_INPUT_TYPES(Tagged, Tagged)
 
+  NodeType type() const { return NodeType::kJSReceiver; }
+
   void SetValueLocationConstraints();
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
 };
@@ -10334,6 +10724,8 @@ class CheckDerivedConstructResult
                                               OpProperties::DeferredCall();
   DECLARE_INPUTS(ConstructResult)
   DECLARE_INPUT_TYPES(Tagged)
+
+  NodeType type() const { return NodeType::kJSReceiver; }
 
   bool for_derived_constructor();
 
@@ -10367,6 +10759,18 @@ class CheckJSReceiverOrNullOrUndefined
 class CheckNotHole : public FixedInputNodeT<1, CheckNotHole> {
  public:
   explicit CheckNotHole(uint64_t bitfield) : Base(bitfield) {}
+
+  static constexpr OpProperties kProperties = OpProperties::EagerDeopt();
+  DECLARE_INPUTS(Object)
+  DECLARE_INPUT_TYPES(Tagged)
+
+  void SetValueLocationConstraints();
+  void GenerateCode(MaglevAssembler*, const ProcessingState&);
+};
+
+class CheckNotUndefined : public FixedInputNodeT<1, CheckNotUndefined> {
+ public:
+  explicit CheckNotUndefined(uint64_t bitfield) : Base(bitfield) {}
 
   static constexpr OpProperties kProperties = OpProperties::EagerDeopt();
   DECLARE_INPUTS(Object)
@@ -10857,6 +11261,16 @@ class Abort : public TerminalControlNodeT<0, Abort> {
   using AbortReasonField = Base::NextBitField<AbortReason, kAbortReasonBitSize>;
 };
 
+class Trap : public FixedInputNodeT<0, Trap> {
+ public:
+  explicit Trap(uint64_t bitfield) : Base(bitfield) {
+    DCHECK_EQ(NodeBase::opcode(), opcode_of<Trap>);
+  }
+
+  void SetValueLocationConstraints();
+  void GenerateCode(MaglevAssembler*, const ProcessingState&);
+};
+
 class Return : public TerminalControlNodeT<1, Return> {
  public:
   explicit Return(uint64_t bitfield) : Base(bitfield) {
@@ -10932,6 +11346,7 @@ class Throw : public TerminalControlNodeT<1, Throw> {
       THROW_FUNCTIONS_LIST(CASE)
 #undef CASE
     }
+    UNREACHABLE();
   }
 
   bool has_input() const { return HasInputBitField::decode(bitfield()); }
@@ -11310,6 +11725,7 @@ constexpr inline int StaticInputCountForOpcode(Opcode op) {
     NODE_BASE_LIST(CASE)
 #undef CASE
   }
+  UNREACHABLE();
 }
 
 constexpr inline OpProperties StaticPropertiesForOpcode(Opcode opcode) {
@@ -11320,6 +11736,7 @@ constexpr inline OpProperties StaticPropertiesForOpcode(Opcode opcode) {
     NODE_BASE_LIST(CASE)
 #undef CASE
   }
+  UNREACHABLE();
 }
 
 constexpr inline int SizeOfNodeForOpcode(Opcode op) {
@@ -11331,6 +11748,7 @@ constexpr inline int SizeOfNodeForOpcode(Opcode op) {
     NODE_BASE_LIST(CASE);
 #undef CASE
   }
+  UNREACHABLE();
 }
 
 template <typename Function>
@@ -11340,8 +11758,9 @@ inline void NodeBase::ForAllInputsInRegallocAssignmentOrder(Function&& f) {
       switch (compiler::UnallocatedOperand::cast(input.operand())
                   .extended_policy()) {
         case compiler::UnallocatedOperand::MUST_HAVE_REGISTER:
-          if (category == InputAllocationPolicy::kArbitraryRegister)
+          if (category == InputAllocationPolicy::kArbitraryRegister) {
             f(category, input);
+          }
           break;
 
         case compiler::UnallocatedOperand::REGISTER_OR_SLOT_OR_CONSTANT:
@@ -11350,8 +11769,9 @@ inline void NodeBase::ForAllInputsInRegallocAssignmentOrder(Function&& f) {
 
         case compiler::UnallocatedOperand::FIXED_REGISTER:
         case compiler::UnallocatedOperand::FIXED_FP_REGISTER:
-          if (category == InputAllocationPolicy::kFixedRegister)
+          if (category == InputAllocationPolicy::kFixedRegister) {
             f(category, input);
+          }
           break;
 
         case compiler::UnallocatedOperand::REGISTER_OR_SLOT:
@@ -11379,6 +11799,9 @@ ROOT_LIST(DEFINE_IS_ROOT_OBJECT)
 
 #undef DEF_SHAPE_FIELD_ENUM
 #undef DEF_SHAPE_FIELD_DESC
+#undef DEF_SHAPE_FIELD_DESC_3
+#undef DEF_SHAPE_FIELD_DESC_4
+#undef GET_DEF_SHAPE_FIELD_DESC_MACRO
 #undef DEF_SHAPE_FIELD_LIST
 #undef DEF_SHAPE_STATIC_ASSERTS
 #undef DEF_SHAPE

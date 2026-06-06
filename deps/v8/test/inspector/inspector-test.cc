@@ -72,6 +72,9 @@ class UtilsExtension : public InspectorIsolateData::SetupGlobalTask {
     utils->Set(isolate, "compileAndRunWithOrigin",
                v8::FunctionTemplate::New(
                    isolate, &UtilsExtension::CompileAndRunWithOrigin));
+    utils->Set(isolate, "compileAndRunWrapped",
+               v8::FunctionTemplate::New(
+                   isolate, &UtilsExtension::CompileAndRunWrapped));
     utils->Set(isolate, "setCurrentTimeMSForTest",
                v8::FunctionTemplate::New(
                    isolate, &UtilsExtension::SetCurrentTimeMSForTest));
@@ -233,6 +236,20 @@ class UtilsExtension : public InspectorIsolateData::SetupGlobalTask {
         info[4].As<v8::Int32>(), info[5].As<v8::Boolean>()));
   }
 
+  static void CompileAndRunWrapped(
+      const v8::FunctionCallbackInfo<v8::Value>& info) {
+    if (info.Length() != 3 || !info[0]->IsInt32() || !info[1]->IsString() ||
+        !info[2]->IsString()) {
+      FATAL(
+          "Internal error: compileAndRunWrapped(context_group_id, source, "
+          "url).");
+    }
+    backend_runner_->Append(std::make_unique<ExecuteWrappedStringTask>(
+        info.GetIsolate(), info[0].As<v8::Int32>()->Value(),
+        ToVector(info.GetIsolate(), info[1].As<v8::String>()),
+        info[2].As<v8::String>()));
+  }
+
   static void SetCurrentTimeMSForTest(
       const v8::FunctionCallbackInfo<v8::Value>& info) {
     if (info.Length() != 1 || !info[0]->IsNumber()) {
@@ -384,8 +401,8 @@ class UtilsExtension : public InspectorIsolateData::SetupGlobalTask {
           "dispatch, is_fully_trusted).");
     }
     v8::Local<v8::Context> context = info.GetIsolate()->GetCurrentContext();
-    std::unique_ptr<FrontendChannelImpl> channel =
-        std::make_unique<FrontendChannelImpl>(
+    std::shared_ptr<FrontendChannelImpl> channel =
+        std::make_shared<FrontendChannelImpl>(
             InspectorIsolateData::FromContext(context)->task_runner(),
             InspectorIsolateData::FromContext(context)->GetContextGroupId(
                 context),
@@ -711,9 +728,9 @@ class InspectorExtension : public InspectorIsolateData::SetupGlobalTask {
     isolate->ThrowError("Getter is called");
   }
 
-  static void AccessorSetter(v8::Local<v8::Name> property,
-                             v8::Local<v8::Value> value,
-                             const v8::PropertyCallbackInfo<void>& info) {
+  static void AccessorSetter(
+      v8::Local<v8::Name> property, v8::Local<v8::Value> value,
+      const v8::PropertyCallbackInfo<v8::Boolean>& info) {
     v8::Isolate* isolate = info.GetIsolate();
     isolate->ThrowError("Setter is called");
   }
@@ -856,10 +873,10 @@ class InspectorExtension : public InspectorIsolateData::SetupGlobalTask {
 };
 
 int InspectorTestMain(int argc, char* argv[]) {
-  v8::V8::InitializeICUDefaultLocation(argv[0]);
+  CHECK(v8::V8::InitializeICUDefaultLocation(argv[0]));
   std::unique_ptr<Platform> platform(platform::NewDefaultPlatform());
   v8::V8::InitializePlatform(platform.get());
-  v8_flags.abort_on_contradictory_flags = true;
+  v8_flags.flag_processing_mode = "abort-on-error";
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
   v8::V8::InitializeExternalStartupData(argv[0]);
   v8::V8::Initialize();

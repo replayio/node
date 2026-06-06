@@ -754,14 +754,12 @@ class InstructionBase {
   bool IsShortInstruction() const;
 
   inline uint8_t InstructionSize() const {
-    return (v8_flags.riscv_c_extension && this->IsShortInstruction())
-               ? kShortInstrSize
-               : kInstrSize;
+    return (this->IsShortInstruction()) ? kShortInstrSize : kInstrSize;
   }
 
   // Get the raw instruction bits.
   inline Instr InstructionBits() const {
-    if (v8_flags.riscv_c_extension && this->IsShortInstruction()) {
+    if (this->IsShortInstruction()) {
       return 0x0000FFFF & (*reinterpret_cast<const ShortInstr*>(this));
     }
     return *reinterpret_cast<const Instr*>(this);
@@ -1297,21 +1295,6 @@ class Instruction : public InstructionGetters<InstructionBase> {
   // We need to prevent the creation of instances of class Instruction.
   DISALLOW_IMPLICIT_CONSTRUCTORS(Instruction);
 };
-
-// -----------------------------------------------------------------------------
-// RISC-V assembly various constants.
-
-// C/C++ argument slots size.
-const int kCArgSlotCount = 0;
-
-// TODO(plind): below should be based on kSystemPointerSize
-// TODO(plind): find all usages and remove the needless instructions for n64.
-const int kCArgsSlotsSize = kCArgSlotCount * kInstrSize * 2;
-
-const int kInvalidStackOffset = -1;
-const int kBranchReturnOffset = 2 * kInstrSize;
-
-static const int kNegOffset = 0x00008000;
 
 // -----------------------------------------------------------------------------
 // Instructions.

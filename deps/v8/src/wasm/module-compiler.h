@@ -31,10 +31,7 @@ class Vector;
 
 namespace internal {
 
-class JSArrayBuffer;
-class JSPromise;
 class WasmModuleObject;
-class WasmInstanceObject;
 class WasmTrustedInstanceData;
 
 namespace wasm {
@@ -47,6 +44,7 @@ class NativeModule;
 class ProfileInformation;
 class StreamingDecoder;
 class WasmCode;
+class WasmError;
 struct WasmModule;
 
 V8_EXPORT_PRIVATE
@@ -69,15 +67,8 @@ std::shared_ptr<wasm::WasmWrapperHandle> CompileImportWrapperForTest(
     Isolate* isolate, ImportCallKind kind, const CanonicalSig* sig,
     int expected_arity, Suspend suspend);
 
-// Triggered by the WasmCompileLazy builtin. The return value indicates whether
-// compilation was successful. Lazy compilation can fail only if validation is
-// also lazy.
-bool CompileLazy(Isolate*, NativeModule*, int func_index);
-
-// Throws the compilation error after failed lazy compilation.
-void ThrowLazyCompilationError(Isolate* isolate,
-                               const NativeModule* native_module,
-                               int func_index);
+// Triggered by the WasmCompileLazy builtin.
+void CompileLazy(Isolate*, NativeModule*, int func_index);
 
 // Trigger tier-up of a particular function to TurboFan. If tier-up was already
 // triggered, we instead increase the priority with exponential back-off.
@@ -194,8 +185,6 @@ class AsyncCompileJob {
                      bool cache_hit) &&;
   void Failed() &&;
 
-  void AsyncCompileSucceeded(DirectHandle<WasmModuleObject> result);
-
   void StartForegroundTask();
   void StartBackgroundTask();
 
@@ -246,7 +235,7 @@ class AsyncCompileJob {
   const char* const api_method_name_;
   const WasmEnabledFeatures enabled_features_;
   WasmDetectedFeatures detected_features_;
-  CompileTimeImports compile_imports_;
+  const CompileTimeImports compile_imports_;
   base::TimeTicks start_time_;
   base::TimeTicks compilation_finished_time_;
   // Copy of the module wire bytes, moved into the {new_native_module_} on its

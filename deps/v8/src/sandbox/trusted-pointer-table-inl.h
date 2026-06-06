@@ -8,7 +8,7 @@
 #include "src/sandbox/trusted-pointer-table.h"
 // Include the non-inl header before the rest of the headers.
 
-#include "src/sandbox/external-entity-table-inl.h"
+#include "src/heap/read-only-heap.h"
 #include "src/sandbox/sandbox.h"
 #include "src/sandbox/trusted-pointer-scope.h"
 
@@ -22,7 +22,7 @@ void TrustedPointerTableEntry::MakeTrustedPointerEntry(Address pointer,
                                                        bool mark_as_alive) {
   auto payload = Payload(pointer, tag);
   if (mark_as_alive) payload.SetMarkBit();
-  payload_.store(payload, std::memory_order_relaxed);
+  payload_.store(payload, std::memory_order_release);
 }
 
 void TrustedPointerTableEntry::MakeFreelistEntry(uint32_t next_entry_index) {
@@ -38,7 +38,7 @@ void TrustedPointerTableEntry::MakeZappedEntry() {
 Address TrustedPointerTableEntry::GetPointer(
     IndirectPointerTagRange tag_range) const {
   DCHECK(!IsFreelistEntry());
-  return payload_.load(std::memory_order_relaxed).Untag(tag_range);
+  return payload_.load(std::memory_order_acquire).Untag(tag_range);
 }
 
 void TrustedPointerTableEntry::SetPointer(Address pointer,
@@ -50,21 +50,34 @@ void TrustedPointerTableEntry::SetPointer(Address pointer,
   DCHECK(!payload_.load(std::memory_order_relaxed).HasMarkBitSet());
   auto new_payload = Payload(pointer, tag);
   DCHECK(!new_payload.HasMarkBitSet());
-  payload_.store(new_payload, std::memory_order_relaxed);
+  payload_.store(new_payload, std::memory_order_release);
 }
 
 bool TrustedPointerTableEntry::HasPointer(
     IndirectPointerTagRange tag_range) const {
-  auto payload = payload_.load(std::memory_order_relaxed);
+  auto payload = payload_.load(std::memory_order_acquire);
   if (!payload.ContainsPointer()) return false;
   return payload.IsTaggedWithTagIn(tag_range);
+}
+
+Address TrustedPointerTableEntry::GetMaybeUnpublished(
+    IndirectPointerTagRange tag_range) const {
+  auto payload = payload_.load(std::memory_order_acquire);
+  if (payload.IsTaggedWithTagIn(kUnpublishedIndirectPointerTag)) {
+    return payload.Untag(kUnpublishedIndirectPointerTag);
+  }
+  return payload.Untag(tag_range);
+}
+
+IndirectPointerTag TrustedPointerTableEntry::GetTag() const {
+  return payload_.load(std::memory_order_relaxed).ExtractTag();
 }
 
 void TrustedPointerTableEntry::Unpublish() {
   auto old_payload = payload_.load(std::memory_order_relaxed);
   auto new_payload = old_payload;
   new_payload.SetTag(kUnpublishedIndirectPointerTag);
-  payload_.store(new_payload, std::memory_order_relaxed);
+  payload_.store(new_payload, std::memory_order_release);
 }
 
 void TrustedPointerTableEntry::Publish(IndirectPointerTag tag) {
@@ -72,7 +85,7 @@ void TrustedPointerTableEntry::Publish(IndirectPointerTag tag) {
   CHECK(old_payload.IsTaggedWith(kUnpublishedIndirectPointerTag));
   auto new_payload = old_payload;
   new_payload.SetTag(tag);
-  payload_.store(new_payload, std::memory_order_relaxed);
+  payload_.store(new_payload, std::memory_order_release);
 }
 
 bool TrustedPointerTableEntry::IsFreelistEntry() const {
@@ -122,10 +135,7 @@ Address TrustedPointerTable::GetMaybeUnpublished(
     TrustedPointerHandle handle, IndirectPointerTagRange tag_range) const {
   uint32_t index = HandleToIndex(handle);
   const TrustedPointerTableEntry& entry = at(index);
-  if (entry.HasPointer(kUnpublishedIndirectPointerTag)) {
-    return entry.GetPointer(kUnpublishedIndirectPointerTag);
-  }
-  return Get(handle, tag_range);
+  return entry.GetMaybeUnpublished(tag_range);
 }
 
 void TrustedPointerTable::Set(TrustedPointerHandle handle, Address pointer,
@@ -169,6 +179,11 @@ void TrustedPointerTable::Publish(TrustedPointerHandle handle,
   at(index).Publish(tag);
 }
 
+void TrustedPointerTable::Unpublish(TrustedPointerHandle handle) {
+  uint32_t index = HandleToIndex(handle);
+  at(index).Unpublish();
+}
+
 bool TrustedPointerTable::IsUnpublished(TrustedPointerHandle handle) const {
   uint32_t index = HandleToIndex(handle);
   return at(index).HasPointer(kUnpublishedIndirectPointerTag);
@@ -204,7 +219,14 @@ void TrustedPointerTable::Validate(Address pointer, IndirectPointerTag tag) {
     // This CHECK is mostly just here to force tags to be taken out of the
     // IsTrustedSpaceMigrationInProgressForObjectsWithTag function once the
     // objects are fully migrated into trusted space.
-    DCHECK(Sandbox::current()->Contains(pointer));
+    return;
+  }
+
+  if (ReadOnlyHeap::Contains(pointer)) {
+    // Only Code and UncompiledData are allowed to reside in the Read-Only Heap
+    // and have entries in the Trusted Pointer Table.
+    CHECK(tag == kCodeIndirectPointerTag ||
+          tag == kUncompiledDataIndirectPointerTag);
     return;
   }
 

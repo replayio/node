@@ -5,6 +5,7 @@
 #ifndef V8_MAGLEV_MAGLEV_ASSEMBLER_H_
 #define V8_MAGLEV_MAGLEV_ASSEMBLER_H_
 
+#include "src/base/logging.h"
 #include "src/codegen/machine-type.h"
 #include "src/codegen/macro-assembler.h"
 #include "src/common/globals.h"
@@ -217,7 +218,7 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
     DecodeField<BitField>(result);
   }
 
-  enum StoreMode { kField, kElement };
+  enum StoreMode { kField, kFixedArrayElement };
   enum ValueIsCompressed { kValueIsDecompressed, kValueIsCompressed };
   enum ValueCanBeSmi { kValueCannotBeSmi, kValueCanBeSmi };
 
@@ -447,13 +448,17 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
   inline void DecrementInt32(Register reg);
   inline void AddInt32(Register reg, int amount);
   inline void AddInt32(Register reg, Register other);
+  inline void AddInt32(Register dst, Register src, int amount);
   inline void AndInt32(Register reg, int mask);
+  inline void AndInt32(Register dst, Register src, int mask);
   inline void OrInt32(Register reg, int mask);
   inline void AndInt32(Register reg, Register other);
   inline void OrInt32(Register reg, Register other);
   inline void ShiftLeft(Register reg, int amount);
+  inline void ShiftRightLogical32(Register dst, Register src, int amount);
   inline void IncrementAddress(Register reg, int32_t delta);
   inline void LoadAddress(Register dst, MemOperand location);
+  inline void MakeWeak(Register result, Register object);
 
   inline void EmitEnterExitFrame(int extra_slots, StackFrame::Type frame_type,
                                  Register scratch);
@@ -548,6 +553,10 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
                                       InstanceType lower_limit,
                                       InstanceType higher_limit,
                                       AbortReason reason);
+#ifdef DEBUG
+  inline void AssertFloat64IsSmi(DoubleRegister value);
+  inline void AssertHoleyFloat64IsSmi(DoubleRegister value);
+#endif
   inline void BranchOnObjectTypeInRange(
       Register heap_object, InstanceType lower_limit, InstanceType higher_limit,
       Label* if_true, Label::Distance true_distance, bool fallthrough_when_true,
@@ -696,6 +705,12 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
                             Label::Distance distance = Label::kFar);
   inline void JumpIfNotHoleNan(MemOperand operand, Label* target,
                                Label::Distance distance = Label::kFar);
+
+  inline void SubInt32(Register dst, Register src);
+  inline void SubInt32(Register dst, Register src1, Register src2);
+  inline void ShiftRightLogical32(Register dst, int32_t value);
+  inline void LoadBitsFromWord32(Register dst, Register src, int width,
+                                 int shift);
 
   inline void CompareInt32AndJumpIf(Register r1, Register r2, Condition cond,
                                     Label* target,
@@ -1158,6 +1173,7 @@ inline Condition ToCondition(AssertCondition cond) {
     ASSERT_CONDITION(CASE)
 #undef CASE
   }
+  UNREACHABLE();
 }
 
 constexpr Condition ConditionFor(Operation operation) {

@@ -178,7 +178,8 @@ class V8_EXPORT V8InspectorSession {
 
   // Dispatching protocol messages.
   static bool canDispatchMethod(StringView method);
-  virtual void dispatchProtocolMessage(StringView message) = 0;
+  virtual void dispatchProtocolMessage(StringView message,
+                                       StringView associated_data = {}) = 0;
   virtual std::vector<uint8_t> state() = 0;
   virtual std::vector<std::unique_ptr<protocol::Schema::API::Domain>>
   supportedDomains() = 0;
@@ -418,10 +419,13 @@ class V8_EXPORT V8Inspector {
   };
 
   class V8_EXPORT ManagedChannel
-      : public cppgc::GarbageCollected<ManagedChannel>,
-        public Channel {
+      : public cppgc::GarbageCollected<ManagedChannel> {
    public:
     virtual ~ManagedChannel() = default;
+    virtual void sendResponse(int callId,
+                              std::unique_ptr<StringBuffer> message) = 0;
+    virtual void sendNotification(std::unique_ptr<StringBuffer> message) = 0;
+    virtual void flushProtocolNotifications() = 0;
     virtual void Trace(cppgc::Visitor* visitor) const {}
   };
 
@@ -429,6 +433,8 @@ class V8_EXPORT V8Inspector {
   enum SessionPauseState { kWaitingForDebugger, kNotWaitingForDebugger };
   // TODO(chromium:1352175): remove default value once downstream change lands.
   // Deprecated: Use `connectShared` instead.
+  // Channel is owned by the embedder. Ensure to keep it alive as long as the
+  // returned session is alive.
   virtual std::unique_ptr<V8InspectorSession> connect(
       int contextGroupId, Channel*, StringView state,
       ClientTrustLevel client_trust_level,
@@ -439,10 +445,15 @@ class V8_EXPORT V8Inspector {
   // (V8InspectorClient::runMessageLoopOnPause) is running. To partially ensure
   // this, we defer session deconstruction until no "dispatchProtocolMessages"
   // remains on the stack.
+  // Channel is owned by the embedder. Ensure to keep it alive as long as the
+  // returned session is alive.
   virtual std::shared_ptr<V8InspectorSession> connectShared(
       int contextGroupId, Channel* channel, StringView state,
       ClientTrustLevel clientTrustLevel, SessionPauseState pauseState) = 0;
 
+  // Same as `connectShared` but takes a `ManagedChannel` instead. The session
+  // will take a cppgc::Persistent on the ManagedChannel so the embedder doesn't
+  // have to worry about the life-time of `channel`.
   virtual std::shared_ptr<V8InspectorSession> connectShared(
       int contextGroupId, ManagedChannel* channel, StringView state,
       ClientTrustLevel clientTrustLevel, SessionPauseState pauseState) = 0;

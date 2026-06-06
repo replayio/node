@@ -18,7 +18,6 @@
 #include "src/flags/flags.h"
 #include "src/heap/memory-chunk-constants.h"
 #include "src/sandbox/check.h"
-#include "src/sandbox/code-pointer-table.h"
 #include "src/utils/allocation.h"
 
 #include "src/sandbox/js-dispatch-table.h"
@@ -47,6 +46,8 @@ class SandboxedArrayBufferAllocatorBase {
  public:
   virtual void* Allocate(size_t length) = 0;
   virtual void* AllocateUninitialized(size_t length) = 0;
+  // On allocation failure, triggers an OOM crash instead of returning nullptr.
+  virtual void* AllocateUninitializedOrCrash(size_t length) = 0;
   virtual void Free(void* ptr) = 0;
 };
 
@@ -71,6 +72,7 @@ class SandboxedArrayBufferAllocator final
 
   void* Allocate(size_t length) override;
   void* AllocateUninitialized(size_t length) override;
+  void* AllocateUninitializedOrCrash(size_t length) override;
   void Free(void* data) override;
 
   void TearDown();
@@ -107,6 +109,7 @@ class PABackedSandboxedArrayBufferAllocator
 
   void* Allocate(size_t length) override;
   void* AllocateUninitialized(size_t length) override;
+  void* AllocateUninitializedOrCrash(size_t length) override;
   void Free(void* data) override;
 
   void TearDown();
@@ -292,8 +295,6 @@ class V8_EXPORT_PRIVATE IsolateGroup final {
 
   Sandbox* sandbox() { return sandbox_; }
 
-  CodePointerTable* code_pointer_table() { return &code_pointer_table_; }
-
   BasePageTableEntry* metadata_pointer_table() {
     return metadata_pointer_table_;
   }
@@ -417,7 +418,6 @@ class V8_EXPORT_PRIVATE IsolateGroup final {
 
 #ifdef V8_ENABLE_SANDBOX
   Sandbox* sandbox_ = nullptr;
-  CodePointerTable code_pointer_table_;
   BasePageTableEntry metadata_pointer_table_
       [MemoryChunkConstants::kMetadataPointerTableSize]{};
 #ifdef V8_ENABLE_PARTITION_ALLOC

@@ -47,7 +47,8 @@ TurbolevFrontendPipeline::TurbolevFrontendPipeline(PipelineData* data,
       compilation_info_(maglev::MaglevCompilationInfo::NewForTurbolev(
           data->isolate(), data->broker(), data->info()->closure(),
           data->info()->osr_offset(),
-          data->info()->function_context_specializing())) {
+          data->info()->function_context_specializing(),
+          data->info()->debug_name())) {
   // We need to be certain that the parameter count reported by our output
   // Code object matches what the code we compile expects. Otherwise, this
   // may lead to effectively signature mismatches during function calls. This
@@ -306,8 +307,16 @@ std::optional<maglev::Graph*> TurbolevFrontendPipeline::Run() {
   if (v8_flags.maglev_truncation && graph_->may_have_truncation()) {
     Run<TruncationPhase>();
     Run<PostOptimizerPhase>(nullptr);
+  } else if (graph_->compilation_info()->flags().enable_truncated_int32_phis) {
+    // This only needs to run unless we have accurate usage hints.
+    // TODO(turbolev): sort out perf problems blocking
+    // https://chromium-review.git.corp.google.com/c/v8/v8/+/7595239 from
+    // landing.
+    Run<PostOptimizerPhase>(nullptr);
   }
-  Run<PhiUntaggingPhase>();
+  if (v8_flags.turbolev_untagged_phis) {
+    Run<PhiUntaggingPhase>();
+  }
   if (v8_flags.maglev_range_analysis) {
     maglev::NodeRanges ranges(graph_);
     Run<RangeAnalysisPhase>(ranges);

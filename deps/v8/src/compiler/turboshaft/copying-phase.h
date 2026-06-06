@@ -33,6 +33,8 @@
 namespace v8::internal::compiler::turboshaft {
 
 using MaybeVariable = std::optional<Variable>;
+enum class CanHavePhis { kNo, kYes };
+enum class ForCloning { kNo, kYes };
 
 V8_EXPORT_PRIVATE int CountDecimalDigits(uint32_t value);
 struct PaddingSpace {
@@ -134,16 +136,8 @@ class GraphVisitor : public OutputGraphAssembler<GraphVisitor<AfterNext>,
   }
 
   void Finalize() {
-    // Updating the source_positions.
-    if (!Asm().input_graph().source_positions().empty()) {
-      for (OpIndex index : Asm().output_graph().AllOperationIndices()) {
-        OpIndex origin = Asm().output_graph().operation_origins()[index];
-        Asm().output_graph().source_positions()[index] =
-            origin.valid() ? Asm().input_graph().source_positions()[origin]
-                           : SourcePosition::Unknown();
-      }
-    }
-    // Updating the operation origins.
+    // Updating the operation origins in `PipelineData`'s origin tracking,
+    // which is persistent over multiple phases.
     NodeOriginTable* origins = Asm().data()->node_origins();
     if (origins) {
       for (OpIndex index : Asm().output_graph().AllOperationIndices()) {
@@ -478,6 +472,8 @@ class GraphVisitor : public OutputGraphAssembler<GraphVisitor<AfterNext>,
   }
 
  private:
+  friend class RandomRescheduler;
+
   template <bool trace_reduction>
   void VisitAllBlocks() {
     base::SmallVector<const Block*, 128> visit_stack;
@@ -534,9 +530,6 @@ class GraphVisitor : public OutputGraphAssembler<GraphVisitor<AfterNext>,
     }
   }
 
-  enum class CanHavePhis { kNo, kYes };
-  enum class ForCloning { kNo, kYes };
-
   template <CanHavePhis can_have_phis, ForCloning for_cloning,
             bool trace_reduction>
   void VisitBlockBody(const Block* input_block,
@@ -560,7 +553,7 @@ class GraphVisitor : public OutputGraphAssembler<GraphVisitor<AfterNext>,
     // mappings: phis were emitted before using the old mapping, and all of
     // the other operations will use the new mapping (as they should).
     //
-    // Note that Phis are not always at the begining of blocks, but when they
+    // Note that Phis are not always at the beginning of blocks, but when they
     // aren't, they can't have inputs from the current block (except on their
     // backedge for loop phis, but they start as PendingLoopPhis without
     // backedge input), so visiting all Phis first is safe.
@@ -887,7 +880,7 @@ class GraphVisitor : public OutputGraphAssembler<GraphVisitor<AfterNext>,
   }
   OpIndex AssembleOutputGraphCall(const CallOp& op) {
     V<CallTarget> callee = MapToNewGraph(op.callee());
-    OptionalV<FrameState> frame_state = MapToNewGraph(op.frame_state());
+    OptionalV<LazyFrameState> frame_state = MapToNewGraph(op.frame_state());
     auto arguments = MapToNewGraph<16>(op.arguments());
     return Asm().ReduceCall(callee, frame_state, base::VectorOf(arguments),
                             op.descriptor, op.Effects());
@@ -929,6 +922,7 @@ class GraphVisitor : public OutputGraphAssembler<GraphVisitor<AfterNext>,
         // handler or both, so the catch block may be empty.
         catch_scope.emplace(Asm(), MapToNewGraph(op.catch_block));
       }
+#if V8_ENABLE_WEBASSEMBLY
       if (!op.effect_handlers.empty()) {
         // Similar logic as the catch scope, but effect handlers cannot be
         // nested, so just set it and clear it after the reduction.
@@ -939,11 +933,18 @@ class GraphVisitor : public OutputGraphAssembler<GraphVisitor<AfterNext>,
                 ->template AllocateVector<EffectHandler>(
                     op.effect_handlers.size());
         for (int i = 0; i < op.effect_handlers.length(); ++i) {
-          output_handlers[i].tag_index = op.effect_handlers[i].tag_index;
-          output_handlers[i].block = MapToNewGraph(op.effect_handlers[i].block);
+          output_handlers[i].tag_and_kind = op.effect_handlers[i].tag_and_kind;
+          output_handlers[i].sig = op.effect_handlers[i].sig;
+          if (!op.effect_handlers[i].is_switch()) {
+            output_handlers[i].block =
+                MapToNewGraph(op.effect_handlers[i].block);
+          } else {
+            output_handlers[i].block = nullptr;
+          }
         }
         Asm().set_effect_handlers_for_next_call(output_handlers);
       }
+#endif
       DCHECK(Asm().input_graph().Get(*it).template Is<DidntThrowOp>());
       if (!Asm().InlineOp(*it, op.didnt_throw_block)) {
         Asm().clear_effect_handlers();

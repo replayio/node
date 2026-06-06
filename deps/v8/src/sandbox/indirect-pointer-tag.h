@@ -57,7 +57,6 @@ enum IndirectPointerTag : uint16_t {
   kWasmSuspenderIndirectPointerTag,
   kAsmWasmDataIndirectPointerTag,
   kWasmExportedFunctionDataIndirectPointerTag,
-  kWasmJSFunctionDataIndirectPointerTag,
   kWasmCapiFunctionDataIndirectPointerTag,
   kRegExpDataIndirectPointerTag,
   kInterpreterDataIndirectPointerTag,
@@ -144,8 +143,6 @@ constexpr IndirectPointerTagRange kAllSharedIndirectPointerTags(
     kFirstSharedTrustedPointerTag, kLastSharedTrustedPointerTag);
 constexpr IndirectPointerTagRange kAllPerIsolateIndirectPointerTags(
     kFirstPerIsolateTrustedPointerTag, kLastPerIsolateTrustedPointerTag);
-constexpr IndirectPointerTagRange kAllTrustedPointerTags(
-    kFirstSharedTrustedPointerTag, static_cast<IndirectPointerTag>(0x3f));
 constexpr IndirectPointerTagRange kAllIndirectPointerTags(
     kFirstSharedTrustedPointerTag, static_cast<IndirectPointerTag>(0x7f));
 constexpr IndirectPointerTagRange kAllIndirectPointerTagsIncludingUnpublished(
@@ -155,25 +152,18 @@ constexpr IndirectPointerTagRange kWasmFunctionDataIndirectPointerTagRange(
     kWasmExportedFunctionDataIndirectPointerTag,
     kWasmCapiFunctionDataIndirectPointerTag);
 
-// The kAllTrustedPointerTags contains all trusted pointer tags but not code.
-static_assert(kAllTrustedPointerTags.Contains(kAllSharedIndirectPointerTags));
-static_assert(
-    kAllTrustedPointerTags.Contains(kAllPerIsolateIndirectPointerTags));
-static_assert(!kAllTrustedPointerTags.Contains(kCodeIndirectPointerTag));
-
 // The kAllIndirectPointerTags contains all regular tags including the code tag.
-static_assert(kAllIndirectPointerTags.Contains(kAllTrustedPointerTags));
-static_assert(kAllIndirectPointerTags.Contains(kAllTrustedPointerTags));
+static_assert(kAllIndirectPointerTags.Contains(kAllSharedIndirectPointerTags));
+static_assert(
+    kAllIndirectPointerTags.Contains(kAllPerIsolateIndirectPointerTags));
 static_assert(kAllIndirectPointerTags.Contains(kCodeIndirectPointerTag));
 
 // None of the above must contain any special entries though.
 static_assert(
     !kAllIndirectPointerTags.Contains(kUnpublishedIndirectPointerTag));
-static_assert(!kAllTrustedPointerTags.Contains(kUnpublishedIndirectPointerTag));
 
-// Both ranges are expected to be fast.
+// The range is expected to be fast.
 static_assert(IsFastIndirectPointerTagRange(kAllIndirectPointerTags));
-static_assert(IsFastIndirectPointerTagRange(kAllTrustedPointerTags));
 
 // These are only included in kAllIndirectPointerTagsIncludingUnpublished.
 static_assert(kAllIndirectPointerTagsIncludingUnpublished.Contains(
@@ -229,8 +219,8 @@ V8_INLINE static constexpr bool ExternalPointerCanBeEmpty(
 // field should be using this tag.
 static_assert(!IsValidIndirectPointerTag(kIndirectPointerNullTag));
 
-V8_INLINE IndirectPointerTag
-IndirectPointerTagFromInstanceType(InstanceType instance_type, bool shared) {
+V8_INLINE IndirectPointerTag IndirectPointerTagFromInstanceType(
+    InstanceType instance_type, SharedFlag shared) {
   switch (instance_type) {
     case CODE_TYPE:
       return kCodeIndirectPointerTag;
@@ -252,13 +242,17 @@ IndirectPointerTagFromInstanceType(InstanceType instance_type, bool shared) {
       return kRegExpDataIndirectPointerTag;
 #if V8_ENABLE_WEBASSEMBLY
     case WASM_DISPATCH_TABLE_TYPE:
-      return shared ? kSharedWasmDispatchTableIndirectPointerTag
-                    : kWasmDispatchTableIndirectPointerTag;
+      return shared == SharedFlag::kYes
+                 ? kSharedWasmDispatchTableIndirectPointerTag
+                 : kWasmDispatchTableIndirectPointerTag;
     case WASM_TRUSTED_INSTANCE_DATA_TYPE:
-      return shared ? kSharedWasmTrustedInstanceDataIndirectPointerTag
-                    : kWasmTrustedInstanceDataIndirectPointerTag;
+      return shared == SharedFlag::kYes
+                 ? kSharedWasmTrustedInstanceDataIndirectPointerTag
+                 : kWasmTrustedInstanceDataIndirectPointerTag;
     case WASM_INTERNAL_FUNCTION_TYPE:
       return kWasmInternalFunctionIndirectPointerTag;
+    case ASM_WASM_DATA_TYPE:
+      return kAsmWasmDataIndirectPointerTag;
     case WASM_SUSPENDER_OBJECT_TYPE:
       return kWasmSuspenderIndirectPointerTag;
     case WASM_FUNCTION_DATA_TYPE:
@@ -267,8 +261,6 @@ IndirectPointerTagFromInstanceType(InstanceType instance_type, bool shared) {
       UNREACHABLE();
     case WASM_EXPORTED_FUNCTION_DATA_TYPE:
       return kWasmExportedFunctionDataIndirectPointerTag;
-    case WASM_JS_FUNCTION_DATA_TYPE:
-      return kWasmJSFunctionDataIndirectPointerTag;
     case WASM_CAPI_FUNCTION_DATA_TYPE:
       return kWasmCapiFunctionDataIndirectPointerTag;
 #endif  // V8_ENABLE_WEBASSEMBLY

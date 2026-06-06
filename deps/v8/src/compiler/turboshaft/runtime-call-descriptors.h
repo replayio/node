@@ -221,6 +221,8 @@ struct runtime : CallDescriptorBuilder {
     using Arguments = NoArguments;
     using returns_t = V<Object>;
 
+    // Even though termination doesn't resume in JS, we need a frame state
+    // here so the stack walker can summarize the frame.
     static constexpr bool kCanTriggerLazyDeopt = true;
     static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
   };
