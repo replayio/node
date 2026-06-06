@@ -44,8 +44,10 @@ using v8::Value;
 // InitPerformance() can still override them deterministically; the static
 // initializer is kept as a safe default because Environment now caches these at
 // construction (env.cc), unlike v16.14.
-// TODO(replay-port): call InitPerformance() before the first Environment is
-// constructed when recording/replaying (was implicit via static-init in v16.14).
+// Replay port: InitPerformance() is now called from StartInternal() (src/node.cc),
+// right after the record/replay driver attaches and before the first Environment
+// is constructed, so the cached values are deterministic (was implicit via
+// static-init order in v16.14).
 uint64_t performance_process_start = PERFORMANCE_NOW();
 double performance_process_start_timestamp =
     GetCurrentTimeInMicroseconds();

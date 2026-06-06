@@ -1108,8 +1108,6 @@ void RecordReplayFinishRecording() {
         free(reason);
         return;
       }
-  InitializeRecordReplay(&argc, &argv);
-
 
       FILE* file = fopen(env, "a");
       if (file) {
@@ -1769,6 +1767,21 @@ static ExitCode StartInternal(int argc, char** argv) {
 
   // Hack around with the argv pointer. Used for process.title = "blah".
   argv = uv_setup_args(argc, argv);
+
+  // [RecordReplay] Attach the record/replay driver before V8 is initialized and
+  // before any Environment is constructed, so V8/Node instrumentation and the
+  // driver-intercepted clocks are active from the very start. This also records
+  // the command-line arguments. (In v16.14 this ran inside the bootstrap with
+  // argc/argv in scope; Node 27's InitializeOncePerProcessInternal only has a
+  // std::vector<std::string>, so we attach here in StartInternal instead.)
+  InitializeRecordReplay(&argc, &argv);
+
+  // Node 27 caches performance_process_start[_timestamp] into Environment at
+  // construction. Re-capture them now, deterministically, while the driver is
+  // attached but before the first Environment exists.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    performance::InitPerformance();
+  }
 
   std::shared_ptr<InitializationResultImpl> result =
       InitializeOncePerProcessInternal(
