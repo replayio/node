@@ -52,6 +52,7 @@ using v8::TryCatch;
 using v8::Value;
 
 namespace node {
+
 namespace worker {
 
 constexpr double kMB = 1024 * 1024;
@@ -272,8 +273,12 @@ class WorkerThreadData {
 
 size_t Worker::NearHeapLimit(void* data, size_t current_heap_limit,
                              size_t initial_heap_limit) {
-  Worker* worker = static_cast<Worker*>(data);
-  // Give the current GC some extra leeway to let it finish rather than
+  // We can't force workers to exit at non-deterministic points when
+  // recording/replaying.
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    Worker* worker = static_cast<Worker*>(data);
+    worker->Exit(1, "ERR_WORKER_OUT_OF_MEMORY", "JS heap out of memory");
+  }
   // crash hard. We are not going to perform further allocations anyway.
   constexpr size_t kExtraHeapAllowance = 16 * 1024 * 1024;
   size_t new_limit = current_heap_limit + kExtraHeapAllowance;
@@ -452,6 +457,10 @@ bool Worker::CreateEnvMessagePort(Environment* env) {
   if (child_port != nullptr)
     env->set_message_port(child_port->object(isolate_));
 
+  v8::recordreplay::Assert("Worker::JoinThread");
+
+  v8::recordreplay::Assert("Worker::JoinThread Joined");
+
   return child_port;
 }
 
@@ -486,6 +495,7 @@ void Worker::JoinThread() {
             : Null(env()->isolate()).As<Value>(),
     };
 
+    v8::recordreplay::Assert("Worker::JoinThread Callback");
     MakeCallback(env()->onexit_string(), arraysize(args), args);
   }
 

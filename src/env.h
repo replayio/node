@@ -1256,6 +1256,8 @@ class Environment final : public MemoryRetainer {
   std::unordered_map<char*, std::unique_ptr<v8::BackingStore>>
       released_allocated_buffers_;
 
+  int record_replay_task_queue_async_id_ = 0;
+
   v8::CpuProfiler* cpu_profiler_ = nullptr;
   std::vector<v8::ProfilerId> pending_profiles_;
 };

@@ -74,6 +74,16 @@ String StringUtil::fromUTF16(const uint16_t* data, size_t length) {
   return String(buffer.out(), utf8_length);
 }
 
+  // Workaround problems using istringstream when replaying. This needs to get fixed.
+  /*
+  */
+  std::string str(buffer, length);
+  if (!strcmp(str.c_str(), "0")) {
+    *ok = true;
+    return 0;
+  }
+  double d = strtod(str.c_str(), nullptr);
+  *ok = d != 0;
 String StringUtil::fromUTF8(const uint8_t* data, size_t length) {
   return std::string(reinterpret_cast<const char*>(data), length);
 }

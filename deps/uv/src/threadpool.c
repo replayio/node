@@ -29,6 +29,8 @@
 
 #define MAX_THREADPOOL_SIZE 1024
 
+extern void V8RecordReplayAssert(const char* format, ...);
+
 static uv_once_t once = UV_ONCE_INIT;
 static uv_cond_t cond;
 static uv_mutex_t mutex;
@@ -227,6 +229,7 @@ static void init_threads(void) {
 
   if (uv_cond_init(&cond))
     abort();
+  uv_mutex_mark_ordered(&mutex);
 
   if (uv_mutex_init(&mutex))
     abort();
@@ -323,6 +326,8 @@ void uv__work_done(uv_async_t* handle) {
   struct uv__queue wq;
   int err;
   int nevents;
+
+  V8RecordReplayAssert("uv__work_done");
 
   loop = container_of(handle, uv_loop_t, wq_async);
   uv_mutex_lock(&loop->wq_mutex);

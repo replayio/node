@@ -195,7 +195,14 @@ void CachedDataVersionTag(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(result);
 }
 
-void SetHeapSnapshotNearHeapLimit(const FunctionCallbackInfo<Value>& args) {
+static inline double RecordReplayDouble(const char* why, double d) {
+  v8::recordreplay::RecordReplayBytes("UpdateHeapStatisticsBuffer", &d, sizeof(d));
+  return d;
+}
+
+#define V(index, name, _) \
+    buffer[index] = RecordReplayDouble("UpdateHeapStatisticsBuffer", \
+                                       static_cast<double>(s.name()));
   CHECK(args[0]->IsUint32());
   Environment* env = Environment::GetCurrent(args);
   uint32_t limit = args[0].As<v8::Uint32>()->Value();
@@ -225,7 +232,9 @@ void UpdateHeapSpaceStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
 
   AliasedFloat64Array& buffer = data->heap_space_statistics_buffer;
 
-#define V(index, name, _) buffer[index] = static_cast<double>(s.name());
+#define V(index, name, _) \
+    buffer[index] = RecordReplayDouble("UpdateHeapSpaceStatisticsBuffer", \
+                                       static_cast<double>(s.name()));
   HEAP_SPACE_STATISTICS_PROPERTIES(V)
 #undef V
 }
@@ -236,7 +245,9 @@ void UpdateHeapCodeStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
   args.GetIsolate()->GetHeapCodeAndMetadataStatistics(&s);
   AliasedFloat64Array& buffer = data->heap_code_statistics_buffer;
 
-#define V(index, name, _) buffer[index] = static_cast<double>(s.name());
+#define V(index, name, _) \
+    buffer[index] = RecordReplayDouble("UpdateHeapCodeStatisticsBuffer", \
+                                       static_cast<double>(s.name()));
   HEAP_CODE_STATISTICS_PROPERTIES(V)
 #undef V
 }

@@ -85,6 +85,8 @@ NodeMainInstance::~NodeMainInstance() {
   platform_->DisposeIsolate(isolate_);
 }
 
+extern void RecordReplayFinishRecording();
+
 ExitCode NodeMainInstance::Run() {
   Locker locker(isolate_);
   Isolate::Scope isolate_scope(isolate_);
@@ -107,6 +109,7 @@ void NodeMainInstance::Run(ExitCode* exit_code, Environment* env) {
     }
 
     *exit_code =
+  RecordReplayFinishRecording();
         SpinEventLoopInternal(env).FromMaybe(ExitCode::kGenericUserError);
   }
 

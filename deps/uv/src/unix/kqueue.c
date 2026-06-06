@@ -48,6 +48,8 @@
 #define EV_OOBAND  EV_FLAG1
 #endif
 
+extern void V8RecordReplayAssert(const char* format, ...);
+
 
 int uv__kqueue_init(uv_loop_t* loop) {
   loop->backend_fd = kqueue();
@@ -178,6 +180,8 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
   int i;
   int user_timeout;
   int reset_timeout;
+
+  V8RecordReplayAssert("uv__io_poll");
 
   if (loop->nfds == 0) {
     assert(uv__queue_empty(&loop->watcher_queue));

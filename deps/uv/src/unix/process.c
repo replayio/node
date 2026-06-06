@@ -70,6 +70,8 @@ extern char **environ;
 #define UV_USE_SIGCHLD
 #endif
 
+extern void V8RecordReplayAssert(const char* format, ...);
+extern void V8RecordReplayDiagnostic(const char* format, ...);
 
 #ifdef UV_USE_SIGCHLD
 static void uv__chld(uv_signal_t* handle, int signum) {
@@ -108,6 +110,8 @@ void uv__wait_children(uv_loop_t* loop) {
   struct uv__queue pending;
   struct uv__queue* q;
   struct uv__queue* h;
+
+  V8RecordReplayAssert("uv__chld start");
 
   uv__queue_init(&pending);
 
@@ -288,6 +292,8 @@ static void uv__process_child_init(const uv_process_options_t* options,
                                    int stdio_count,
                                    int (*pipes)[2],
                                    int error_fd) {
+  V8RecordReplayDiagnostic("uv__process_child_init start");
+
   sigset_t signewset;
   int close_fd;
   int use_fd;
@@ -934,9 +940,11 @@ static int uv__spawn_and_init_child(
   uv__close(signal_pipe[1]);
 
   if (err == 0) {
-    do
-      r = read(signal_pipe[0], &exec_errorno, sizeof(exec_errorno));
-    while (r == -1 && errno == EINTR);
+  do {
+    V8RecordReplayDiagnostic("uv_spawn read pipe start");
+    r = read(signal_pipe[0], &exec_errorno, sizeof(exec_errorno));
+    V8RecordReplayDiagnostic("uv_spawn read pipe done %d %d", r, errno);
+  } while (r == -1 && errno == EINTR);
 
     if (r == 0)
       ; /* okay, EOF */
@@ -977,6 +985,12 @@ int uv_spawn(uv_loop_t* loop,
   int err;
   int exec_errorno;
   int i;
+
+  V8RecordReplayDiagnostic("uv_spawn start");
+  char** nargs;
+  for (nargs = options->args; *nargs; nargs++) {
+    V8RecordReplayDiagnostic("uv_spawn arg %s", *nargs);
+  }
 
   assert(options->file != NULL);
   assert(!(options->flags & ~(UV_PROCESS_DETACHED |

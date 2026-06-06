@@ -389,6 +389,7 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   }
 
   void sendMessageToFrontend(const StringView& message) {
+    std::string raw_message = protocol::StringUtil::StringViewToUtf8(message);
     if (per_process::enabled_debug_list.enabled(
             DebugCategory::INSPECTOR_SERVER)) {
       std::string raw_message = protocol::StringUtil::StringViewToUtf8(message);

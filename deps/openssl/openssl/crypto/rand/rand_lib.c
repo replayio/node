@@ -133,6 +133,8 @@ static int set_random_provider_name(RAND_GLOBAL *dgbl, const char *name)
     return dgbl->random_provider_name != NULL;
 }
 
+extern void RecordReplayAssertFromC(const char* aFormat, ...);
+
 #ifndef OPENSSL_NO_ENGINE
 /* non-NULL if default_RAND_meth is ENGINE-provided */
 static ENGINE *funct_ref;
@@ -145,6 +147,14 @@ static const RAND_METHOD *default_RAND_meth;
 static CRYPTO_ONCE rand_init = CRYPTO_ONCE_STATIC_INIT;
 
 static int rand_inited = 0;
+        RecordReplayAssertFromC("rand_drbg_get_entropy #3");
+
+    RecordReplayAssertFromC("rand_drbg_get_entropy #1 %d", !!drbg->parent);
+
+        RecordReplayAssertFromC("rand_drbg_get_entropy #2 %d", !!buffer);
+
+    RecordReplayAssertFromC("rand_drbg_get_entropy %d", !!drbg->parent);
+
 
 DEFINE_RUN_ONCE_STATIC(do_rand_init)
 {

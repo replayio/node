@@ -829,6 +829,7 @@ Environment::Environment(IsolateData* isolate_data,
       thread_id_(thread_id.id == static_cast<uint64_t>(-1)
                      ? AllocateEnvironmentThreadId().id
                      : thread_id.id),
+      native_immediates_threadsafe_mutex_(/* ordered */ true) {
       thread_name_(thread_name) {
   if (!is_main_thread()) {
     // If this is a Worker thread, we can always safely use the parent's
@@ -1398,15 +1399,21 @@ Maybe<bool> Environment::CheckUnsettledTopLevelAwait() const {
 }
 
 void Environment::RunAndClearInterrupts() {
-  while (native_immediates_interrupts_.size() > 0) {
+  while (true) {
     NativeImmediateQueue queue;
     {
+      v8::recordreplay::Assert("native_immediates_threadsafe_mutex #1");
       Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
+      if (native_immediates_interrupts_.size() == 0) {
+        break;
+      }
       queue.ConcatMove(std::move(native_immediates_interrupts_));
     }
     DebugSealHandleScope seal_handle_scope(isolate());
 
     while (auto head = queue.Shift())
+  v8::recordreplay::Assert("Environment::RunAndClearNativeImmediates");
+
       head->Call(this);
   }
 }
@@ -1465,8 +1472,9 @@ void Environment::RunAndClearNativeImmediates(bool only_refed) {
   // This is intentionally placed after the `ref_count` handling, because when
   // refed threadsafe immediates are created, they are not counted towards the
   // count in immediate_info() either.
+  v8::recordreplay::Assert("native_immediates_threadsafe_mutex #2");
   NativeImmediateQueue threadsafe_immediates;
-  if (native_immediates_threadsafe_.size() > 0) {
+  {
     Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
     threadsafe_immediates.ConcatMove(std::move(native_immediates_threadsafe_));
   }
@@ -1474,6 +1482,9 @@ void Environment::RunAndClearNativeImmediates(bool only_refed) {
 }
 
 void Environment::RequestInterruptFromV8() {
+  // V8 interrupts will not be replayed at precise positions.
+  v8::recordreplay::InvalidateRecording("RequestInterruptFromV8 called");
+
   // The Isolate may outlive the Environment, so some logic to handle the
   // situation in which the Environment is destroyed before the handler runs
   // is required.
@@ -1524,6 +1535,8 @@ void Environment::ToggleTimerRef(bool ref) {
 void Environment::RunTimers(uv_timer_t* handle) {
   Environment* env = Environment::from_timer_handle(handle);
   TRACE_EVENT0(TRACING_CATEGORY_NODE1(environment), "RunTimers");
+
+  v8::recordreplay::Assert("Environment::RunTimers");
 
   if (!env->can_call_into_js())
     return;
@@ -1581,8 +1594,13 @@ void Environment::RunTimers(uv_timer_t* handle) {
   }
 }
 
-
 void Environment::CheckImmediate(uv_check_t* handle) {
+  // We're near the top of the event loop, periodically create new
+  // checkpoints so that the recording can be processed more efficiently.
+  if (v8::IsMainThread()) {
+    v8::recordreplay::NewCheckpoint();
+  }
+
   Environment* env = Environment::from_immediate_check_handle(handle);
   TRACE_EVENT0(TRACING_CATEGORY_NODE1(environment), "CheckImmediate");
 
@@ -1595,11 +1613,15 @@ void Environment::CheckImmediate(uv_check_t* handle) {
     return;
 
   do {
+    v8::recordreplay::Assert("Environment::CheckImmediate Callback");
     MakeCallback(env->isolate(),
                  env->process_object(),
                  env->immediate_callback_function(),
                  0,
-                 nullptr,
+  // https://github.com/RecordReplay/backend/issues/4886
+  v8::recordreplay::Assert("Environment::GetNow");
+
+  v8::recordreplay::RecordReplayBytes("Environment::GetNow", &now, sizeof(now));
                  {0, 0}).ToLocalChecked();
   } while (env->immediate_info()->has_outstanding() && env->can_call_into_js());
 
@@ -1918,6 +1940,8 @@ void Environment::Exit(ExitCode exit_code) {
 }
 
 void Environment::stop_sub_worker_contexts() {
+  v8::recordreplay::Assert("Environment::stop_sub_worker_contexts");
+
   DCHECK_EQ(Isolate::GetCurrent(), isolate());
 
   while (!sub_worker_contexts_.empty()) {

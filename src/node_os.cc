@@ -59,8 +59,24 @@ using v8::Object;
 using v8::String;
 using v8::Value;
 
+// When recording/replaying, sometimes when side effects aren't allowed we want
+// to avoid interacting with the system in potentially new ways, as this can cause
+// the associated command to e.g. get an object's contents to fail. In this case
+// we return an "unavailable" string.
+static bool MaybeMarkUnavailable(const FunctionCallbackInfo<Value>& args) {
+  if (!v8::recordreplay::AllowSideEffects()) {
+    Environment* env = Environment::GetCurrent(args);
+    args.GetReturnValue().Set(
+      String::NewFromUtf8(env->isolate(), "unavailable").ToLocalChecked());
+    return true;
+  }
+  return false;
+}
 
 static void GetHostname(const FunctionCallbackInfo<Value>& args) {
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   char buf[UV_MAXHOSTNAMESIZE];
   size_t size = sizeof(buf);
@@ -80,6 +96,9 @@ static void GetHostname(const FunctionCallbackInfo<Value>& args) {
 }
 
 static void GetOSInformation(const FunctionCallbackInfo<Value>& args) {
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   uv_utsname_t info;
   int err = uv_os_uname(&info);
@@ -107,6 +126,9 @@ static void GetOSInformation(const FunctionCallbackInfo<Value>& args) {
 }
 
 static void GetCPUInfo(const FunctionCallbackInfo<Value>& args) {
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
   Isolate* isolate = args.GetIsolate();
 
   uv_cpu_info_t* cpu_infos;
@@ -141,6 +163,15 @@ static void GetCPUInfo(const FunctionCallbackInfo<Value>& args) {
   uv_free_cpu_info(cpu_infos, count);
   args.GetReturnValue().Set(Array::New(isolate, result.data(), result.size()));
 }
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
 
 
 static void GetFreeMemory(const FunctionCallbackInfo<Value>& args) {
@@ -183,6 +214,9 @@ static void GetUptime(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetLoadAvg(const FunctionCallbackInfo<Value>& args) {
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
   CHECK(args[0]->IsFloat64Array());
   Local<Float64Array> array = args[0].As<Float64Array>();
   CHECK_EQ(array->Length(), 3);
@@ -193,6 +227,9 @@ static void GetLoadAvg(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetInterfaceAddresses(const FunctionCallbackInfo<Value>& args) {
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   Isolate* isolate = env->isolate();
   uv_interface_address_t* interfaces;
@@ -275,6 +312,9 @@ static void GetInterfaceAddresses(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetHomeDirectory(const FunctionCallbackInfo<Value>& args) {
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   char buf[PATH_MAX];
 
@@ -297,6 +337,9 @@ static void GetHomeDirectory(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetUserInfo(const FunctionCallbackInfo<Value>& args) {
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   uv_passwd_t pwd;
   enum encoding encoding;
@@ -391,6 +434,9 @@ static void SetPriority(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetPriority(const FunctionCallbackInfo<Value>& args) {
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
 
   CHECK_EQ(args.Length(), 2);

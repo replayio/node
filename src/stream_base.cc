@@ -446,6 +446,8 @@ MaybeLocal<Value> StreamBase::CallJSOnreadMethod(ssize_t nread,
                                                  StreamBaseJSChecks checks) {
   Environment* env = env_;
 
+  v8::recordreplay::Assert("StreamBase::CallJSOnreadMethod");
+
   DCHECK_EQ(static_cast<int32_t>(nread), nread);
   DCHECK_LE(offset, INT32_MAX);
 
@@ -751,6 +753,8 @@ void CustomBufferJSListener::OnStreamRead(ssize_t nread, const uv_buf_t& buf) {
 
 void ReportWritesToJSStreamListener::OnStreamAfterReqFinished(
     StreamReq* req_wrap, int status) {
+  v8::recordreplay::Assert("ReportWritesToJSStreamListener::OnStreamAfterReqFinished");
+
   StreamBase* stream = static_cast<StreamBase*>(stream_);
   Environment* env = stream->stream_env();
   if (!env->can_call_into_js()) return;

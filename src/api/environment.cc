@@ -114,7 +114,9 @@ MaybeLocal<Value> PrepareStackTraceCallback(Local<Context> context,
 
 void* NodeArrayBufferAllocator::Allocate(size_t size) {
   void* ret;
-  COUNT_GENERIC_USAGE("NodeArrayBufferAllocator.Allocate.ZeroFilled");
+  if (zero_fill_field_ ||
+      per_process::cli_options->zero_fill_all_buffers ||
+      v8::recordreplay::IsRecordingOrReplaying())
   ret = allocator_->Allocate(size);
   if (ret != nullptr) [[likely]] {
     total_mem_usage_.fetch_add(size, std::memory_order_relaxed);
@@ -1143,7 +1145,10 @@ void DefaultProcessExitHandlerInternal(Environment* env, ExitCode exit_code) {
   Exit(exit_code);
 }
 
+extern void RecordReplayFinishRecording();
+
 void DefaultProcessExitHandler(Environment* env, int exit_code) {
+  RecordReplayFinishRecording();
   DefaultProcessExitHandlerInternal(env, static_cast<ExitCode>(exit_code));
 }
 

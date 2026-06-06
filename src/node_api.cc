@@ -689,8 +689,28 @@ static void napi_module_register_cb(v8::Local<v8::Object> exports,
       exports,
       module,
       context,
-      static_cast<const napi_module*>(priv)->nm_register_func);
+      v8::recordreplay::IsReplaying()
+      ? (napi_addon_register_func)0x1
+      : static_cast<const napi_module*>(priv)->nm_register_func);
 }
+
+namespace node {
+
+void RecordReplayAddonContextRegister(addon_context_register_func* pfunc) {
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
+  if (v8::recordreplay::RecordReplayValue("RecordReplayAddonContextRegisterFunc",
+                                          *pfunc == napi_module_register_cb)) {
+    *pfunc = napi_module_register_cb;
+    return;
+  }
+
+  v8::recordreplay::InvalidateRecording("Binary module unknown addon_context_register_func");
+}
+
+} // namespace node
 
 template <int32_t module_api_version>
 static void node_api_context_register_func(v8::Local<v8::Object> exports,
@@ -769,7 +789,21 @@ void napi_module_register_by_symbol(v8::Local<v8::Object> exports,
   napi_env env =
       node_napi_env__::New(context, module_filename, module_api_version);
 
-  napi_value _exports = nullptr;
+  v8::recordreplay::RegisterPointer(env);
+  v8::recordreplay::RegisterPointer(v8impl::JsValueFromV8LocalValue(exports));
+
+    if (v8::recordreplay::IsReplaying()) {
+      node::recordreplay::AutoCallbackRegion region;
+      int id = v8::recordreplay::RecordReplayValue("napi_module_register_by_symbol", 0);
+      _exports = (napi_value) v8::recordreplay::IdPointer(id);
+    } else {
+      {
+        node::recordreplay::AutoCallbackRegion region;
+        _exports = init(env, v8impl::JsValueFromV8LocalValue(exports));
+      }
+      int id = v8::recordreplay::PointerId(_exports);
+      v8::recordreplay::RecordReplayValue("napi_module_register_by_symbol", id);
+    }
   env->CallIntoModule([&](napi_env env) {
     _exports = init(env, v8impl::JsValueFromV8LocalValue(exports));
   });
