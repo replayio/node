@@ -70,6 +70,12 @@ static void uv__async_send(uv_loop_t* loop);
 static int uv__async_start(uv_loop_t* loop);
 static void uv__cpu_relax(void);
 
+/* Replay port: ordered locks make cross-thread async wakeups deterministic. */
+extern void V8RecordReplayAssert(const char* format, ...);
+extern size_t V8RecordReplayCreateOrderedLock(const char* name);
+extern void V8RecordReplayOrderedLock(int lock);
+extern void V8RecordReplayOrderedUnlock(int lock);
+
 
 int uv_async_init(uv_loop_t* loop, uv_async_t* handle, uv_async_cb async_cb) {
   int err;
@@ -81,6 +87,7 @@ int uv_async_init(uv_loop_t* loop, uv_async_t* handle, uv_async_cb async_cb) {
   uv__handle_init(loop, (uv_handle_t*)handle, UV_ASYNC);
   handle->async_cb = async_cb;
   handle->pending = 0;
+  handle->ordered_lock_id = V8RecordReplayCreateOrderedLock("uv_async_t");
   handle->u.fd = 0; /* This will be used as a busy flag. */
 
   uv__queue_insert_tail(&loop->async_handles, &handle->queue);
@@ -97,9 +104,13 @@ int uv_async_send(uv_async_t* handle) {
   pending = (_Atomic int*) &handle->pending;
   busy = (_Atomic int*) &handle->u.fd;
 
+  V8RecordReplayOrderedLock(handle->ordered_lock_id);
+
   /* Do a cheap read first. */
-  if (atomic_load_explicit(pending, memory_order_relaxed) != 0)
+  if (atomic_load_explicit(pending, memory_order_relaxed) != 0) {
+    V8RecordReplayOrderedUnlock(handle->ordered_lock_id);
     return 0;
+  }
 
   /* Set the loop to busy. */
   atomic_fetch_add(busy, 1);
@@ -111,6 +122,7 @@ int uv_async_send(uv_async_t* handle) {
   /* Set the loop to not-busy. */
   atomic_fetch_add(busy, -1);
 
+  V8RecordReplayOrderedUnlock(handle->ordered_lock_id);
   return 0;
 }
 
@@ -129,13 +141,17 @@ static void uv__async_spin(uv_async_t* handle) {
    * threads after this function returns. */
   atomic_store(pending, 1);
 
+  V8RecordReplayOrderedLock(handle->ordered_lock_id);
+
   for (;;) {
     /* 997 is not completely chosen at random. It's a prime number, acyclic by
      * nature, and should therefore hopefully dampen sympathetic resonance.
      */
     for (i = 0; i < 997; i++) {
-      if (atomic_load(busy) == 0)
+      if (atomic_load(busy) == 0) {
+        V8RecordReplayOrderedUnlock(handle->ordered_lock_id);
         return;
+      }
 
       /* Other thread is busy with this handle, spin until it's done. */
       uv__cpu_relax();
@@ -165,6 +181,8 @@ void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
   uv_async_t* h;
   _Atomic int *pending;
 
+  V8RecordReplayAssert("uv__async_io");
+
   assert(w == &loop->async_io_watcher);
 
 #if UV__KQUEUE_EVFILT_USER
@@ -191,6 +209,8 @@ void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
 
   uv__queue_move(&loop->async_handles, &queue);
   while (!uv__queue_empty(&queue)) {
+    V8RecordReplayAssert("uv__async_io #2");
+
     q = uv__queue_head(&queue);
     h = uv__queue_data(q, uv_async_t, queue);
 

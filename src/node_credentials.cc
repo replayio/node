@@ -73,13 +73,17 @@ static bool HasOnly(int capability) {
 // setuid root then lookup will not be allowed.
 bool SafeGetenv(const char* key, std::string* text, Environment* env) {
 #if !defined(__CloudABI__) && !defined(_WIN32)
+  // Replay port: avoid interacting with the system when diverged from the
+  // recording. We can call getenv(), but can't figure out user IDs.
+  if (!v8::recordreplay::HasDivergedFromRecording()) {
 #if defined(__linux__)
-  if ((!HasOnly(CAP_NET_BIND_SERVICE) && linux_at_secure()) ||
-      getuid() != geteuid() || getgid() != getegid())
+    if ((!HasOnly(CAP_NET_BIND_SERVICE) && linux_at_secure()) ||
+        getuid() != geteuid() || getgid() != getegid())
 #else
-  if (linux_at_secure() || getuid() != geteuid() || getgid() != getegid())
+    if (linux_at_secure() || getuid() != geteuid() || getgid() != getegid())
 #endif
-    return false;
+      return false;
+  }
 #endif
 
   // Fallback to system environment which reads the real environment variable

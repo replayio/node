@@ -12,6 +12,7 @@
 #include <cinttypes>
 
 namespace node {
+
 namespace performance {
 
 using v8::Array;
@@ -36,10 +37,26 @@ using v8::Value;
 // Nanoseconds in a millisecond, as a float.
 #define NANOS_PER_MILLIS 1e6
 
-const uint64_t performance_process_start = PERFORMANCE_NOW();
-const double performance_process_start_timestamp =
+// Replay port: in v16.14 these were file-scope `timeOrigin`/`timeOriginTimestamp`
+// and InitPerformance() set them so record/replay sees consistent values instead
+// of the non-deterministic static-init order. In Node 27 they were renamed to
+// performance_process_start[_timestamp]. They are made non-const so
+// InitPerformance() can still override them deterministically; the static
+// initializer is kept as a safe default because Environment now caches these at
+// construction (env.cc), unlike v16.14.
+// TODO(replay-port): call InitPerformance() before the first Environment is
+// constructed when recording/replaying (was implicit via static-init in v16.14).
+uint64_t performance_process_start = PERFORMANCE_NOW();
+double performance_process_start_timestamp =
     GetCurrentTimeInMicroseconds();
 uint64_t performance_v8_start;
+
+void InitPerformance() {
+  // Re-capture deterministically so recording/replaying agree regardless of
+  // static-init order.
+  performance_process_start = PERFORMANCE_NOW();
+  performance_process_start_timestamp = GetCurrentTimeInMicroseconds();
+}
 
 PerformanceState::PerformanceState(Isolate* isolate,
                                    uint64_t time_origin,
@@ -251,6 +268,9 @@ void Notify(const FunctionCallbackInfo<Value>& args) {
   AliasedUint32Array& observers = env->performance_state()->observers;
   if (entry_type != NODE_PERFORMANCE_ENTRY_TYPE_INVALID &&
       observers[entry_type]) {
+    // Performance entries can be non-deterministic and are not currently
+    // supported when recording/replaying.
+    v8::recordreplay::InvalidateRecording("Performance entries observed");
     USE(env->performance_entry_callback()->
       Call(env->context(), Undefined(env->isolate()), 1, &entry));
   }

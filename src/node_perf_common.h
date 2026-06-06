@@ -20,9 +20,13 @@ namespace performance {
 
 // These occur before the environment is created. Cache them
 // here and add them to the milestones when the env is init'd.
-extern const uint64_t performance_process_start;
-extern const double performance_process_start_timestamp;
+// Replay port: non-const so InitPerformance() can reset them deterministically.
+extern uint64_t performance_process_start;
+extern double performance_process_start_timestamp;
 extern uint64_t performance_v8_start;
+
+// Replay port: re-capture process-start time deterministically for record/replay.
+void InitPerformance();
 
 #define NODE_PERFORMANCE_MILESTONES(V)                                         \
   V(TIME_ORIGIN_TIMESTAMP, "timeOriginTimestamp")                              \
