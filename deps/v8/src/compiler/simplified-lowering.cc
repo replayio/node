@@ -4885,6 +4885,8 @@ class RepresentationSelector {
       case IrOpcode::kDateNow:
         VisitInputs<T>(node);
         return SetOutput<T>(node, MachineRepresentation::kTagged);
+      case IrOpcode::kIncrementAndCheckProgressCounter:
+        return;
       case IrOpcode::kDoubleArrayMax: {
         return VisitUnop<T>(node, UseInfo::AnyTagged(),
                             MachineRepresentation::kTagged);

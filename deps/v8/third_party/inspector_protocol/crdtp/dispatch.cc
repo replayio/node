@@ -11,6 +11,8 @@
 #include "frontend_channel.h"
 #include "protocol_core.h"
 
+#include "include/v8.h"
+
 namespace v8_crdtp {
 // =============================================================================
 // DispatchResponse - Error status and chaining / fall through
@@ -459,8 +461,9 @@ DomainDispatcher::Callback::Callback(
 void DomainDispatcher::Callback::sendIfActive(
     std::unique_ptr<Serializable> partialMessage,
     const DispatchResponse& response) {
-  if (!backend_impl_ || !backend_impl_->get())
+  if (!backend_impl_ || !backend_impl_->get()) {
     return;
+  }
   backend_impl_->get()->sendResponse(call_id_, response,
                                      std::move(partialMessage));
   backend_impl_ = nullptr;

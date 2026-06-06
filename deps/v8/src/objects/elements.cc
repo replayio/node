@@ -1254,6 +1254,13 @@ class ElementsAccessorBase : public InternalElementsAccessor {
     UNREACHABLE();
   }
 
+    initial_list_length = (size_t)params->PageSize((KeyIterationIndex)initial_list_length);
+    if (*params && initial_list_length <= nof_property_keys) {
+      // No space for indices.
+      // NOTE: We can return |keys| here because it was a temp allocated object when it was passed in.
+      return keys;
+    }
+
   Tagged<Object> CopyElements(Isolate* isolate, DirectHandle<JSAny> source,
                               DirectHandle<JSObject> destination, size_t length,
                               size_t offset) final {
@@ -1375,6 +1382,8 @@ class ElementsAccessorBase : public InternalElementsAccessor {
     PropertyFilter filter = keys->filter();
     Isolate* isolate = keys->isolate();
     Factory* factory = isolate->factory();
+    auto* params = keys->key_iteration_params();
+    auto pageSize = (size_t)params->PageSize((KeyIterationIndex)length);
     for (size_t i = 0; i < length; i++) {
       if (Subclass::HasElementImpl(isolate, *object, i, *backing_store,
                                    filter)) {
@@ -1412,6 +1421,8 @@ class ElementsAccessorBase : public InternalElementsAccessor {
           list->set(insertion_index, *number);
         }
         insertion_index++;
+
+        if (insertion_index == pageSize) break;
       }
     }
     *nof_indices = insertion_index;
@@ -1933,6 +1944,8 @@ class DictionaryElementsAccessor
       }
       elements->set(insertion_index, raw_key);
       insertion_index++;
+
+      if (insertion_index == pageSize) break;
     }
     SortIndices(isolate, elements, insertion_index);
     for (uint32_t i = 0; i < insertion_index; i++) {
@@ -5755,6 +5768,9 @@ class StringWrapperElementsAccessor
       KeyAccumulator* keys) {
     uint32_t length = GetString(*object)->length();
     Factory* factory = keys->isolate()->factory();
+
+    auto* params = keys->key_iteration_params();
+    auto pageSize = (uint32_t)params->PageSize((KeyIterationIndex)length);
     for (uint32_t i = 0; i < length; i++) {
       RETURN_FAILURE_IF_NOT_SUCCESSFUL(
           keys->AddKey(factory->NewNumberFromUint(i)));

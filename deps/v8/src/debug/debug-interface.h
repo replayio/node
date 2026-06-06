@@ -545,6 +545,11 @@ class V8_EXPORT_PRIVATE StackTraceIterator {
 
   virtual v8::MaybeLocal<v8::Value> Evaluate(v8::Local<v8::String> source,
                                              bool throw_on_side_effect) = 0;
+
+  virtual v8::MaybeLocal<v8::Value> GetFrameArguments() = 0;
+
+  virtual internal::StackFrameId FrameId() = 0;
+  virtual int InlineFrameIndex() = 0;
 };
 
 void GlobalLexicalScopeNames(v8::Local<v8::Context> context,
@@ -667,7 +672,8 @@ class V8_EXPORT_PRIVATE PropertyIterator {
   // The returned std::unique_ptr is empty iff that happens.
   V8_WARN_UNUSED_RESULT static std::unique_ptr<PropertyIterator> Create(
       v8::Local<v8::Context> context, v8::Local<v8::Object> object,
-      bool skip_indices = false);
+      bool skip_indices = false,
+      const v8::KeyIterationParams* params = v8::KeyIterationParams::Default());
 
   virtual ~PropertyIterator() = default;
 

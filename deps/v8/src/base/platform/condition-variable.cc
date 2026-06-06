@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <time.h>
 
+#include "v8.h"
 #include "absl/time/time.h"
 #include "src/base/platform/time.h"
 

@@ -8,6 +8,8 @@
 #include "src/execution/microtask-queue.h"
 #include "src/objects/js-promise-inl.h"
 
+#include "src/base/replayio.h"
+
 namespace v8 {
 namespace internal {
 

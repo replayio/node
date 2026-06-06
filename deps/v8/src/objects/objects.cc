@@ -98,6 +98,8 @@
 #include "src/wasm/wasm-objects-inl.h"
 #endif  // V8_ENABLE_WEBASSEMBLY
 
+#include "src/base/replayio.h"
+
 #ifdef V8_INTL_SUPPORT
 #include "src/objects/js-break-iterator.h"
 #include "src/objects/js-collator.h"
@@ -4764,7 +4766,8 @@ Handle<Object> JSPromise::Reject(DirectHandle<JSPromise> promise,
   // 7. If promise.[[PromiseIsHandled]] is false, perform
   //    HostPromiseRejectionTracker(promise, "reject").
   if (!promise->has_handler()) {
-    isolate->ReportPromiseReject(promise, reason, kPromiseRejectWithNoHandler);
+    isolate->ReportPromiseReject(promise, reason,
+                                 kPromiseRejectWithNoHandler);
   }
 
   // 8. Return TriggerPromiseReactions(reactions, reason).
@@ -5473,6 +5476,10 @@ Handle<RegisteredSymbolTable> RegisteredSymbolTable::Add(
   return table;
 }
 
+
+extern bool RecordReplayShouldCallOnPromiseHook();
+void AddPromiseDependencyGraphAdoption(Isolate* isolate, Handle<Object> promise, Handle<Object> adoption);
+
 template <typename Derived, typename Shape>
 template <typename IsolateT>
 Handle<Derived> BaseNameDictionary<Derived, Shape>::New(
@@ -5635,6 +5642,12 @@ HandleType<Derived>::MaybeType BaseNameDictionary<Derived, Shape>::Add(
   dictionary->set_next_enumeration_index(index + 1);
   return dictionary;
 }
+
+  if (RecordReplayShouldCallOnPromiseHook()) {
+    // Fulfillment of this promise is delayed by adopted resolution.
+    // Ref: Promise/A+ 2.3.2
+    AddPromiseDependencyGraphAdoption(isolate, Handle<Object>::cast(promise), resolution);
+  }
 
 template <typename Derived, typename Shape>
 template <typename IsolateT, template <typename> typename HandleType,

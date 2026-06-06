@@ -1787,12 +1787,16 @@ class CallBase : public Expression {
     return SpreadPositionField::decode(bit_field_);
   }
 
+  int call_head_token_position() const { return call_head_token_position_; }
+
  protected:
   CallBase(Zone* zone, NodeType type, Expression* expression,
-           const ScopedPtrList<Expression>& arguments, int pos, bool has_spread)
+           const ScopedPtrList<Expression>& arguments, int pos, bool has_spread,
+           int call_head_token_position)
       : Expression(pos, type),
         expression_(expression),
-        arguments_(arguments.ToConstVector(), zone) {
+        arguments_(arguments.ToConstVector(), zone),
+        call_head_token_position_(call_head_token_position) {
     DCHECK(type == kCall || type == kCallNew);
     if (has_spread) {
       ComputeSpreadPosition();
@@ -1811,6 +1815,7 @@ class CallBase : public Expression {
 
   Expression* expression_;
   ZonePtrList<Expression> arguments_;
+  int call_head_token_position_;
 };
 
 class Call final : public CallBase {
@@ -1872,8 +1877,8 @@ class Call final : public CallBase {
 
   Call(Zone* zone, Expression* expression,
        const ScopedPtrList<Expression>& arguments, int pos,
-       TaggedTemplateTag tag)
-      : CallBase(zone, kCall, expression, arguments, pos, false) {
+       TaggedTemplateTag tag, int call_head_token_position)
+      : CallBase(zone, kCall, expression, arguments, pos, false, call_head_token_position) {
     bit_field_ |= IsTaggedTemplateField::encode(true) |
                   IsOptionalChainLinkField::encode(false) |
                   EvalScopeInfoIndexField::encode(0);
@@ -1892,8 +1897,10 @@ class CallNew final : public CallBase {
   friend Zone;
 
   CallNew(Zone* zone, Expression* expression,
-          const ScopedPtrList<Expression>& arguments, int pos, bool has_spread)
-      : CallBase(zone, kCallNew, expression, arguments, pos, has_spread) {}
+          const ScopedPtrList<Expression>& arguments, int pos, bool has_spread,
+          int call_head_token_position)
+      : CallBase(zone, kCallNew, expression, arguments, pos, has_spread,
+                 call_head_token_position) {}
 };
 
 // SuperCallForwardArgs is not utterable in JavaScript. It is used to

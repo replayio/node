@@ -45,13 +45,31 @@ DebugStackTraceIterator::~DebugStackTraceIterator() = default;
 
 bool DebugStackTraceIterator::Done() const { return iterator_.done(); }
 
+extern bool RecordReplayHasRegisteredScript(Script script);
+
+// When recording/replaying, frames from scripts that weren't reported to the
+// recorder are ignored when iterating stack traces.
+static bool RecordReplayIgnoreFrame(const FrameSummary& summary) {
+  if (!recordreplay::IsRecordingOrReplaying()) {
+    return false;
+  }
+
+  if (!summary.IsJavaScript()) {
+    return true;
+  }
+
+  Handle<Object> script = summary.AsJavaScript().script();
+  return !RecordReplayHasRegisteredScript(Script::cast(*script));
+}
+
 void DebugStackTraceIterator::Advance() {
   while (true) {
     --inlined_frame_index_;
     for (; inlined_frame_index_ >= 0; --inlined_frame_index_) {
       // Omit functions from native and extension scripts.
-      if (FrameSummary::Get(iterator_.frame(), inlined_frame_index_)
-              .is_subject_to_debugging()) {
+      auto summary = FrameSummary::Get(iterator_.frame(), inlined_frame_index_);
+      if (summary.is_subject_to_debugging() &&
+          !RecordReplayIgnoreFrame(summary)) {
         break;
       }
       is_top_frame_ = false;
@@ -247,6 +265,11 @@ void DebugStackTraceIterator::UpdateInlineFrameIndexAndResumableFnOnStack() {
 
   if (resumable_fn_on_stack_) return;
 
+  if (recordreplay::IsRecordingOrReplaying() && !frames.size()) {
+    recordreplay::Warning("[RUN-1920] Frame summary was empty.");
+    return;
+  }
+
   StackFrame* frame = iterator_.frame();
   if (!frame->is_javascript()) return;
 
@@ -273,6 +296,35 @@ v8::MaybeLocal<v8::Value> DebugStackTraceIterator::Evaluate(
     return v8::MaybeLocal<v8::Value>();
   }
   return Utils::ToLocal(value);
+}
+
+MaybeLocal<v8::Value> DebugStackTraceIterator::GetFrameArguments() {
+  i::SafeForInterruptsScope safe_for_interrupt_scope(isolate_);
+  StackFrameId frame_id = iterator_.frame()->id();
+  StackTraceFrameIterator it(isolate_, frame_id);
+  if (it.is_javascript()) {
+    JavaScriptFrame* frame = it.javascript_frame();
+    Handle<JSObject> args = Accessors::FunctionGetArguments(frame, 0);
+    MaybeHandle<Object> maybe_result(args);
+
+    Handle<Object> value;
+    if (maybe_result.ToHandle(&value)) {
+      return Utils::ToLocal(value);
+    }
+    isolate_->OptionalRescheduleException(false);
+  }
+
+  return v8::MaybeLocal<v8::Value>();
+}
+
+StackFrameId DebugStackTraceIterator::FrameId() {
+  DCHECK(!Done());
+  return iterator_.frame()->id();
+}
+
+int DebugStackTraceIterator::InlineFrameIndex() {
+  DCHECK(!Done());
+  return inlined_frame_index_;
 }
 
 void DebugStackTraceIterator::PrepareRestart() {

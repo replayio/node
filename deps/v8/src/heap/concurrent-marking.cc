@@ -650,6 +650,8 @@ void ConcurrentMarking::TryScheduleJob(GarbageCollector garbage_collector,
   DCHECK(!heap_->IsTearingDown());
   DCHECK(IsStopped());
 
+  replayio::AutoDisallowEvents disallow("ConcurrentMarking::ScheduleJob");
+
   DCHECK_NE(garbage_collector, GarbageCollector::SCAVENGER);
   if (garbage_collector == GarbageCollector::MARK_COMPACTOR &&
       !heap_->mark_compact_collector()->UseBackgroundThreadsInCycle()) {

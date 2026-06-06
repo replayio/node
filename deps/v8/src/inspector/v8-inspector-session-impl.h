@@ -92,6 +92,9 @@ class V8InspectorSessionImpl : public V8InspectorSession,
   void setSkipAllPauses(bool) override;
   void resume(bool terminateOnResume = false) override;
   void stepOver() override;
+
+  v8::MaybeLocal<v8::Value> getArgumentsOfCallFrame(StringView callFrameId) override;
+
   std::vector<std::unique_ptr<protocol::Debugger::API::SearchMatch>>
   searchInTextByLines(StringView text, StringView query, bool caseSensitive,
                       bool isRegex) override;
@@ -102,6 +105,12 @@ class V8InspectorSessionImpl : public V8InspectorSession,
   std::unique_ptr<protocol::Runtime::API::RemoteObject> wrapObject(
       v8::Local<v8::Context>, v8::Local<v8::Value>, StringView groupName,
       bool generatePreview) override;
+
+  // Replay edit: Return objectId
+  virtual std::u16string wrapObjectGetObjectId(v8::Local<v8::Context>,
+                                               v8::Local<v8::Value>,
+                                               StringView groupName,
+                                               bool generatePreview) override;
 
   V8InspectorSession::Inspectable* inspectedObject(unsigned num);
   static const unsigned kInspectedObjectBufferSize = 5;
@@ -132,6 +141,9 @@ class V8InspectorSessionImpl : public V8InspectorSession,
   void SendProtocolNotification(
       std::unique_ptr<protocol::Serializable> message) override;
   void FlushProtocolNotifications() override;
+
+  void RecordReplayMessageAnnotation(const char* kind,
+                                     const std::function<v8_crdtp::span<uint8_t>()>& get_cbor);
 
   std::unique_ptr<StringBuffer> serializeForFrontend(
       std::unique_ptr<protocol::Serializable> message);

@@ -75,6 +75,9 @@ void MessageHandler::DefaultMessageReport(Isolate* isolate,
   }
 }
 
+extern Handle<Object>* gCurrentException;
+extern "C" uint64_t V8RecordReplayNewBookmark();
+
 Handle<JSMessageObject> MessageHandler::MakeMessageObject(
     Isolate* isolate, MessageTemplate message, const MessageLocation* location,
     DirectHandle<Object> argument, DirectHandle<StackTraceInfo> stack_trace) {
@@ -399,7 +402,15 @@ MaybeDirectHandle<JSAny> ErrorUtils::FormatStackTrace(
     }
   }
 
-  return builder.Finish();
+  MaybeHandle<String> rv = builder.Finish();
+  if (recordreplay::IsRecordingOrReplaying("ErrorUtils::FormatStackTrace") &&
+      !recordreplay::AreEventsDisallowed()) {
+    // [PRO-1150] Replay Error.stack
+    std::string str = rv.ToHandleChecked()->ToCString().get();
+    recordreplay::RecordReplayString("ErrorUtils::FormatStackTrace", str);
+    rv = isolate->factory()->NewStringFromUtf8(base::CStrVector(str.c_str()));
+  }
+  return rv;
 }
 
 DirectHandle<String> MessageFormatter::Format(
@@ -1214,7 +1225,10 @@ void ErrorUtils::SetFormattedStack(Isolate* isolate,
 
   if (IsErrorStackData(*lookup.error_stack)) {
     auto error_stack_data = Cast<ErrorStackData>(lookup.error_stack);
-    error_stack_data->set_formatted_stack(*formatted_stack);
+    if (!recordreplay::AreEventsDisallowed()) {
+      // [PRO-2368] Don't cache the formatted stack during replay-only invocations.
+      error_stack_data->set_formatted_stack(*formatted_stack);
+    }
   } else {
     Object::SetProperty(isolate, error_object,
                         isolate->factory()->error_stack_symbol(),

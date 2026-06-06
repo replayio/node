@@ -9,6 +9,12 @@ namespace runtime {
 extern runtime JSWeakRefAddToKeptObjects(
     implicit context: Context)(JSReceiver|Symbol): void;
 
+extern runtime JSReplayWeakRefConstruct(implicit context: Context)(
+    JSReceiver | Symbol): void;
+
+extern runtime JSReplayWeakRefDeref(implicit context: Context)(
+    JSWeakRef): JSAny;
+
 }  // namespace runtime
 
 namespace weakref {
@@ -44,6 +50,7 @@ transitioning javascript builtin WeakRefConstructor(
   // and don't need generational barriers for the reference from `weakRef` to
   // `weakTarget`.
   weakRef.target = weakTarget;
+  runtime::JSReplayWeakRefConstruct(weakTarget);
   // 4. Perfom ! AddToKeptObjects(target).
   runtime::JSWeakRefAddToKeptObjects(weakTarget);
   // 6. Return weakRef.
@@ -59,7 +66,7 @@ transitioning javascript builtin WeakRefDeref(
       MessageTemplate::kIncompatibleMethodReceiver, 'WeakRef.prototype.deref',
       receiver);
   // 3. Let target be the value of weakRef.[[WeakRefTarget]].
-  const target = weakRef.target;
+  const target = runtime::JSReplayWeakRefDeref(weakRef);
   // 4. If target is not empty,
   //   a. Perform ! AddToKeptObjects(target).
   //   b. Return target.

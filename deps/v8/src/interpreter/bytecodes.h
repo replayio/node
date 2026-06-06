@@ -506,6 +506,19 @@ namespace interpreter {
   /* Block Coverage */                                                         \
   V(IncBlockCounter, ImplicitRegisterUse::kNone, OperandType::kCoverageSlot)   \
                                                                                \
+  /* Record Replay */                                                          \
+  V(RecordReplayIncExecutionProgressCounter, ImplicitRegisterUse::kNone)       \
+  V(RecordReplayNotifyActivity, ImplicitRegisterUse::kNone)                    \
+  V(RecordReplayInstrumentation, ImplicitRegisterUse::kNone,                   \
+    OperandType::kIdx)                                                         \
+  V(RecordReplayInstrumentationGenerator, ImplicitRegisterUse::kNone,          \
+    OperandType::kIdx, OperandType::kReg)                                      \
+  V(RecordReplayInstrumentationReturn, ImplicitRegisterUse::kNone,             \
+    OperandType::kIdx, OperandType::kReg)                                      \
+  V(RecordReplayAssertValue, ImplicitRegisterUse::kReadWriteAccumulator,       \
+    OperandType::kIdx)                                                         \
+  V(RecordReplayTrackObjectId, ImplicitRegisterUse::kNone, OperandType::kReg)  \
+                                                                               \
   /* Execution Abort (internal error) */                                       \
   V(Abort, ImplicitRegisterUse::kNone, OperandType::kAbortReason)
 

@@ -608,3 +608,5 @@ void StickySpace::AdjustDifferenceInAllocatedBytes(size_t diff) {
 
 }  // namespace internal
 }  // namespace v8
+
+  replayio::AutoDisallowEvents disallow("PagedSpaceBase::RawRefillLabMain");

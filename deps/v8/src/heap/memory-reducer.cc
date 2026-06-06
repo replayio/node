@@ -228,6 +228,11 @@ MemoryReducer::State MemoryReducer::Step(const State& state,
 }
 
 void MemoryReducer::ScheduleTimer(double delay_ms) {
+  // Posting tasks non-deterministically with a delay is not currently supported
+  // when recording/replaying.
+  if (recordreplay::IsRecordingOrReplaying("gc-changes", "MemoryReducer::ScheduleTimer")) {
+    return;
+  }
   DCHECK_LT(0, delay_ms);
   if (heap()->IsTearingDown()) return;
   // Leave some room for precision error in task scheduler.

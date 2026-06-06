@@ -6342,6 +6342,13 @@ v8_cluster_source_set("v8_base_without_compiler") {
     "src/zone/type-stats.cc",
     "src/zone/zone-segment.cc",
     "src/zone/zone.cc",
+    "src/replay/replay-isolate-data.cc",
+    "src/replay/replay-isolate-data.h",
+    "src/replay/replayio.cc",
+    "src/replay/replayio.h",
+    "src/replay/replay-runtime-weak-refs.cc",
+    "src/replay/weak-refs.cc",
+    "src/replay/weak-refs.h",
     "third_party/siphash/halfsiphash.cc",
   ]
 

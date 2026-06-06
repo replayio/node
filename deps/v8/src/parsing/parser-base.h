@@ -3957,6 +3957,7 @@ ParserBase<Impl>::ParseLeftHandSideContinuation(ExpressionT result) {
 
     ExpressionListT args(pointer_buffer());
     bool has_spread;
+    int call_head_token_position = peek_position();
     ParseArguments(&args, &has_spread, kMaybeArrowHead);
     if (V8_LIKELY(peek() == Token::kArrow)) {
       fni_.RemoveAsyncKeywordFromEnd();
@@ -3972,7 +3973,7 @@ ParserBase<Impl>::ParseLeftHandSideContinuation(ExpressionT result) {
       return result;
     }
 
-    result = factory()->NewCall(result, args, pos, has_spread);
+    result = factory()->NewCall(result, args, pos, has_spread, call_head_token_position);
 
     maybe_arrow.ValidateExpression();
 
@@ -4049,6 +4050,7 @@ ParserBase<Impl>::ParseLeftHandSideContinuation(ExpressionT result) {
         }
         bool has_spread;
         ExpressionListT args(pointer_buffer());
+        int call_head_token_position = peek_position();
         ParseArguments(&args, &has_spread);
 
         // Keep track of eval() calls since they disable all local variable
@@ -4068,7 +4070,7 @@ ParserBase<Impl>::ParseLeftHandSideContinuation(ExpressionT result) {
           }
         }
 
-        result = factory()->NewCall(result, args, pos, has_spread,
+        result = factory()->NewCall(result, args, pos, has_spread, call_head_token_position,
                                     eval_scope_info_index, is_optional);
 
         fni_.RemoveLastFunction();
@@ -4155,9 +4157,10 @@ ParserBase<Impl>::ParseMemberWithPresentNewPrefixesExpression() {
     {
       ExpressionListT args(pointer_buffer());
       bool has_spread;
+      int call_head_token_position = peek_position();
       ParseArguments(&args, &has_spread);
-
-      result = factory()->NewCallNew(result, args, new_pos, has_spread);
+      result = factory()->NewCallNew(result, args, new_pos, has_spread,
+                                     call_head_token_position);
     }
     // The expression can still continue with . or [ after the arguments.
     return ParseMemberExpressionContinuation(result);
@@ -4903,6 +4906,7 @@ ParserBase<Impl>::ParseAsyncFunctionDeclaration(
     impl()->ReportUnexpectedToken(Token::kEscapedKeyword);
   }
   int pos = position();
+  int call_head_token_position = pos;
   DCHECK(!scanner()->HasLineTerminatorBeforeNext());
   Consume(Token::kFunction);
   ParseFunctionFlags flags = ParseFunctionFlag::kIsAsync;
@@ -5567,7 +5571,7 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseTemplateLiteral(
     typename Impl::TemplateLiteralState ts = impl()->OpenTemplateLiteral(pos);
     bool is_valid = CheckTemplateEscapes(forbid_illegal_escapes);
     impl()->AddTemplateSpan(&ts, is_valid, true);
-    return impl()->CloseTemplateLiteral(&ts, start, tag);
+  return impl()->CloseTemplateLiteral(&ts, start, tag, call_head_token_position);
   }
 
   Consume(Token::kTemplateSpan);

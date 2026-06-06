@@ -193,6 +193,9 @@ class V8_EXPORT V8InspectorSession {
   virtual void setSkipAllPauses(bool) = 0;
   virtual void resume(bool setTerminateOnResume = false) = 0;
   virtual void stepOver() = 0;
+
+  virtual v8::MaybeLocal<v8::Value> getArgumentsOfCallFrame(StringView callFrameId) = 0;
+
   virtual std::vector<std::unique_ptr<protocol::Debugger::API::SearchMatch>>
   searchInTextByLines(StringView text, StringView query, bool caseSensitive,
                       bool isRegex) = 0;
@@ -201,6 +204,12 @@ class V8_EXPORT V8InspectorSession {
   virtual std::unique_ptr<protocol::Runtime::API::RemoteObject> wrapObject(
       v8::Local<v8::Context>, v8::Local<v8::Value>, StringView groupName,
       bool generatePreview) = 0;
+
+  // Replay edit: Return objectId
+  virtual std::u16string wrapObjectGetObjectId(v8::Local<v8::Context>,
+                                               v8::Local<v8::Value>,
+                                               StringView groupName,
+                                               bool generatePreview) = 0;
 
   virtual bool unwrapObject(std::unique_ptr<StringBuffer>* error,
                             StringView objectId, v8::Local<v8::Value>*,

@@ -20,6 +20,9 @@
 
 #include "src/trap-handler/trap-handler-internal.h"
 
+#include "include/v8.h"
+#include "src/base/logging.h"
+
 namespace v8 {
 namespace internal {
 namespace trap_handler {

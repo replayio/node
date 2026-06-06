@@ -55,6 +55,8 @@ void AllocationCounter::RemoveAllocationObserver(AllocationObserver* observer) {
     return;
   }
 
+  replayio::AutoDisallowEvents disallow("AllocationCounter::InvokeAllocationObservers");
+
   observers_.erase(it);
 
   if (observers_.empty()) {

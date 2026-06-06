@@ -1473,6 +1473,10 @@ V8_OBJECT class JSMessageObject : public JSObject {
 
   class BodyDescriptor;
 
+  // when recording/replaying, a bookmark for the point where the message's
+  // exception was thrown.
+  DECL_INT_ACCESSORS(record_replay_bookmark)
+
  private:
   friend class Factory;
 

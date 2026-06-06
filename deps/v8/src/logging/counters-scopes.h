@@ -9,6 +9,8 @@
 #include "src/logging/counters.h"
 #include "src/logging/log.h"
 
+#include "replayio.h"
+
 namespace v8 {
 namespace internal {
 
@@ -153,6 +155,8 @@ class V8_NODISCARD NestedTimedHistogramScope : public BaseTimedHistogramScope {
   friend PauseNestedTimedHistogramScope;
 
   void StartInteral() {
+    replayio::AutoPassThroughEvents pt;
+
     previous_scope_ = timed_histogram()->Enter(this);
     base::TimeTicks now = base::TimeTicks::Now();
     if (previous_scope_) previous_scope_->Pause(now);
@@ -160,6 +164,8 @@ class V8_NODISCARD NestedTimedHistogramScope : public BaseTimedHistogramScope {
   }
 
   void StopInternal() {
+    replayio::AutoPassThroughEvents pt;
+
     timed_histogram()->Leave(previous_scope_);
     base::TimeTicks now = base::TimeTicks::Now();
     base::TimeDelta elapsed = timer_.Elapsed(now);

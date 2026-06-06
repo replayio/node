@@ -205,6 +205,17 @@ void PendingCompilationErrorHandler::ThrowPendingError(
   }
   isolate->debug()->OnCompileError(script);
 
+  if (recordreplay::IsReplaying()) {
+    std::string url;
+    if (!script->name().IsUndefined()) {
+      std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+      url = name.get();
+    }
+
+    Script::PositionInfo position_info;
+    Script::GetPositionInfo(script, location.start_pos(), &position_info, Script::WITH_OFFSET);
+  }
+
   Factory* factory = isolate->factory();
   DirectHandle<JSObject> error = factory->NewSyntaxError(
       error_details_.message(), base::VectorOf(args, num_args));

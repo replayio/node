@@ -13,6 +13,8 @@
 #include "src/base/platform/time.h"
 #include "src/init/v8.h"
 
+#include "replayio.h"
+
 namespace v8 {
 class TaskRunner;
 }  // namespace v8

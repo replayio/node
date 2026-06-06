@@ -40,6 +40,8 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
  public:
   BytecodeArrayBuilder(
       Zone* zone, int parameter_count, int locals_count,
+      bool record_replay_ignore,
+      bool record_replay_assert_values,
       FeedbackVectorSpec* feedback_vector_spec = nullptr,
       SourcePositionTableBuilder::RecordingMode source_position_mode =
           SourcePositionTableBuilder::RECORD_SOURCE_POSITIONS);
@@ -502,6 +504,22 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
   // Increment the block counter at the given slot (block code coverage).
   BytecodeArrayBuilder& IncBlockCounter(int slot);
 
+  BytecodeArrayBuilder& RecordReplayOnProgress();
+  BytecodeArrayBuilder& RecordReplayAssertValue(const std::string& desc);
+
+  int RecordReplayRegisterInstrumentationSite(const char* kind,
+                                              int source_position);
+  BytecodeArrayBuilder& RecordReplayInstrumentation(const char* kind,
+                                                    int source_position = kNoSourcePosition);
+  BytecodeArrayBuilder& RecordReplayInstrumentationGenerator(const char* kind,
+                                                             Register generator_object);
+  BytecodeArrayBuilder& RecordReplayInstrumentationReturn(const char* kind,
+                                                          Register return_value,
+                                                          int source_position = kNoSourcePosition);
+  BytecodeArrayBuilder& RecordReplayTrackObjectId(Register object);
+
+  bool EmitRecordReplayInstrumentationOpcodes() const;
+
   // Complex flow control.
   BytecodeArrayBuilder& ForInEnumerate(Register receiver);
   BytecodeArrayBuilder& ForInPrepare(RegisterList cache_info_triple,
@@ -583,6 +601,7 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
 
   void SetExpressionPosition(int position) {
     if (position == kNoSourcePosition) return;
+    most_recent_source_position_ = position;
     if (!latest_source_info_.is_statement()) {
       // Ensure the current expression position is overwritten with the
       // latest value.
@@ -704,6 +723,12 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
   BytecodeRegisterOptimizer* register_optimizer_;
   BytecodeSourceInfo latest_source_info_;
   BytecodeSourceInfo deferred_source_info_;
+  int most_recent_source_position_ = -1;
+  bool emit_record_replay_opcodes_ = false;
+  bool emit_record_replay_assert_values_ = false;
+  std::unordered_set<int> record_replay_instrumentation_site_locations_;
+ public:
+  int record_replay_instrumentation_site_counter_ = 0;
   int potentially_throwing_bytecode_count_;
 };
 

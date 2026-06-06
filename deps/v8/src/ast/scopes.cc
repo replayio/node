@@ -1270,6 +1270,14 @@ Variable* Scope::DeclareVariable(
       var = NonLocal(name, VariableMode::kDynamic);
       // Mark the var as used in case anyone outside the eval wants to use it.
       var->set_is_used();
+  // While replaying, force all variables to be context-allocated.
+  // Ideally we'd only do this for non-leaf functions, but it's not
+  // immediately obvious how to do that at this level.
+  // (RUN-2604)
+  if (recordreplay::IsReplaying() &&
+      recordreplay::FeatureEnabled("force-variable-context-allocation")) {
+    var->ForceContextAllocation();
+  }
     } else {
       // Declare the name.
       var = DeclareLocal(name, mode, kind, was_added, init);
@@ -1315,6 +1323,16 @@ Variable* Scope::DeclareVariable(
   // lead to repeated DeclareEvalVar or DeclareEvalFunction calls.
   decls_.Add(declaration);
   declaration->set_var(var);
+
+  // While replaying, force all variables to be context-allocated.
+  // Ideally we'd only do this for non-leaf functions, but it's not
+  // immediately obvious how to do that at this level.
+  // (RUN-2604)
+  if (recordreplay::IsReplaying() &&
+      recordreplay::FeatureEnabled("force-variable-context-allocation") &&
+      kind == VariableKind::NORMAL_VARIABLE) {
+        var->ForceContextAllocation();
+  }
   return var;
 }
 

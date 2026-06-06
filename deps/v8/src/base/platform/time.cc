@@ -131,14 +131,20 @@ V8_INLINE int64_t ClockNow(clockid_t clk_id) {
 #endif
 }
 
+/*
 V8_INLINE int64_t NanosecondsNow() {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return int64_t{ts.tv_sec} * v8::base::Time::kNanosecondsPerSecond +
          ts.tv_nsec;
 }
+*/
 
 inline bool IsHighResolutionTimer(clockid_t clk_id) {
+  // Avoid interacting with the system when recording/replaying.
+  // Testing IsRecordingOrReplaying() here leads to link errors...
+  return true;
+  /*
   // Currently this is only needed for CLOCK_MONOTONIC. If other clocks need
   // to be checked, care must be taken to support all platforms correctly;
   // see ClockNow() above for precedent.
@@ -162,6 +168,7 @@ inline bool IsHighResolutionTimer(clockid_t clk_id) {
   // a fast desktop). If we still haven't seen a non-zero clock increment
   // in sub-microsecond range, assume a low resolution timer.
   return false;
+  */
 }
 
 #elif V8_OS_WIN

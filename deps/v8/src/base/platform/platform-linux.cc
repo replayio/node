@@ -45,6 +45,8 @@
 #include "src/base/platform/platform-posix.h"
 #include "src/base/platform/platform.h"
 
+#include "v8.h"
+
 namespace v8 {
 namespace base {
 
@@ -90,6 +92,9 @@ void* OS::RemapShared(void* old_address, void* new_address, size_t size) {
 std::optional<OS::MemoryRange> OS::GetFirstFreeMemoryRangeWithin(
     OS::Address boundary_start, OS::Address boundary_end, size_t minimum_size,
     size_t alignment) {
+  // Reading from /proc/self/maps isn't supported when recording/replaying.
+  if (recordreplay::IsRecordingOrReplaying()) return {};
+
   std::optional<OS::MemoryRange> result;
   SignalSafeMapsParser parser;
   if (!parser.IsValid()) return {};
@@ -131,6 +136,9 @@ namespace {
 std::unique_ptr<std::vector<MemoryRegion>> ParseProcSelfMaps(
     FILE* fp, std::function<bool(const MemoryRegion&)> predicate,
     bool early_stopping) {
+  // Reading from /proc/self/maps isn't supported when recording/replaying.
+  if (recordreplay::IsRecordingOrReplaying()) return nullptr;
+
   auto result = std::make_unique<std::vector<MemoryRegion>>();
 
   // Create parser. If fp is provided, use its fd.
