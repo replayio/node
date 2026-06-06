@@ -1,5 +1,6 @@
 #include "node_platform.h"
 #include "node_internals.h"
+#include "replayio.h"  // Replay port: v8::replayio:: RAII guards
 
 #include "env-inl.h"
 #include "debug_utils-inl.h"
@@ -763,7 +764,8 @@ std::shared_ptr<v8::TaskRunner> NodePlatform::GetForegroundTaskRunner(
 
 double NodePlatform::MonotonicallyIncreasingTime() {
   // Convert nanos to seconds.
-  v8::recordreplay::AutoPassThroughEvents pt;
+  // Replay port: PR #282 migrated the RAII guards to the v8::replayio namespace.
+  v8::replayio::AutoPassThroughEvents pt;
   return uv_hrtime() / 1e9;
 }
 

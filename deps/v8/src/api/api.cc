@@ -12838,6 +12838,16 @@ extern "C" DLLEXPORT void V8RecordReplayDiagnosticVA(const char* format, va_list
   }
 }
 
+// Replay port: variadic form libuv calls (deps/uv/src/unix/{process,signal}.c).
+extern "C" DLLEXPORT void V8RecordReplayDiagnostic(const char* format, ...) {
+  if (recordreplay::IsRecordingOrReplaying()) {
+    va_list ap;
+    va_start(ap, format);
+    gRecordReplayDiagnostic(format, ap);
+    va_end(ap);
+  }
+}
+
 extern "C" DLLEXPORT void V8RecordReplayCommandDiagnosticVA(const char* format,
                                                             va_list args) {
   if (recordreplay::IsReplaying()) {
@@ -13279,6 +13289,34 @@ bool recordreplay::HasDivergedFromRecording() {
 
 extern "C" DLLEXPORT bool V8RecordReplayHasDivergedFromRecording() {
   return recordreplay::HasDivergedFromRecording();
+}
+
+// Replay port: symbols the Node fork's hooks depend on that were dropped during
+// the M151 re-application. Restored here so a Node tree links against this V8.
+
+// C++ method form of OnAnnotation (the C shim V8RecordReplayOnAnnotation exists
+// but node calls v8::recordreplay::OnAnnotation directly, e.g. process.report).
+void recordreplay::OnAnnotation(const char* kind, const char* contents) {
+  if (IsRecordingOrReplaying()) {
+    gRecordReplayOnAnnotation(kind, contents);
+  }
+}
+
+// Declared in the Node fork's v8.h but never defined in either fork; there is no
+// driver primitive for it yet. No-op stub so node (src/node_file.cc) links.
+// TODO(replay-port): record the scripted (JS) caller for divergence detection.
+void recordreplay::AssertScriptedCaller(Isolate* isolate, const char* why) {
+  (void)isolate;
+  (void)why;
+}
+
+// C-ABI shims libuv calls (deps/uv/src/unix/{signal,darwin}.c).
+extern "C" DLLEXPORT int V8RecordReplayIsRecording() {
+  return recordreplay::IsRecording() ? 1 : 0;
+}
+
+extern "C" DLLEXPORT int V8RecordReplayIsReplaying() {
+  return recordreplay::IsReplaying() ? 1 : 0;
 }
 
 bool recordreplay::AllowSideEffects() {

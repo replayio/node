@@ -87,6 +87,8 @@ class Platform;
 
 bool IsMainThread();
 
+class Isolate;  // Replay port: needed by recordreplay::AssertScriptedCaller.
+
 // Static container class for record/replay methods.
 class V8_EXPORT recordreplay {
   public:
@@ -117,6 +119,9 @@ static void AssertRaw(const char* format, ...);
 static void Assert(const char* format, ...);
 static void AssertMaybeEventsDisallowed(const char* format, ...);
 static void AssertBytes(const char* why, const void* buf, size_t size);
+// Replay port: needed by Node hooks (node_file.cc, node_process_methods.cc).
+static void AssertScriptedCaller(Isolate* isolate, const char* why);
+static void OnAnnotation(const char* kind, const char* contents);
 static bool AreAssertsDisabled();
 
 static uintptr_t RecordReplayValue(const char* why, uintptr_t v);
