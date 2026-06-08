@@ -50,6 +50,10 @@
 namespace v8 {
 namespace base {
 
+// Defined in v8_base (api.cc); declared weak so libbase-only build tools
+// (torque/mksnapshot) link with it resolving to null (they never record).
+extern "C" V8_WEAK bool V8IsRecordingOrReplaying(const char*, const char*);
+
 TimezoneCache* OS::CreateTimezoneCache() {
   return new PosixDefaultTimezoneCache();
 }
@@ -95,7 +99,6 @@ std::optional<OS::MemoryRange> OS::GetFirstFreeMemoryRangeWithin(
   // Reading from /proc/self/maps isn't supported when recording/replaying.
   // C ABI referenced weakly so libbase-only build tools (torque/mksnapshot) link
   // (recordreplay::IsRecordingOrReplaying() is defined in v8_base/api.cc).
-  extern "C" V8_WEAK bool V8IsRecordingOrReplaying(const char*, const char*);
   if (V8IsRecordingOrReplaying && V8IsRecordingOrReplaying(nullptr, nullptr))
     return {};
 
@@ -142,7 +145,6 @@ std::unique_ptr<std::vector<MemoryRegion>> ParseProcSelfMaps(
     bool early_stopping) {
   // Reading from /proc/self/maps isn't supported when recording/replaying.
   // C ABI referenced weakly so libbase-only build tools (torque/mksnapshot) link.
-  extern "C" V8_WEAK bool V8IsRecordingOrReplaying(const char*, const char*);
   if (V8IsRecordingOrReplaying && V8IsRecordingOrReplaying(nullptr, nullptr))
     return nullptr;
 
