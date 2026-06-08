@@ -109,9 +109,10 @@ void NodeMainInstance::Run(ExitCode* exit_code, Environment* env) {
     }
 
     *exit_code =
-  RecordReplayFinishRecording();
         SpinEventLoopInternal(env).FromMaybe(ExitCode::kGenericUserError);
   }
+
+  RecordReplayFinishRecording();
 
 #if defined(LEAK_SANITIZER)
   __lsan_do_leak_check();
