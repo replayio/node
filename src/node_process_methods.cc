@@ -847,55 +847,12 @@ void BindingData::HrtimeBigIntImpl(BindingData* receiver) {
   fields[0] = t;
 }
 
-  env->SetMethod(target, "isRecordingOrReplaying",
-                 v8::FunctionCallbackIsRecordingOrReplaying);
-  env->SetMethod(target, "recordReplayLog", RecordReplayLog);
-  env->SetMethod(target, "recordReplayOnConsoleAPI",
-                 v8::FunctionCallbackRecordReplayOnConsoleAPI);
-  env->SetMethod(target, "recordReplaySetCommandCallback",
-                 v8::FunctionCallbackRecordReplaySetCommandCallback);
-  env->SetMethod(target, "recordReplaySetClearPauseDataCallback",
-                 v8::FunctionCallbackRecordReplaySetClearPauseDataCallback);
-  env->SetMethod(target, "recordReplayIgnoreScript",
-                 v8::FunctionCallbackRecordReplayIgnoreScript);
-  env->SetMethod(target, "recordReplayAssert",
-                 v8::FunctionCallbackRecordReplayAssert);
-  env->SetMethod(target, "recordReplayGetCurrentError",
-                 v8::FunctionCallbackRecordReplayGetCurrentError);
-  env->SetMethod(target, "recordReplaySetCDPMessageCallback",
-                 RecordReplaySetCDPMessageCallback);
-  env->SetMethod(target, "recordReplaySendCDPMessage",
-                 RecordReplaySendCDPMessage);
-  env->SetMethod(target, "recordReplayRecordingId",
-                 v8::FunctionCallbackRecordReplayGetRecordingId);
-  env->SetMethod(target, "recordReplayCurrentExecutionPoint",
-                 v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
-  env->SetMethod(target, "recordReplayElapsedTimeMs",
-                 v8::FunctionCallbackRecordReplayElapsedTimeMs);
-  env->SetMethod(
-      target, "recordReplayAnnotationHook", RecordReplayAnnotationHook);
-
 void BindingData::SlowHrtimeBigInt(const FunctionCallbackInfo<Value>& args) {
   HrtimeBigIntImpl(FromJSObject<BindingData>(args.This()));
 }
 
 void BindingData::SlowHrtime(const FunctionCallbackInfo<Value>& args) {
   HrtimeImpl(FromJSObject<BindingData>(args.This()));
-
-  registry->Register(v8::FunctionCallbackIsRecordingOrReplaying);
-  registry->Register(RecordReplayLog);
-  registry->Register(v8::FunctionCallbackRecordReplayOnConsoleAPI);
-  registry->Register(v8::FunctionCallbackRecordReplaySetCommandCallback);
-  registry->Register(v8::FunctionCallbackRecordReplaySetClearPauseDataCallback);
-  registry->Register(v8::FunctionCallbackRecordReplayIgnoreScript);
-  registry->Register(v8::FunctionCallbackRecordReplayAssert);
-  registry->Register(v8::FunctionCallbackRecordReplayGetCurrentError);
-  registry->Register(RecordReplaySetCDPMessageCallback);
-  registry->Register(RecordReplaySendCDPMessage);
-  registry->Register(v8::FunctionCallbackRecordReplayGetRecordingId);
-  registry->Register(v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
-  registry->Register(v8::FunctionCallbackRecordReplayElapsedTimeMs);
-  registry->Register(RecordReplayAnnotationHook);
 }
 
 bool BindingData::PrepareForSerialization(Local<Context> context,
@@ -976,6 +933,35 @@ static void CreatePerIsolateProperties(IsolateData* isolate_data,
   SetMethod(isolate, target, "loadEnvFile", LoadEnvFile);
 
   SetMethod(isolate, target, "setEmitWarningSync", SetEmitWarningSync);
+
+  // Record/replay instrumentation methods.
+  SetMethod(isolate, target, "isRecordingOrReplaying",
+            v8::FunctionCallbackIsRecordingOrReplaying);
+  SetMethod(isolate, target, "recordReplayLog", RecordReplayLog);
+  SetMethod(isolate, target, "recordReplayOnConsoleAPI",
+            v8::FunctionCallbackRecordReplayOnConsoleAPI);
+  SetMethod(isolate, target, "recordReplaySetCommandCallback",
+            v8::FunctionCallbackRecordReplaySetCommandCallback);
+  SetMethod(isolate, target, "recordReplaySetClearPauseDataCallback",
+            v8::FunctionCallbackRecordReplaySetClearPauseDataCallback);
+  SetMethod(isolate, target, "recordReplayIgnoreScript",
+            v8::FunctionCallbackRecordReplayIgnoreScript);
+  SetMethod(isolate, target, "recordReplayAssert",
+            v8::FunctionCallbackRecordReplayAssert);
+  SetMethod(isolate, target, "recordReplayGetCurrentError",
+            v8::FunctionCallbackRecordReplayGetCurrentError);
+  SetMethod(isolate, target, "recordReplaySetCDPMessageCallback",
+            RecordReplaySetCDPMessageCallback);
+  SetMethod(isolate, target, "recordReplaySendCDPMessage",
+            RecordReplaySendCDPMessage);
+  SetMethod(isolate, target, "recordReplayRecordingId",
+            v8::FunctionCallbackRecordReplayGetRecordingId);
+  SetMethod(isolate, target, "recordReplayCurrentExecutionPoint",
+            v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
+  SetMethod(isolate, target, "recordReplayElapsedTimeMs",
+            v8::FunctionCallbackRecordReplayElapsedTimeMs);
+  SetMethod(isolate, target, "recordReplayAnnotationHook",
+            RecordReplayAnnotationHook);
 }
 
 static void CreatePerContextProperties(Local<Object> target,
@@ -1023,6 +1009,22 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(LoadEnvFile);
 
   registry->Register(SetEmitWarningSync);
+
+  // Record/replay instrumentation methods.
+  registry->Register(v8::FunctionCallbackIsRecordingOrReplaying);
+  registry->Register(RecordReplayLog);
+  registry->Register(v8::FunctionCallbackRecordReplayOnConsoleAPI);
+  registry->Register(v8::FunctionCallbackRecordReplaySetCommandCallback);
+  registry->Register(v8::FunctionCallbackRecordReplaySetClearPauseDataCallback);
+  registry->Register(v8::FunctionCallbackRecordReplayIgnoreScript);
+  registry->Register(v8::FunctionCallbackRecordReplayAssert);
+  registry->Register(v8::FunctionCallbackRecordReplayGetCurrentError);
+  registry->Register(RecordReplaySetCDPMessageCallback);
+  registry->Register(RecordReplaySendCDPMessage);
+  registry->Register(v8::FunctionCallbackRecordReplayGetRecordingId);
+  registry->Register(v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
+  registry->Register(v8::FunctionCallbackRecordReplayElapsedTimeMs);
+  registry->Register(RecordReplayAnnotationHook);
 }
 
 }  // namespace process
