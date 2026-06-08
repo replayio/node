@@ -1345,8 +1345,8 @@ InitializeOncePerProcessInternal(const std::vector<std::string>& args,
 
   if (per_process::cli_options->print_build_id) {
     printf("%s\n", gBuildId);
-    result.exit_code = 0;
-    result.early_return = true;
+    result->exit_code_ = ExitCode::kNoFailure;
+    result->early_return_ = true;
     return result;
   }
 
