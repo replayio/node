@@ -1639,6 +1639,8 @@ void VisitStack_ForCallSiteBuilder(Isolate* isolate, CallSiteBuilder* visitor) {
   }
 }
 
+}  // namespace
+
 void Isolate::RecordReplayInvokeApiInterruptCallbacksAtProgress() {
   CHECK(recordreplay::IsRecordingOrReplaying("interrupts"));
   CHECK(IsMainThread());
