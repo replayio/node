@@ -789,24 +789,28 @@ void napi_module_register_by_symbol(v8::Local<v8::Object> exports,
   napi_env env =
       node_napi_env__::New(context, module_filename, module_api_version);
 
-  v8::recordreplay::RegisterPointer(env);
-  v8::recordreplay::RegisterPointer(v8impl::JsValueFromV8LocalValue(exports));
+  napi_value _exports = nullptr;
 
-    if (v8::recordreplay::IsReplaying()) {
+  // M151 V8's recordreplay::RegisterPointer takes a (name, ptr) pair (the
+  // original fork's 1-arg form predates the named driver API).
+  v8::recordreplay::RegisterPointer("napi_env", env);
+  v8::recordreplay::RegisterPointer("napi_exports",
+                                    v8impl::JsValueFromV8LocalValue(exports));
+
+  // The replay branch below intentionally replaces env->CallIntoModule(): it
+  // records/replays the module's exports pointer for determinism.
+  if (v8::recordreplay::IsReplaying()) {
+    node::recordreplay::AutoCallbackRegion region;
+    int id = v8::recordreplay::RecordReplayValue("napi_module_register_by_symbol", 0);
+    _exports = (napi_value) v8::recordreplay::IdPointer(id);
+  } else {
+    {
       node::recordreplay::AutoCallbackRegion region;
-      int id = v8::recordreplay::RecordReplayValue("napi_module_register_by_symbol", 0);
-      _exports = (napi_value) v8::recordreplay::IdPointer(id);
-    } else {
-      {
-        node::recordreplay::AutoCallbackRegion region;
-        _exports = init(env, v8impl::JsValueFromV8LocalValue(exports));
-      }
-      int id = v8::recordreplay::PointerId(_exports);
-      v8::recordreplay::RecordReplayValue("napi_module_register_by_symbol", id);
+      _exports = init(env, v8impl::JsValueFromV8LocalValue(exports));
     }
-  env->CallIntoModule([&](napi_env env) {
-    _exports = init(env, v8impl::JsValueFromV8LocalValue(exports));
-  });
+    int id = v8::recordreplay::PointerId(_exports);
+    v8::recordreplay::RecordReplayValue("napi_module_register_by_symbol", id);
+  }
 
   // If register function returned a non-null exports object different from
   // the exports object we passed it, set that as the "exports" property of

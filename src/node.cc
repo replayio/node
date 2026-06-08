@@ -1056,6 +1056,10 @@ static ExitCode InitializeNodeWithArgsInternal(
   // We should set node_is_initialized here instead of in node::Start,
   // otherwise embedders using node::Init to initialize everything will not be
   // able to set it and native addons will not load for them.
+  node_is_initialized = true;
+  return ExitCode::kNoFailure;
+}
+
 static void (*gRecordReplayAttach)(const char* buildId);
 static void (*gRecordReplayRecordCommandLineArguments)(int*, char***);
 static void (*gRecordReplaySaveRecording)(const char* dir);
@@ -1248,10 +1252,6 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
       gRecordReplayAddMetadata(metadata.c_str());
     }
   }
-}
-
-  node_is_initialized = true;
-  return ExitCode::kNoFailure;
 }
 
 #if NODE_USE_V8_WASM_TRAP_HANDLER
