@@ -1664,6 +1664,8 @@ void Isolate::RecordReplayInvokeApiInterruptCallbacksAtProgress() {
   }
 }
 
+namespace {
+
 Handle<FixedArray> CaptureSimpleStackTrace(Isolate* isolate, int limit,
                                            FrameSkipMode mode,
                                            Handle<Object> caller) {
