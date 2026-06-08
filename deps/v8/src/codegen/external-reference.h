@@ -98,6 +98,8 @@ enum class IsolateFieldId : uint8_t;
 
 #define EXTERNAL_REFERENCE_LIST(V)                                             \
   V(abort_with_reason, "abort_with_reason")                                    \
+  V(record_replay_progress_counter, "record_replay_progress_counter")          \
+  V(record_replay_target_progress, "record_replay_target_progress")            \
   V(abort_with_sandbox_violation, "abort_with_sandbox_violation")              \
   V(address_of_log_or_trace_osr, "v8_flags.log_or_trace_osr")                  \
   V(address_of_builtin_subclassing_flag, "v8_flags.builtin_subclassing")       \

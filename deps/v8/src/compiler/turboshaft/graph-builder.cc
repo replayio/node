@@ -2247,6 +2247,46 @@ OpIndex GraphBuilder::Process(
       __ StoreMessage(Map(node->InputAt(0)), Map(node->InputAt(1)));
       return OpIndex::Invalid();
 
+    case IrOpcode::kIncrementAndCheckProgressCounter: {
+      // Replay: atomically (with respect to JS) increment the record/replay
+      // progress counter and, when it reaches the target progress value,
+      // notify the runtime so execution can be paused at the desired point.
+      // This was originally lowered in EffectControlLinearizer; in Turboshaft
+      // the simplified opcode survives into the graph builder where we emit the
+      // equivalent machine-level sequence directly.
+      V<WordPtr> progress_counter = __ ExternalConstant(
+          ExternalReference::record_replay_progress_counter());
+      V<Word64> progress_counter_value =
+          __ LoadOffHeap(progress_counter, MemoryRepresentation::Uint64());
+      V<Word64> incremented_value =
+          __ Word64Add(progress_counter_value, __ Word64Constant(uint64_t{1}));
+      __ StoreOffHeap(progress_counter, incremented_value,
+                      MemoryRepresentation::Uint64());
+
+      V<WordPtr> target_progress = __ ExternalConstant(
+          ExternalReference::record_replay_target_progress());
+      V<Word64> target_progress_value =
+          __ LoadOffHeap(target_progress, MemoryRepresentation::Uint64());
+
+      IF (UNLIKELY(__ Word64Equal(incremented_value, target_progress_value))) {
+        Runtime::FunctionId id = Runtime::kRecordReplayTargetProgressReached;
+        const Operator::Properties properties =
+            Operator::kNoDeopt | Operator::kNoThrow;
+        auto* call_descriptor = Linkage::GetRuntimeCallDescriptor(
+            graph_zone, id, 0, properties, CallDescriptor::kNoFlags);
+        const TSCallDescriptor* ts_descriptor = TSCallDescriptor::Create(
+            call_descriptor, CanThrow::kNo, LazyDeoptOnThrow::kNo, graph_zone);
+        OpIndex arguments[] = {
+            __ ExternalConstant(ExternalReference::Create(id)),
+            __ Word32Constant(0), __ NoContextConstant()};
+        __ Call(__ CEntryStubConstant(isolate, 1),
+                OptionalV<LazyFrameState>::Nullopt(),
+                base::VectorOf(arguments, arraysize(arguments)), ts_descriptor);
+      }
+
+      return OpIndex::Invalid();
+    }
+
     case IrOpcode::kSameValue:
       return __ SameValue(Map(node->InputAt(0)), Map(node->InputAt(1)),
                           SameValueOp::Mode::kSameValue);

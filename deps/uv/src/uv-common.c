@@ -1062,3 +1062,51 @@ void uv_free_interface_addresses(uv_interface_address_t* addresses,
   uv__free(addresses);
 }
 #endif  /* !__MVS__ */
+
+
+/* Replay record/replay instrumentation: weak fallback definitions.
+ *
+ * libuv's record/replay hooks (in unix/*.c, threadpool.c) call these
+ * V8RecordReplay* functions, which are defined strongly in libv8 (api.cc).
+ * Host build tools such as node_js2c link libuv.a but NOT libv8, so those
+ * references would otherwise be undefined at link time.  Provide weak no-op
+ * definitions here (compiled into every libuv.a) so libuv-only tools link;
+ * in the real node binary the strong libv8 definitions are statically linked
+ * in the same link and override these.  Build tools never record, so the
+ * no-ops are correct.  Guarded to GCC/Clang on non-Windows (where these unix
+ * hooks are actually referenced and __attribute__((weak)) is available).
+ */
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(_WIN32)
+__attribute__((weak)) int V8RecordReplayIsRecording(void) { return 0; }
+__attribute__((weak)) int V8RecordReplayIsReplaying(void) { return 0; }
+__attribute__((weak)) int V8RecordReplayPointerId(const void* ptr) {
+  (void) ptr; return 0;
+}
+__attribute__((weak)) size_t V8RecordReplayCreateOrderedLock(const char* name) {
+  (void) name; return 0;
+}
+__attribute__((weak)) uintptr_t V8RecordReplayValue(const char* why,
+                                                    uintptr_t value) {
+  (void) why; return value;
+}
+__attribute__((weak)) void V8RecordReplayAddOrderedPthreadMutex(
+    const char* name, pthread_mutex_t* mutex) {
+  (void) name; (void) mutex;
+}
+__attribute__((weak)) void V8RecordReplayAssert(const char* format, ...) {
+  (void) format;
+}
+__attribute__((weak)) void V8RecordReplayDiagnostic(const char* format, ...) {
+  (void) format;
+}
+__attribute__((weak)) void V8RecordReplayBeginPassThroughEvents(void) {}
+__attribute__((weak)) void V8RecordReplayEndPassThroughEvents(void) {}
+__attribute__((weak)) void V8RecordReplayOrderedLock(int lock) { (void) lock; }
+__attribute__((weak)) void V8RecordReplayOrderedUnlock(int lock) { (void) lock; }
+__attribute__((weak)) void V8RecordReplayRegisterPointer(const void* ptr) {
+  (void) ptr;
+}
+__attribute__((weak)) void* V8RecordReplayIdPointer(int id) {
+  (void) id; return NULL;
+}
+#endif  /* (__GNUC__ || __clang__) && !_WIN32 */

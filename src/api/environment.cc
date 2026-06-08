@@ -124,7 +124,13 @@ void* NodeArrayBufferAllocator::Allocate(size_t size) {
 
 void* NodeArrayBufferAllocator::AllocateUninitialized(size_t size) {
   COUNT_GENERIC_USAGE("NodeArrayBufferAllocator.Allocate.Uninitialized");
-  void* ret = allocator_->AllocateUninitialized(size);
+  // During record/replay, returning uninitialized memory would make recordings
+  // non-deterministic; zero-fill instead. (node 27 dropped the old
+  // zero_fill_field_ conditional from Allocate(), so this determinism hook now
+  // lives here, the only remaining uninitialized-allocation path.)
+  void* ret = v8::recordreplay::IsRecordingOrReplaying()
+                  ? allocator_->Allocate(size)
+                  : allocator_->AllocateUninitialized(size);
   if (ret != nullptr) [[likely]] {
     total_mem_usage_.fetch_add(size, std::memory_order_relaxed);
   }
@@ -1143,7 +1149,10 @@ void DefaultProcessExitHandlerInternal(Environment* env, ExitCode exit_code) {
   Exit(exit_code);
 }
 
+extern void RecordReplayFinishRecording();
+
 void DefaultProcessExitHandler(Environment* env, int exit_code) {
+  RecordReplayFinishRecording();
   DefaultProcessExitHandlerInternal(env, static_cast<ExitCode>(exit_code));
 }
 

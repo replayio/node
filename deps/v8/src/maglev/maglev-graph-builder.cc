@@ -3393,6 +3393,62 @@ MaybeReduceResult MaglevGraphBuilder::TryReduceTypeOf(ValueNode* value) {
                          });
 }
 
+ReduceResult MaglevGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
+  ValueNode* closure = GetClosure();
+  RETURN_IF_ABORT(
+      BuildCallRuntime(Runtime::kRecordReplayAssertExecutionProgress,
+                       {closure}));
+  return ReduceResult::Done();
+}
+
+ReduceResult MaglevGraphBuilder::VisitRecordReplayNotifyActivity() {
+  RETURN_IF_ABORT(BuildCallRuntime(Runtime::kRecordReplayNotifyActivity, {}));
+  return ReduceResult::Done();
+}
+
+ReduceResult MaglevGraphBuilder::VisitRecordReplayInstrumentation() {
+  ValueNode* closure = GetClosure();
+  ValueNode* index = GetSmiConstant(iterator_.GetUnsignedImmediateOperand(0));
+  RETURN_IF_ABORT(BuildCallRuntime(Runtime::kRecordReplayInstrumentation,
+                                   {closure, index}));
+  return ReduceResult::Done();
+}
+
+ReduceResult MaglevGraphBuilder::VisitRecordReplayInstrumentationGenerator() {
+  ValueNode* closure = GetClosure();
+  ValueNode* index = GetSmiConstant(iterator_.GetUnsignedImmediateOperand(0));
+  ValueNode* generator_object = LoadRegister(1);
+  RETURN_IF_ABORT(
+      BuildCallRuntime(Runtime::kRecordReplayInstrumentationGenerator,
+                       {closure, index, generator_object}));
+  return ReduceResult::Done();
+}
+
+ReduceResult MaglevGraphBuilder::VisitRecordReplayInstrumentationReturn() {
+  ValueNode* closure = GetClosure();
+  ValueNode* index = GetSmiConstant(iterator_.GetUnsignedImmediateOperand(0));
+  ValueNode* return_value = LoadRegister(1);
+  RETURN_IF_ABORT(
+      BuildCallRuntime(Runtime::kRecordReplayInstrumentationReturn,
+                       {closure, index, return_value}));
+  return ReduceResult::Done();
+}
+
+ReduceResult MaglevGraphBuilder::VisitRecordReplayAssertValue() {
+  ValueNode* closure = GetClosure();
+  ValueNode* index = GetSmiConstant(iterator_.GetUnsignedImmediateOperand(0));
+  ValueNode* value = GetAccumulator();
+  return SetAccumulator(BuildCallRuntime(Runtime::kRecordReplayAssertValue,
+                                         {closure, index, value}));
+}
+
+ReduceResult MaglevGraphBuilder::VisitRecordReplayTrackObjectId() {
+  ValueNode* object = LoadRegister(0);
+  RETURN_IF_ABORT(
+      BuildCallRuntime(Runtime::kRecordReplayTrackObjectId, {object}));
+  return ReduceResult::Done();
+}
+
 ReduceResult MaglevGraphBuilder::VisitTestTypeOf() {
   // TODO(v8:7700): Add a branch version of TestTypeOf that does not need to
   // materialise the boolean value.

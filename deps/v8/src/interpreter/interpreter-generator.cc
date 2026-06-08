@@ -3239,6 +3239,66 @@ IGNITION_HANDLER(IncBlockCounter, InterpreterAssembler) {
   Dispatch();
 }
 
+IGNITION_HANDLER(RecordReplayIncExecutionProgressCounter, InterpreterAssembler) {
+  TNode<Context> context = GetContext();
+  TNode<Object> closure = LoadRegister(Register::function_closure());
+  CallRuntime(Runtime::kRecordReplayAssertExecutionProgress, context, closure);
+  Dispatch();
+}
+
+IGNITION_HANDLER(RecordReplayNotifyActivity, InterpreterAssembler) {
+  TNode<Context> context = GetContext();
+  CallRuntime(Runtime::kRecordReplayNotifyActivity, context);
+  Dispatch();
+}
+
+IGNITION_HANDLER(RecordReplayInstrumentation, InterpreterAssembler) {
+  TNode<Context> context = GetContext();
+  TNode<Object> closure = LoadRegister(Register::function_closure());
+  TNode<Smi> index = BytecodeOperandIdxSmi(0);
+  CallRuntime(Runtime::kRecordReplayInstrumentation, context, closure, index);
+  Dispatch();
+}
+
+IGNITION_HANDLER(RecordReplayInstrumentationGenerator, InterpreterAssembler) {
+  TNode<Context> context = GetContext();
+  TNode<Object> closure = LoadRegister(Register::function_closure());
+  TNode<Smi> index = BytecodeOperandIdxSmi(0);
+  TNode<Object> generator = LoadRegisterAtOperandIndex(1);
+  CallRuntime(Runtime::kRecordReplayInstrumentationGenerator,
+              context, closure, index, generator);
+  Dispatch();
+}
+
+IGNITION_HANDLER(RecordReplayInstrumentationReturn, InterpreterAssembler) {
+  TNode<Context> context = GetContext();
+  TNode<Object> closure = LoadRegister(Register::function_closure());
+  TNode<Smi> index = BytecodeOperandIdxSmi(0);
+  TNode<Object> return_value = LoadRegisterAtOperandIndex(1);
+  CallRuntime(Runtime::kRecordReplayInstrumentationReturn,
+              context, closure, index, return_value);
+  Dispatch();
+}
+
+IGNITION_HANDLER(RecordReplayAssertValue, InterpreterAssembler) {
+  TNode<Context> context = GetContext();
+  TNode<Object> closure = LoadRegister(Register::function_closure());
+  TNode<Smi> index = BytecodeOperandIdxSmi(0);
+  TNode<Object> value = GetAccumulator();
+  TNode<Object> result = CallRuntime(Runtime::kRecordReplayAssertValue,
+                                     context, closure, index, value);
+  SetAccumulator(result);
+  Dispatch();
+}
+
+IGNITION_HANDLER(RecordReplayTrackObjectId, InterpreterAssembler) {
+  TNode<Context> context = GetContext();
+  TNode<Object> object = LoadRegisterAtOperandIndex(0);
+  CallRuntime(Runtime::kRecordReplayTrackObjectId,
+              context, object);
+  Dispatch();
+}
+
 // ForInEnumerate <receiver>
 //
 // Enumerates the enumerable keys of the |receiver| and either returns the

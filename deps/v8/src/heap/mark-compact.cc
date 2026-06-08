@@ -4949,7 +4949,7 @@ class PageEvacuationJob : public v8::JobTask {
     SetCurrentIsolateScope isolate_scope(collector_->heap()->isolate());
 
     Evacuator* evacuator = (*evacuators_)[delegate->GetTaskId()].get();
-    if (delegate->IsJoiningThread()) {
+    if (!delegate || delegate->IsJoiningThread()) {
       TRACE_GC_WITH_FLOW(tracer_, GCTracer::Scope::MC_EVACUATE_COPY_PARALLEL,
                          perfetto::TerminatingFlow::ProcessScoped(trace_id_));
       ProcessItems(delegate, evacuator);

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/heap/concurrent-marking.h"
+#include "include/replayio.h"
 
 #include <algorithm>
 #include <atomic>
@@ -649,6 +650,8 @@ void ConcurrentMarking::TryScheduleJob(GarbageCollector garbage_collector,
          v8_flags.concurrent_minor_ms_marking);
   DCHECK(!heap_->IsTearingDown());
   DCHECK(IsStopped());
+
+  replayio::AutoDisallowEvents disallow("ConcurrentMarking::ScheduleJob");
 
   DCHECK_NE(garbage_collector, GarbageCollector::SCAVENGER);
   if (garbage_collector == GarbageCollector::MARK_COMPACTOR &&

@@ -941,6 +941,12 @@ bool DatabaseSync::Open() {
     return false;
   }
 
+  // Replay port: node:sqlite is not yet modeled for record/replay. SQLite's VFS
+  // uses non-deterministic randomness (rowids/temp names), wall-clock time, and
+  // file-ordering. Invalidate rather than diverge silently. TODO(replay-port):
+  // override the SQLite VFS random/time hooks to support recording.
+  v8::recordreplay::InvalidateRecording("node:sqlite database opened");
+
   // TODO(cjihrig): Support additional flags.
   int default_flags = SQLITE_OPEN_URI;
   int flags = open_config_.get_read_only()

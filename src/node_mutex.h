@@ -68,7 +68,7 @@ class ExclusiveAccess {
 template <typename Traits>
 class MutexBase {
  public:
-  inline MutexBase();
+  inline MutexBase(bool ordered = false);
   inline ~MutexBase();
   inline void Lock();
   inline void Unlock();
@@ -187,6 +187,10 @@ struct LibuvMutexTraits {
     uv_mutex_unlock(mutex);
   }
 
+  static inline void mutex_mark_ordered(MutexT* mutex) {
+    uv_mutex_mark_ordered(mutex);
+  }
+
   static inline void mutex_rdlock(MutexT* mutex) {
     uv_mutex_lock(mutex);
   }
@@ -213,6 +217,11 @@ struct LibuvRwlockTraits {
 
   static inline void mutex_unlock(MutexT* mutex) {
     uv_rwlock_wrunlock(mutex);
+  }
+
+  static inline void mutex_mark_ordered(MutexT* mutex) {
+    // Ordered rw locks are not supported.
+    CHECK(0);
   }
 
   static inline void mutex_rdlock(MutexT* mutex) {
@@ -250,8 +259,11 @@ void ConditionVariableBase<Traits>::Wait(const ScopedLock& scoped_lock) {
 }
 
 template <typename Traits>
-MutexBase<Traits>::MutexBase() {
+MutexBase<Traits>::MutexBase(bool ordered) {
   CHECK_EQ(0, Traits::mutex_init(&mutex_));
+  if (ordered) {
+    Traits::mutex_mark_ordered(&mutex_);
+  }
 }
 
 template <typename Traits>

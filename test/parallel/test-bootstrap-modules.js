@@ -117,6 +117,11 @@ expected.beforePreExec = new Set([
   'NativeModule internal/net',
   'NativeModule internal/dns/utils',
   'NativeModule internal/modules/esm/get_format',
+  'NativeModule internal/recordreplay/main',
+  'NativeModule internal/recordreplay/message',
+  'NativeModule internal/recordreplay/object',
+  'NativeModule internal/recordreplay/preview',
+  'NativeModule internal/recordreplay/utils',
 ]);
 
 expected.atRunTime = new Set([

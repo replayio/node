@@ -1336,6 +1336,7 @@ class V8_EXPORT_PRIVATE SimplifiedOperatorBuilder final
 #endif
 
   const Operator* DateNow();
+  const Operator* IncrementAndCheckProgressCounter();
 
   // Math.min/max for JSArray with PACKED_DOUBLE_ELEMENTS.
   const Operator* DoubleArrayMin();

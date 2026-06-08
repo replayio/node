@@ -92,6 +92,14 @@ class AstRawString final : public ZoneObject {
     return string_;
   }
 
+  std::string to_string() const {
+    std::string rv;
+    for (int i = 0; i < length(); i++) {
+      rv += *(char*)(raw_data() + i * (is_one_byte() ? 1 : 2));
+    }
+    return rv;
+  }
+
 #ifdef OBJECT_PRINT
   void Print() const;
 #endif  // OBJECT_PRINT

@@ -34,11 +34,13 @@ std::unique_ptr<DebugPropertyIterator> DebugPropertyIterator::Create(
 
 DebugPropertyIterator::DebugPropertyIterator(Isolate* isolate,
                                              DirectHandle<JSReceiver> receiver,
-                                             bool skip_indices)
+                                             bool skip_indices,
+                                             const v8::KeyIterationParams* params)
     : isolate_(isolate),
       prototype_iterator_(isolate, receiver, kStartAtReceiver,
                           PrototypeIterator::END_AT_NULL),
       skip_indices_(skip_indices),
+      key_iteration_params_(params),
       current_key_index_(0),
       current_keys_(isolate_->factory()->empty_fixed_array()),
       current_keys_length_(0) {}

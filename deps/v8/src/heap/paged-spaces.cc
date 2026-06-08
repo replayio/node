@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/heap/paged-spaces.h"
+#include "include/replayio.h"
 
 #include <atomic>
 #include <iterator>

@@ -234,6 +234,8 @@ class BaselineAssembler {
   inline void SmiUntag(Register value);
   inline void SmiUntag(Register output, Register value);
 
+  inline void AddPointer(Register output, Immediate value);
+
   inline void Word32And(Register output, Register lhs, int rhs);
 
   inline void Switch(Register reg, int case_value_base, Label** labels,

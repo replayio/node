@@ -722,6 +722,7 @@ int FileHandle::DoShutdown(ShutdownWrap* req_wrap) {
 }
 
 void FSReqCallback::Reject(Local<Value> reject) {
+  v8::recordreplay::Assert("FSReqCallback::Reject");
   MakeCallback(env()->oncomplete_string(), 1, &reject);
 }
 
@@ -734,6 +735,7 @@ void FSReqCallback::ResolveStatFs(const uv_statfs_t* stat) {
 }
 
 void FSReqCallback::Resolve(Local<Value> value) {
+  v8::recordreplay::Assert("FSReqCallback::Resolve");
   Local<Value> argv[2]{Null(env()->isolate()), value};
   MakeCallback(env()->oncomplete_string(),
                value->IsUndefined() ? 1 : arraysize(argv),
@@ -2517,6 +2519,11 @@ static void WriteBuffer(const FunctionCallbackInfo<Value>& args) {
 
   char* buf = buffer_data + off;
   uv_buf_t uvbuf = uv_buf_init(buf, len);
+
+  // https://github.com/RecordReplay/backend/issues/4792
+  v8::recordreplay::AssertScriptedCaller(args.GetIsolate(), "fs::WriteBuffer");
+  v8::recordreplay::Assert("fs::WriteBuffer %d %zu %zu %zu",
+                           fd, off, len, (size_t)pos);
 
   FSReqBase* req_wrap_async = GetReqWrap(args, 5);
   if (req_wrap_async != nullptr) {  // write(fd, buffer, off, len, pos, req)

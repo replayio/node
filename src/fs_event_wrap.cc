@@ -157,6 +157,11 @@ void FSEventWrap::Start(const FunctionCallbackInfo<Value>& args) {
 
   wrap->encoding_ = ParseEncoding(env->isolate(), args[3], kDefaultEncoding);
 
+  // Replay port: OS file-change events arrive non-deterministically and are not
+  // yet recorded. Invalidate rather than diverge. TODO(replay-port): record and
+  // replay the fs-event stream to support fs.watch / --watch.
+  v8::recordreplay::InvalidateRecording("fs.watch (FSEvent) started");
+
   int err = uv_fs_event_init(wrap->env()->event_loop(), &wrap->handle_);
   if (err != 0) {
     return args.GetReturnValue().Set(err);

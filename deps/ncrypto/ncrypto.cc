@@ -561,7 +561,11 @@ BignumPointer BignumPointer::NewLShift(size_t length) {
 // ============================================================================
 // Utility methods
 
-bool CSPRNG(void* buffer, size_t length) {
+// Replay port: V8 driver hook to record/replay raw bytes for determinism.
+extern "C" void V8RecordReplayAssertBytes(const char* why, const void* buf,
+                                          size_t size);
+
+static bool CSPRNG_impl(void* buffer, size_t length) {
   auto buf = reinterpret_cast<unsigned char*>(buffer);
   do {
     if (1 == RAND_status()) {
@@ -595,6 +599,17 @@ bool CSPRNG(void* buffer, size_t length) {
   } while (1 == RAND_poll());
 
   return false;
+}
+
+bool CSPRNG(void* buffer, size_t length) {
+  // Replay port: CSPRNG is the single randomness primitive in Node 27 — keygen,
+  // QUIC connection IDs/tokens, DTLS, WebCrypto, randomUUID, etc. all route
+  // through here. Recording/replaying its output at this chokepoint makes every
+  // consumer deterministic in one place (supersedes per-callsite hooks).
+  bool rv = CSPRNG_impl(buffer, length);
+  if (rv && length > 0)
+    V8RecordReplayAssertBytes("ncrypto::CSPRNG", buffer, length);
+  return rv;
 }
 
 int NoPasswordCallback(char* buf, int size, int rwflag, void* u) {

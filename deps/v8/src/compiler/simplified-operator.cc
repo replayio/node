@@ -2699,6 +2699,13 @@ const Operator* SimplifiedOperatorBuilder::TransitionAndStoreNonNumberElement(
       "TransitionAndStoreNonNumberElement", 3, 1, 1, 0, 1, 0, parameters);
 }
 
+const Operator* SimplifiedOperatorBuilder::IncrementAndCheckProgressCounter() {
+  return zone()->New<Operator>(IrOpcode::kIncrementAndCheckProgressCounter,
+                               Operator::kNoDeopt | Operator::kNoThrow,
+                               "IncrementAndCheckProgressCounter",
+                               0, 1, 0, 1, 1, 0);
+}
+
 const Operator* SimplifiedOperatorBuilder::FastApiCall(
     FastApiCallFunction c_function, FeedbackSource const& feedback,
     CallDescriptor* descriptor) {

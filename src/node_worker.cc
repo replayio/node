@@ -52,6 +52,7 @@ using v8::TryCatch;
 using v8::Value;
 
 namespace node {
+
 namespace worker {
 
 constexpr double kMB = 1024 * 1024;
@@ -286,10 +287,14 @@ size_t Worker::NearHeapLimit(void* data, size_t current_heap_limit,
           "new_limit=%" PRIu64 "\n",
           static_cast<uint64_t>(new_limit));
   }
+  // We can't force workers to exit at non-deterministic points when
+  // recording/replaying.
   // TODO(joyeecheung): maybe this should be kV8FatalError instead?
-  worker->Exit(ExitCode::kGenericUserError,
-               "ERR_WORKER_OUT_OF_MEMORY",
-               "JS heap out of memory");
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    worker->Exit(ExitCode::kGenericUserError,
+                 "ERR_WORKER_OUT_OF_MEMORY",
+                 "JS heap out of memory");
+  }
   return new_limit;
 }
 
@@ -452,6 +457,10 @@ bool Worker::CreateEnvMessagePort(Environment* env) {
   if (child_port != nullptr)
     env->set_message_port(child_port->object(isolate_));
 
+  v8::recordreplay::Assert("Worker::JoinThread");
+
+  v8::recordreplay::Assert("Worker::JoinThread Joined");
+
   return child_port;
 }
 
@@ -486,6 +495,7 @@ void Worker::JoinThread() {
             : Null(env()->isolate()).As<Value>(),
     };
 
+    v8::recordreplay::Assert("Worker::JoinThread Callback");
     MakeCallback(env()->onexit_string(), arraysize(args), args);
   }
 

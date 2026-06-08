@@ -45,8 +45,18 @@
 #include "src/base/platform/platform-posix.h"
 #include "src/base/platform/platform.h"
 
+#include "v8.h"
+
 namespace v8 {
 namespace base {
+
+// Weak DEFINITION (not just a declaration): a weak undefined reference links on
+// ELF but not on macOS Mach-O. The strong DLLEXPORT definition in v8_base
+// (api.cc) overrides this for libv8; libbase-only build tools (torque/mksnapshot)
+// get this false stub (they never record).
+extern "C" V8_WEAK bool V8IsRecordingOrReplaying(const char*, const char*) {
+  return false;
+}
 
 TimezoneCache* OS::CreateTimezoneCache() {
   return new PosixDefaultTimezoneCache();
@@ -90,6 +100,12 @@ void* OS::RemapShared(void* old_address, void* new_address, size_t size) {
 std::optional<OS::MemoryRange> OS::GetFirstFreeMemoryRangeWithin(
     OS::Address boundary_start, OS::Address boundary_end, size_t minimum_size,
     size_t alignment) {
+  // Reading from /proc/self/maps isn't supported when recording/replaying.
+  // C ABI referenced weakly so libbase-only build tools (torque/mksnapshot) link
+  // (recordreplay::IsRecordingOrReplaying() is defined in v8_base/api.cc).
+  if (V8IsRecordingOrReplaying(nullptr, nullptr))
+    return {};
+
   std::optional<OS::MemoryRange> result;
   SignalSafeMapsParser parser;
   if (!parser.IsValid()) return {};
@@ -131,6 +147,11 @@ namespace {
 std::unique_ptr<std::vector<MemoryRegion>> ParseProcSelfMaps(
     FILE* fp, std::function<bool(const MemoryRegion&)> predicate,
     bool early_stopping) {
+  // Reading from /proc/self/maps isn't supported when recording/replaying.
+  // C ABI referenced weakly so libbase-only build tools (torque/mksnapshot) link.
+  if (V8IsRecordingOrReplaying(nullptr, nullptr))
+    return nullptr;
+
   auto result = std::make_unique<std::vector<MemoryRegion>>();
 
   // Create parser. If fp is provided, use its fd.

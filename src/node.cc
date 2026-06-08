@@ -46,6 +46,7 @@
 #include "node_snapshot_builder.h"
 #include "node_v8_platform-inl.h"
 #include "node_version.h"
+#include "uv.h"
 
 #if HAVE_OPENSSL
 #include "ncrypto.h"
@@ -282,6 +283,10 @@ std::optional<StartExecutionCallbackInfoWithModule> CallbackInfoFromArray(
 
 MaybeLocal<Value> StartExecution(Environment* env,
                                  StartExecutionCallbackWithModule cb) {
+  if (v8::IsMainThread()) {
+    v8::recordreplay::NewCheckpoint();
+  }
+
   InternalCallbackScope callback_scope(
       env,
       Object::New(env->isolate()),
@@ -1055,6 +1060,200 @@ static ExitCode InitializeNodeWithArgsInternal(
   return ExitCode::kNoFailure;
 }
 
+static void (*gRecordReplayAttach)(const char* buildId);
+static void (*gRecordReplayRecordCommandLineArguments)(int*, char***);
+static void (*gRecordReplaySaveRecording)(const char* dir);
+static void (*gRecordReplayRememberRecording)();
+static void (*gRecordReplayAddMetadata)(const char* metadata);
+static void (*gRecordReplayFinishRecording)();
+static void (*gBeginCallbackRegion)();
+static void (*gEndCallbackRegion)();
+static const char* (*gRecordReplayGetRecordingId)();
+static char* (*gGetUnusableRecordingReason)();
+static void* (*gJSONCreateString)(const char*);
+static void* (*gJSONCreateArray)(size_t, void**);
+static void* (*gJSONCreateObject)(size_t, const char**, void**);
+static char* (*gJSONToString)(void*);
+static void (*gJSONFree)(void*);
+
+namespace recordreplay {
+
+static bool gRecordingFinished;
+
+bool IsRecordingFinished() {
+  return gRecordingFinished;
+}
+
+void BeginCallbackRegion() {
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    gBeginCallbackRegion();
+  }
+}
+
+void EndCallbackRegion() {
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    gEndCallbackRegion();
+  }
+}
+
+} // namespace recordreplay
+
+void RecordReplayFinishRecording() {
+  if (gRecordReplayFinishRecording) {
+    gRecordReplayFinishRecording();
+    recordreplay::gRecordingFinished = true;
+
+    // If specified via the environment, append the recording ID to a file.
+    const char* env = getenv("RECORD_REPLAY_RECORDING_ID_FILE");
+    if (env) {
+      // Don't add the recording ID when the recording is unusable.
+      char* reason = gGetUnusableRecordingReason();
+      if (reason) {
+        free(reason);
+        return;
+      }
+
+      FILE* file = fopen(env, "a");
+      if (file) {
+        const char* recordingId = gRecordReplayGetRecordingId();
+        fprintf(file, "%s\n", recordingId);
+        fclose(file);
+      } else {
+        fprintf(stderr, "Error: Could not open %s for adding recording ID", env);
+      }
+    }
+  }
+}
+
+template <typename Src, typename Dst>
+static inline void CastPointer(const Src src, Dst* dst) {
+  static_assert(sizeof(Src) == sizeof(uintptr_t), "bad size");
+  static_assert(sizeof(Dst) == sizeof(uintptr_t), "bad size");
+  memcpy((void*)dst, (const void*)&src, sizeof(uintptr_t));
+}
+
+template <typename T>
+static void RecordReplayLoadSymbol(void* handle, const char* name, T& function) {
+  void* sym = dlsym(handle, name);
+  if (!sym) {
+    fprintf(stderr, "Could not find %s in Record Replay driver.\n", name);
+    return;
+  }
+
+  CastPointer(sym, &function);
+}
+
+extern char gBuildId[];
+extern char gRecordReplayDriver[];
+extern int gRecordReplayDriverSize;
+
+static std::string GetRecordingMetadata(int argc, char** argv) {
+  std::vector<void*> handles;
+  for (int i = 1; i < argc; i++) {
+    handles.push_back(gJSONCreateString(argv[i]));
+  }
+  void* array = gJSONCreateArray(handles.size(), &handles[0]);
+  const char* property = "argv";
+
+  void* object = gJSONCreateObject(1, &property, &array);
+  char* objectStr = gJSONToString(object);
+  std::string rv = objectStr;
+
+  free(objectStr);
+  gJSONFree(object);
+  gJSONFree(array);
+  for (void* handle : handles) {
+    gJSONFree(handle);
+  }
+
+  return rv;
+}
+
+static void* OpenDriverHandle() {
+  const char* driver = getenv("RECORD_REPLAY_DRIVER");
+  bool temporaryDriver = false;
+
+  if (!driver) {
+    const char* tmpdir = getenv("TMPDIR");
+    if (!tmpdir) {
+      tmpdir = "/tmp";
+    }
+
+    char filename[1024];
+    snprintf(filename, sizeof(filename), "%s/recordreplay.so-XXXXXX", tmpdir);
+    int fd = mkstemp(filename);
+    if (fd < 0) {
+      fprintf(stderr, "mkstemp failed, can't create driver.\n");
+      return nullptr;
+    }
+
+    int nbytes = write(fd, gRecordReplayDriver, gRecordReplayDriverSize);
+    if (nbytes != gRecordReplayDriverSize) {
+      fprintf(stderr, "write to driver temporary file failed, can't create driver.\n");
+      return nullptr;
+    }
+
+    temporaryDriver = true;
+    driver = strdup(filename);
+    close(fd);
+  }
+
+  void* handle = dlopen(driver, RTLD_LAZY);
+
+  if (temporaryDriver) {
+    unlink(driver);
+  }
+
+  return handle;
+}
+
+static void InitializeRecordReplay(int* pargc, char*** pargv) {
+  if (getenv("RECORD_REPLAY_DONT_RECORD")) {
+    return;
+  }
+
+  void* handle = OpenDriverHandle();
+
+  if (!handle) {
+    fprintf(stderr, "Loading Record Replay driver failed (%s).\n", dlerror());
+    return;
+  }
+
+  RecordReplayLoadSymbol(handle, "RecordReplayAttach", gRecordReplayAttach);
+  RecordReplayLoadSymbol(handle, "RecordReplayRecordCommandLineArguments",
+                         gRecordReplayRecordCommandLineArguments);
+  RecordReplayLoadSymbol(handle, "RecordReplaySaveRecording", gRecordReplaySaveRecording);
+  RecordReplayLoadSymbol(handle, "RecordReplayRememberRecording", gRecordReplayRememberRecording);
+  RecordReplayLoadSymbol(handle, "RecordReplayAddMetadata", gRecordReplayAddMetadata);
+  RecordReplayLoadSymbol(handle, "RecordReplayFinishRecording", gRecordReplayFinishRecording);
+  RecordReplayLoadSymbol(handle, "RecordReplayGetRecordingId", gRecordReplayGetRecordingId);
+  RecordReplayLoadSymbol(handle, "RecordReplayGetUnusableRecordingReason", gGetUnusableRecordingReason);
+  RecordReplayLoadSymbol(handle, "RecordReplayBeginCallbackRegion", gBeginCallbackRegion);
+  RecordReplayLoadSymbol(handle, "RecordReplayEndCallbackRegion", gEndCallbackRegion);
+  RecordReplayLoadSymbol(handle, "RecordReplayJSONCreateString", gJSONCreateString);
+  RecordReplayLoadSymbol(handle, "RecordReplayJSONCreateArray", gJSONCreateArray);
+  RecordReplayLoadSymbol(handle, "RecordReplayJSONCreateObject", gJSONCreateObject);
+  RecordReplayLoadSymbol(handle, "RecordReplayJSONToString", gJSONToString);
+  RecordReplayLoadSymbol(handle, "RecordReplayJSONFree", gJSONFree);
+
+  if (gRecordReplayAttach && gRecordReplayFinishRecording) {
+    gRecordReplayAttach(gBuildId);
+    gRecordReplayRecordCommandLineArguments(pargc, pargv);
+    v8::recordreplay::SetRecordingOrReplaying(handle);
+
+    if (gRecordReplaySaveRecording) {
+      gRecordReplaySaveRecording(nullptr);
+    }
+
+    gRecordReplayRememberRecording();
+
+    if (gRecordReplayAddMetadata) {
+      std::string metadata = GetRecordingMetadata(*pargc, *pargv);
+      gRecordReplayAddMetadata(metadata.c_str());
+    }
+  }
+}
+
 #if NODE_USE_V8_WASM_TRAP_HANDLER
 bool CanEnableWebAssemblyTrapHandler() {
 // On POSIX, the machine may have a limit on the amount of virtual memory
@@ -1141,12 +1340,19 @@ InitializeOncePerProcessInternal(const std::vector<std::string>& args,
       printf("%s\n", NODE_VERSION);
       result->exit_code_ = ExitCode::kNoFailure;
       result->early_return_ = true;
-      return result;
-    }
+    return result;
+  }
 
-    if (per_process::cli_options->print_bash_completion) {
-      std::string completion = options_parser::GetBashCompletion();
-      printf("%s\n", completion.c_str());
+  if (per_process::cli_options->print_build_id) {
+    printf("%s\n", gBuildId);
+    result->exit_code_ = ExitCode::kNoFailure;
+    result->early_return_ = true;
+    return result;
+  }
+
+  if (per_process::cli_options->print_bash_completion) {
+    std::string completion = options_parser::GetBashCompletion();
+    printf("%s\n", completion.c_str());
       result->exit_code_ = ExitCode::kNoFailure;
       result->early_return_ = true;
       return result;
@@ -1561,6 +1767,21 @@ static ExitCode StartInternal(int argc, char** argv) {
 
   // Hack around with the argv pointer. Used for process.title = "blah".
   argv = uv_setup_args(argc, argv);
+
+  // [RecordReplay] Attach the record/replay driver before V8 is initialized and
+  // before any Environment is constructed, so V8/Node instrumentation and the
+  // driver-intercepted clocks are active from the very start. This also records
+  // the command-line arguments. (In v16.14 this ran inside the bootstrap with
+  // argc/argv in scope; Node 27's InitializeOncePerProcessInternal only has a
+  // std::vector<std::string>, so we attach here in StartInternal instead.)
+  InitializeRecordReplay(&argc, &argv);
+
+  // Node 27 caches performance_process_start[_timestamp] into Environment at
+  // construction. Re-capture them now, deterministically, while the driver is
+  // attached but before the first Environment exists.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    performance::InitPerformance();
+  }
 
   std::shared_ptr<InitializationResultImpl> result =
       InitializeOncePerProcessInternal(

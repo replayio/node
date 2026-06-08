@@ -396,6 +396,15 @@ void AppendExceptionLine(Environment* env,
 void Assert(const AssertionInfo& info) {
   std::string name = GetHumanReadableProcessName();
 
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    v8::recordreplay::Print("%s: %s:%s%s Assertion `%s' failed.\n",
+                            name.c_str(),
+                            info.file_line,
+                            info.function,
+                            *info.function ? ":" : "",
+                            info.message);
+  }
+
   fprintf(stderr,
           "\n"
           "  #  %s: %s at %s\n"
@@ -1266,12 +1275,16 @@ void DecorateErrorStack(Environment* env,
       env->context(), env->decorated_private_symbol(), True(env->isolate()));
 }
 
+extern "C" void V8RecordReplayOnErrorEvent(Local<Message> message);
+
 void TriggerUncaughtException(Isolate* isolate,
                               Local<Value> error,
                               Local<Message> message,
                               bool from_promise) {
   CHECK(!error.IsEmpty());
   HandleScope scope(isolate);
+
+  v8::recordreplay::Assert("TriggerUncaughtException");
 
   if (message.IsEmpty()) message = Exception::CreateMessage(isolate, error);
 
@@ -1365,6 +1378,8 @@ void TriggerUncaughtException(Isolate* isolate,
   if (!handled->IsFalse()) {
     return;
   }
+
+  V8RecordReplayOnErrorEvent(message);
 
   // Now we are certain that the exception is fatal.
   ReportFatalException(env, error, message, EnhanceFatalException::kEnhance);

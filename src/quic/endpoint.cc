@@ -1184,6 +1184,12 @@ void Endpoint::Listen(const Session::Options& options) {
   if (is_closed() || is_closing() || state_->listening == 1) return;
   DCHECK(!server_state_.has_value());
 
+  // Replay port: QUIC (UDP datagram) network I/O is not yet recorded. Random
+  // connection IDs/tokens route through ncrypto::CSPRNG (covered), but the
+  // datagram traffic and timers are not. Invalidate rather than diverge.
+  // TODO(replay-port): record/replay QUIC endpoint send/recv.
+  v8::recordreplay::InvalidateRecording("QUIC Endpoint::Listen");
+
   // We need at least one key and one cert to complete the tls handshake on the
   // server. Why not make this an error? We could but it's not strictly
   // necessary.
@@ -1226,6 +1232,10 @@ BaseObjectPtr<Session> Endpoint::Connect(
     const SocketAddress& remote_address,
     const Session::Options& options,
     std::optional<SessionTicket> session_ticket) {
+  // Replay port: QUIC network I/O is not yet recorded (see Endpoint::Listen).
+  // TODO(replay-port): record/replay QUIC endpoint send/recv.
+  v8::recordreplay::InvalidateRecording("QUIC Endpoint::Connect");
+
   // If starting fails, the endpoint will be destroyed.
   if (!Start()) return {};
 

@@ -39,6 +39,8 @@
 #include "src/base/platform/platform-posix.h"
 #include "src/base/platform/platform.h"
 
+#include "v8.h"
+
 #if defined(V8_TARGET_OS_IOS)
 #include "src/base/ios-headers.h"
 #else
@@ -47,6 +49,12 @@
 
 namespace v8 {
 namespace base {
+
+// Weak DEFINITION (not just a declaration): a weak undefined reference links on
+// ELF but not on macOS Mach-O ('symbol not found'). The strong DLLEXPORT
+// definition in v8_base (api.cc) overrides this for libv8; the libbase-only build
+// tools (torque/mksnapshot) get this false stub (they never record).
+extern "C" V8_WEAK bool V8RecordReplayIsARM() { return false; }
 
 namespace {
 
@@ -111,6 +119,13 @@ TimezoneCache* OS::CreateTimezoneCache() {
 
 void OS::AdjustSchedulingParams() {
 #if V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_IA32
+  // Avoid making system calls that didn't originally happen if we recorded on ARM.
+  // recordreplay::IsARMRecording() lives in v8_base (api.cc), which the
+  // libbase-only build tools (torque/mksnapshot) don't link; reference the C ABI
+  // weakly so those tools resolve it to null (a build tool never records).
+  if (V8RecordReplayIsARM())
+    return;
+
   {
     // Check availability of scheduling params.
     uint32_t val = 0;

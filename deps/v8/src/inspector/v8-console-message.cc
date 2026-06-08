@@ -21,6 +21,8 @@
 #include "src/inspector/value-mirror.h"
 #include "src/tracing/trace-event.h"
 
+#include "include/v8.h"
+
 namespace v8_inspector {
 
 namespace {
@@ -573,6 +575,10 @@ void TraceV8ConsoleMessageEvent(V8MessageOrigin origin, ConsoleAPIType type) {
 
 }  // anonymous namespace
 
+extern "C" void V8RecordReplayOnConsoleMessage(size_t bookmark);
+extern "C" void SetContextGroupIdForSendCDPMessage(int contextGroupId);
+extern "C" void ClearContextGroupIdForSendCDPMessage();
+
 void V8ConsoleMessageStorage::addMessage(
     std::unique_ptr<V8ConsoleMessage> message) {
   int contextGroupId = m_contextGroupId;
@@ -580,6 +586,8 @@ void V8ConsoleMessageStorage::addMessage(
   if (message->type() == ConsoleAPIType::kClear) clear();
 
   TraceV8ConsoleMessageEvent(message->origin(), message->type());
+
+  v8::recordreplay::Assert("[RUN-1596] V8ConsoleMessageStorage::addMessage #1");
 
   inspector->forEachSession(
       contextGroupId, [&message](V8InspectorSessionImpl* session) {

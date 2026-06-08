@@ -888,6 +888,7 @@
       ],
 
       'sources': [
+        'src/node_record_replay_driver.cc',
         '<@(node_sources)',
         # Dependency headers
         'deps/v8/include/v8.h',

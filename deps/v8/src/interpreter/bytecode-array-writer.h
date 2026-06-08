@@ -74,6 +74,8 @@ class V8_EXPORT_PRIVATE BytecodeArrayWriter final {
 
   bool RemainderOfBlockIsDead() const { return exit_seen_in_block_; }
 
+  int size() const { return (int)bytecodes_.size(); }
+
   size_t current_bytecode_size() const { return bytecodes_.size(); }
 
  private:

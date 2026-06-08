@@ -98,6 +98,8 @@
 #include "src/wasm/wasm-objects-inl.h"
 #endif  // V8_ENABLE_WEBASSEMBLY
 
+#include "src/base/replayio.h"
+
 #ifdef V8_INTL_SUPPORT
 #include "src/objects/js-break-iterator.h"
 #include "src/objects/js-collator.h"
@@ -4764,13 +4766,21 @@ Handle<Object> JSPromise::Reject(DirectHandle<JSPromise> promise,
   // 7. If promise.[[PromiseIsHandled]] is false, perform
   //    HostPromiseRejectionTracker(promise, "reject").
   if (!promise->has_handler()) {
-    isolate->ReportPromiseReject(promise, reason, kPromiseRejectWithNoHandler);
+    isolate->ReportPromiseReject(promise, reason,
+                                 kPromiseRejectWithNoHandler);
   }
 
   // 8. Return TriggerPromiseReactions(reactions, reason).
   return TriggerPromiseReactions(isolate, reactions, reason,
                                  PromiseReaction::kReject);
 }
+
+// record/replay: defined in debug.cc; declared here so the promise-adoption hook
+// relocated into JSPromise::Resolve below can see them (the original decls are
+// later in this file, after the use).
+extern bool RecordReplayShouldCallOnPromiseHook();
+void AddPromiseDependencyGraphAdoption(Isolate* isolate, Handle<Object> promise,
+                                       Handle<Object> adoption);
 
 // https://tc39.es/ecma262/#sec-promise-resolve-functions
 // static
@@ -4860,6 +4870,13 @@ MaybeHandle<Object> JSPromise::Resolve(DirectHandle<JSPromise> promise,
       isolate->factory()->NewPromiseResolveThenableJobTask(
           promise, resolution_recv, Cast<JSReceiver>(then_action),
           then_context);
+  if (RecordReplayShouldCallOnPromiseHook()) {
+    // Fulfillment of this promise is delayed by adopted resolution.
+    // Ref: Promise/A+ 2.3.2
+    AddPromiseDependencyGraphAdoption(
+        isolate, indirect_handle(Cast<Object>(promise), isolate),
+        indirect_handle(Cast<Object>(resolution_recv), isolate));
+  }
   if (isolate->debug()->is_active() && IsJSPromise(*resolution_recv)) {
     // Mark the dependency of the new {promise} on the {resolution}.
     Object::SetProperty(isolate, resolution_recv,
@@ -5472,6 +5489,10 @@ Handle<RegisteredSymbolTable> RegisteredSymbolTable::Add(
   table->ElementAdded();
   return table;
 }
+
+
+extern bool RecordReplayShouldCallOnPromiseHook();
+void AddPromiseDependencyGraphAdoption(Isolate* isolate, Handle<Object> promise, Handle<Object> adoption);
 
 template <typename Derived, typename Shape>
 template <typename IsolateT>

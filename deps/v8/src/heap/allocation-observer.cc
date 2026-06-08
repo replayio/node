@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/heap/allocation-observer.h"
+#include "include/replayio.h"
 
 #include <algorithm>
 
@@ -54,6 +55,8 @@ void AllocationCounter::RemoveAllocationObserver(AllocationObserver* observer) {
     pending_removed_.insert(observer);
     return;
   }
+
+  replayio::AutoDisallowEvents disallow("AllocationCounter::InvokeAllocationObservers");
 
   observers_.erase(it);
 

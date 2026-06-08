@@ -260,6 +260,69 @@ enum class KeyConversionMode { kConvertToString, kKeepNumbers, kNoNumbers };
  */
 enum class IntegrityLevel { kFrozen, kSealed };
 
+using KeyIterationIndex = int;
+
+/**
+ * [RecordReplay]
+ * Used to paginate keys for performance reasons (RUN-1315).
+ * This is currently only implemented as part of the debugger's
+ * `Runtime.getProperties` command. It is also not a guarantee on pagination,
+ * but purely a performance improvement. We apply these params in many scenarios
+ * where large key sets would slow things down a lot.
+ * WARNING: |page_index_| has not been fully implemented.
+ * NOTE: In the future, this can be updated to encapsulate all key query
+ * parameters in a single object (`KeyCollectionMode`, `IndexFilter` etc.).
+ */
+class KeyIterationParams {
+  KeyIterationIndex page_size_;
+  /** WARNING: |page_index_| is not fully implemented. */
+  KeyIterationIndex page_index_;
+ public:
+  /**
+   * Create new KeyIterationParams to limit iteration to between |page_index| and
+   * |page_index + page_size|.
+   */
+  KeyIterationParams(KeyIterationIndex page_size, KeyIterationIndex page_index)
+      : page_size_(page_size) , page_index_(page_index) {}
+
+  /**
+   * The min of page_size_ or target size.
+   * Ignores page_size_ if no parameters are given.
+   */
+  KeyIterationIndex PageSize(KeyIterationIndex numberOfElements) const {
+    return (*this && page_size_ < numberOfElements) ? page_size_
+                                                         : numberOfElements;
+  }
+
+  /**
+   * First index of iteration.
+   */
+  KeyIterationIndex KeyFirstIndex() const { return page_index_ * page_size_; }
+
+  /**
+   * Final index of iteration + 1, indicating end of iteration.
+   */
+  KeyIterationIndex KeyEndIndex(KeyIterationIndex numberOfElements) const {
+    return (*this && (KeyFirstIndex() + page_size_) < numberOfElements)
+               ? KeyFirstIndex() + page_size_
+               : numberOfElements;
+  }
+
+  /**
+   * Whether parameters are given.
+   * If no parameters are given, key iteration will iterate all keys at once.
+   */
+  operator bool() const { return page_size_ > 0; }
+
+  /**
+   * Default (i.e. empty) key iteration params.
+   */
+  static const KeyIterationParams* Default() {
+    static KeyIterationParams params(0, 0);
+    return &params;
+  }
+};
+
 /**
  * A JavaScript object (ECMA-262, 4.3.3)
  */
@@ -895,7 +958,8 @@ class V8_EXPORT Object : public Value {
    * For other types, this will return an empty MaybeLocal<Array> (without
    * scheduling an exception).
    */
-  MaybeLocal<Array> PreviewEntries(bool* is_key_value);
+  MaybeLocal<Array> PreviewEntries(bool* is_key_value,
+                                   const v8::KeyIterationParams* params = KeyIterationParams::Default());
 
   static Local<Object> New(Isolate* isolate);
 

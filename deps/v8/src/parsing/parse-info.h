@@ -44,6 +44,8 @@ class Zone;
   V(is_toplevel, bool, 1, _)                                    \
   V(is_eager, bool, 1, _)                                       \
   V(is_eval, bool, 1, _)                                        \
+  V(record_replay_ignore, bool, 1, _)                           \
+  V(record_replay_assert_values, bool, 1, _)                    \
   V(is_reparse, bool, 1, _)                                     \
   V(outer_language_mode, LanguageMode, 1, _)                    \
   V(parse_restriction, ParseRestriction, 1, _)                  \
@@ -75,7 +77,8 @@ class V8_EXPORT_PRIVATE UnoptimizedCompileFlags {
                                                     bool is_user_javascript,
                                                     LanguageMode language_mode,
                                                     REPLMode repl_mode,
-                                                    ScriptType type, bool lazy);
+                                                    ScriptType type, bool lazy,
+                                                    int script_id = UnboundScript::kNoScriptId);
 
   // Set-up flags for a compiling a particular function (either a lazy compile
   // or a recompile).

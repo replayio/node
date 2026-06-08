@@ -8,6 +8,8 @@
 #include "src/base/logging.h"
 #include "src/base/platform/time.h"
 
+#include "replayio.h"
+
 namespace v8 {
 namespace base {
 
@@ -116,6 +118,7 @@ class ElapsedTimer final {
 
  private:
   static V8_INLINE TimeTicks Now() {
+    replayio::AutoPassThroughEvents pt;
     TimeTicks now = TimeTicks::Now();
     DCHECK(!now.IsNull());
     return now;

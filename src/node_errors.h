@@ -169,6 +169,7 @@ void OOMErrorHandler(const char* location, const v8::OOMDetails& details);
   template <typename... Args>                                                  \
   inline void THROW_##code(                                                    \
       v8::Isolate* isolate, std::string_view format, Args&&... args) {         \
+    v8::recordreplay::Assert("ThrowException %s", format);                     \
     isolate->ThrowException(                                                   \
         code(isolate, format, std::forward<Args>(args)...));                   \
   }                                                                            \
@@ -255,6 +256,7 @@ ERRORS_WITH_CODE(V)
     return code(isolate, message);                                             \
   }                                                                            \
   inline void THROW_##code(v8::Isolate* isolate) {                             \
+    v8::recordreplay::Assert("ThrowException %s", message);                    \
     isolate->ThrowException(code(isolate, message));                           \
   }                                                                            \
   inline void THROW_##code(Environment* env) { THROW_##code(env->isolate()); }

@@ -30,6 +30,8 @@
 #include "src/heap/cppgc/stats-collector.h"
 #include "src/heap/cppgc/task-handle.h"
 
+#include "replayio.h"
+
 namespace cppgc::internal {
 
 namespace {
@@ -1080,6 +1082,8 @@ class Sweeper::SweeperImpl final {
 
   bool SweepForLargeAllocation(BaseSpace* space, size_t size,
                                v8::base::TimeDelta max_duration) {
+    v8::replayio::AutoDisallowEvents disallow("Sweeper::SweepForAllocationIfRunning");
+
     DCHECK(space->is_large());
 #ifdef DEBUG
     // SpaceState for large objects is emtpy as those objects are put directly
@@ -1212,6 +1216,8 @@ class Sweeper::SweeperImpl final {
   }
 
   bool FinishIfRunning() {
+    v8::replayio::AutoDisallowEvents disallow("SweeperImpl::FinishIfRunning");
+
     if (!is_in_progress_) {
       return false;
     }

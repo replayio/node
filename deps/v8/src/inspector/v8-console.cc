@@ -34,6 +34,8 @@
 #include "src/tracing/trace-id.h"
 #include "v8-object.h"
 
+#include "v8.h"
+
 namespace v8_inspector {
 
 namespace {

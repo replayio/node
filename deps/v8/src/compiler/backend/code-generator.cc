@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/compiler/backend/code-generator.h"
+#include "include/replayio.h"
 
 #include <optional>
 
@@ -512,6 +513,8 @@ base::OwnedVector<uint8_t> CodeGenerator::GetTrappingInstructionsData() {
 }
 
 MaybeHandle<Code> CodeGenerator::FinalizeCode() {
+  replayio::AutoDisallowEvents disallow("CodeGenerator::FinalizeCode");
+
   if (result_ != kSuccess) {
     masm()->AbortedCodeGeneration();
     return {};

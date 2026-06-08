@@ -14,6 +14,7 @@
 #include "uv.h"
 #include "v8-fast-api-calls.h"
 #include "v8.h"
+#include "v8-inspector.h"
 
 #include <vector>
 
@@ -36,6 +37,23 @@ typedef int mode_t;
 #include <termios.h>  // tcgetattr, tcsetattr
 #include <unistd.h>
 #endif
+
+static const char* AnnotationHookJSName = "recordreplay.annotationHook";
+
+namespace v8 {
+
+extern void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplaySetCommandCallback(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplaySetClearPauseDataCallback(const FunctionCallbackInfo<Value>& callArgs);
+extern void FunctionCallbackRecordReplayIgnoreScript(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplayAssert(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplayGetCurrentError(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplayGetRecordingId(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplayCurrentExecutionPoint(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplayElapsedTimeMs(const FunctionCallbackInfo<Value>& args);
+
+}
 
 namespace node {
 
@@ -246,6 +264,9 @@ static void MemoryUsage(const FunctionCallbackInfo<Value>& args) {
       array_buffer_allocator == nullptr
           ? 0
           : static_cast<double>(array_buffer_allocator->total_mem_usage());
+
+  // Ensure memory usage measurements are consistent when replaying.
+  v8::recordreplay::RecordReplayBytes("MemoryUsage", fields, 5 * sizeof(double));
 }
 
 static void GetConstrainedMemory(const FunctionCallbackInfo<Value>& args) {
@@ -676,6 +697,101 @@ BindingData::BindingData(Realm* realm,
   hrtime_buffer_.MakeWeak();
 }
 
+static void RecordReplayLog(const FunctionCallbackInfo<Value>& args) {
+  CHECK(args.Length() == 1 && args[0]->IsString() &&
+        "must be called with a single string");
+  Utf8Value text(args.GetIsolate(), args[0]);
+  v8::recordreplay::Print("%s", text.ToString().c_str());
+}
+
+// Function to invoke on CDP responses and events.
+static v8::Eternal<v8::Function>* gCDPMessageCallback;
+
+static void RecordReplaySetCDPMessageCallback(const FunctionCallbackInfo<Value>& args) {
+  CHECK(!gCDPMessageCallback);
+  Isolate* isolate = args.GetIsolate();
+  CHECK(args[0]->IsFunction());
+  Local<v8::Function> callback = args[0].As<v8::Function>();
+  gCDPMessageCallback = new v8::Eternal<v8::Function>(isolate, callback);
+}
+
+static std::unique_ptr<inspector::InspectorSession> gRecordReplayInspectorSession;
+
+class RecordReplaySessionDelegate : public inspector::InspectorSessionDelegate {
+ public:
+  void SendMessageToFrontend(const v8_inspector::StringView& message) override {
+    CHECK(v8::IsMainThread());
+
+    if (recordreplay::IsRecordingFinished()) {
+      return;
+    }
+
+    CHECK(gCDPMessageCallback);
+    CHECK(!message.is8Bit());
+
+    Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::HandleScope scope(isolate);
+
+    Local<Context> context = isolate->GetCurrentContext();
+
+    Local<Value> arg = v8::String::NewFromTwoByte(isolate, message.characters16(),
+                                                  NewStringType::kNormal,
+                                                  message.length()).ToLocalChecked();
+    Local<v8::Function> callback = gCDPMessageCallback->Get(isolate);
+    v8::MaybeLocal<Value> rv = callback->Call(context, v8::Undefined(isolate), 1, &arg);
+    CHECK(!rv.IsEmpty());
+  }
+};
+
+static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) {
+  CHECK(args.Length() == 1 && args[0]->IsString() &&
+        "must be called with a single string");
+  Utf8Value message(args.GetIsolate(), args[0]);
+
+  if (!gRecordReplayInspectorSession) {
+    Environment* env = Environment::GetCurrent(args);
+    inspector::Agent* agent = env->inspector_agent();
+
+    auto delegate = std::make_unique<RecordReplaySessionDelegate>();
+    gRecordReplayInspectorSession = agent->Connect(std::move(delegate),
+                                                   /* prevent_shutdown */ false);
+  }
+
+  std::string nmessage(message.ToString());
+  v8_inspector::StringView messageView((const uint8_t*)nmessage.c_str(), nmessage.length());
+  gRecordReplayInspectorSession->Dispatch(messageView);
+}
+
+// Called from javascript.
+// `recordreplay.annotationHook(kind, contents)`
+// Since this function is called from userland JS, we avoid assertions.
+// We don't want flawed uses of the API to crash the recording.
+static void RecordReplayAnnotationHook(
+    const FunctionCallbackInfo<Value>& args) {
+  if (!(args.Length() >= 2 && args[0]->IsString())) {
+    v8::recordreplay::Print("[RuntimeError] %s called with incorrect arguments",
+                            AnnotationHookJSName);
+    return;
+  }
+
+  v8::Isolate* isolate = args.GetIsolate();
+  v8::Local<v8::Object> payload = v8::Object::New(isolate);
+  v8::Local<v8::Context> context = isolate->GetCurrentContext();
+  payload->Set(context, v8::String::NewFromUtf8(isolate, "message").ToLocalChecked(), args[1]).Check();
+
+  v8::Local<v8::String> json;
+  if (!v8::JSON::Stringify(context, payload).ToLocal(&json)) {
+    v8::recordreplay::Print(
+        "[RuntimeError] %s contents failed to json stringify",
+        AnnotationHookJSName);
+    return;
+  }
+
+  v8::String::Utf8Value kind(args.GetIsolate(), args[0]);
+  v8::String::Utf8Value contents(args.GetIsolate(), json);
+  v8::recordreplay::OnAnnotation(*kind, *contents);
+}
+
 CFunction BindingData::fast_hrtime_(CFunction::Make(FastHrtime));
 CFunction BindingData::fast_hrtime_bigint_(CFunction::Make(FastHrtimeBigInt));
 
@@ -817,6 +933,35 @@ static void CreatePerIsolateProperties(IsolateData* isolate_data,
   SetMethod(isolate, target, "loadEnvFile", LoadEnvFile);
 
   SetMethod(isolate, target, "setEmitWarningSync", SetEmitWarningSync);
+
+  // Record/replay instrumentation methods.
+  SetMethod(isolate, target, "isRecordingOrReplaying",
+            v8::FunctionCallbackIsRecordingOrReplaying);
+  SetMethod(isolate, target, "recordReplayLog", RecordReplayLog);
+  SetMethod(isolate, target, "recordReplayOnConsoleAPI",
+            v8::FunctionCallbackRecordReplayOnConsoleAPI);
+  SetMethod(isolate, target, "recordReplaySetCommandCallback",
+            v8::FunctionCallbackRecordReplaySetCommandCallback);
+  SetMethod(isolate, target, "recordReplaySetClearPauseDataCallback",
+            v8::FunctionCallbackRecordReplaySetClearPauseDataCallback);
+  SetMethod(isolate, target, "recordReplayIgnoreScript",
+            v8::FunctionCallbackRecordReplayIgnoreScript);
+  SetMethod(isolate, target, "recordReplayAssert",
+            v8::FunctionCallbackRecordReplayAssert);
+  SetMethod(isolate, target, "recordReplayGetCurrentError",
+            v8::FunctionCallbackRecordReplayGetCurrentError);
+  SetMethod(isolate, target, "recordReplaySetCDPMessageCallback",
+            RecordReplaySetCDPMessageCallback);
+  SetMethod(isolate, target, "recordReplaySendCDPMessage",
+            RecordReplaySendCDPMessage);
+  SetMethod(isolate, target, "recordReplayRecordingId",
+            v8::FunctionCallbackRecordReplayGetRecordingId);
+  SetMethod(isolate, target, "recordReplayCurrentExecutionPoint",
+            v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
+  SetMethod(isolate, target, "recordReplayElapsedTimeMs",
+            v8::FunctionCallbackRecordReplayElapsedTimeMs);
+  SetMethod(isolate, target, "recordReplayAnnotationHook",
+            RecordReplayAnnotationHook);
 }
 
 static void CreatePerContextProperties(Local<Object> target,
@@ -864,6 +1009,22 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(LoadEnvFile);
 
   registry->Register(SetEmitWarningSync);
+
+  // Record/replay instrumentation methods.
+  registry->Register(v8::FunctionCallbackIsRecordingOrReplaying);
+  registry->Register(RecordReplayLog);
+  registry->Register(v8::FunctionCallbackRecordReplayOnConsoleAPI);
+  registry->Register(v8::FunctionCallbackRecordReplaySetCommandCallback);
+  registry->Register(v8::FunctionCallbackRecordReplaySetClearPauseDataCallback);
+  registry->Register(v8::FunctionCallbackRecordReplayIgnoreScript);
+  registry->Register(v8::FunctionCallbackRecordReplayAssert);
+  registry->Register(v8::FunctionCallbackRecordReplayGetCurrentError);
+  registry->Register(RecordReplaySetCDPMessageCallback);
+  registry->Register(RecordReplaySendCDPMessage);
+  registry->Register(v8::FunctionCallbackRecordReplayGetRecordingId);
+  registry->Register(v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
+  registry->Register(v8::FunctionCallbackRecordReplayElapsedTimeMs);
+  registry->Register(RecordReplayAnnotationHook);
 }
 
 }  // namespace process

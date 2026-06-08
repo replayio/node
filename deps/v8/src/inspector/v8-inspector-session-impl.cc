@@ -4,6 +4,9 @@
 
 #include "src/inspector/v8-inspector-session-impl.h"
 
+#include <sstream>
+#include <string>
+
 #include "../../third_party/inspector_protocol/crdtp/cbor.h"
 #include "../../third_party/inspector_protocol/crdtp/dispatch.h"
 #include "../../third_party/inspector_protocol/crdtp/json.h"
@@ -26,6 +29,8 @@
 #include "src/inspector/v8-profiler-agent-impl.h"
 #include "src/inspector/v8-runtime-agent-impl.h"
 #include "src/inspector/v8-schema-agent-impl.h"
+
+#include "replayio.h"
 
 namespace v8_inspector {
 namespace {
@@ -122,6 +127,9 @@ V8InspectorSessionImpl::V8InspectorSessionImpl(
       m_clientTrustLevel(clientTrustLevel) {
   m_state->getBoolean("use_binary_protocol", &use_binary_protocol_);
 
+  v8::recordreplay::CommandDiagnosticTrace(
+      "[RUN-2486-2577] V8InspectorSessionImpl %d %d", contextGroupId, sessionId);
+
   m_runtimeAgent.reset(new V8RuntimeAgentImpl(
       this, this, agentState(protocol::Runtime::Metainfo::domainName),
       std::move(debuggerBarrier)));
@@ -191,13 +199,64 @@ std::unique_ptr<StringBuffer> V8InspectorSessionImpl::serializeForFrontend(
   return StringBufferFrom(std::move(json));
 }
 
+extern "C" void V8RecordReplayOnAnnotation(const char* kind, const char* contents);
+
+// Add an annotation to the recording for a protocol message event.
+// The get_cbor callback will only be invoked when replaying.
+void V8InspectorSessionImpl::RecordReplayMessageAnnotation(const char* kind,
+                                                           const std::function<v8_crdtp::span<uint8_t>()>& get_cbor) {
+  if (!v8::recordreplay::IsRecordingOrReplaying() ||
+      !v8::IsMainThread() ||
+      v8::recordreplay::AreEventsDisallowed("RecordReplayMessageAnnotation") ||
+      v8::recordreplay::IsInReplayCode("RecordReplayMessageAnnotation")) {
+    return;
+  }
+
+  // OnAnnotation calls must happen at the same point when recording vs. replaying,
+  // but the contents do not need to be consistent. Avoid serialization and
+  // conversion overhead when recording.
+  std::string json;
+  if (v8::recordreplay::IsReplaying()) {
+    v8::replayio::AutoDisallowEvents disallow("RecordReplayMessageAnnotation");
+    v8_crdtp::span<uint8_t> cbor = get_cbor();
+    v8_crdtp::Status status = ConvertCBORToJSON(cbor, &json);
+    DCHECK(status.ok());
+    USE(status);
+
+    // Tack additional information about this inspector onto the annotation JSON.
+    if (json.length() && json[json.length() - 1] == '}') {
+      json.resize(json.length() - 1);
+
+      std::ostringstream oss;
+      oss << ",\"contextGroupId\":" << m_contextGroupId;
+      oss << ",\"sessionId\":" << m_sessionId;
+      oss << "}";
+
+      json += oss.str();
+    }
+  }
+  V8RecordReplayOnAnnotation(kind, json.c_str());
+}
+
 void V8InspectorSessionImpl::SendProtocolResponse(
     int callId, std::unique_ptr<protocol::Serializable> message) {
+  std::vector<uint8_t> cbor;
+  RecordReplayMessageAnnotation("inspector-protocol-response",
+                                [&]() {
+                                  cbor = message->Serialize();
+                                  return SpanFrom(cbor);
+                                });
   m_channel->sendResponse(callId, serializeForFrontend(std::move(message)));
 }
 
 void V8InspectorSessionImpl::SendProtocolNotification(
     std::unique_ptr<protocol::Serializable> message) {
+  std::vector<uint8_t> cbor;
+  RecordReplayMessageAnnotation("inspector-protocol-notification",
+                                [&]() {
+                                  cbor = message->Serialize();
+                                  return SpanFrom(cbor);
+                                });
   m_channel->sendNotification(serializeForFrontend(std::move(message)));
 }
 
@@ -227,6 +286,11 @@ Response V8InspectorSessionImpl::findInjectedScript(
   std::shared_ptr<InspectedContext> context =
       m_inspector->getContext(m_contextGroupId, contextId);
   if (!context) {
+    if (v8::recordreplay::IsInReplayCode("InjectedScript::bindRemoteObjectIfNeeded")) {
+      v8::recordreplay::Warning(
+        "[RUN-2486-2498] Cannot find context with specified id B %d %d",
+        m_contextGroupId, contextId);
+    }
     return Response::ServerError("Cannot find context with specified id");
   }
   injectedScript = context->getInjectedScript(m_sessionId);
@@ -244,6 +308,11 @@ Response V8InspectorSessionImpl::findInjectedScript(
     RemoteObjectIdBase* objectId, InjectedScript*& injectedScript,
     std::shared_ptr<InspectedContext>* inspectedContext) {
   if (objectId->isolateId() != m_inspector->isolateId()) {
+    if (v8::recordreplay::IsInReplayCode("InjectedScript::bindRemoteObjectIfNeeded")) {
+      v8::recordreplay::Warning(
+        "[RUN-2486-2498] Cannot find context with specified id C %llu %llu",
+        objectId->isolateId(), m_inspector->isolateId());
+    }
     return Response::ServerError("Cannot find context with specified id");
   }
   return findInjectedScript(objectId->contextId(), injectedScript,
@@ -306,6 +375,25 @@ V8InspectorSessionImpl::wrapObject(v8::Local<v8::Context> context,
                                    v8::Local<v8::Value> value,
                                    StringView groupName, bool generatePreview) {
   return wrapObject(context, value, toString16(groupName), generatePreview);
+}
+
+// Replay edit: Return objectId
+std::u16string V8InspectorSessionImpl::wrapObjectGetObjectId(
+    v8::Local<v8::Context> context, v8::Local<v8::Value> value,
+    StringView groupName, bool generatePreview) {
+  auto remoteObject =
+      wrapObject(context, value, toString16(groupName), generatePreview);
+
+  String16 defaultValue("");
+  const String16& objectId = remoteObject->getObjectId(defaultValue);
+  // StringView* objectIdStringView = new StringView(objectId.characters16(),
+  // objectId.length());
+
+  // create new string and assign to result
+  // NOTE: StringView does not own its memory and String16 is not part of the
+  // API, so we have to use std::*string
+  auto* chrs = reinterpret_cast<const char16_t*>(objectId.characters16());
+  return std::u16string(chrs, objectId.length());
 }
 
 std::unique_ptr<protocol::Runtime::RemoteObject>
@@ -391,6 +479,8 @@ void V8InspectorSessionImpl::dispatchProtocolMessage(
     associated_data_copy = toString16(associated_data).utf8();
     associated_data_view = associated_data_copy;
   }
+  RecordReplayMessageAnnotation("inspector-protocol-dispatch",
+                                [&]() { return cbor; });
   v8_crdtp::Dispatchable dispatchable(cbor, associated_data_view,
                                       v8_crdtp::FallthroughCallback());
   if (!dispatchable.ok()) {
@@ -496,6 +586,10 @@ void V8InspectorSessionImpl::resume(bool terminateOnResume) {
 }
 
 void V8InspectorSessionImpl::stepOver() { m_debuggerAgent->stepOver({}); }
+
+v8::MaybeLocal<v8::Value> V8InspectorSessionImpl::getArgumentsOfCallFrame(StringView callFrameId) {
+  return m_debuggerAgent->getArgumentsOfCallFrame(toString16(callFrameId));
+}
 
 std::vector<std::unique_ptr<protocol::Debugger::API::SearchMatch>>
 V8InspectorSessionImpl::searchInTextByLines(StringView text, StringView query,

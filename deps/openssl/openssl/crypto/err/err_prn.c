@@ -34,7 +34,9 @@ void ERR_print_errors_cb(int (*cb)(const char *str, size_t len, void *u),
             data = "";
 
         hex = ossl_buf2hexstr_sep((const unsigned char *)&tid, sizeof(tid), '\0');
-        BIO_snprintf(buf, sizeof(buf), "%s:", hex == NULL ? "<null>" : hex);
+        /* Replay port: emit a constant thread id; the real one varies when
+         * replaying, which would diverge the recording. */
+        BIO_snprintf(buf, sizeof(buf), "0:");
         offset = strlen(buf);
         ossl_err_string_int(l, func, buf + offset, sizeof(buf) - offset);
         offset += strlen(buf + offset);

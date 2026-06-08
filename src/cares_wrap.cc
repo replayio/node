@@ -58,6 +58,7 @@
 
 
 namespace node {
+
 namespace cares_wrap {
 
 using v8::Array;
@@ -927,6 +928,7 @@ void ChannelWrap::Setup() {
 }
 
 void ChannelWrap::StartTimer() {
+  v8::recordreplay::Assert("ChannelWrap::StartTimer %d", *(int*)cares_channel());
   if (timer_handle_ == nullptr) {
     timer_handle_ = new uv_timer_t();
     timer_handle_->data = static_cast<void*>(this);
@@ -1798,6 +1800,8 @@ static void Query(const FunctionCallbackInfo<Value>& args) {
 }
 
 void AfterGetAddrInfo(uv_getaddrinfo_t* req, int status, struct addrinfo* res) {
+  v8::recordreplay::Assert("AfterGetAddrInfo");
+
   auto cleanup = OnScopeLeave([&]() { uv_freeaddrinfo(res); });
   BaseObjectPtr<GetAddrInfoReqWrap> req_wrap{
       static_cast<GetAddrInfoReqWrap*>(req->data)};
@@ -1886,6 +1890,7 @@ void AfterGetNameInfo(uv_getnameinfo_t* req,
                       int status,
                       const char* hostname,
                       const char* service) {
+  v8::recordreplay::Assert("AfterGetNameInfo");
   BaseObjectPtr<GetNameInfoReqWrap> req_wrap{
       static_cast<GetNameInfoReqWrap*>(req->data)};
   Environment* env = req_wrap->env();

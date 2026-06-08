@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/heap/main-allocator.h"
+#include "include/replayio.h"
 
 #include <optional>
 
@@ -652,6 +653,8 @@ bool PagedSpaceAllocatorPolicy::RefillLab(int size_in_bytes,
   // Allocation in this space has failed.
   DCHECK_GE(size_in_bytes, 0);
 
+  replayio::AutoDisallowEvents disallow("PagedSpaceAllocatorPolicy::RefillLab");
+
   if (TryExtendLAB(size_in_bytes)) return true;
 
   if (TryAllocationFromFreeList(size_in_bytes, origin)) return true;
@@ -733,6 +736,14 @@ bool PagedSpaceAllocatorPolicy::RefillLab(int size_in_bytes,
     if (TryExpandAndAllocate(static_cast<size_t>(size_in_bytes), origin)) {
       return true;
     }
+    recordreplay::Diagnostic(
+        "[RUN-851] PagedSpaceAllocatorPolicy::RefillLab TryExpandAndAllocateFailed");
+  } else {
+    recordreplay::Diagnostic(
+        "[RUN-851] PagedSpaceAllocatorPolicy::RefillLab CantExpand %d %d",
+        space_heap()->ShouldExpandOldGenerationOnSlowAllocation(
+            allocator_->local_heap(), origin),
+        space_heap()->CanExpandOldGeneration(space_->AreaSize()));
   }
 
   // Try sweeping all pages.

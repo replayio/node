@@ -51,7 +51,12 @@ bool RecursiveMutex::TryLock() {
   return false;
 }
 
-Mutex::Mutex() {
+Mutex::Mutex(const char* ordered_name) {
+  // record/replay: accept |ordered_name| to match the ported header. The original
+  // hook registered the pthread mutex with the backend for deterministic lock
+  // ordering; this V8's mutex is absl-backed (no pthread_mutex_t to register), so
+  // the registration is skipped. (Mirrors the chromium-v8 fork fix.)
+  USE(ordered_name);
 #ifdef DEBUG
   level_ = 0;
 #endif

@@ -14,6 +14,8 @@
 #include "src/init/v8.h"
 #include "src/strings/char-predicates-inl.h"
 
+#include "replayio.h"
+
 namespace v8 {
 namespace internal {
 
@@ -26,6 +28,7 @@ class V8_NODISCARD TimedScope {
 
  private:
   static inline double TimestampMs() {
+    replayio::AutoPassThroughEvents pt;
     return V8::GetCurrentPlatform()->MonotonicallyIncreasingTime() *
            static_cast<double>(base::Time::kMillisecondsPerSecond);
   }

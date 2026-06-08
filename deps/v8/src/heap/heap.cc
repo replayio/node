@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/heap/heap.h"
+#include "include/replayio.h"
 
 #include <algorithm>
 #include <atomic>
@@ -926,6 +927,7 @@ void Heap::IncrementDeferredCounts(
 void Heap::GarbageCollectionPrologue(
     GarbageCollectionReason gc_reason,
     const v8::GCCallbackFlags gc_callback_flags) {
+  replayio::AutoDisallowEvents disallow("Heap::CollectGarbage");
   TRACE_GC(tracer(), GCTracer::Scope::HEAP_PROLOGUE);
 
   is_current_gc_forced_ = gc_callback_flags & v8::kGCCallbackFlagForced ||
@@ -1288,6 +1290,7 @@ void FreeCachesOnMemoryPressure(Isolate* isolate,
 }  // anonymous namespace
 
 void Heap::CollectAllAvailableGarbage(GarbageCollectionReason gc_reason) {
+  replayio::AutoDisallowEvents disallow("Heap::CollectAllAvailableGarbage");
   // Min and max number of attempts for GC. The method will continue with more
   // GCs until the root set is stable.
   static constexpr int kMaxNumberOfAttempts = 7;
@@ -1827,6 +1830,8 @@ void Heap::StartIncrementalMarking(GCFlags gc_flags,
     // guarantee.
     return;
   }
+
+  replayio::AutoDisallowEvents disallow("Heap::StartIncrementalMarking");
 
   TRACE_EVENT(
       "v8",
@@ -3877,6 +3882,11 @@ void Heap::NotifyObjectLayoutChange(
     const Address clear_range_end = object.address() + new_size;
 
     if (incremental_marking()->IsMarking()) {
+      // Replay: relocated from the removed
+      // IncrementalMarking::MarkBlackAndVisitObjectDueToLayoutChange hook. The
+      // marking-time layout-change bookkeeping must not emit record/replay
+      // events. (TODO: confirm scope during deterministic-replay validation.)
+      replayio::AutoDisallowEvents disallow("Heap::NotifyObjectLayoutChange");
       ObjectLock::Lock(isolate(), object);
       DCHECK_EQ(pending_layout_change_object_address, kNullAddress);
       pending_layout_change_object_address = object.address();
@@ -4026,6 +4036,8 @@ void Heap::CheckMemoryPressure() {
 }
 
 void Heap::CollectGarbageOnMemoryPressure() {
+  replayio::AutoDisallowEvents disallow("Heap::CollectGarbageOnMemoryPressure");
+
   const int kGarbageThresholdInBytes = 8 * MB;
   const double kGarbageThresholdAsFractionOfTotalMemory = 0.1;
   // This constant is the maximum response time in RAIL performance model.
@@ -4062,6 +4074,8 @@ void Heap::CollectGarbageOnMemoryPressure() {
 
 void Heap::MemoryPressureNotification(MemoryPressureLevel level,
                                       bool is_isolate_locked) {
+  replayio::AutoDisallowEvents disallow("Heap::MemoryPressureNotification");
+
   TRACE_EVENT("devtools.timeline,v8", "V8.MemoryPressureNotification", "level",
               static_cast<int>(level));
   MemoryPressureLevel previous =
@@ -6262,6 +6276,8 @@ const ::heap::base::Stack& Heap::stack() const {
 }
 
 void Heap::StartTearDown() {
+  replayio::AutoDisallowEvents disallow("Heap::StartTearDown");
+
   if (cpp_heap_) {
     // This may invoke a GC in case marking is running to get us into a
     // well-defined state for tear down.
@@ -7744,6 +7760,8 @@ int Heap::NextScriptId() {
         Cast<Smi>(last_script_id_slot.Relaxed_CompareAndSwap(last_id, new_id));
   } while (last_id != last_id_before_cas);
 
+  recordreplay::OrderedUnlock(script_ordered_lock_id_);
+  recordreplay::Assert("Heap::NextScriptId %d", new_id.value());
   return new_id.value();
 }
 

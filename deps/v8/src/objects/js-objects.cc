@@ -815,7 +815,6 @@ Maybe<PropertyAttributes> JSReceiver::GetPropertyAttributes(
     UNREACHABLE();
   }
 }
-
 namespace {
 
 Tagged<JSReceiver::PropertiesOrHash> SetHashAndUpdateProperties(
@@ -5528,6 +5527,8 @@ static bool ShouldConvertToFastElements(Tagged<JSObject> object,
 
   // Adding a property with this index will require slow elements.
   if (index >= static_cast<uint32_t>(Smi::kMaxValue)) return false;
+
+  recordreplay::Assert("[RUN-1675-1826] JSDate::CurrentTimeValue");
 
   if (IsJSArray(object)) {
     Tagged<Object> length = Cast<JSArray>(object)->length();

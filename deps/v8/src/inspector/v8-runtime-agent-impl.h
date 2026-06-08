@@ -104,6 +104,7 @@ class V8RuntimeAgentImpl : public protocol::Runtime::Backend {
       std::optional<bool> accessorPropertiesOnly,
       std::optional<bool> generatePreview,
       std::optional<bool> nonIndexedPropertiesOnly,
+      std::optional<int> pageSize, std::optional<int> pageIndex,
       std::unique_ptr<protocol::Array<protocol::Runtime::PropertyDescriptor>>*
           result,
       std::unique_ptr<
@@ -180,6 +181,9 @@ class V8RuntimeAgentImpl : public protocol::Runtime::Backend {
       m_compiledScripts;
   // Binding name -> executionContextIds mapping.
   std::unordered_map<String16, std::unordered_set<int>> m_activeBindings;
+
+  // Whether this agent is replaying specific, and should not interact with the recording.
+  bool m_replay_owned;
 };
 
 }  // namespace v8_inspector
