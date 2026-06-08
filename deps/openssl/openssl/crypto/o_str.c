@@ -372,10 +372,9 @@ char *OPENSSL_buf2hexstr(const unsigned char *buf, long buflen)
     return ossl_buf2hexstr_sep(buf, buflen, DEFAULT_SEPARATOR);
 }
 
-    RecordReplayAssertFromC("openssl_strerror_r %d %lu", errnum, buflen);
-
 int openssl_strerror_r(int errnum, char *buf, size_t buflen)
 {
+    RecordReplayAssertFromC("openssl_strerror_r %d %lu", errnum, buflen);
 #if defined(_MSC_VER) && _MSC_VER >= 1400 && !defined(_WIN32_WCE)
     return !strerror_s(buf, buflen, errnum);
 #elif defined(_GNU_SOURCE)
