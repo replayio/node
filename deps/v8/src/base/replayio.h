@@ -11,7 +11,7 @@
 
 #include "include/replayio.h"
 
-#include "src/base/optional.h"
+#include <optional>
 
 namespace v8 {
 namespace replayio {
@@ -24,7 +24,7 @@ struct AutoMaybeDisallowEvents {
   }
   
 private:
-  v8::base::Optional<v8::replayio::AutoDisallowEvents> disallow;
+  std::optional<v8::replayio::AutoDisallowEvents> disallow;
 };
 
 }  // namespace replayio
