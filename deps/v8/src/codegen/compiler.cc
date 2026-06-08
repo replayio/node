@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/codegen/compiler.h"
+#include "include/replayio.h"
 
 #include <algorithm>
 #include <memory>
@@ -1603,18 +1604,11 @@ Handle<SharedFunctionInfo> GetOrCreateTopLevelSharedFunctionInfo(
   return CreateTopLevelSharedFunctionInfo(parse_info, script, isolate);
 }
 
-MaybeHandle<SharedFunctionInfo> CompileToplevel(
-    ParseInfo* parse_info, Handle<Script> script,
-    MaybeDirectHandle<ScopeInfo> maybe_outer_scope_info, Isolate* isolate,
-    IsCompiledScope* is_compiled_scope) {
-  TimerEventScope<TimerEventCompileCode> top_level_timer(isolate);
-  TRACE_EVENT(TRACE_DISABLED_BY_DEFAULT("v8.compile"), "V8.CompileCode");
-  DCHECK_EQ(ThreadId::Current(), isolate->thread_id());
-
 extern bool RecordReplayHasDefaultContext();
 extern bool RecordReplayAssertValues(const std::string& url);
 
-static void SetRecordReplayFlags(UnoptimizedCompileFlags& flags, const std::string& url) {
+static void SetRecordReplayFlags(UnoptimizedCompileFlags& flags,
+                                 const std::string& url) {
   if (!recordreplay::IsRecordingOrReplaying()) {
     return;
   }
@@ -1631,6 +1625,14 @@ static void SetRecordReplayFlags(UnoptimizedCompileFlags& flags, const std::stri
     flags.set_record_replay_assert_values(true);
   }
 }
+
+MaybeHandle<SharedFunctionInfo> CompileToplevel(
+    ParseInfo* parse_info, Handle<Script> script,
+    MaybeDirectHandle<ScopeInfo> maybe_outer_scope_info, Isolate* isolate,
+    IsCompiledScope* is_compiled_scope) {
+  TimerEventScope<TimerEventCompileCode> top_level_timer(isolate);
+  TRACE_EVENT(TRACE_DISABLED_BY_DEFAULT("v8.compile"), "V8.CompileCode");
+  DCHECK_EQ(ThreadId::Current(), isolate->thread_id());
 
   PostponeInterruptsScope postpone(isolate);
   DCHECK(!isolate->native_context().is_null());
@@ -1680,14 +1682,6 @@ static void SetRecordReplayFlags(UnoptimizedCompileFlags& flags, const std::stri
   FinalizeUnoptimizedScriptCompilation(
       isolate, script, parse_info->flags(), parse_info->state(),
       finalize_unoptimized_compilation_data_list);
-
-  std::string url;
-  Handle<Script> script(Script::cast(shared_info->script()), isolate);
-  if (!script->name().IsUndefined()) {
-    std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
-    url = name.get();
-  }
-  SetRecordReplayFlags(flags_, url);
 
   if (v8_flags.always_sparkplug) {
     CompileAllWithBaseline(isolate, finalize_unoptimized_compilation_data_list);
@@ -3961,14 +3955,6 @@ class StressBackgroundCompileThread : public ParkingThread {
     std::unique_ptr<uint16_t[]> source_buffer_;
     bool done_;
   };
-
-    std::string url;
-    Handle<Object> script_name;
-    if (script_details.name_obj.ToHandle(&script_name) && script_name->IsString()) {
-      std::unique_ptr<char[]> name = String::cast(*script_name).ToCString();
-      url = name.get();
-    }
-    SetRecordReplayFlags(flags, url);
 
   Handle<String> source_;
   v8::ScriptCompiler::StreamedSource streamed_source_;

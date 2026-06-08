@@ -99,12 +99,14 @@ class ElementsAccessor {
   virtual MaybeHandle<FixedArray> PrependElementIndices(
       Isolate* isolate, DirectHandle<JSObject> object,
       DirectHandle<FixedArrayBase> backing_store, DirectHandle<FixedArray> keys,
-      GetKeysConversion convert, PropertyFilter filter = ALL_PROPERTIES) = 0;
+      GetKeysConversion convert, PropertyFilter filter = ALL_PROPERTIES,
+      const KeyIterationParams* params = KeyIterationParams::Default()) = 0;
 
   inline MaybeHandle<FixedArray> PrependElementIndices(
       Isolate* isolate, DirectHandle<JSObject> object,
       DirectHandle<FixedArray> keys, GetKeysConversion convert,
-      PropertyFilter filter = ALL_PROPERTIES);
+      PropertyFilter filter = ALL_PROPERTIES,
+      const KeyIterationParams* params = KeyIterationParams::Default());
 
   V8_WARN_UNUSED_RESULT virtual ExceptionStatus AddElementsToKeyAccumulator(
       DirectHandle<JSObject> receiver, KeyAccumulator* accumulator,

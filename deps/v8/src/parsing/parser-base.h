@@ -4174,7 +4174,7 @@ ParserBase<Impl>::ParseMemberWithPresentNewPrefixesExpression() {
 
   // NewExpression without arguments.
   ExpressionListT args(pointer_buffer());
-  return factory()->NewCallNew(result, args, new_pos, false);
+  return factory()->NewCallNew(result, args, new_pos, false, new_pos);
 }
 
 template <typename Impl>
@@ -4906,7 +4906,6 @@ ParserBase<Impl>::ParseAsyncFunctionDeclaration(
     impl()->ReportUnexpectedToken(Token::kEscapedKeyword);
   }
   int pos = position();
-  int call_head_token_position = pos;
   DCHECK(!scanner()->HasLineTerminatorBeforeNext());
   Consume(Token::kFunction);
   ParseFunctionFlags flags = ParseFunctionFlag::kIsAsync;
@@ -5571,7 +5570,7 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseTemplateLiteral(
     typename Impl::TemplateLiteralState ts = impl()->OpenTemplateLiteral(pos);
     bool is_valid = CheckTemplateEscapes(forbid_illegal_escapes);
     impl()->AddTemplateSpan(&ts, is_valid, true);
-  return impl()->CloseTemplateLiteral(&ts, start, tag, call_head_token_position);
+    return impl()->CloseTemplateLiteral(&ts, start, tag, start);
   }
 
   Consume(Token::kTemplateSpan);
@@ -5620,7 +5619,7 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseTemplateLiteral(
 
   DCHECK_IMPLIES(!has_error(), next == Token::kTemplateTail);
   // Once we've reached a kTemplateTail, we can close the TemplateLiteral.
-  return impl()->CloseTemplateLiteral(&ts, start, tag);
+  return impl()->CloseTemplateLiteral(&ts, start, tag, start);
 }
 
 template <typename Impl>

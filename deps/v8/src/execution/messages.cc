@@ -402,7 +402,7 @@ MaybeDirectHandle<JSAny> ErrorUtils::FormatStackTrace(
     }
   }
 
-  MaybeHandle<String> rv = builder.Finish();
+  MaybeDirectHandle<String> rv = builder.Finish();
   if (recordreplay::IsRecordingOrReplaying("ErrorUtils::FormatStackTrace") &&
       !recordreplay::AreEventsDisallowed()) {
     // [PRO-1150] Replay Error.stack
@@ -410,7 +410,7 @@ MaybeDirectHandle<JSAny> ErrorUtils::FormatStackTrace(
     recordreplay::RecordReplayString("ErrorUtils::FormatStackTrace", str);
     rv = isolate->factory()->NewStringFromUtf8(base::CStrVector(str.c_str()));
   }
-  return rv;
+  return Cast<JSAny>(rv);
 }
 
 DirectHandle<String> MessageFormatter::Format(

@@ -282,14 +282,14 @@ static std::string GetFunctionLocationInfo(Isolate* isolate, Handle<JSFunction> 
 
   Script::PositionInfo info;
   Script::GetPositionInfo(script, function->shared().StartPosition(),
-                          &info, Script::WITH_OFFSET);
+                          &info, Script::OffsetFlag::kWithOffset);
 
   std::string name = script->name().IsString()
     ? String::cast(script->name()).ToCString().get()
     : "(anonymous script)";
 
   std::ostringstream os;
-  os << "scriptId=" << (script.is_null() ? script->id() : -1);
+  os << "scriptId=" << (!script.is_null() ? script->id() : -1);
   os << " @" << name << ":" << info.line + 1 << ":" << info.column;
   return os.str();
 }

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/execution/futex-emulation.h"
+#include "include/replayio.h"
 
 #include <limits>
 
@@ -562,7 +563,6 @@ Tagged<Object> FutexEmulation::WaitAsync(
   FutexWaitList* wait_list = GetWaitList();
   {
     replayio::AutoDisallowEvents disallow("FutexEmulation::WaitAsync");
-    replayio::AutoDisallowEvents disallow("AtomicsWaitWakeHandle::Wake");
     // 16. Perform EnterCriticalSection(WL).
     NoGarbageCollectionMutexGuard lock_guard(wait_list->mutex());
 
@@ -675,8 +675,8 @@ int FutexEmulation::Wake(Tagged<JSArrayBuffer> array_buffer, size_t addr,
   return Wake(wait_location, num_waiters_to_wake);
 }
 
-  replayio::AutoDisallowEvents disallow("FutexEmulation::Wake");
 int FutexEmulation::Wake(void* wait_location, uint32_t num_waiters_to_wake) {
+  replayio::AutoDisallowEvents disallow("FutexEmulation::Wake");
   int num_waiters_woken = 0;
   FutexWaitList* wait_list = GetWaitList();
   NoGarbageCollectionMutexGuard lock_guard(wait_list->mutex());
@@ -943,7 +943,6 @@ void FutexEmulation::IsolateDeinit(Isolate* isolate) {
   FutexWaitList* wait_list = GetWaitList();
   NoGarbageCollectionMutexGuard lock_guard(wait_list->mutex());
 
-  replayio::AutoDisallowEvents disallow("FutexEmulation::NumWaitersForTesting");
   // Iterate all locations to find nodes belonging to "isolate" and delete them.
   // The Isolate is going away; don't bother cleaning up the Promises in the
   // NativeContext. Also we don't need to cancel the timeout tasks, since they

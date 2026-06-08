@@ -1144,6 +1144,16 @@ Maybe<bool> ValueSerializer::WriteJSArrayBufferView(
   return ThrowIfOutOfMemory();
 }
 
+// FIXME surely there is a utility somewhere we can use instead?
+inline int HashBytes(const void* aPtr, size_t aSize) {
+  int hash = 0;
+  uint8_t* ptr = (uint8_t*)aPtr;
+  for (size_t i = 0; i < aSize; i++) {
+    hash = (((hash << 5) - hash) + ptr[i]) | 0;
+  }
+  return hash;
+}
+
 Maybe<bool> ValueSerializer::WriteJSError(DirectHandle<JSObject> error) {
   DirectHandle<Object> stack;
   PropertyDescriptor message_desc;
@@ -1165,16 +1175,6 @@ Maybe<bool> ValueSerializer::WriteJSError(DirectHandle<JSObject> error) {
   if (!Object::ToString(isolate_, name_object).ToHandle(&name)) {
     return Nothing<bool>();
   }
-
-// FIXME surely there is a utility somewhere we can use instead?
-inline int HashBytes(const void* aPtr, size_t aSize) {
-  int hash = 0;
-  uint8_t* ptr = (uint8_t*)aPtr;
-  for (size_t i = 0; i < aSize; i++) {
-    hash = (((hash << 5) - hash) + ptr[i]) | 0;
-  }
-  return hash;
-}
 
   if (name->IsOneByteEqualTo(base::CStrVector("EvalError"))) {
     WriteVarint(static_cast<uint8_t>(ErrorTag::kEvalErrorPrototype));

@@ -980,7 +980,7 @@ std::string GetScriptLocationString(int script_id, int start_position) {
   std::string script_name = GetScriptName(script);
 
   Script::PositionInfo info;
-  Script::GetPositionInfo(script, start_position, &info, Script::WITH_OFFSET);
+  Script::GetPositionInfo(script, start_position, &info, Script::OffsetFlag::kWithOffset);
 
   std::ostringstream os;
   os << script_id << ":" << script_name << ":" << info.line + 1 << ":" << info.column;
@@ -1180,7 +1180,7 @@ static std::string GetStackLocation(Isolate* isolate) {
 
     int source_position = js.SourcePosition();
     Script::PositionInfo info;
-    Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
+    Script::GetPositionInfo(script, source_position, &info, Script::OffsetFlag::kWithOffset);
 
     if (script->name().IsUndefined()) {
       snprintf(location, sizeof(location), "<none>:%d:%d", info.line + 1, info.column);
@@ -1247,7 +1247,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
 
   if (!site.location_.length()) {
     Script::PositionInfo info;
-    Script::GetPositionInfo(script, site.source_position_, &info, Script::WITH_OFFSET);
+    Script::GetPositionInfo(script, site.source_position_, &info, Script::OffsetFlag::kWithOffset);
 
     char buf[1024];
     if (script->name().IsUndefined()) {
@@ -1393,7 +1393,7 @@ std::string GetRecordReplayFunctionId(Handle<SharedFunctionInfo> shared) {
 
     Script::PositionInfo info;
     Handle<Script> handleScript(script, Isolate::Current());
-    Script::GetPositionInfo(handleScript, shared->StartPosition(), &info, Script::WITH_OFFSET);
+    Script::GetPositionInfo(handleScript, shared->StartPosition(), &info, Script::OffsetFlag::kWithOffset);
     recordreplay::Print("FunctionId %s -> %s:%d:%d",
                         os.str().c_str(), url.get() ? url.get() : "<none>",
                         info.line + 1, info.column);

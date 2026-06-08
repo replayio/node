@@ -436,6 +436,3 @@ IgnoreLocalGCRequests::~IgnoreLocalGCRequests() {
 }  // namespace v8
 
 #endif  // V8_HEAP_HEAP_INL_H_
-
-  recordreplay::OrderedUnlock(script_ordered_lock_id_);
-  recordreplay::Assert("Heap::NextScriptId %d", new_id.value());

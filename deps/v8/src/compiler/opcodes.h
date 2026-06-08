@@ -499,6 +499,7 @@
   V(ConvertReceiver)                        \
   V(ConvertTaggedHoleToUndefined)           \
   V(DateNow)                                \
+  V(IncrementAndCheckProgressCounter)       \
   V(DoubleArrayMax)                         \
   V(DoubleArrayMin)                         \
   V(EnsureWritableFastElements)             \

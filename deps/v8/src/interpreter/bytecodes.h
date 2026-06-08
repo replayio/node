@@ -510,13 +510,13 @@ namespace interpreter {
   V(RecordReplayIncExecutionProgressCounter, ImplicitRegisterUse::kNone)       \
   V(RecordReplayNotifyActivity, ImplicitRegisterUse::kNone)                    \
   V(RecordReplayInstrumentation, ImplicitRegisterUse::kNone,                   \
-    OperandType::kIdx)                                                         \
+    OperandType::kUImm)                                                         \
   V(RecordReplayInstrumentationGenerator, ImplicitRegisterUse::kNone,          \
-    OperandType::kIdx, OperandType::kReg)                                      \
+    OperandType::kUImm, OperandType::kReg)                                      \
   V(RecordReplayInstrumentationReturn, ImplicitRegisterUse::kNone,             \
-    OperandType::kIdx, OperandType::kReg)                                      \
+    OperandType::kUImm, OperandType::kReg)                                      \
   V(RecordReplayAssertValue, ImplicitRegisterUse::kReadWriteAccumulator,       \
-    OperandType::kIdx)                                                         \
+    OperandType::kUImm)                                                         \
   V(RecordReplayTrackObjectId, ImplicitRegisterUse::kNone, OperandType::kReg)  \
                                                                                \
   /* Execution Abort (internal error) */                                       \

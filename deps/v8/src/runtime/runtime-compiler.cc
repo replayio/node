@@ -146,8 +146,6 @@ RUNTIME_FUNCTION(Runtime_CompileLazy) {
     return isolate->StackOverflow();
   }
 
-  CHECK(isolate == function->GetIsolate());
-
   DirectHandle<SharedFunctionInfo> sfi(function->shared(), isolate);
 
   DCHECK(!function->is_compiled(isolate));

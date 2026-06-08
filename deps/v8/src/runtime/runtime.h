@@ -837,7 +837,9 @@ constexpr bool CanTriggerGC(T... properties) {
 
 #define FOR_EACH_INTRINSIC_WEAKREF(F, I)                             \
   F(JSFinalizationRegistryRegisterWeakCellWithUnregisterToken, 2, 1) \
-  F(JSWeakRefAddToKeptObjects, 1, 1)
+  F(JSWeakRefAddToKeptObjects, 1, 1)                                 \
+  F(JSReplayWeakRefConstruct, 1, 1)                                  \
+  F(JSReplayWeakRefDeref, 1, 1)
 
 #define FOR_EACH_INTRINSIC_RETURN_PAIR_IMPL(F, I) \
   F(DebugBreakOnBytecode, 1, 2)                   \

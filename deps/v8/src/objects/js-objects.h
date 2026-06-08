@@ -1517,6 +1517,10 @@ V8_OBJECT class JSMessageObject : public JSObject {
   TaggedMember<Smi> start_position_;
   TaggedMember<Smi> end_position_;
   TaggedMember<Smi> error_level_;
+  // record/replay: matches js-objects.tq's trailing `record_replay_bookmark: Smi`
+  // field (JSMessageObject is a @cppObjectLayoutDefinition, so the backing member
+  // must be declared by hand). Backs DECL_INT_ACCESSORS(record_replay_bookmark).
+  TaggedMember<Smi> record_replay_bookmark_;
 } V8_OBJECT_END;
 
 // The [Async-from-Sync Iterator] object

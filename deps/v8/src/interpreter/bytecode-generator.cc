@@ -2298,10 +2298,6 @@ void BytecodeGenerator::BuildDeclareCall(Runtime::FunctionId id) {
   top_level_builder()->mark_processed();
 }
 
-  // See BuildTryCatch for why we increment the progress counter here.
-  builder()->RecordReplayOnProgress();
-  builder()->RecordReplayAssertValue("BeginFinally");
-
 void BytecodeGenerator::VisitModuleDeclarations(Declaration::List* decls) {
   RegisterAllocationScope register_scope(this);
   for (Declaration* decl : *decls) {
@@ -3091,6 +3087,10 @@ void BytecodeGenerator::BuildTryFinally(
   try_control_builder.LeaveTry();
   try_control_builder.BeginHandler();
   commands.RecordHandlerReThrowPath();
+
+  // See BuildTryCatch for why we increment the progress counter here.
+  builder()->RecordReplayOnProgress();
+  builder()->RecordReplayAssertValue("BeginFinally");
 
   try_control_builder.BeginFinally();
 

@@ -416,15 +416,26 @@ InjectedScript::~InjectedScript() { discardEvaluateCallbacks(); }
 namespace {
 class PropertyAccumulator : public ValueMirror::PropertyAccumulator {
  public:
-  explicit PropertyAccumulator(std::vector<PropertyMirror>* mirrors)
-      : m_mirrors(mirrors) {}
+  PropertyAccumulator(std::vector<PropertyMirror>* mirrors,
+                      const v8::KeyIterationParams* params)
+      : m_mirrors(mirrors), m_params(params) {}
   bool Add(PropertyMirror mirror) override {
     m_mirrors->push_back(std::move(mirror));
+    // [RUN-3149] When pagination params are given, stop collecting once we have
+    // gathered a full page worth of properties.
+    if (m_params && *m_params) {
+      v8::KeyIterationIndex pageSize = m_params->PageSize(
+          static_cast<v8::KeyIterationIndex>(m_mirrors->size()) + 1);
+      if (static_cast<v8::KeyIterationIndex>(m_mirrors->size()) >= pageSize) {
+        return false;
+      }
+    }
     return true;
   }
 
  private:
   std::vector<PropertyMirror>* m_mirrors;
+  const v8::KeyIterationParams* m_params;
 };
 }  // anonymous namespace
 
@@ -432,6 +443,7 @@ Response InjectedScript::getProperties(
     v8::Local<v8::Object> object, const String16& groupName, bool ownProperties,
     bool accessorPropertiesOnly, bool nonIndexedPropertiesOnly,
     const WrapOptions& wrapOptions,
+    const v8::KeyIterationParams* params,
     std::unique_ptr<Array<PropertyDescriptor>>* properties,
     std::unique_ptr<protocol::Runtime::ExceptionDetails>* exceptionDetails) {
   v8::HandleScope handles(m_context->isolate());

@@ -45,7 +45,6 @@
 #include "src/base/template-utils.h"
 #include "src/base/utils/random-number-generator.h"
 #include "src/base/vector.h"
-#include "src/base/vector.h"
 #include "src/builtins/accessors.h"
 #include "src/builtins/builtins-promise.h"
 #include "src/builtins/builtins-utils.h"
@@ -2048,6 +2047,14 @@ MaybeLocal<Value> Script::Run(Local<Context> context,
   }
 #endif  // V8_ENABLE_ETW_STACK_WALKING
   auto fun = i::Cast<i::JSFunction>(Utils::OpenDirectHandle(this));
+
+  // TODO: IsInReplayCode (RUN-1502)
+  v8::recordreplay::AssertMaybeEventsDisallowed(
+      "JS Script::Run %d",
+      i::IsScript(fun->shared()->script())
+          ? i::Cast<i::Script>(fun->shared()->script())->id()
+          : 0);
+
   i::DirectHandle<i::Object> receiver = i_isolate->global_proxy();
   // TODO(cbruni, chromium:1244145): Remove once migrated to the context.
   i::DirectHandle<i::Object> options(
@@ -2306,14 +2313,6 @@ Local<FixedArray> Module::GetModuleRequests() const {
         i_isolate));
   }
 }
-
-  // TODO: IsInReplayCode (RUN-1502)
-  v8::recordreplay::AssertMaybeEventsDisallowed(
-    "JS Script::Run %d",
-    fun->shared().script().IsScript()
-      ? i::Script::cast(fun->shared().script()).id()
-      : 0
-  );
 
 Location Module::SourceOffsetToLocation(int offset) const {
   auto self = Utils::OpenDirectHandle(this);
@@ -2629,11 +2628,11 @@ ReplayingReplaceScriptContents(Isolate* isolate, Handle<String> source) {
   return isolate->factory()->NewStringFromUtf8(base::CStrVector(new_contents)).ToHandleChecked();
 }
 
-MaybeHandle<SharedFunctionInfo>
-ReplayingMaybeReplaceScript(Isolate* isolate,
-                            MaybeHandle<SharedFunctionInfo> maybe_function_info,
-                            const ScriptDetails& script_details,
-                            Handle<String> source) {
+MaybeDirectHandle<SharedFunctionInfo>
+ReplayingMaybeReplaceScript(
+    Isolate* isolate,
+    MaybeDirectHandle<SharedFunctionInfo> maybe_function_info,
+    const ScriptDetails& script_details, Handle<String> source) {
   MaybeHandle<String> new_source = ReplayingReplaceScriptContents(isolate, source);
 
   if (new_source.is_null() || maybe_function_info.is_null()) {
@@ -2641,13 +2640,14 @@ ReplayingMaybeReplaceScript(Isolate* isolate,
   }
 
   CHECK(!gReplaceSourceContentsScriptId);
-  gReplaceSourceContentsScriptId = Script::cast(maybe_function_info.ToHandleChecked()->script()).id();
+  gReplaceSourceContentsScriptId =
+      Cast<Script>(maybe_function_info.ToHandleChecked()->script())->id();
 
   maybe_function_info = Compiler::GetSharedFunctionInfoForScript(
       isolate, new_source.ToHandleChecked(), script_details,
       ScriptCompiler::kNoCompileOptions,
       ScriptCompiler::kNoCacheNoReason,
-      NOT_NATIVES_CODE);
+      NOT_NATIVES_CODE, nullptr);
 
   gReplaceSourceContentsScriptId = 0;
   return maybe_function_info;
@@ -2712,6 +2712,10 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundInternal(
         i::NOT_NATIVES_CODE, &source->compilation_details);
   }
 
+  // While replaying, allow the script source to be substituted for another.
+  maybe_function_info = i::ReplayingMaybeReplaceScript(
+      i_isolate, maybe_function_info, script_details, str);
+
   if (!maybe_function_info.ToHandle(&result)) return {};
   DCHECK(!i::HeapLayout::InReadOnlySpace(*result));
   return api_scope.Escape(ToApiHandle<UnboundScript>(result));
@@ -2726,8 +2730,6 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundScript(
       "v8::ScriptCompiler::CompileModule must be used to compile modules");
   return CompileUnboundInternal(v8_isolate, source, options, no_cache_reason);
 }
-
-  maybe_function_info = i::ReplayingMaybeReplaceScript(i_isolate, maybe_function_info, script_details, str);
 
 MaybeLocal<Script> ScriptCompiler::Compile(Local<Context> context,
                                            Source* source,

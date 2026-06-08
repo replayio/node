@@ -213,7 +213,7 @@ void PendingCompilationErrorHandler::ThrowPendingError(
     }
 
     Script::PositionInfo position_info;
-    Script::GetPositionInfo(script, location.start_pos(), &position_info, Script::WITH_OFFSET);
+    Script::GetPositionInfo(script, location.start_pos(), &position_info, Script::OffsetFlag::kWithOffset);
   }
 
   Factory* factory = isolate->factory();

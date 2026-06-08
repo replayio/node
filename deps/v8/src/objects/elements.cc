@@ -1254,13 +1254,6 @@ class ElementsAccessorBase : public InternalElementsAccessor {
     UNREACHABLE();
   }
 
-    initial_list_length = (size_t)params->PageSize((KeyIterationIndex)initial_list_length);
-    if (*params && initial_list_length <= nof_property_keys) {
-      // No space for indices.
-      // NOTE: We can return |keys| here because it was a temp allocated object when it was passed in.
-      return keys;
-    }
-
   Tagged<Object> CopyElements(Isolate* isolate, DirectHandle<JSAny> source,
                               DirectHandle<JSObject> destination, size_t length,
                               size_t offset) final {
@@ -1385,6 +1378,7 @@ class ElementsAccessorBase : public InternalElementsAccessor {
     auto* params = keys->key_iteration_params();
     auto pageSize = (size_t)params->PageSize((KeyIterationIndex)length);
     for (size_t i = 0; i < length; i++) {
+      if (i == pageSize) break;
       if (Subclass::HasElementImpl(isolate, *object, i, *backing_store,
                                    filter)) {
         RETURN_FAILURE_IF_NOT_SUCCESSFUL(
@@ -1421,8 +1415,6 @@ class ElementsAccessorBase : public InternalElementsAccessor {
           list->set(insertion_index, *number);
         }
         insertion_index++;
-
-        if (insertion_index == pageSize) break;
       }
     }
     *nof_indices = insertion_index;
@@ -1433,15 +1425,17 @@ class ElementsAccessorBase : public InternalElementsAccessor {
   MaybeHandle<FixedArray> PrependElementIndices(
       Isolate* isolate, DirectHandle<JSObject> object,
       DirectHandle<FixedArrayBase> backing_store, DirectHandle<FixedArray> keys,
-      GetKeysConversion convert, PropertyFilter filter) final {
+      GetKeysConversion convert, PropertyFilter filter,
+      const KeyIterationParams* params) final {
     return Subclass::PrependElementIndicesImpl(isolate, object, backing_store,
-                                               keys, convert, filter);
+                                               keys, convert, filter, params);
   }
 
   static MaybeHandle<FixedArray> PrependElementIndicesImpl(
       Isolate* isolate, DirectHandle<JSObject> object,
       DirectHandle<FixedArrayBase> backing_store, DirectHandle<FixedArray> keys,
-      GetKeysConversion convert, PropertyFilter filter) {
+      GetKeysConversion convert, PropertyFilter filter,
+      const KeyIterationParams* params = KeyIterationParams::Default()) {
     uint32_t nof_property_keys = keys->ulength().value();
     size_t nof_elements_szt =
         Subclass::GetMaxNumberOfEntries(isolate, *object, *backing_store);
@@ -1452,6 +1446,20 @@ class ElementsAccessorBase : public InternalElementsAccessor {
     }
     uint32_t nof_elements = static_cast<uint32_t>(nof_elements_szt);
     uint32_t initial_list_length = nof_elements + nof_property_keys;
+
+    initial_list_length =
+        (uint32_t)params->PageSize((KeyIterationIndex)initial_list_length);
+    if (*params && initial_list_length <= nof_property_keys) {
+      // No space for indices.
+      // NOTE: We can return |keys| here because it was a temp allocated object
+      // when it was passed in.
+      return keys;
+    }
+    // The page size may cap how many element indices fit alongside the property
+    // keys; never collect more indices than there is room for.
+    if (initial_list_length - nof_property_keys < nof_elements) {
+      nof_elements = initial_list_length - nof_property_keys;
+    }
 
     // Collect the element indices into a new list.
     DCHECK_LE(initial_list_length, std::numeric_limits<int>::max());
@@ -1932,6 +1940,9 @@ class DictionaryElementsAccessor
     uint32_t insertion_index = 0;
     PropertyFilter filter = keys->filter();
     ReadOnlyRoots roots(isolate);
+    auto* params = keys->key_iteration_params();
+    auto pageSize = (uint32_t)params->PageSize((KeyIterationIndex)
+        GetMaxNumberOfEntries(isolate, *object, *backing_store));
     for (InternalIndex i : dictionary->IterateEntries()) {
       AllowGarbageCollection allow_gc;
       Tagged<Object> raw_key = dictionary->KeyAt(i);
@@ -5772,6 +5783,7 @@ class StringWrapperElementsAccessor
     auto* params = keys->key_iteration_params();
     auto pageSize = (uint32_t)params->PageSize((KeyIterationIndex)length);
     for (uint32_t i = 0; i < length; i++) {
+      if (i == pageSize) break;
       RETURN_FAILURE_IF_NOT_SUCCESSFUL(
           keys->AddKey(factory->NewNumberFromUint(i)));
     }

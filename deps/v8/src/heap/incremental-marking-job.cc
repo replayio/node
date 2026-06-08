@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/heap/incremental-marking-job.h"
+#include "include/replayio.h"
 
 #include <optional>
 

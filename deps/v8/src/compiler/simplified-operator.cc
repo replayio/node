@@ -2699,13 +2699,6 @@ const Operator* SimplifiedOperatorBuilder::TransitionAndStoreNonNumberElement(
       "TransitionAndStoreNonNumberElement", 3, 1, 1, 0, 1, 0, parameters);
 }
 
-const Operator* SimplifiedOperatorBuilder::DateNow() {
-  return zone()->New<Operator>(IrOpcode::kDateNow,
-                               Operator::kNoDeopt | Operator::kNoThrow,
-                               "DateNow",
-                               0, 1, 1, 1, 1, 0);
-}
-
 const Operator* SimplifiedOperatorBuilder::IncrementAndCheckProgressCounter() {
   return zone()->New<Operator>(IrOpcode::kIncrementAndCheckProgressCounter,
                                Operator::kNoDeopt | Operator::kNoThrow,

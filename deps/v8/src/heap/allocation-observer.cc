@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/heap/allocation-observer.h"
+#include "include/replayio.h"
 
 #include <algorithm>
 

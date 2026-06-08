@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/heap/local-heap.h"
+#include "include/replayio.h"
 
 #include <atomic>
 #include <memory>
@@ -27,8 +28,6 @@
 
 namespace v8 {
 namespace internal {
-
-#if V8_OS_WIN
 
 thread_local LocalHeap* g_current_local_heap_ V8_CONSTINIT = nullptr;
 

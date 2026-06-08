@@ -1449,38 +1449,6 @@ std::unique_ptr<ValueMirror> createNativeGetter(v8::Local<v8::Context> context,
   return ValueMirror::create(context, function);
 }
 
-static const char* allowed_getters[] = {
-    "type",
-    "fromElement",
-    "target",
-    "isTrusted",
-    "key",
-    "clientX",
-    "clientY",
-    "altKey",
-    "button",
-    "buttons",
-    "ctrlKey",
-    "currentTarget",
-    "defaultPrevented",
-    "eventPhase",
-    "metaKey",
-    "movementX",
-    "movementY",
-    "offsetX",
-    "offsetY",
-    "pageX",
-    "pageY",
-    "screenX",
-    "screenY",
-    "shiftKey",
-    "srcElement",
-    "timeStamp",
-    "which",
-    "x",
-    "y",
-};
-
 void nativeSetterCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() < 1) return;
   v8::Isolate* isolate = info.GetIsolate();

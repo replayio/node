@@ -4863,6 +4863,13 @@ MaybeHandle<Object> JSPromise::Resolve(DirectHandle<JSPromise> promise,
       isolate->factory()->NewPromiseResolveThenableJobTask(
           promise, resolution_recv, Cast<JSReceiver>(then_action),
           then_context);
+  if (RecordReplayShouldCallOnPromiseHook()) {
+    // Fulfillment of this promise is delayed by adopted resolution.
+    // Ref: Promise/A+ 2.3.2
+    AddPromiseDependencyGraphAdoption(
+        isolate, indirect_handle(Cast<Object>(promise), isolate),
+        indirect_handle(Cast<Object>(resolution_recv), isolate));
+  }
   if (isolate->debug()->is_active() && IsJSPromise(*resolution_recv)) {
     // Mark the dependency of the new {promise} on the {resolution}.
     Object::SetProperty(isolate, resolution_recv,
@@ -5642,12 +5649,6 @@ HandleType<Derived>::MaybeType BaseNameDictionary<Derived, Shape>::Add(
   dictionary->set_next_enumeration_index(index + 1);
   return dictionary;
 }
-
-  if (RecordReplayShouldCallOnPromiseHook()) {
-    // Fulfillment of this promise is delayed by adopted resolution.
-    // Ref: Promise/A+ 2.3.2
-    AddPromiseDependencyGraphAdoption(isolate, Handle<Object>::cast(promise), resolution);
-  }
 
 template <typename Derived, typename Shape>
 template <typename IsolateT, template <typename> typename HandleType,

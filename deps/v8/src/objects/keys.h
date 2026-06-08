@@ -74,7 +74,8 @@ class KeyAccumulator final {
   // Does not throw for uninitialized exports in module namespace objects, so
   // this has to be checked separately.
   static Handle<FixedArray> GetOwnEnumPropertyKeys(
-      Isolate* isolate, DirectHandle<JSObject> object);
+      Isolate* isolate, DirectHandle<JSObject> object,
+      const KeyIterationParams* params = KeyIterationParams::Default());
 
   V8_WARN_UNUSED_RESULT ExceptionStatus
   AddKey(Tagged<Object> key, AddKeyConversion convert = DO_NOT_CONVERT);
@@ -189,13 +190,16 @@ class FastKeyAccumulator {
  public:
   FastKeyAccumulator(Isolate* isolate, DirectHandle<JSReceiver> receiver,
                      KeyCollectionMode mode, PropertyFilter filter,
-                     bool is_for_in = false, bool skip_indices = false)
+                     bool is_for_in = false, bool skip_indices = false,
+                     const KeyIterationParams* params =
+                         KeyIterationParams::Default())
       : isolate_(isolate),
         receiver_(receiver),
         mode_(mode),
         filter_(filter),
         is_for_in_(is_for_in),
-        skip_indices_(skip_indices) {
+        skip_indices_(skip_indices),
+        key_iteration_params_(params) {
     Prepare();
   }
   FastKeyAccumulator(const FastKeyAccumulator&) = delete;

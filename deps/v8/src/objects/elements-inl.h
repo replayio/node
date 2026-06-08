@@ -25,10 +25,10 @@ ElementsAccessor::CollectElementIndices(DirectHandle<JSObject> object,
 inline MaybeHandle<FixedArray> ElementsAccessor::PrependElementIndices(
     Isolate* isolate, DirectHandle<JSObject> object,
     DirectHandle<FixedArray> keys, GetKeysConversion convert,
-    PropertyFilter filter) {
+    PropertyFilter filter, const KeyIterationParams* params) {
   return PrependElementIndices(isolate, object,
                                direct_handle(object->elements(), isolate), keys,
-                               convert, filter);
+                               convert, filter, params);
 }
 
 inline bool ElementsAccessor::HasElement(Isolate* isolate,

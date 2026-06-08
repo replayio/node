@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/compiler/backend/code-generator.h"
+#include "include/replayio.h"
 
 #include <optional>
 

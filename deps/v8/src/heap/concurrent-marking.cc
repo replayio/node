@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/heap/concurrent-marking.h"
+#include "include/replayio.h"
 
 #include <algorithm>
 #include <atomic>

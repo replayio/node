@@ -157,13 +157,15 @@ class V8DebuggerAgentImpl : public protocol::Debugger::Backend {
       std::unique_ptr<protocol::Array<protocol::Debugger::ScriptPosition>>
           positions) override;
   Response getCallFrames(
-      Maybe<int> maxFrames, Maybe<bool> noContents,
-      Maybe<String16> objectGroup,
-      std::unique_ptr<protocol::Array<protocol::Debugger::CallFrame>>* out_callFrames) override;
-  Response getTopFrameLocation(Maybe<protocol::Debugger::Location>* out_location) override;
+      std::optional<int> maxFrames, std::optional<bool> noContents,
+      std::optional<String16> objectGroup,
+      std::unique_ptr<protocol::Array<protocol::Debugger::CallFrame>>*
+          out_callFrames) override;
+  Response getTopFrameLocation(
+      std::unique_ptr<protocol::Debugger::Location>* out_location) override;
   Response getPendingException(
-      Maybe<String16> objectGroup,
-      Maybe<protocol::Runtime::RemoteObject>* out_exception) override;
+      std::optional<String16> objectGroup,
+      std::unique_ptr<protocol::Runtime::RemoteObject>* out_exception) override;
 
   bool enabled() const { return m_enableState == kEnabled; }
 
@@ -204,11 +206,15 @@ class V8DebuggerAgentImpl : public protocol::Debugger::Backend {
   v8::Isolate* isolate() { return m_isolate; }
 
   Response currentCallFrames(
-      Maybe<int> maxFrames, Maybe<bool> noContents,
-      Maybe<String16> objectGroup,
+      std::optional<int> maxFrames, std::optional<bool> noContents,
+      std::optional<String16> objectGroup,
       std::unique_ptr<protocol::Array<protocol::Debugger::CallFrame>>*);
   std::unique_ptr<protocol::Runtime::RemoteObject> wrapObject(int contextId,
                                                               v8::Local<v8::Value> val);
+
+  // [replay] Always offer `arguments`, even if not usually available.
+  //   -> https://linear.app/replay/issue/RUN-1061#comment-fc1c3ee4
+  v8::MaybeLocal<v8::Value> getArgumentsOfCallFrame(const String16& callFrameId);
 
   void clearBreakDetails();
 

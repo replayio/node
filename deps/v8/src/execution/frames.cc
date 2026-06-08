@@ -3144,7 +3144,7 @@ FrameSummaries OptimizedJSFrame::Summarize(
       // Replay workaround: Sometimes, DeoptimizationData could not be found for an unknown reason.
       // → Let this be a no-op instead of a crash.
       recordreplay::Warning("[RUN-1920] Missing deoptimization information for OptimizedFrame::Summarize.");
-      return;
+      return summaries;
     }
     FATAL(
         "Missing deoptimization information for OptimizedJSFrame::Summarize.");
