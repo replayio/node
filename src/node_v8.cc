@@ -195,14 +195,7 @@ void CachedDataVersionTag(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(result);
 }
 
-static inline double RecordReplayDouble(const char* why, double d) {
-  v8::recordreplay::RecordReplayBytes("UpdateHeapStatisticsBuffer", &d, sizeof(d));
-  return d;
-}
-
-#define V(index, name, _) \
-    buffer[index] = RecordReplayDouble("UpdateHeapStatisticsBuffer", \
-                                       static_cast<double>(s.name()));
+void SetHeapSnapshotNearHeapLimit(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsUint32());
   Environment* env = Environment::GetCurrent(args);
   uint32_t limit = args[0].As<v8::Uint32>()->Value();
@@ -211,12 +204,19 @@ static inline double RecordReplayDouble(const char* why, double d) {
   env->set_heap_snapshot_near_heap_limit(limit);
 }
 
+static inline double RecordReplayDouble(const char* why, double d) {
+  v8::recordreplay::RecordReplayBytes("UpdateHeapStatisticsBuffer", &d, sizeof(d));
+  return d;
+}
+
 void UpdateHeapStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
   BindingData* data = Realm::GetBindingData<BindingData>(args);
   HeapStatistics s;
   args.GetIsolate()->GetHeapStatistics(&s);
   AliasedFloat64Array& buffer = data->heap_statistics_buffer;
-#define V(index, name, _) buffer[index] = static_cast<double>(s.name());
+#define V(index, name, _) \
+    buffer[index] = RecordReplayDouble("UpdateHeapStatisticsBuffer", \
+                                       static_cast<double>(s.name()));
   HEAP_STATISTICS_PROPERTIES(V)
 #undef V
 }
