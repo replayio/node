@@ -586,15 +586,16 @@ void ValueSerializer::WriteString(DirectHandle<String> string) {
     // replaying due to JIT and other VM behavior. Only write out strings
     // as two bytes to ensure serialized buffers have a consistent size.
     if (recordreplay::IsRecordingOrReplaying("values", "ValueSerializer::WriteString")) {
-      base::ScopedVector<base::uc16> new_chars(chars.length());
+      base::OwnedVector<base::uc16> new_chars =
+          base::OwnedVector<base::uc16>::New(chars.length());
       for (int i = 0; i < chars.length(); i++)
         new_chars[i] = chars[i];
-      uint32_t byte_length = new_chars.length() * sizeof(base::uc16);
+      uint32_t byte_length = new_chars.size() * sizeof(base::uc16);
       // The existing reading code expects 16-byte strings to be aligned.
       if ((buffer_size_ + 1 + BytesNeededForVarint(byte_length)) & 1)
         WriteTag(SerializationTag::kPadding);
       WriteTag(SerializationTag::kTwoByteString);
-      WriteTwoByteString(new_chars);
+      WriteTwoByteString(new_chars.as_vector());
     } else {
       WriteTag(SerializationTag::kOneByteString);
       WriteOneByteString(chars);
