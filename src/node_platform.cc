@@ -337,14 +337,13 @@ void PerIsolatePlatformData::PostIdleTaskImpl(
   UNREACHABLE();
 }
 
+void PerIsolatePlatformData::PostTaskImpl(std::unique_ptr<Task> task,
+                                          const v8::SourceLocation& location) {
   if (task->IsRecordReplayNonDeterministic() && v8::recordreplay::IsRecordingOrReplaying()) {
     // For now we ignore non-deterministic tasks. This prevents the GC from working.
     return;
   }
   v8::recordreplay::Assert("PerIsolatePlatformData::PostTask");
-
-void PerIsolatePlatformData::PostTaskImpl(std::unique_ptr<Task> task,
-                                          const v8::SourceLocation& location) {
   // The task can be posted from any V8 background worker thread, even when
   // the foreground task runner is being cleaned up by Shutdown(). In that
   // case, make sure we wait until the shutdown is completed (which leads

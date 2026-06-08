@@ -163,18 +163,11 @@ static void GetCPUInfo(const FunctionCallbackInfo<Value>& args) {
   uv_free_cpu_info(cpu_infos, count);
   args.GetReturnValue().Set(Array::New(isolate, result.data(), result.size()));
 }
-  if (MaybeMarkUnavailable(args)) {
-    return;
-  }
-  if (MaybeMarkUnavailable(args)) {
-    return;
-  }
-  if (MaybeMarkUnavailable(args)) {
-    return;
-  }
-
 
 static void GetFreeMemory(const FunctionCallbackInfo<Value>& args) {
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
   double amount = static_cast<double>(uv_get_free_memory());
   args.GetReturnValue().Set(amount);
 }
@@ -188,6 +181,9 @@ static v8::CFunction fast_get_free_memory(
     v8::CFunction::Make(FastGetFreeMemory));
 
 static void GetTotalMemory(const FunctionCallbackInfo<Value>& args) {
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
   double amount = static_cast<double>(uv_get_total_memory());
   args.GetReturnValue().Set(amount);
 }
@@ -201,6 +197,9 @@ static v8::CFunction fast_get_total_memory(
     v8::CFunction::Make(FastGetTotalMemory));
 
 static void GetUptime(const FunctionCallbackInfo<Value>& args) {
+  if (MaybeMarkUnavailable(args)) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   double uptime;
   int err = uv_uptime(&uptime);
