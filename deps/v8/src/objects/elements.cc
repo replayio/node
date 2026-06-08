@@ -1453,7 +1453,7 @@ class ElementsAccessorBase : public InternalElementsAccessor {
       // No space for indices.
       // NOTE: We can return |keys| here because it was a temp allocated object
       // when it was passed in.
-      return keys;
+      return indirect_handle(keys, isolate);  // DirectHandle -> MaybeHandle
     }
     // The page size may cap how many element indices fit alongside the property
     // keys; never collect more indices than there is room for.
