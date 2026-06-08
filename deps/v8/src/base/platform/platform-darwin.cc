@@ -50,9 +50,11 @@
 namespace v8 {
 namespace base {
 
-// Defined in v8_base (api.cc); declared weak so libbase-only build tools
-// (torque/mksnapshot) link with it resolving to null (they never record).
-extern "C" V8_WEAK bool V8RecordReplayIsARM();
+// Weak DEFINITION (not just a declaration): a weak undefined reference links on
+// ELF but not on macOS Mach-O ('symbol not found'). The strong DLLEXPORT
+// definition in v8_base (api.cc) overrides this for libv8; the libbase-only build
+// tools (torque/mksnapshot) get this false stub (they never record).
+extern "C" V8_WEAK bool V8RecordReplayIsARM() { return false; }
 
 namespace {
 
@@ -121,7 +123,7 @@ void OS::AdjustSchedulingParams() {
   // recordreplay::IsARMRecording() lives in v8_base (api.cc), which the
   // libbase-only build tools (torque/mksnapshot) don't link; reference the C ABI
   // weakly so those tools resolve it to null (a build tool never records).
-  if (V8RecordReplayIsARM && V8RecordReplayIsARM())
+  if (V8RecordReplayIsARM())
     return;
 
   {
