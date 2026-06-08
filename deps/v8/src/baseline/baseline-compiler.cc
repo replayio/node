@@ -2728,35 +2728,35 @@ void BaselineCompiler::VisitRecordReplayNotifyActivity() {
 }
 
 void BaselineCompiler::VisitRecordReplayInstrumentation() {
-  SaveAccumulatorScope accumulator_scope(&basm_);
-  uint32_t index = Index(0);
+  SaveAccumulatorScope accumulator_scope(this, &basm_);
+  uint32_t index = Uint(0);
   CallRuntime(Runtime::kRecordReplayInstrumentation,
               __ FunctionOperand(), Smi::FromInt(index));
 }
 
 void BaselineCompiler::VisitRecordReplayInstrumentationGenerator() {
-  SaveAccumulatorScope accumulator_scope(&basm_);
-  uint32_t index = Index(0);
+  SaveAccumulatorScope accumulator_scope(this, &basm_);
+  uint32_t index = Uint(0);
   CallRuntime(Runtime::kRecordReplayInstrumentationGenerator,
               __ FunctionOperand(), Smi::FromInt(index), RegisterOperand(1));
 }
 
 void BaselineCompiler::VisitRecordReplayInstrumentationReturn() {
-  SaveAccumulatorScope accumulator_scope(&basm_);
-  uint32_t index = Index(0);
+  SaveAccumulatorScope accumulator_scope(this, &basm_);
+  uint32_t index = Uint(0);
   CallRuntime(Runtime::kRecordReplayInstrumentationReturn,
               __ FunctionOperand(), Smi::FromInt(index), RegisterOperand(1));
 }
 
 void BaselineCompiler::VisitRecordReplayAssertValue() {
-  SaveAccumulatorScope accumulator_scope(&basm_);
+  SaveAccumulatorScope accumulator_scope(this, &basm_);
   CallRuntime(Runtime::kRecordReplayAssertValue,
-              __ FunctionOperand(), Smi::FromInt(Index(0)),
+              __ FunctionOperand(), Smi::FromInt(Uint(0)),
               kInterpreterAccumulatorRegister);
 }
 
 void BaselineCompiler::VisitRecordReplayTrackObjectId() {
-  SaveAccumulatorScope accumulator_scope(&basm_);
+  SaveAccumulatorScope accumulator_scope(this, &basm_);
   CallRuntime(Runtime::kRecordReplayTrackObjectId, RegisterOperand(0));
 }
 
