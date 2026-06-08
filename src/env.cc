@@ -829,8 +829,8 @@ Environment::Environment(IsolateData* isolate_data,
       thread_id_(thread_id.id == static_cast<uint64_t>(-1)
                      ? AllocateEnvironmentThreadId().id
                      : thread_id.id),
-      native_immediates_threadsafe_mutex_(/* ordered */ true),
-      thread_name_(thread_name) {
+      thread_name_(thread_name),
+      native_immediates_threadsafe_mutex_(/* ordered */ true) {
   if (!is_main_thread()) {
     // If this is a Worker thread, we can always safely use the parent's
     // Isolate's code cache because of the shared read-only heap.
@@ -1617,10 +1617,6 @@ void Environment::CheckImmediate(uv_check_t* handle) {
                  env->process_object(),
                  env->immediate_callback_function(),
                  0,
-  // https://github.com/RecordReplay/backend/issues/4886
-  v8::recordreplay::Assert("Environment::GetNow");
-
-  v8::recordreplay::RecordReplayBytes("Environment::GetNow", &now, sizeof(now));
                  {0, 0}).ToLocalChecked();
   } while (env->immediate_info()->has_outstanding() && env->can_call_into_js());
 
@@ -1649,6 +1645,9 @@ uint64_t Environment::GetNowUint64() {
 
 Local<Value> Environment::GetNow() {
   uint64_t now = GetNowUint64();
+  // https://github.com/RecordReplay/backend/issues/4886
+  v8::recordreplay::Assert("Environment::GetNow");
+  v8::recordreplay::RecordReplayBytes("Environment::GetNow", &now, sizeof(now));
   if (now <= 0xffffffff)
     return Integer::NewFromUnsigned(isolate(), static_cast<uint32_t>(now));
   return Number::New(isolate(), static_cast<double>(now));
