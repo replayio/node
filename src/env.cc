@@ -829,7 +829,7 @@ Environment::Environment(IsolateData* isolate_data,
       thread_id_(thread_id.id == static_cast<uint64_t>(-1)
                      ? AllocateEnvironmentThreadId().id
                      : thread_id.id),
-      native_immediates_threadsafe_mutex_(/* ordered */ true) {
+      native_immediates_threadsafe_mutex_(/* ordered */ true),
       thread_name_(thread_name) {
   if (!is_main_thread()) {
     // If this is a Worker thread, we can always safely use the parent's
