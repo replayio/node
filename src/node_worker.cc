@@ -273,12 +273,8 @@ class WorkerThreadData {
 
 size_t Worker::NearHeapLimit(void* data, size_t current_heap_limit,
                              size_t initial_heap_limit) {
-  // We can't force workers to exit at non-deterministic points when
-  // recording/replaying.
-  if (!v8::recordreplay::IsRecordingOrReplaying()) {
-    Worker* worker = static_cast<Worker*>(data);
-    worker->Exit(1, "ERR_WORKER_OUT_OF_MEMORY", "JS heap out of memory");
-  }
+  Worker* worker = static_cast<Worker*>(data);
+  // Give the current GC some extra leeway to let it finish rather than
   // crash hard. We are not going to perform further allocations anyway.
   constexpr size_t kExtraHeapAllowance = 16 * 1024 * 1024;
   size_t new_limit = current_heap_limit + kExtraHeapAllowance;
@@ -291,10 +287,14 @@ size_t Worker::NearHeapLimit(void* data, size_t current_heap_limit,
           "new_limit=%" PRIu64 "\n",
           static_cast<uint64_t>(new_limit));
   }
+  // We can't force workers to exit at non-deterministic points when
+  // recording/replaying.
   // TODO(joyeecheung): maybe this should be kV8FatalError instead?
-  worker->Exit(ExitCode::kGenericUserError,
-               "ERR_WORKER_OUT_OF_MEMORY",
-               "JS heap out of memory");
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    worker->Exit(ExitCode::kGenericUserError,
+                 "ERR_WORKER_OUT_OF_MEMORY",
+                 "JS heap out of memory");
+  }
   return new_limit;
 }
 
