@@ -4429,37 +4429,37 @@ MaybeDirectHandle<JSFunction> Compiler::GetWrappedFunction(
   // replace the result.
   MaybeHandle<String> new_source = ReplayingReplaceScriptContents(isolate, source);
   if (!new_source.is_null()) {
-    MaybeHandle<ScopeInfo> maybe_outer_scope_info;
-    if (!context->IsNativeContext()) {
-      maybe_outer_scope_info = handle(context->scope_info(), isolate);
-    }
-
+    // Mirror the wrapped-function compile path above, but for the replaced
+    // source, and replace |result| with the recompiled SharedFunctionInfo.
     UnoptimizedCompileFlags flags = UnoptimizedCompileFlags::ForToplevelCompile(
-        isolate, true, language_mode, REPLMode::kNo, ScriptType::kClassic,
-        v8_flags.lazy_eval, script->id());
-    flags.set_is_eval(true);
-    flags.set_parsing_while_debugging(parsing_while_debugging);
-    DCHECK(!flags.is_module());
-    flags.set_parse_restriction(restriction);
+        isolate, true, language_mode, script_details.repl_mode,
+        ScriptType::kClassic, v8_flags.lazy);
+    flags.set_is_eval(true);  // Use an eval scope as declaration scope.
+    flags.set_function_syntax_kind(FunctionSyntaxKind::kWrapped);
+    flags.set_collect_source_positions(true);
+    flags.set_is_eager(compile_options & ScriptCompiler::kEagerCompile);
 
     SetRecordReplayFlags(flags, "");
 
     UnoptimizedCompileState compile_state;
     ReusableUnoptimizedCompileState reusable_state(isolate);
     ParseInfo parse_info(isolate, flags, &compile_state, &reusable_state);
-    parse_info.set_parameters_end_pos(parameters_end_pos);
 
-    Handle<Script> new_script = parse_info.CreateScript(
-        isolate, new_source.ToHandleChecked(), kNullMaybeHandle,
-        OriginOptionsForEval(outer_info->script(), parsing_while_debugging));
+    MaybeDirectHandle<ScopeInfo> maybe_outer_scope_info;
+    if (!IsNativeContext(*context)) {
+      maybe_outer_scope_info = direct_handle(context->scope_info(), isolate);
+    }
+    Handle<Script> new_script = NewScript(
+        isolate, &parse_info, new_source.ToHandleChecked(), script_details,
+        NOT_NATIVES_CODE);
 
-    Handle<SharedFunctionInfo> new_shared_info =
-      v8::internal::CompileToplevel(&parse_info, new_script,
-                                    maybe_outer_scope_info, isolate,
-                                    &is_compiled_scope)
-        .ToHandleChecked();
+    DirectHandle<SharedFunctionInfo> new_shared_info =
+        v8::internal::CompileToplevel(&parse_info, new_script,
+                                      maybe_outer_scope_info, isolate,
+                                      &is_compiled_scope)
+            .ToHandleChecked();
 
-    result = Factory::JSFunctionBuilder{isolate, new_shared_info, context}.Build();
+    result = new_shared_info;
   }
 
   return Factory::JSFunctionBuilder{isolate, result, context}
