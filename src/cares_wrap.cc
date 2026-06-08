@@ -1888,10 +1888,9 @@ void AfterGetAddrInfo(uv_getaddrinfo_t* req, int status, struct addrinfo* res) {
 
 void AfterGetNameInfo(uv_getnameinfo_t* req,
                       int status,
-  v8::recordreplay::Assert("AfterGetNameInfo");
-
                       const char* hostname,
                       const char* service) {
+  v8::recordreplay::Assert("AfterGetNameInfo");
   BaseObjectPtr<GetNameInfoReqWrap> req_wrap{
       static_cast<GetNameInfoReqWrap*>(req->data)};
   Environment* env = req_wrap->env();

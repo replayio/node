@@ -1411,9 +1411,8 @@ void Environment::RunAndClearInterrupts() {
     }
     DebugSealHandleScope seal_handle_scope(isolate());
 
+    v8::recordreplay::Assert("Environment::RunAndClearNativeImmediates");
     while (auto head = queue.Shift())
-  v8::recordreplay::Assert("Environment::RunAndClearNativeImmediates");
-
       head->Call(this);
   }
 }
