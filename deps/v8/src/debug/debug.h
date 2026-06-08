@@ -534,6 +534,11 @@ class V8_EXPORT_PRIVATE Debug {
                    bool is_stack_overflow = false);
 
   void ProcessCompileEvent(bool has_compile_error, DirectHandle<Script> script);
+  // Replay: the original ProcessCompileEvent body. ProcessCompileEvent wraps
+  // this and additionally registers the script with the recorder, so that
+  // registration is not skipped by this method's early returns.
+  void DoProcessCompileEvent(bool has_compile_error,
+                             DirectHandle<Script> script);
 
   // Find the closest source position for a break point for a given position.
   int FindBreakablePosition(Handle<DebugInfo> debug_info, int source_position);

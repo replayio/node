@@ -207,8 +207,8 @@ void PendingCompilationErrorHandler::ThrowPendingError(
 
   if (recordreplay::IsReplaying()) {
     std::string url;
-    if (!script->name().IsUndefined()) {
-      std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+    if (!IsUndefined(script->name())) {
+      std::unique_ptr<char[]> name = Cast<String>(script->name())->ToCString();
       url = name.get();
     }
 

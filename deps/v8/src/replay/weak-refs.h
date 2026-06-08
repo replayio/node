@@ -12,8 +12,10 @@ namespace replayio {
 
 class ReplayWeakRefPins {
  public:
-  static void Pin(internal::Isolate* isolate, internal::HeapObject target);
-  static void Unpin(internal::Isolate* isolate, internal::HeapObject target);
+  static void Pin(internal::Isolate* isolate,
+                  internal::Tagged<internal::HeapObject> target);
+  static void Unpin(internal::Isolate* isolate,
+                    internal::Tagged<internal::HeapObject> target);
 };
 
 }  // namespace replayio

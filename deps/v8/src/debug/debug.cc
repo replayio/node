@@ -2410,7 +2410,10 @@ void Debug::RemoveBreakInfoAndMaybeFree(DirectHandle<DebugInfo> debug_info) {
   }
 }
 
-void Debug::ProcessCompileEvent(bool has_compile_error, Handle<Script> script) {
+static void RecordReplayRegisterScript(DirectHandle<Script> script);
+
+void Debug::ProcessCompileEvent(bool has_compile_error,
+                                DirectHandle<Script> script) {
   Debug::DoProcessCompileEvent(has_compile_error, script);
   if (!has_compile_error && recordreplay::IsRecordingOrReplaying("register-scripts") && IsMainThread()) {
     RecordReplayRegisterScript(script);
@@ -2821,8 +2824,8 @@ void Debug::OnAfterCompile(DirectHandle<Script> script) {
   ProcessCompileEvent(false, script);
 }
 
-void Debug::ProcessCompileEvent(bool has_compile_error,
-                                DirectHandle<Script> script) {
+void Debug::DoProcessCompileEvent(bool has_compile_error,
+                                  DirectHandle<Script> script) {
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kDebugger);
   // Ignore temporary scripts.
   if (script->id() == Script::kTemporaryScriptId) return;
@@ -3510,7 +3513,7 @@ static ScriptIdMap* gRecordReplayScripts;
 
 static int GetSourceIdProperty(Isolate* isolate, Handle<Object> obj) {
   Handle<Object> sourceIdStr = GetProperty(isolate, obj, "sourceId");
-  std::unique_ptr<char[]> sourceIdText = String::cast(*sourceIdStr).ToCString();
+  std::unique_ptr<char[]> sourceIdText = Cast<String>(*sourceIdStr)->ToCString();
   int rv = atoi(sourceIdText.get());
   recordreplay::Diagnostic("GetSourceIdProperty %s %d", sourceIdText.get(), rv);
   return rv;
@@ -3526,7 +3529,7 @@ MaybeHandle<Script> MaybeGetScript(Isolate* isolate, int script_id) {
 
   Local<v8::Value> scriptValue = iter->second.Get((v8::Isolate*)isolate);
   Handle<Object> scriptObj = Utils::OpenHandle(*scriptValue);
-  Handle<Script> script(Script::cast(*scriptObj), isolate);
+  Handle<Script> script(Cast<Script>(*scriptObj), isolate);
   CHECK(script->id() == script_id);
   return script;
 }
@@ -3557,7 +3560,7 @@ Handle<Object> RecordReplayGetSourceContents(Isolate* isolate, Handle<Object> pa
     padded_source += "\n";
   }
 
-  Handle<String> source(String::cast(script->source()), isolate);
+  Handle<String> source(Cast<String>(script->source()), isolate);
   padded_source += source->ToCString().get();
 
   Handle<JSObject> obj = NewPlainObject(isolate);
@@ -3569,15 +3572,15 @@ Handle<Object> RecordReplayGetSourceContents(Isolate* isolate, Handle<Object> pa
 static void DecodeLocationProperty(Isolate* isolate, Handle<Object> params,
                                    const char* property, int* line, int* column) {
   Handle<Object> location = GetProperty(isolate, params, property);
-  if (location->IsUndefined()) {
+  if (IsUndefined(*location)) {
     return;
   }
 
   Handle<Object> lineProperty = GetProperty(isolate, location, "line");
-  *line = lineProperty->Number();
+  *line = Object::NumberValue(*lineProperty);
 
   Handle<Object> columnProperty = GetProperty(isolate, location, "column");
-  *column = columnProperty->Number();
+  *column = Object::NumberValue(*columnProperty);
 }
 
 static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
@@ -3589,10 +3592,10 @@ static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
     std::vector<Handle<SharedFunctionInfo>> candidates;
     std::vector<IsCompiledScope> compiled_scopes;
     SharedFunctionInfo::ScriptIterator iterator(isolate, *script);
-    for (SharedFunctionInfo info = iterator.Next(); !info.is_null();
+    for (Tagged<SharedFunctionInfo> info = iterator.Next(); !info.is_null();
          info = iterator.Next()) {
-      if (!info.IsSubjectToDebugging()) continue;
-      if (!info.is_compiled() && !info.allows_lazy_compilation()) continue;
+      if (!info->IsSubjectToDebugging()) continue;
+      if (!info->is_compiled() && !info->allows_lazy_compilation()) continue;
       candidates.push_back(i::handle(info, isolate));
     }
 
@@ -3804,17 +3807,17 @@ static Handle<Object> RecordReplayGetPossibleBreakpoints(Isolate* isolate,
   return rv;
 }
 
-static SharedFunctionInfo GetSharedFunctionInfoById(Isolate* isolate,
+static Tagged<SharedFunctionInfo> GetSharedFunctionInfoById(Isolate* isolate,
                                                     Handle<Script> script,
                                                     int startPosition) {
   SharedFunctionInfo::ScriptIterator iterator(isolate, *script);
-  for (SharedFunctionInfo info = iterator.Next(); !info.is_null();
+  for (Tagged<SharedFunctionInfo> info = iterator.Next(); !info.is_null();
        info = iterator.Next()) {
-    if (info.StartPosition() == startPosition) {
+    if (info->StartPosition() == startPosition) {
       return info;
     }
   }
-  SharedFunctionInfo empty;
+  Tagged<SharedFunctionInfo> empty;
   return empty;
 }
 
@@ -3828,7 +3831,7 @@ static void ParseRecordReplayFunctionIdFromParams(Isolate* isolate,
                                                   int* source_position) {
   Handle<Object> function_id_raw = GetProperty(isolate, params, "functionId");
   std::unique_ptr<char[]> function_id_chars =
-      String::cast(*function_id_raw).ToCString();
+      Cast<String>(*function_id_raw)->ToCString();
   *function_id = function_id_chars.get();
   ParseRecordReplayFunctionId(*function_id, script_id, source_position);
 }
@@ -3848,24 +3851,24 @@ v8::Local<v8::Object> RecordReplayGetBytecode(v8::Isolate* isolate_,
     Handle<Script> script = maybe_script.ToHandleChecked();
     SetProperty(isolate, rv, "sourceId", script_id);
 
-    SharedFunctionInfo info =
+    Tagged<SharedFunctionInfo> info =
         GetSharedFunctionInfoById(isolate, script, function_source_position);
     if (!info.is_null()) {
-      SetProperty(isolate, rv, "name", SharedFunctionInfo::DebugName(handle(info, isolate)));
-      SetProperty(isolate, rv, "debuggable", info.IsSubjectToDebugging());
-      SetProperty(isolate, rv, "compiled", info.is_compiled());
-      SetProperty(isolate, rv, "hasBytecode", info.HasBytecodeArray());
+      SetProperty(isolate, rv, "name", SharedFunctionInfo::DebugName(isolate, handle(info, isolate)));
+      SetProperty(isolate, rv, "debuggable", info->IsSubjectToDebugging());
+      SetProperty(isolate, rv, "compiled", info->is_compiled());
+      SetProperty(isolate, rv, "hasBytecode", info->HasBytecodeArray());
 
-      if (info.IsSubjectToDebugging() && info.is_compiled() &&
-          info.HasBytecodeArray()) {
+      if (info->IsSubjectToDebugging() && info->is_compiled() &&
+          info->HasBytecodeArray()) {
         // Get Bytecode.
         // (based on InterpreterCompilationJob::DoFinalizeJobImpl)
-        BytecodeArray bytecode = info.GetBytecodeArray(isolate);
+        Tagged<BytecodeArray> bytecode = info->GetBytecodeArray(isolate);
         std::ostringstream bytecodeResult;
-        bytecode.Disassemble(bytecodeResult);
+        bytecode->Disassemble(bytecodeResult);
 
         SetProperty(isolate, rv, "bytecode", bytecodeResult.str().c_str());
-        SetProperty(isolate, rv, "bytecodeLength", bytecode.length());
+        SetProperty(isolate, rv, "bytecodeLength", bytecode->length());
       }
     }
   }
@@ -3875,11 +3878,11 @@ v8::Local<v8::Object> RecordReplayGetBytecode(v8::Isolate* isolate_,
 
 extern void RecordReplayAddPossibleBreakpoint(int line, int column, const char* function_id, int function_index);
 
-static void EnsureIsolateContext(Isolate* isolate, base::Optional<SaveAndSwitchContext>& ssc);
+static void EnsureIsolateContext(Isolate* isolate, std::optional<SaveAndSwitchContext>& ssc);
 
 void RecordReplayGetPossibleBreakpointsCallback(const char* script_id_str) {
   Isolate* isolate = Isolate::Current();
-  base::Optional<SaveAndSwitchContext> ssc;
+  std::optional<SaveAndSwitchContext> ssc;
   EnsureIsolateContext(isolate, ssc);
 
   HandleScope scope(isolate);
@@ -3913,8 +3916,8 @@ Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
                                                            Handle<Object> params) {
   Handle<Object> location = GetProperty(isolate, params, "location");
   int sourceId = GetSourceIdProperty(isolate, location);
-  int line = GetProperty(isolate, location, "line")->Number();
-  int column = GetProperty(isolate, location, "column")->Number();
+  int line = Object::NumberValue(*GetProperty(isolate, location, "line"));
+  int column = Object::NumberValue(*GetProperty(isolate, location, "column"));
 
   std::string key = BreakpointKey(sourceId, line, column);
   if (!gBreakpoints) {
@@ -3938,7 +3941,7 @@ Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
   return rv;
 }
 
-static Handle<String> GetProtocolSourceId(Isolate* isolate, Handle<Script> script) {
+static Handle<String> GetProtocolSourceId(Isolate* isolate, DirectHandle<Script> script) {
   std::ostringstream os;
   os << script->id();
   return CStringToHandle(isolate, os.str().c_str());
@@ -3956,8 +3959,8 @@ static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(
   // The offset may or may not be present. If the offset is present, use it as the
   // instrumentation site to get the source position.
   int line = 0, column = 0;
-  if (offset_raw->IsNumber()) {
-    int bytecode_offset = offset_raw->Number();
+  if (IsNumber(*offset_raw)) {
+    int bytecode_offset = Object::NumberValue(*offset_raw);
 
     std::string key = BreakpointPositionKey(function_id, bytecode_offset);
     if (!gBreakpointPositions) {
@@ -4001,7 +4004,7 @@ static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(
   return rv;
 }
 
-bool RecordReplayHasRegisteredScript(Script script);
+bool RecordReplayHasRegisteredScript(Tagged<Script> script);
 
 static Handle<Object> RecordReplayCountStackFrames(Isolate* isolate,
                                                    Handle<Object> params) {
@@ -4011,11 +4014,11 @@ static Handle<Object> RecordReplayCountStackFrames(Isolate* isolate,
   size_t count = 0;
   for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
     StackFrame* frame = it.frame();
-    if (!frame->is_java_script()) {
+    if (!frame->is_javascript()) {
       continue;
     }
-    std::vector<FrameSummary> frames;
-    CommonFrame::cast(frame)->Summarize(&frames);
+    FrameSummaries summaries = CommonFrame::cast(frame)->Summarize();
+    auto& frames = summaries.frames;
 
     // We don't strictly need to iterate the frames in reverse order, but it
     // helps when logging the stack contents for debugging.
@@ -4031,7 +4034,7 @@ static Handle<Object> RecordReplayCountStackFrames(Isolate* isolate,
         continue;
       }
 
-      Handle<Script> script(Script::cast(shared->script()), isolate);
+      Handle<Script> script(Cast<Script>(shared->script()), isolate);
       if (script->id() && RecordReplayHasRegisteredScript(*script)) {
         count++;
       }
@@ -4111,7 +4114,7 @@ extern "C" void V8RecordReplayHTMLParseAddData(void* token, const char* text) {
 
 static Handle<Object> RecordReplayGetHTMLSource(Isolate* isolate, Handle<Object> params) {
   Handle<Object> url_raw = GetProperty(isolate, params, "url");
-  std::unique_ptr<char[]> url_chars = String::cast(*url_raw).ToCString();
+  std::unique_ptr<char[]> url_chars = Cast<String>(*url_raw)->ToCString();
 
   std::string contents;
   if (gHTMLParses) {
@@ -4154,19 +4157,19 @@ extern bool RecordReplayHasDefaultContext();
 typedef std::unordered_set<int> ScriptIdSet;
 static ScriptIdSet* gRegisteredScripts;
 
-bool RecordReplayHasRegisteredScript(Script script) {
+bool RecordReplayHasRegisteredScript(Tagged<Script> script) {
   return IsMainThread() &&
     gRegisteredScripts &&
-    gRegisteredScripts->find(script.id()) != gRegisteredScripts->end();
+    gRegisteredScripts->find(script->id()) != gRegisteredScripts->end();
 }
 
 bool RecordReplayIsDivergentUserJSWithoutPause(
     const SharedFunctionInfo& shared) {
   return recordreplay::AreEventsDisallowed() &&
          !recordreplay::HasDivergedFromRecording() &&
-         shared.script().IsScript() &&
+         IsScript(shared.script()) &&
          RecordReplayHasRegisteredScript(
-             Script::cast(shared.script()));
+             Cast<Script>(shared.script()));
 }
 
 typedef std::vector<std::pair<Eternal<Value>*, bool>> NewScriptHandlerVector;
@@ -4188,7 +4191,7 @@ struct AutoMarkReplayCode {
 
 } // anonymous namespace
 
-static void RecordReplayRegisterScript(Handle<Script> script) {
+static void RecordReplayRegisterScript(DirectHandle<Script> script) {
   CHECK(IsMainThread());
 
   if (!gRecordReplayScripts) {
@@ -4210,9 +4213,9 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
   }
 
   Handle<String> idStr = GetProtocolSourceId(isolate, script);
-  std::unique_ptr<char[]> id = String::cast(*idStr).ToCString();
+  std::unique_ptr<char[]> id = Cast<String>(*idStr)->ToCString();
 
-  if (script->type() == Script::TYPE_WASM) {
+  if (script->type() == Script::Type::kWasm) {
     return;
   }
 
@@ -4221,8 +4224,8 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
   }
 
   std::string url;
-  if (!script->name().IsUndefined()) {
-    std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+  if (!IsUndefined(script->name())) {
+    std::unique_ptr<char[]> name = Cast<String>(script->name())->ToCString();
     url = name.get();
   }
 
@@ -4263,7 +4266,7 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
       auto disallowEvents = entry.second;
 
       AutoMarkReplayCode amrc;
-      base::Optional<replayio::AutoDisallowEvents> disallow;
+      std::optional<replayio::AutoDisallowEvents> disallow;
       if (disallowEvents) {
         disallow.emplace("RecordReplayRegisterScript");
       }
@@ -4311,7 +4314,7 @@ static int gPauseContextGroupId = 0;
 
 // Make sure that the isolate has a context by switching to the default
 // context if necessary.
-static void EnsureIsolateContext(Isolate* isolate, base::Optional<SaveAndSwitchContext>& ssc) {
+static void EnsureIsolateContext(Isolate* isolate, std::optional<SaveAndSwitchContext>& ssc) {
   if (isolate->context().is_null()) {
     Local<v8::Context> v8_context;
     V8RecordReplayGetDefaultContext((v8::Isolate*)isolate, &v8_context);
@@ -4328,7 +4331,7 @@ char* CommandCallback(const char* command, const char* params) {
   replayio::AutoDisallowEvents disallow("CommandCallback");
 
   Isolate* isolate = Isolate::Current();
-  base::Optional<SaveAndSwitchContext> ssc;
+  std::optional<SaveAndSwitchContext> ssc;
   EnsureIsolateContext(isolate, ssc);
 
   HandleScope scope(isolate);
@@ -4359,7 +4362,7 @@ char* CommandCallback(const char* command, const char* params) {
   Handle<Object> undefined = isolate->factory()->undefined_value();
   Handle<String> paramsStr = CStringToHandle(isolate, params);
 
-  MaybeHandle<Object> maybeParams = JsonParser<uint8_t>::Parse(isolate, paramsStr, undefined);
+  MaybeHandle<Object> maybeParams = JsonParser<uint8_t>::Parse(isolate, paramsStr, undefined, std::nullopt);
   if (maybeParams.is_null()) {
     recordreplay::Diagnostic("Error: CommandCallback Parse %s failed", params);
     IMMEDIATE_CRASH();
@@ -4392,8 +4395,11 @@ char* CommandCallback(const char* command, const char* params) {
   }
 
   Handle<Object> result = rv.ToHandleChecked();
-  Handle<Object> rvStr = JsonStringify(isolate, result, undefined, undefined).ToHandleChecked();
-  std::unique_ptr<char[]> rvCStr = String::cast(*rvStr).ToCString();
+  DirectHandle<Object> rvStr =
+      JsonStringify(isolate, Cast<JSAny>(result), Cast<JSAny>(undefined),
+                    undefined)
+          .ToHandleChecked();
+  std::unique_ptr<char[]> rvCStr = Cast<String>(*rvStr)->ToCString();
 
   if (startProgressCounter < *gProgressCounter && !recordreplay::HasDivergedFromRecording()) {
     // [RUN-1988] Our command handler incremented the PC by accidentally calling
@@ -4419,7 +4425,7 @@ void ClearPauseDataCallback() {
   }
 
   Isolate* isolate = Isolate::Current();
-  base::Optional<SaveAndSwitchContext> ssc;
+  std::optional<SaveAndSwitchContext> ssc;
   EnsureIsolateContext(isolate, ssc);
 
   HandleScope scope(isolate);
@@ -4504,10 +4510,10 @@ int RecordReplayObjectId(v8::Isolate* v8_isolate, v8::Local<v8::Context> cx,
   if (gRecordReplayObjectIds) {
     for (const auto& entry : *gRecordReplayObjectIds) {
       Local<v8::Value> object_ids_val = entry.object_ids_.Get(v8_isolate);
-      Handle<JSWeakMap> object_ids = Handle<JSWeakMap>::cast(Utils::OpenHandle(*object_ids_val));
+      Handle<JSWeakMap> object_ids = Cast<JSWeakMap>(Utils::OpenHandle(*object_ids_val));
 
-      Handle<Object> existing(EphemeronHashTable::cast(object_ids->table()).Lookup(object), isolate);
-      if (!existing->IsTheHole(isolate)) {
+      Handle<Object> existing(Cast<EphemeronHashTable>(object_ids->table())->Lookup(object), isolate);
+      if (!IsTheHole(*existing)) {
         v8::Local<v8::Value> id_value = v8::Utils::ToLocal(existing);
         if (id_value->IsInt32()) {
           int id = id_value.As<v8::Int32>()->Value();
@@ -4532,10 +4538,10 @@ int RecordReplayObjectId(v8::Isolate* v8_isolate, v8::Local<v8::Context> cx,
 
   Local<Value> id_value = v8::Integer::New(v8_isolate, id);
 
-  int32_t hash = object->GetOrCreateHash(isolate).value();
+  int32_t hash = Object::GetOrCreateHash(*object, isolate).value();
 
   Local<v8::Value> object_ids_val = GetObjectIdMapForContext(v8_isolate, cx);
-  Handle<JSWeakMap> object_ids = Handle<JSWeakMap>::cast(Utils::OpenHandle(*object_ids_val));
+  Handle<JSWeakMap> object_ids = Cast<JSWeakMap>(Utils::OpenHandle(*object_ids_val));
   JSWeakCollection::Set(object_ids, object, Utils::OpenHandle(*id_value), hash);
 
   return id;
@@ -4609,8 +4615,8 @@ static std::string ToReadableString(const char* str) {
 // Get a string describing a value which can be used in assertions.
 // Only basic information about the value is obtained, to keep things fast.
 std::string RecordReplayBasicValueContents(Handle<Object> value) {
-  if (value->IsNumber()) {
-    double num = value->Number();
+  if (IsNumber(*value)) {
+    double num = Object::NumberValue(*value);
     if (std::isnan(num)) {
       return "NaN";
     }
@@ -4621,35 +4627,35 @@ std::string RecordReplayBasicValueContents(Handle<Object> value) {
     return StringPrintf("Number %d %llu", num2, *(uint64_t*)&num);
   }
 
-  if (value->IsBoolean()) {
-    return StringPrintf("Boolean %d", value->IsTrue());
+  if (IsBoolean(*value)) {
+    return StringPrintf("Boolean %d", IsTrue(*value));
   }
 
-  if (value->IsUndefined()) {
+  if (IsUndefined(*value)) {
     return "Undefined";
   }
 
-  if (value->IsNull()) {
+  if (IsNull(*value)) {
     return "Null";
   }
 
-  if (value->IsString()) {
-    String str = String::cast(*value);
-    if (str.length() <= 200) {
-      std::unique_ptr<char[]> name = str.ToCString();
+  if (IsString(*value)) {
+    Tagged<String> str = Cast<String>(*value);
+    if (str->length() <= 200) {
+      std::unique_ptr<char[]> name = str->ToCString();
       std::string readable_name = ToReadableString(name.get());
       return StringPrintf("String %s", readable_name.c_str());
     }
-    return StringPrintf("LongString %d", str.length());
+    return StringPrintf("LongString %d", str->length());
   }
 
-  if (value->IsJSObject()) {
+  if (IsJSObject(*value)) {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::Local<v8::Context> cx = isolate->GetCurrentContext();
     int object_id = RecordReplayObjectId(isolate, cx, v8::Utils::ToLocal(value),
                                          /* allow_create */ true);
 
-    InstanceType type = JSObject::cast(*value).map().instance_type();
+    InstanceType type = Cast<JSObject>(*value)->map()->instance_type();
     const char* typeStr;
     switch (type) {
 #define STRINGIFY_TYPE(TYPE) case TYPE: typeStr = #TYPE; break;
@@ -4659,8 +4665,8 @@ std::string RecordReplayBasicValueContents(Handle<Object> value) {
       typeStr = "<unknown>";
     }
     if (!strcmp(typeStr, "JS_DATE_TYPE")) {
-      JSDate date = JSDate::cast(*value);
-      double time = date.value().Number();
+      Tagged<JSDate> date = Cast<JSDate>(*value);
+      double time = date->value();
       return StringPrintf("Date %d %.2f", object_id, time);
     }
     if (!strcmp(typeStr, "JS_TYPED_ARRAY_TYPE")) {
@@ -4674,7 +4680,7 @@ std::string RecordReplayBasicValueContents(Handle<Object> value) {
     return StringPrintf("Object %d %s", object_id, typeStr);
   }
 
-  if (value->IsJSProxy()) {
+  if (IsJSProxy(*value)) {
     return "Proxy";
   }
 
@@ -4768,7 +4774,7 @@ void RecordReplayOnPromiseHook(Isolate* isolate, PromiseHookType type,
       std::string new_node_str = StringPrintf("{\"kind\":\"newPromise\",\"persistentId\":%d}",
                                                data.persistent_id);
       data.new_node_id = recordreplay::NewDependencyGraphNode(new_node_str.c_str());
-      if (!parent->IsUndefined()) {
+      if (!IsUndefined(*parent)) {
         PromiseDependencyGraphData& parent_data =
           GetOrCreatePromiseDependencyGraphData(isolate, parent);
         if (parent_data.new_node_id) {

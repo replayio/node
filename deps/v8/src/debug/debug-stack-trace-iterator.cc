@@ -45,7 +45,7 @@ DebugStackTraceIterator::~DebugStackTraceIterator() = default;
 
 bool DebugStackTraceIterator::Done() const { return iterator_.done(); }
 
-extern bool RecordReplayHasRegisteredScript(Script script);
+extern bool RecordReplayHasRegisteredScript(Tagged<Script> script);
 
 // When recording/replaying, frames from scripts that weren't reported to the
 // recorder are ignored when iterating stack traces.
@@ -59,7 +59,10 @@ static bool RecordReplayIgnoreFrame(const FrameSummary& summary) {
   }
 
   Handle<Object> script = summary.AsJavaScript().script();
-  return !RecordReplayHasRegisteredScript(Script::cast(*script));
+  if (!i::IsScript(*script)) {
+    return true;
+  }
+  return !RecordReplayHasRegisteredScript(*i::Cast<i::Script>(script));
 }
 
 void DebugStackTraceIterator::Advance() {
@@ -265,7 +268,7 @@ void DebugStackTraceIterator::UpdateInlineFrameIndexAndResumableFnOnStack() {
 
   if (resumable_fn_on_stack_) return;
 
-  if (recordreplay::IsRecordingOrReplaying() && !frames.size()) {
+  if (recordreplay::IsRecordingOrReplaying() && !summaries.size()) {
     recordreplay::Warning("[RUN-1920] Frame summary was empty.");
     return;
   }
@@ -301,7 +304,7 @@ v8::MaybeLocal<v8::Value> DebugStackTraceIterator::Evaluate(
 MaybeLocal<v8::Value> DebugStackTraceIterator::GetFrameArguments() {
   i::SafeForInterruptsScope safe_for_interrupt_scope(isolate_);
   StackFrameId frame_id = iterator_.frame()->id();
-  StackTraceFrameIterator it(isolate_, frame_id);
+  DebuggableStackFrameIterator it(isolate_, frame_id);
   if (it.is_javascript()) {
     JavaScriptFrame* frame = it.javascript_frame();
     Handle<JSObject> args = Accessors::FunctionGetArguments(frame, 0);
@@ -311,7 +314,7 @@ MaybeLocal<v8::Value> DebugStackTraceIterator::GetFrameArguments() {
     if (maybe_result.ToHandle(&value)) {
       return Utils::ToLocal(value);
     }
-    isolate_->OptionalRescheduleException(false);
+    if (isolate_->has_exception()) isolate_->clear_exception();
   }
 
   return v8::MaybeLocal<v8::Value>();

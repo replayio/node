@@ -23,6 +23,14 @@ extern "C" int V8RecordReplayDependencyGraphExecutionNode();
 namespace v8 {
 namespace internal {
 
+// record/replay: defined in other TUs (gProgressCounter & the dependency-graph
+// flag in api.cc; the divergent-JS predicate in debug.cc). Declared here so the
+// instrumentation in Invoke() below resolves them (mirrors runtime-debug.cc).
+extern uint64_t* gProgressCounter;
+extern bool gRecordReplayEnableDependencyGraph;
+extern bool RecordReplayIsDivergentUserJSWithoutPause(
+    const SharedFunctionInfo& shared);
+
 namespace {
 
 DirectHandle<Object> NormalizeReceiver(Isolate* isolate,
@@ -273,19 +281,19 @@ MaybeDirectHandle<Context> NewScriptContext(
 }
 
 // Get a description of a function's location for logging etc.
-static std::string GetFunctionLocationInfo(Isolate* isolate, Handle<JSFunction> function) {
-  if (!function->shared().script().IsScript()) {
+static std::string GetFunctionLocationInfo(Isolate* isolate, DirectHandle<JSFunction> function) {
+  if (!IsScript(function->shared()->script())) {
     return "<not-script>";
   }
 
-  Handle<Script> script(Script::cast(function->shared().script()), isolate);
+  DirectHandle<Script> script(Cast<Script>(function->shared()->script()), isolate);
 
   Script::PositionInfo info;
-  Script::GetPositionInfo(script, function->shared().StartPosition(),
+  Script::GetPositionInfo(script, function->shared()->StartPosition(),
                           &info, Script::OffsetFlag::kWithOffset);
 
-  std::string name = script->name().IsString()
-    ? String::cast(script->name()).ToCString().get()
+  std::string name = IsString(script->name())
+    ? Cast<String>(script->name())->ToCString().get()
     : "(anonymous script)";
 
   std::ostringstream os;
@@ -365,7 +373,7 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
     }
 #endif
 
-    if (RecordReplayIsDivergentUserJSWithoutPause(function->shared())) {
+    if (RecordReplayIsDivergentUserJSWithoutPause(*function->shared())) {
       // User JS should not get executed in divergent code paths,
       // unless we have paused.
       // → Print log and prevent execution.
@@ -384,7 +392,7 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
         gRecordReplayEnableDependencyGraph &&
         !recordreplay::AreEventsDisallowed() &&
         V8RecordReplayDependencyGraphExecutionNode() == 0 &&
-        function->shared().script().IsScript()) {
+        IsScript(function->shared()->script())) {
       static bool show_warning = !!getenv("RECORD_REPLAY_WARN_MISSING_EXECUTION");
       if (show_warning) {
         std::string location = GetFunctionLocationInfo(isolate, function);

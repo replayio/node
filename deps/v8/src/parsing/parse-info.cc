@@ -22,7 +22,7 @@
 namespace v8 {
 namespace internal {
 
-extern bool RecordReplayHasRegisteredScript(Script script);
+extern bool RecordReplayHasRegisteredScript(Tagged<Script> script);
 extern bool RecordReplayAssertValues(const std::string& url);
 
 UnoptimizedCompileFlags::UnoptimizedCompileFlags(Isolate* isolate,

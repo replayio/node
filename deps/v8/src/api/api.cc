@@ -3277,7 +3277,11 @@ int Message::ErrorLevel() const {
 
 extern "C" int V8GetMessageRecordReplayBookmark(v8::Local<v8::Message> message) {
   auto self = Utils::OpenHandle(*message);
-  DCHECK_NO_SCRIPT_NO_EXCEPTION(self->GetIsolate());
+  // 15.1: JSMessageObject::GetIsolate() and the DCHECK_NO_SCRIPT_NO_EXCEPTION
+  // macro were removed. The scope below provides the same debug-only
+  // no-script/no-exception guard that the macro used to assert (see the other
+  // Message accessors above).
+  EnterV8NoScriptNoExceptionScope api_scope(i::Isolate::Current());
   return self->record_replay_bookmark();
 }
 
@@ -8611,13 +8615,13 @@ i::DirectHandle<i::JSArray> MapAsArray(i::Isolate* i_isolate,
 
 }  // namespace
 
-Local<Array> Map::AsArray() const {
+Local<Array> Map::AsArray(const v8::KeyIterationParams* params) const {
   auto obj = Utils::OpenDirectHandle(this);
   i::Isolate* i_isolate = i::Isolate::Current();
   ApiRuntimeCallStatsScope rcs_scope(i_isolate, RCCId::kAPI_Map_AsArray);
   EnterV8NoScriptNoExceptionScope api_scope(i_isolate);
   return Utils::ToLocal(
-      MapAsArray(i_isolate, obj->table(), 0, MapAsArrayKind::kEntries));
+      MapAsArray(i_isolate, obj->table(), 0, MapAsArrayKind::kEntries, params));
 }
 
 Local<v8::Set> v8::Set::New(Isolate* v8_isolate) {
@@ -8681,14 +8685,17 @@ Maybe<bool> Set::Delete(Local<Context> context, Local<Value> key) {
 namespace {
 i::DirectHandle<i::JSArray> SetAsArray(i::Isolate* i_isolate,
                                        i::Tagged<i::Object> table_obj,
-                                       int offset, SetAsArrayKind kind) {
+                                       int offset, SetAsArrayKind kind,
+                                       const KeyIterationParams* params =
+                                           KeyIterationParams::Default()) {
   i::Factory* factory = i_isolate->factory();
   i::DirectHandle<i::OrderedHashSet> table(
       i::Cast<i::OrderedHashSet>(table_obj), i_isolate);
   // Elements skipped by |offset| may already be deleted.
   int capacity = table->UsedCapacity();
   const bool collect_key_values = kind == SetAsArrayKind::kEntries;
-  int max_length = (capacity - offset) * (collect_key_values ? 2 : 1);
+  auto page_size = params->PageSize(capacity - offset);
+  int max_length = page_size * (collect_key_values ? 2 : 1);
   if (max_length == 0) return factory->NewJSArray(0);
   i::DirectHandle<i::FixedArray> result = factory->NewFixedArray(max_length);
   uint32_t result_index = 0;
@@ -8702,8 +8709,8 @@ i::DirectHandle<i::JSArray> SetAsArray(i::Isolate* i_isolate,
       if (key == hash_table_hole) continue;
       result->set(result_index++, key);
       if (collect_key_values) result->set(result_index++, key);
-      
-      if (result_index == max_length) break;
+
+      if (*params && result_index == max_length) break;
     }
   }
   DCHECK_GE(max_length, result_index);
@@ -8714,13 +8721,13 @@ i::DirectHandle<i::JSArray> SetAsArray(i::Isolate* i_isolate,
 }
 }  // namespace
 
-Local<Array> Set::AsArray() const {
+Local<Array> Set::AsArray(const v8::KeyIterationParams* params) const {
   auto obj = Utils::OpenDirectHandle(this);
   i::Isolate* i_isolate = i::Isolate::Current();
   ApiRuntimeCallStatsScope rcs_scope(i_isolate, RCCId::kAPI_Set_AsArray);
   EnterV8NoScriptNoExceptionScope api_scope(i_isolate);
   return Utils::ToLocal(
-      SetAsArray(i_isolate, obj->table(), 0, SetAsArrayKind::kValues));
+      SetAsArray(i_isolate, obj->table(), 0, SetAsArrayKind::kValues, params));
 }
 
 MaybeLocal<Promise::Resolver> Promise::Resolver::New(Local<Context> context) {
@@ -11471,17 +11478,18 @@ Maybe<bool> Exception::CaptureStackTrace(Local<Context> context,
   return Just(true);
 }
 
-v8::MaybeLocal<v8::Array> v8::Object::PreviewEntries(bool* is_key_value) {
+v8::MaybeLocal<v8::Array> v8::Object::PreviewEntries(
+    bool* is_key_value, const v8::KeyIterationParams* params) {
   auto object = Utils::OpenDirectHandle(this);
   i::Isolate* i_isolate = i::Isolate::Current();
   if (i_isolate->is_execution_terminating()) return {};
   if (IsMap()) {
     *is_key_value = true;
-    return Map::Cast(this)->AsArray();
+    return Map::Cast(this)->AsArray(params);
   }
   if (IsSet()) {
     *is_key_value = false;
-    return Set::Cast(this)->AsArray();
+    return Set::Cast(this)->AsArray(params);
   }
 
   Isolate* v8_isolate = reinterpret_cast<Isolate*>(i_isolate);
@@ -11507,7 +11515,8 @@ v8::MaybeLocal<v8::Array> v8::Object::PreviewEntries(bool* is_key_value) {
     *is_key_value = kind == SetAsArrayKind::kEntries;
     if (!it->HasMore()) return v8::Array::New(v8_isolate);
     return Utils::ToLocal(
-        SetAsArray(i_isolate, it->table(), i::Smi::ToInt(it->index()), kind));
+        SetAsArray(i_isolate, it->table(), i::Smi::ToInt(it->index()), kind,
+                   params));
   }
   return {};
 }
@@ -12439,7 +12448,7 @@ extern "C" void V8RecordReplayGetCurrentException(MaybeLocal<Value>* exception) 
 }
 
 
-extern bool RecordReplayHasRegisteredScript(Script script);
+extern bool RecordReplayHasRegisteredScript(Tagged<Script> script);
 
 void RecordReplayOnExceptionUnwind(Isolate* isolate) {
   CHECK(gRecordingOrReplaying);
@@ -12451,28 +12460,33 @@ void RecordReplayOnExceptionUnwind(Isolate* isolate) {
 
   HandleScope scope(isolate);
 
-  if (!isolate->has_pending_exception())
+  // 15.1: the pending/scheduled exception split was unified into a single
+  // exception slot. has_pending_exception()/pending_exception() ->
+  // has_exception()/exception(); clear_pending_exception() ->
+  // clear_internal_exception(); set_pending_exception() -> set_exception().
+  if (!isolate->has_exception())
     return;
 
-  Handle<Object> exception(isolate->pending_exception(), isolate);
+  Handle<Object> exception(isolate->exception(), isolate);
   if (!isolate->is_catchable_by_javascript(*exception))
     return;
 
   {
     // Note: Most of this is copied from |ComputeLocation| in messages.cc.
-    JavaScriptFrameIterator it(isolate);
+    // 15.1: JavaScriptFrameIterator -> JavaScriptStackFrameIterator.
+    JavaScriptStackFrameIterator it(isolate);
     if (!it.done()) {
       // Compute the location from the function and the relocation info of the
       // baseline code. For optimized code this will use the deoptimization
       // information to get canonical location information.
-      std::vector<FrameSummary> frames;
-      it.frame()->Summarize(&frames);
-      if (!frames.empty()) { // There might not always be a frame due to RUN-1920.
-        auto& summary = frames.back().AsJavaScript();
+      // 15.1: Summarize() now returns FrameSummaries by value.
+      FrameSummaries summaries = it.frame()->Summarize();
+      if (!summaries.frames.empty()) { // There might not always be a frame due to RUN-1920.
+        auto& summary = summaries.frames.back().AsJavaScript();
         Handle<SharedFunctionInfo> shared(summary.function()->shared(), isolate);
         Handle<Object> script(shared->script(), isolate);
-        if (script->IsScript()) {
-          Handle<Script> casted_script = Handle<Script>::cast(script);
+        if (i::IsScript(*script)) {
+          Handle<Script> casted_script = i::Cast<i::Script>(script);
           if (!RecordReplayHasRegisteredScript(*casted_script)) {
             // Don't repor errors from unregistered.
             return;
@@ -12482,25 +12496,17 @@ void RecordReplayOnExceptionUnwind(Isolate* isolate) {
     }
   }
 
-  isolate->clear_pending_exception();
+  isolate->clear_internal_exception();
   Handle<Object> message(isolate->pending_message(), isolate);
   isolate->clear_pending_message();
-  Handle<Object> scheduledException;
-  if (isolate->has_scheduled_exception()) {
-    scheduledException = Handle<Object>(isolate->scheduled_exception(), isolate);
-    isolate->clear_scheduled_exception();
-  }
   gCurrentException = &exception;
 
   gRecordReplayOnExceptionUnwind();
 
   gCurrentException = nullptr;
-  CHECK(!isolate->has_pending_exception());
-  isolate->set_pending_exception(*exception);
+  CHECK(!isolate->has_exception());
+  isolate->set_exception(*exception);
   isolate->set_pending_message(*message);
-  if (!scheduledException.is_null()) {
-    isolate->set_scheduled_exception(*scheduledException);
-  }
 }
 
 uint64_t* gProgressCounter;
@@ -13824,8 +13830,8 @@ ForEachRecordReplaySymbolVoid(LoadRecordReplaySymbolVoid)
 
   // Disable wasm background compilation.
   if (V8RecordReplayFeatureEnabled("disable-v8-flags-wasm-compilation-tasks", nullptr)) {
-    i::FLAG_wasm_num_compilation_tasks = 0;
-    i::FLAG_wasm_async_compilation = false;
+    i::v8_flags.wasm_num_compilation_tasks = 0;
+    i::v8_flags.wasm_async_compilation = false;
   }
 
   // The baseline JIT's handling of some record/replay opcodes is buggy.
@@ -13840,20 +13846,22 @@ ForEachRecordReplaySymbolVoid(LoadRecordReplaySymbolVoid)
 
   // Disable some GC settings while replaying for causing mysterious crashes.
   if (IsReplaying() || !V8RecordReplayFeatureEnabled("v8-flags-gc", nullptr)) {
-    i::FLAG_concurrent_marking = false;
-    i::FLAG_concurrent_sweeping = false;
-    i::FLAG_incremental_marking_task = false;
-    i::FLAG_parallel_compaction = false;
-    i::FLAG_parallel_marking = false;
-    i::FLAG_parallel_pointer_update = false;
-    i::FLAG_parallel_scavenge = false;
-    i::FLAG_scavenge_task = false;
-    i::FLAG_incremental_marking = false;
+    i::v8_flags.concurrent_marking = false;
+    i::v8_flags.concurrent_sweeping = false;
+    i::v8_flags.incremental_marking_task = false;
+    i::v8_flags.parallel_compaction = false;
+    i::v8_flags.parallel_marking = false;
+    i::v8_flags.parallel_pointer_update = false;
+    i::v8_flags.parallel_scavenge = false;
+    // 15.1: |scavenge_task| was removed; |minor_gc_task| now gates scheduling
+    // of young-generation (scavenge) GC tasks.
+    i::v8_flags.minor_gc_task = false;
+    i::v8_flags.incremental_marking = false;
   }
 
   // For now the compilation cache is only used when recording.
   if (IsReplaying() || !V8RecordReplayFeatureEnabled("v8-flags-compilation-cache", nullptr)) {
-    i::FLAG_compilation_cache = false;
+    i::v8_flags.compilation_cache = false;
   }
 
   // Write out our pid to a file if specified.
@@ -13877,7 +13885,7 @@ extern "C" void V8InitializeNotRecordingOrReplaying() {
   // These flags are necessary to avoid hangs in some situations, for unknown
   // reasons. See https://linear.app/replay/issue/RUN-1071
   internal::v8_flags.sparkplug = false;
-  internal::FLAG_incremental_marking_task = false;
+  internal::v8_flags.incremental_marking_task = false;
 }
 
 extern "C" DLLEXPORT bool V8IsMainThread() {
