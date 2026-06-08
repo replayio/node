@@ -21,6 +21,8 @@
 #include "src/deoptimizer/deoptimizer.h"
 #include "src/execution/execution.h"
 #include "src/execution/frames-inl.h"
+#include "src/json/json-parser.h"
+#include "src/json/json-stringifier.h"
 #include "src/execution/frames.h"
 #include "src/execution/isolate-inl.h"
 #include "src/execution/protectors-inl.h"
@@ -4274,13 +4276,14 @@ static void RecordReplayRegisterScript(DirectHandle<Script> script) {
       Local<v8::Value> handlerValue = handlerEternalValue->Get((v8::Isolate*)isolate);
       Handle<Object> handler = Utils::OpenHandle(*handlerValue);
 
-      Handle<Object> callArgs[3];
+      DirectHandle<Object> callArgs[3];
       callArgs[0] = idStr;
       callArgs[1] = Handle<Object>(script->GetNameOrSourceURL(), isolate);
       callArgs[2] = Handle<Object>(script->source_mapping_url(), isolate);
 
       Handle<Object> undefined = isolate->factory()->undefined_value();
-      MaybeHandle<Object> rv = Execution::Call(isolate, handler, undefined, 3, callArgs);
+      MaybeHandle<Object> rv =
+          Execution::Call(isolate, handler, undefined, base::VectorOf(callArgs));
       CHECK(!rv.is_null());
     }
   }
@@ -4384,10 +4387,10 @@ char* CommandCallback(const char* command, const char* params) {
     Local<v8::Value> callbackValue = gCommandCallback->Get((v8::Isolate*)isolate);
     Handle<Object> callback = Utils::OpenHandle(*callbackValue);
 
-    Handle<Object> callArgs[2];
+    DirectHandle<Object> callArgs[2];
     callArgs[0] = CStringToHandle(isolate, command);
     callArgs[1] = paramsObj;
-    rv = Execution::Call(isolate, callback, undefined, 2, callArgs);
+    rv = Execution::Call(isolate, callback, undefined, base::VectorOf(callArgs));
     if (rv.is_null()) {
       recordreplay::Diagnostic("Error: CommandCallback generic command %s failed", command);
       IMMEDIATE_CRASH();
@@ -4434,7 +4437,7 @@ void ClearPauseDataCallback() {
   Handle<Object> callback = Utils::OpenHandle(*callbackValue);
 
   Handle<Object> undefined = isolate->factory()->undefined_value();
-  MaybeHandle<Object> rv = Execution::Call(isolate, callback, undefined, 0, nullptr);
+  MaybeHandle<Object> rv = Execution::Call(isolate, callback, undefined, {});
   CHECK(!rv.is_null());
 }
 
