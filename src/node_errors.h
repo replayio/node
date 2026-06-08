@@ -250,13 +250,13 @@ ERRORS_WITH_CODE(V)
   V(ERR_PROTO_ACCESS,                                                          \
     "Accessing Object.prototype.__proto__ has been "                           \
     "disallowed with --disable-proto=throw")
-    v8::recordreplay::Assert("ThrowException %s", message);                  \
 
 #define V(code, message)                                                       \
   inline v8::Local<v8::Object> code(v8::Isolate* isolate) {                    \
     return code(isolate, message);                                             \
   }                                                                            \
   inline void THROW_##code(v8::Isolate* isolate) {                             \
+    v8::recordreplay::Assert("ThrowException %s", message);                    \
     isolate->ThrowException(code(isolate, message));                           \
   }                                                                            \
   inline void THROW_##code(Environment* env) { THROW_##code(env->isolate()); }
