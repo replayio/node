@@ -4775,6 +4775,13 @@ Handle<Object> JSPromise::Reject(DirectHandle<JSPromise> promise,
                                  PromiseReaction::kReject);
 }
 
+// record/replay: defined in debug.cc; declared here so the promise-adoption hook
+// relocated into JSPromise::Resolve below can see them (the original decls are
+// later in this file, after the use).
+extern bool RecordReplayShouldCallOnPromiseHook();
+void AddPromiseDependencyGraphAdoption(Isolate* isolate, Handle<Object> promise,
+                                       Handle<Object> adoption);
+
 // https://tc39.es/ecma262/#sec-promise-resolve-functions
 // static
 MaybeHandle<Object> JSPromise::Resolve(DirectHandle<JSPromise> promise,
