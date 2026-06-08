@@ -16,7 +16,42 @@
 #include "internal/thread_once.h"
 #include "internal/to_hex.h"
 
-extern void RecordReplayAssertFromC(const char* aFormat, ...);
+/* Record/replay determinism assert shim, callable from OpenSSL's C code.
+ * Resolves the driver's RecordReplayAssert at runtime via dlsym, so this
+ * object links into both the node binary and standalone OpenSSL tools
+ * (e.g. openssl-cli) and forwards only when the recordreplay runtime is
+ * loaded.  This is the canonical Replay shim; it originally lived in
+ * crypto/rand/rand_unix.c, which moved into providers/ in OpenSSL 3.x, so
+ * the definition is hosted here next to its sole remaining caller. */
+#include <stdarg.h>
+#ifndef _WIN32
+#include <dlfcn.h>
+/* RTLD_DEFAULT is a GNU extension on glibc (needs _GNU_SOURCE); its value
+ * there is NULL.  macOS always defines it.  Fall back defensively so this
+ * compiles even if _GNU_SOURCE didn't reach this translation unit. */
+#ifndef RTLD_DEFAULT
+#define RTLD_DEFAULT ((void *)0)
+#endif
+
+static void (*gRecordReplayAssertFn)(const char*, va_list);
+
+void RecordReplayAssertFromC(const char* aFormat, ...) {
+  if (!gRecordReplayAssertFn) {
+    void* fnptr = dlsym(RTLD_DEFAULT, "RecordReplayAssert");
+    if (!fnptr) {
+      return;
+    }
+    gRecordReplayAssertFn = fnptr;
+  }
+
+  va_list ap;
+  va_start(ap, aFormat);
+  gRecordReplayAssertFn(aFormat, ap);
+  va_end(ap);
+}
+#else
+void RecordReplayAssertFromC(const char* aFormat, ...) { (void) aFormat; }
+#endif
 
 #define DEFAULT_SEPARATOR ':'
 #define CH_ZERO '\0'
