@@ -93,7 +93,11 @@ std::optional<OS::MemoryRange> OS::GetFirstFreeMemoryRangeWithin(
     OS::Address boundary_start, OS::Address boundary_end, size_t minimum_size,
     size_t alignment) {
   // Reading from /proc/self/maps isn't supported when recording/replaying.
-  if (recordreplay::IsRecordingOrReplaying()) return {};
+  // C ABI referenced weakly so libbase-only build tools (torque/mksnapshot) link
+  // (recordreplay::IsRecordingOrReplaying() is defined in v8_base/api.cc).
+  extern "C" V8_WEAK bool V8IsRecordingOrReplaying(const char*, const char*);
+  if (V8IsRecordingOrReplaying && V8IsRecordingOrReplaying(nullptr, nullptr))
+    return {};
 
   std::optional<OS::MemoryRange> result;
   SignalSafeMapsParser parser;
@@ -137,7 +141,10 @@ std::unique_ptr<std::vector<MemoryRegion>> ParseProcSelfMaps(
     FILE* fp, std::function<bool(const MemoryRegion&)> predicate,
     bool early_stopping) {
   // Reading from /proc/self/maps isn't supported when recording/replaying.
-  if (recordreplay::IsRecordingOrReplaying()) return nullptr;
+  // C ABI referenced weakly so libbase-only build tools (torque/mksnapshot) link.
+  extern "C" V8_WEAK bool V8IsRecordingOrReplaying(const char*, const char*);
+  if (V8IsRecordingOrReplaying && V8IsRecordingOrReplaying(nullptr, nullptr))
+    return nullptr;
 
   auto result = std::make_unique<std::vector<MemoryRegion>>();
 

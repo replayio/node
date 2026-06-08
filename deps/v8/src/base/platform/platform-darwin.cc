@@ -114,7 +114,11 @@ TimezoneCache* OS::CreateTimezoneCache() {
 void OS::AdjustSchedulingParams() {
 #if V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_IA32
   // Avoid making system calls that didn't originally happen if we recorded on ARM.
-  if (recordreplay::IsARMRecording())
+  // recordreplay::IsARMRecording() lives in v8_base (api.cc), which the
+  // libbase-only build tools (torque/mksnapshot) don't link; reference the C ABI
+  // weakly so those tools resolve it to null (a build tool never records).
+  extern "C" V8_WEAK bool V8RecordReplayIsARM();
+  if (V8RecordReplayIsARM && V8RecordReplayIsARM())
     return;
 
   {
