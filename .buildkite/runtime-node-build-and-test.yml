@@ -1,0 +1,124 @@
+# NodeBKWiring build/test steps (PipelineYamlHome).
+# Emitted by replay_build_scripts/build-pipeline.py (bakes pin SHA from
+# node REPLAY_BACKEND_REV into the PIN_TOKEN placeholders).
+# ${BUILDKITE_*} remain for Buildkite interpolation at PipelineUpload.
+steps:
+  - trigger: "build-driver-linker"
+    key: "build-driver-linker"
+    label: ":hammer: Build driver/linker at pin"
+    build:
+      commit: "__REPLAY_BACKEND_REV__"
+      message: "Triggered from node: ${BUILDKITE_MESSAGE}"
+
+  - label: ":bust_in_silhouette: Build node (linux)"
+    key: "build-node-linux"
+    depends_on:
+      - "build-driver-linker"
+    agents:
+      - "deploy=true"
+      - "size=large"
+    plugins:
+      - seek-oss/aws-sm#v2.3.1:
+          region: us-east-2
+          env:
+            EARTHLY_TOKEN: earthly-token
+            ACCESS_KEY_ID:
+              secret-id: "prod/deploy-access-keys"
+              json-key: ".aws_access_key_id"
+            SECRET_ACCESS_KEY:
+              secret-id: "prod/deploy-access-keys"
+              json-key: ".aws_secret_access_key"
+      - "ssh://git@github.com/replayio/replay-deploy-buildkite-plugin.git#v1.33":
+          name: "node"
+          buildcmd: >
+            export DOCKER_BUILDKIT=1;
+          # YAML folds this into one string; then two Buildkite upload passes
+          # interpolate `$VAR`, so shell variables need `$$$$`. `$(...)` needs `$$`.
+          # Pin SHA is baked at PipelineUpload.
+          deploycmd: >
+            set -e;
+            PIN="__REPLAY_BACKEND_REV__";
+            BACKEND_DIR="$$$$(pwd)/../replay-backend-pin";
+            rm -rf "$$$$BACKEND_DIR";
+            mkdir -p "$$$$BACKEND_DIR";
+            git -C "$$$$BACKEND_DIR" init;
+            git -C "$$$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git;
+            git -C "$$$$BACKEND_DIR" fetch --depth 1 origin "$$$$PIN";
+            git -C "$$$$BACKEND_DIR" checkout FETCH_HEAD;
+            cd "$$$$BACKEND_DIR";
+            BUILDKITE_DOCKER_ENVS=$$(env | awk -F= '/^BUILDKITE/{printf "-e %s ", $$$$1}');
+            BUILDKITE_AGENT_BIN="$$(command -v buildkite-agent)";
+            REPLAYIO_NODE_REF="$$$$BUILDKITE_COMMIT" ./scripts/docker/build_node_builder &&
+            docker run --rm
+            $$$$BUILDKITE_DOCKER_ENVS
+            -v "$$$$BUILDKITE_AGENT_BIN:/usr/local/bin/buildkite-agent:ro"
+            linux-node-build
+          secretenv:
+            SENTRY_AUTH_TOKEN: sentry-auth-token
+            HASURA_ADMIN_SECRET: prod/hasura-admin-secret
+            POSTGRES_PASSWORD: prod/replay-user-postgres-password
+            TAILSCALE_AUTH_KEY: prod/agent-tailscale-auth-key
+
+  - label: ":clipboard: Node test-suite"
+    key: "node-test-suite"
+    depends_on:
+      - "build-node-linux"
+    agents:
+      - "deploy=true"
+    plugins:
+      - seek-oss/aws-sm#v2.3.1:
+          region: us-east-2
+          env:
+            ACCESS_KEY_ID:
+              secret-id: "prod/deploy-access-keys"
+              json-key: ".aws_access_key_id"
+            SECRET_ACCESS_KEY:
+              secret-id: "prod/deploy-access-keys"
+              json-key: ".aws_secret_access_key"
+    command: |
+      set -e
+      PIN="__REPLAY_BACKEND_REV__"
+      BACKEND_DIR="$$(pwd)/../replay-backend-pin"
+      rm -rf "$$BACKEND_DIR"
+      mkdir -p "$$BACKEND_DIR"
+      git -C "$$BACKEND_DIR" init
+      git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
+      git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
+      git -C "$$BACKEND_DIR" checkout FETCH_HEAD
+      buildkite-agent artifact download build_id .
+      BUILD_ID="$$(cat build_id)"
+      cd "$$BACKEND_DIR"
+      npm ci --prefer-offline --progress=false
+      npx tsx src/build/buildNode.ts test-suite --build-id "$$BUILD_ID"
+
+  - label: ":jest: Node test-jest"
+    key: "node-test-jest"
+    depends_on:
+      - "build-node-linux"
+    agents:
+      - "deploy=true"
+    plugins:
+      - seek-oss/aws-sm#v2.3.1:
+          region: us-east-2
+          env:
+            ACCESS_KEY_ID:
+              secret-id: "prod/deploy-access-keys"
+              json-key: ".aws_access_key_id"
+            SECRET_ACCESS_KEY:
+              secret-id: "prod/deploy-access-keys"
+              json-key: ".aws_secret_access_key"
+    command: |
+      set -e
+      PIN="__REPLAY_BACKEND_REV__"
+      BACKEND_DIR="$$(pwd)/../replay-backend-pin"
+      rm -rf "$$BACKEND_DIR"
+      mkdir -p "$$BACKEND_DIR"
+      git -C "$$BACKEND_DIR" init
+      git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
+      git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
+      git -C "$$BACKEND_DIR" checkout FETCH_HEAD
+      buildkite-agent artifact download build_id .
+      BUILD_ID="$$(cat build_id)"
+      cd "$$BACKEND_DIR"
+      npm ci --prefer-offline --progress=false
+      npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"

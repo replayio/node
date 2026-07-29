@@ -17,6 +17,7 @@
 !.flake8
 !.gitattributes
 !.github
+!.buildkite
 !.gitignore
 !.gitkeep
 !.mailmap
