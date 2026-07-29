@@ -18,6 +18,8 @@ steps:
       - thedyrt/skip-checkout#v0.1.1: ~
     command: |
       set -e
+      # skip-checkout leaves the agent workdir dirty across builds.
+      rm -rf node-src node-src.tgz
       mkdir -p node-src
       git -C node-src init
       git -C node-src remote add origin git@github.com:replayio/node.git
