@@ -2,6 +2,9 @@
 # Emitted by replay_build_scripts/build-pipeline.py (bakes pin SHA from
 # node REPLAY_BACKEND_REV into the PIN_TOKEN placeholders).
 # ${BUILDKITE_*} remain for Buildkite interpolation at PipelineUpload.
+#
+# Scratch dirs: always mktemp under /tmp (BK agents are partially stateful;
+# skip-checkout reuses the pipeline workdir — never init git into a sticky path).
 steps:
   - trigger: "build-driver-linker"
     key: "build-driver-linker"
@@ -17,16 +20,17 @@ steps:
     plugins:
       - thedyrt/skip-checkout#v0.1.1: ~
     command: |
-      set -e
-      # skip-checkout leaves the agent workdir dirty across builds.
-      rm -rf node-src node-src.tgz
-      mkdir -p node-src
-      git -C node-src init
-      git -C node-src remote add origin git@github.com:replayio/node.git
-      git -C node-src fetch --depth 1 origin "$BUILDKITE_COMMIT"
-      git -C node-src checkout FETCH_HEAD
-      tar czf node-src.tgz -C node-src .
-      buildkite-agent artifact upload node-src.tgz
+      set -euo pipefail
+      WORKDIR=$$(mktemp -d "/tmp/clone-node-$${BUILDKITE_JOB_ID}.XXXXXX")
+      trap 'rm -rf "$$WORKDIR"' EXIT
+      mkdir "$$WORKDIR/node-src"
+      git -C "$$WORKDIR/node-src" init
+      git -C "$$WORKDIR/node-src" remote add origin git@github.com:replayio/node.git
+      git -C "$$WORKDIR/node-src" fetch --depth 1 origin "$$BUILDKITE_COMMIT"
+      git -C "$$WORKDIR/node-src" checkout FETCH_HEAD
+      tar czf "$$WORKDIR/node-src.tgz" -C "$$WORKDIR/node-src" .
+      # Upload basename so downloaders can use `node-src.tgz` (not an abs path).
+      buildkite-agent artifact upload "$$WORKDIR/node-src.tgz;node-src.tgz"
 
   # Plain command — do not use replay-deploy-buildkite-plugin (that emits
   # "Deploy to <branch> environment" / preprod steps; wrong for PR CI).
@@ -49,21 +53,20 @@ steps:
               secret-id: "prod/deploy-access-keys"
               json-key: ".aws_secret_access_key"
     command: |
-      set -e
+      set -euo pipefail
       export DOCKER_BUILDKIT=1
       PIN="__REPLAY_BACKEND_REV__"
-      BACKEND_DIR="$$(pwd)/../replay-backend-pin"
-      rm -rf "$$BACKEND_DIR"
-      mkdir -p "$$BACKEND_DIR"
+      WORKDIR=$$(mktemp -d "/tmp/build-node-$${BUILDKITE_JOB_ID}.XXXXXX")
+      trap 'rm -rf "$$WORKDIR"' EXIT
+      BACKEND_DIR="$$WORKDIR/backend"
+      NODE_SRC="$$WORKDIR/node-src"
+      mkdir -p "$$BACKEND_DIR" "$$NODE_SRC"
       git -C "$$BACKEND_DIR" init
       git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
       git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
       git -C "$$BACKEND_DIR" checkout FETCH_HEAD
-      buildkite-agent artifact download node-src.tgz .
-      NODE_SRC="$$(pwd)/node-src"
-      rm -rf "$$NODE_SRC"
-      mkdir -p "$$NODE_SRC"
-      tar xzf node-src.tgz -C "$$NODE_SRC"
+      buildkite-agent artifact download node-src.tgz "$$WORKDIR/"
+      tar xzf "$$WORKDIR/node-src.tgz" -C "$$NODE_SRC"
       cd "$$BACKEND_DIR"
       BUILDKITE_DOCKER_ENVS=$$(env | awk -F= '/^BUILDKITE/{printf "-e %s ", $$1}')
       BUILDKITE_AGENT_BIN="$$(command -v buildkite-agent)"
@@ -94,17 +97,18 @@ steps:
               secret-id: "prod/deploy-access-keys"
               json-key: ".aws_secret_access_key"
     command: |
-      set -e
+      set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
-      BACKEND_DIR="$$(pwd)/../replay-backend-pin"
-      rm -rf "$$BACKEND_DIR"
+      WORKDIR=$$(mktemp -d "/tmp/node-test-suite-$${BUILDKITE_JOB_ID}.XXXXXX")
+      trap 'rm -rf "$$WORKDIR"' EXIT
+      BACKEND_DIR="$$WORKDIR/backend"
       mkdir -p "$$BACKEND_DIR"
       git -C "$$BACKEND_DIR" init
       git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
       git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
       git -C "$$BACKEND_DIR" checkout FETCH_HEAD
-      buildkite-agent artifact download build_id .
-      BUILD_ID="$$(cat build_id)"
+      buildkite-agent artifact download build_id "$$WORKDIR/"
+      BUILD_ID="$$(cat "$$WORKDIR/build_id")"
       cd "$$BACKEND_DIR"
       npm ci --prefer-offline --progress=false
       npx tsx src/build/buildNode.ts test-suite --build-id "$$BUILD_ID"
@@ -126,17 +130,18 @@ steps:
               secret-id: "prod/deploy-access-keys"
               json-key: ".aws_secret_access_key"
     command: |
-      set -e
+      set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
-      BACKEND_DIR="$$(pwd)/../replay-backend-pin"
-      rm -rf "$$BACKEND_DIR"
+      WORKDIR=$$(mktemp -d "/tmp/node-test-jest-$${BUILDKITE_JOB_ID}.XXXXXX")
+      trap 'rm -rf "$$WORKDIR"' EXIT
+      BACKEND_DIR="$$WORKDIR/backend"
       mkdir -p "$$BACKEND_DIR"
       git -C "$$BACKEND_DIR" init
       git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
       git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
       git -C "$$BACKEND_DIR" checkout FETCH_HEAD
-      buildkite-agent artifact download build_id .
-      BUILD_ID="$$(cat build_id)"
+      buildkite-agent artifact download build_id "$$WORKDIR/"
+      BUILD_ID="$$(cat "$$WORKDIR/build_id")"
       cd "$$BACKEND_DIR"
       npm ci --prefer-offline --progress=false
       npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"
