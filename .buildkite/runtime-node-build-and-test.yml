@@ -26,6 +26,8 @@ steps:
       tar czf node-src.tgz -C node-src .
       buildkite-agent artifact upload node-src.tgz
 
+  # Plain command — do not use replay-deploy-buildkite-plugin (that emits
+  # "Deploy to <branch> environment" / preprod steps; wrong for PR CI).
   - label: ":bust_in_silhouette: Build node"
     key: "build-node-linux"
     depends_on:
@@ -38,48 +40,40 @@ steps:
       - seek-oss/aws-sm#v2.3.1:
           region: us-east-2
           env:
-            EARTHLY_TOKEN: earthly-token
             ACCESS_KEY_ID:
               secret-id: "prod/deploy-access-keys"
               json-key: ".aws_access_key_id"
             SECRET_ACCESS_KEY:
               secret-id: "prod/deploy-access-keys"
               json-key: ".aws_secret_access_key"
-      - "ssh://git@github.com/replayio/replay-deploy-buildkite-plugin.git#v1.33":
-          name: "node"
-          buildcmd: >
-            export DOCKER_BUILDKIT=1;
-          # YAML folds this into one string; then two Buildkite upload passes
-          # interpolate `$VAR`, so shell variables need `$$$$`. `$(...)` needs `$$`.
-          # Pin SHA is baked at PipelineUpload.
-          deploycmd: >
-            set -e;
-            PIN="__REPLAY_BACKEND_REV__";
-            BACKEND_DIR="$$$$(pwd)/../replay-backend-pin";
-            rm -rf "$$$$BACKEND_DIR";
-            mkdir -p "$$$$BACKEND_DIR";
-            git -C "$$$$BACKEND_DIR" init;
-            git -C "$$$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git;
-            git -C "$$$$BACKEND_DIR" fetch --depth 1 origin "$$$$PIN";
-            git -C "$$$$BACKEND_DIR" checkout FETCH_HEAD;
-            buildkite-agent artifact download node-src.tgz .;
-            NODE_SRC="$$$$(pwd)/node-src";
-            rm -rf "$$$$NODE_SRC";
-            mkdir -p "$$$$NODE_SRC";
-            tar xzf node-src.tgz -C "$$$$NODE_SRC";
-            cd "$$$$BACKEND_DIR";
-            BUILDKITE_DOCKER_ENVS=$$(env | awk -F= '/^BUILDKITE/{printf "-e %s ", $$$$1}');
-            BUILDKITE_AGENT_BIN="$$(command -v buildkite-agent)";
-            REPLAYIO_NODE_DIR="$$$$NODE_SRC" ./scripts/docker/build_node_builder &&
-            docker run --rm
-            $$$$BUILDKITE_DOCKER_ENVS
-            -v "$$$$BUILDKITE_AGENT_BIN:/usr/local/bin/buildkite-agent:ro"
-            linux-node-build
-          secretenv:
-            SENTRY_AUTH_TOKEN: sentry-auth-token
-            HASURA_ADMIN_SECRET: prod/hasura-admin-secret
-            POSTGRES_PASSWORD: prod/replay-user-postgres-password
-            TAILSCALE_AUTH_KEY: prod/agent-tailscale-auth-key
+    command: |
+      set -e
+      export DOCKER_BUILDKIT=1
+      PIN="__REPLAY_BACKEND_REV__"
+      BACKEND_DIR="$$(pwd)/../replay-backend-pin"
+      rm -rf "$$BACKEND_DIR"
+      mkdir -p "$$BACKEND_DIR"
+      git -C "$$BACKEND_DIR" init
+      git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
+      git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
+      git -C "$$BACKEND_DIR" checkout FETCH_HEAD
+      buildkite-agent artifact download node-src.tgz .
+      NODE_SRC="$$(pwd)/node-src"
+      rm -rf "$$NODE_SRC"
+      mkdir -p "$$NODE_SRC"
+      tar xzf node-src.tgz -C "$$NODE_SRC"
+      cd "$$BACKEND_DIR"
+      BUILDKITE_DOCKER_ENVS=$$(env | awk -F= '/^BUILDKITE/{printf "-e %s ", $$1}')
+      BUILDKITE_AGENT_BIN="$$(command -v buildkite-agent)"
+      REPLAYIO_NODE_DIR="$$NODE_SRC" ./scripts/docker/build_node_builder
+      docker run --rm \
+        $$BUILDKITE_DOCKER_ENVS \
+        -e ACCESS_KEY_ID \
+        -e SECRET_ACCESS_KEY \
+        -e AWS_ACCESS_KEY_ID="$$ACCESS_KEY_ID" \
+        -e AWS_SECRET_ACCESS_KEY="$$SECRET_ACCESS_KEY" \
+        -v "$$BUILDKITE_AGENT_BIN:/usr/local/bin/buildkite-agent:ro" \
+        linux-node-build
 
   - label: "test-suite"
     key: "node-test-suite"
