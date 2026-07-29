@@ -9,10 +9,28 @@ steps:
       commit: "__REPLAY_BACKEND_REV__"
       message: "Triggered from node: ${BUILDKITE_MESSAGE}"
 
+  # Parallel with build-driver-linker: shallow clone for build_node_builder (REPLAYIO_NODE_DIR).
+  - label: "Clone node"
+    key: "clone-node"
+    agents:
+      - "deploy=true"
+    plugins:
+      - thedyrt/skip-checkout#v0.1.1: ~
+    command: |
+      set -e
+      mkdir -p node-src
+      git -C node-src init
+      git -C node-src remote add origin git@github.com:replayio/node.git
+      git -C node-src fetch --depth 1 origin "$BUILDKITE_COMMIT"
+      git -C node-src checkout FETCH_HEAD
+      tar czf node-src.tgz -C node-src .
+      buildkite-agent artifact upload node-src.tgz
+
   - label: ":bust_in_silhouette: Build node"
     key: "build-node-linux"
     depends_on:
       - "build-driver-linker"
+      - "clone-node"
     agents:
       - "deploy=true"
       - "size=large"
@@ -44,10 +62,15 @@ steps:
             git -C "$$$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git;
             git -C "$$$$BACKEND_DIR" fetch --depth 1 origin "$$$$PIN";
             git -C "$$$$BACKEND_DIR" checkout FETCH_HEAD;
+            buildkite-agent artifact download node-src.tgz .;
+            NODE_SRC="$$$$(pwd)/node-src";
+            rm -rf "$$$$NODE_SRC";
+            mkdir -p "$$$$NODE_SRC";
+            tar xzf node-src.tgz -C "$$$$NODE_SRC";
             cd "$$$$BACKEND_DIR";
             BUILDKITE_DOCKER_ENVS=$$(env | awk -F= '/^BUILDKITE/{printf "-e %s ", $$$$1}');
             BUILDKITE_AGENT_BIN="$$(command -v buildkite-agent)";
-            REPLAYIO_NODE_REF="$$$$BUILDKITE_COMMIT" ./scripts/docker/build_node_builder &&
+            REPLAYIO_NODE_DIR="$$$$NODE_SRC" ./scripts/docker/build_node_builder &&
             docker run --rm
             $$$$BUILDKITE_DOCKER_ENVS
             -v "$$$$BUILDKITE_AGENT_BIN:/usr/local/bin/buildkite-agent:ro"
