@@ -69,7 +69,7 @@ def apply_driver_build_check(yaml_text: str, pin: str) -> str:
       - "deploy=true"
     plugins:
       - thedyrt/skip-checkout#v0.1.1: ~
-    command: echo "DriverBuildCheck: linux-recordreplay-{driver_revision}.tgz already on S3"
+    command: "echo DriverBuildCheck linux-recordreplay-{driver_revision}.tgz already on S3"
 """
     if trigger not in yaml_text:
         raise RuntimeError("DriverBuildCheck: expected build-driver-linker trigger block missing")
