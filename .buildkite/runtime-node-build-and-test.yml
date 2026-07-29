@@ -5,12 +5,11 @@
 steps:
   - trigger: "build-driver-linker"
     key: "build-driver-linker"
-    label: ":hammer: Build driver/linker at pin"
     build:
       commit: "__REPLAY_BACKEND_REV__"
       message: "Triggered from node: ${BUILDKITE_MESSAGE}"
 
-  - label: ":bust_in_silhouette: Build node (linux)"
+  - label: ":bust_in_silhouette: Build node"
     key: "build-node-linux"
     depends_on:
       - "build-driver-linker"
@@ -59,7 +58,7 @@ steps:
             POSTGRES_PASSWORD: prod/replay-user-postgres-password
             TAILSCALE_AUTH_KEY: prod/agent-tailscale-auth-key
 
-  - label: ":clipboard: Node test-suite"
+  - label: "test-suite"
     key: "node-test-suite"
     depends_on:
       - "build-node-linux"
@@ -91,7 +90,7 @@ steps:
       npm ci --prefer-offline --progress=false
       npx tsx src/build/buildNode.ts test-suite --build-id "$$BUILD_ID"
 
-  - label: ":jest: Node test-jest"
+  - label: "test-jest"
     key: "node-test-jest"
     depends_on:
       - "build-node-linux"
