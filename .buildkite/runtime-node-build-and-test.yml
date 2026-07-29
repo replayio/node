@@ -3,8 +3,9 @@
 # node REPLAY_BACKEND_REV into the PIN_TOKEN placeholders).
 # ${BUILDKITE_*} remain for Buildkite interpolation at PipelineUpload.
 #
-# Scratch dirs: always mktemp under /tmp (BK agents are partially stateful;
-# skip-checkout reuses the pipeline workdir — never init git into a sticky path).
+# Scratch dirs: mktemp under /tmp (BK agents are partially stateful).
+# Do not parallel-clone node into a BK artifact — different agents cannot share
+# disk; tar upload/download of the tree is pure waste. build_node_builder clones.
 steps:
   - trigger: "build-driver-linker"
     key: "build-driver-linker"
@@ -12,33 +13,12 @@ steps:
       commit: "__REPLAY_BACKEND_REV__"
       message: "Triggered from node: ${BUILDKITE_MESSAGE}"
 
-  # Parallel with build-driver-linker: shallow clone for build_node_builder (REPLAYIO_NODE_DIR).
-  - label: "Clone node"
-    key: "clone-node"
-    agents:
-      - "deploy=true"
-    plugins:
-      - thedyrt/skip-checkout#v0.1.1: ~
-    command: |
-      set -euo pipefail
-      WORKDIR=$$(mktemp -d "/tmp/clone-node-$${BUILDKITE_JOB_ID}.XXXXXX")
-      trap 'rm -rf "$$WORKDIR"' EXIT
-      mkdir "$$WORKDIR/node-src"
-      git -C "$$WORKDIR/node-src" init
-      git -C "$$WORKDIR/node-src" remote add origin git@github.com:replayio/node.git
-      git -C "$$WORKDIR/node-src" fetch --depth 1 origin "$$BUILDKITE_COMMIT"
-      git -C "$$WORKDIR/node-src" checkout FETCH_HEAD
-      tar czf "$$WORKDIR/node-src.tgz" -C "$$WORKDIR/node-src" .
-      # Upload basename so downloaders can use `node-src.tgz` (not an abs path).
-      buildkite-agent artifact upload "$$WORKDIR/node-src.tgz;node-src.tgz"
-
   # Plain command — do not use replay-deploy-buildkite-plugin (that emits
   # "Deploy to <branch> environment" / preprod steps; wrong for PR CI).
   - label: ":bust_in_silhouette: Build node"
     key: "build-node-linux"
     depends_on:
       - "build-driver-linker"
-      - "clone-node"
     agents:
       - "deploy=true"
       - "size=large"
@@ -59,18 +39,15 @@ steps:
       WORKDIR=$$(mktemp -d "/tmp/build-node-$${BUILDKITE_JOB_ID}.XXXXXX")
       trap 'rm -rf "$$WORKDIR"' EXIT
       BACKEND_DIR="$$WORKDIR/backend"
-      NODE_SRC="$$WORKDIR/node-src"
-      mkdir -p "$$BACKEND_DIR" "$$NODE_SRC"
+      mkdir -p "$$BACKEND_DIR"
       git -C "$$BACKEND_DIR" init
       git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
       git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
       git -C "$$BACKEND_DIR" checkout FETCH_HEAD
-      buildkite-agent artifact download node-src.tgz "$$WORKDIR/"
-      tar xzf "$$WORKDIR/node-src.tgz" -C "$$NODE_SRC"
       cd "$$BACKEND_DIR"
       BUILDKITE_DOCKER_ENVS=$$(env | awk -F= '/^BUILDKITE/{printf "-e %s ", $$1}')
       BUILDKITE_AGENT_BIN="$$(command -v buildkite-agent)"
-      REPLAYIO_NODE_DIR="$$NODE_SRC" ./scripts/docker/build_node_builder
+      REPLAYIO_NODE_REF="$$BUILDKITE_COMMIT" ./scripts/docker/build_node_builder
       docker run --rm \
         $$BUILDKITE_DOCKER_ENVS \
         -e ACCESS_KEY_ID \
