@@ -17,6 +17,8 @@ steps:
   # "Deploy to <branch> environment" / preprod steps; wrong for PR CI).
   - label: ":bust_in_silhouette: Build node"
     key: "build-node-linux"
+    # BK default is 60m; cold node make -j4 exceeds that (see build #12).
+    timeout_in_minutes: 120
     depends_on:
       - "build-driver-linker"
     agents:
