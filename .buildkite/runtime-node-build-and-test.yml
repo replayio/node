@@ -54,6 +54,7 @@ steps:
           -R "$$(id -u):$$(id -g)" /repo
       }
       reclaim_node_repo
+      trap 'reclaim_node_repo; rm -rf "$$WORKDIR"' EXIT
       if [ ! -d "$$NODE_REPO/.git" ]; then
         git clone git@github.com:replayio/node.git "$$NODE_REPO"
       fi
@@ -68,7 +69,6 @@ steps:
         -v "$$BUILDKITE_AGENT_BIN:/usr/local/bin/buildkite-agent:ro" \
         -v "$$NODE_REPO:/usr/build/tmp/replayio-node-repo" \
         linux-node-build
-      reclaim_node_repo
 
   - label: "test-suite"
     key: "node-test-suite"
@@ -80,12 +80,7 @@ steps:
       - seek-oss/aws-sm#v2.3.1:
           region: us-east-2
           env:
-            ACCESS_KEY_ID:
-              secret-id: "prod/deploy-access-keys"
-              json-key: ".aws_access_key_id"
-            SECRET_ACCESS_KEY:
-              secret-id: "prod/deploy-access-keys"
-              json-key: ".aws_secret_access_key"
+            HASURA_ADMIN_SECRET: "prod/hasura-admin-secret"
     command: |
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
@@ -113,12 +108,7 @@ steps:
       - seek-oss/aws-sm#v2.3.1:
           region: us-east-2
           env:
-            ACCESS_KEY_ID:
-              secret-id: "prod/deploy-access-keys"
-              json-key: ".aws_access_key_id"
-            SECRET_ACCESS_KEY:
-              secret-id: "prod/deploy-access-keys"
-              json-key: ".aws_secret_access_key"
+            HASURA_ADMIN_SECRET: "prod/hasura-admin-secret"
     command: |
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
