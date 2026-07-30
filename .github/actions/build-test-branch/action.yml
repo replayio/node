@@ -1,6 +1,0 @@
-name: "Build/Test"
-description: "Trigger build/test run"
-
-runs:
-  using: "node20"
-  main: "./main.js"

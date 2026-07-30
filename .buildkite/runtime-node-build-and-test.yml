@@ -10,6 +10,8 @@
 # NodeRepo: host checkout+out mounted over the image node path so make can
 # incremental-rebuild across jobs on the same agent. Mounting only out/ is not
 # enough — a fresh image COPY of sources resets mtimes and forces a full rebuild.
+# Do not `git fetch --depth 1` the cached NodeRepo — shallow fetch rewrites the
+# tree and bumps gyp input mtimes → make "Regenerating Makefile" → near-full rebuild.
 steps:
   - trigger: "build-driver-linker"
     key: "build-driver-linker"
@@ -31,6 +33,12 @@ steps:
     command: |
       set -euo pipefail
       export DOCKER_BUILDKIT=1
+      echo "=== Disk space (build start) ==="
+      df -h
+      NODE_REPO="/var/lib/buildkite-agent/cache/runtime-node-build/repo"
+      if [ -d "$$NODE_REPO" ]; then
+        du -sh "$$NODE_REPO" "$$NODE_REPO/out" 2>/dev/null || du -sh "$$NODE_REPO" 2>/dev/null || true
+      fi
       PIN="__REPLAY_BACKEND_REV__"
       WORKDIR=$$(mktemp -d "/tmp/build-node-$${BUILDKITE_JOB_ID}.XXXXXX")
       trap 'rm -rf "$$WORKDIR"' EXIT
@@ -44,7 +52,6 @@ steps:
       BUILDKITE_DOCKER_ENVS=$$(env | awk -F= '/^BUILDKITE/{printf "-e %s ", $$1}')
       BUILDKITE_AGENT_BIN="$$(command -v buildkite-agent)"
       REPLAYIO_NODE_REF="$$BUILDKITE_COMMIT" ./scripts/docker/build_node_builder
-      NODE_REPO="/var/lib/buildkite-agent/cache/runtime-node-build/repo"
       mkdir -p "$$NODE_REPO"
       reclaim_node_repo() {
         docker run --rm \
@@ -57,9 +64,12 @@ steps:
       trap 'reclaim_node_repo; rm -rf "$$WORKDIR"' EXIT
       if [ ! -d "$$NODE_REPO/.git" ]; then
         git clone git@github.com:replayio/node.git "$$NODE_REPO"
+      elif [ -f "$$NODE_REPO/.git/shallow" ]; then
+        # Prior jobs used --depth 1; unshallow once so later checkouts keep mtimes.
+        git -C "$$NODE_REPO" fetch --unshallow origin || git -C "$$NODE_REPO" fetch --deepen=2147483647 origin
       fi
-      git -C "$$NODE_REPO" fetch --depth 1 origin "$$BUILDKITE_COMMIT"
-      git -C "$$NODE_REPO" checkout -f --detach FETCH_HEAD
+      git -C "$$NODE_REPO" fetch origin "$$BUILDKITE_COMMIT"
+      git -C "$$NODE_REPO" checkout -f --detach "$$BUILDKITE_COMMIT"
       # Match build-node.yml: do not inject prod/deploy-access-keys (github-backend)
       # into the container — that IAM user cannot s3:PutObject builds/. beefmaster
       # docker uses the agent identity (same as the manual build-node pipeline).
