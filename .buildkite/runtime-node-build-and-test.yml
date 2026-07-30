@@ -145,7 +145,7 @@ steps:
       JEST_DIR="$$WORKDIR/jest/immer"
       mkdir -p "$$WORKDIR/jest"
       git clone --depth 1 https://github.com/immerjs/immer.git "$$JEST_DIR"
-      npm --prefix "$$JEST_DIR" install --prefer-offline --progress=false
+      npm --prefix "$$JEST_DIR" install --legacy-peer-deps --prefer-offline --progress=false
       cd "$$BACKEND_DIR"
       npm ci --prefer-offline --progress=false
       npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"
