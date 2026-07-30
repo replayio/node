@@ -142,6 +142,10 @@ steps:
       git -C "$$BACKEND_DIR" checkout FETCH_HEAD
       buildkite-agent artifact download build_id "$$WORKDIR/"
       BUILD_ID="$$(cat "$$WORKDIR/build_id")"
+      JEST_DIR="$$WORKDIR/jest/immer"
+      mkdir -p "$$WORKDIR/jest"
+      git clone --depth 1 https://github.com/immerjs/immer.git "$$JEST_DIR"
+      npm --prefix "$$JEST_DIR" install --prefer-offline --progress=false
       cd "$$BACKEND_DIR"
       npm ci --prefer-offline --progress=false
       npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"
