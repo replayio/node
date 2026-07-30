@@ -12,6 +12,9 @@
 # enough — a fresh image COPY of sources resets mtimes and forces a full rebuild.
 # Do not `git fetch --depth 1` the cached NodeRepo — shallow fetch rewrites the
 # tree and bumps gyp input mtimes → make "Regenerating Makefile" → near-full rebuild.
+# reclaim_node_repo chown -R bumps ctime on every file; with default git stat
+# checks that dirties the whole tree and `checkout -f` rewrites all sources.
+# core.trustctime=false + update-index --refresh after chown keeps mtimes.
 steps:
   - trigger: "build-driver-linker"
     key: "build-driver-linker"
@@ -68,7 +71,14 @@ steps:
         # Prior jobs used --depth 1; unshallow once so later checkouts keep mtimes.
         git -C "$$NODE_REPO" fetch --unshallow origin || git -C "$$NODE_REPO" fetch --deepen=2147483647 origin
       fi
+      # chown -R (reclaim) bumps ctime; without this, checkout -f rewrites all files.
+      git -C "$$NODE_REPO" config core.trustctime false
+      git -C "$$NODE_REPO" update-index --refresh || true
       git -C "$$NODE_REPO" fetch origin "$$BUILDKITE_COMMIT"
+      echo "=== NodeRepo sync (HEAD -> $$BUILDKITE_COMMIT) ==="
+      echo "HEAD=$$(git -C "$$NODE_REPO" rev-parse HEAD 2>/dev/null || echo none)"
+      echo "dirty=$$(git -C "$$NODE_REPO" status --porcelain 2>/dev/null | wc -l)"
+      echo "diff_files=$$(git -C "$$NODE_REPO" diff --name-only HEAD "$$BUILDKITE_COMMIT" 2>/dev/null | wc -l)"
       git -C "$$NODE_REPO" checkout -f --detach "$$BUILDKITE_COMMIT"
       # Match build-node.yml: do not inject prod/deploy-access-keys (github-backend)
       # into the container — that IAM user cannot s3:PutObject builds/. beefmaster
