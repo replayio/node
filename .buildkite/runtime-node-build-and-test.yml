@@ -69,16 +69,14 @@ steps:
       fi
       git -C "$$NODE_REPO" fetch --depth 1 origin "$$BUILDKITE_COMMIT"
       git -C "$$NODE_REPO" checkout -f --detach FETCH_HEAD
-      # Container runs as root; NodeRepo is agent-owned after reclaim → mark safe.directory.
+      # safe.directory is set inside the image (run_node_build.sh / buildNodeDirectly).
+      # Do not use GIT_CONFIG_* — Ubuntu 20.04 git lacks that feature.
       docker run --rm \
         $$BUILDKITE_DOCKER_ENVS \
         -e ACCESS_KEY_ID \
         -e SECRET_ACCESS_KEY \
         -e AWS_ACCESS_KEY_ID="$$ACCESS_KEY_ID" \
         -e AWS_SECRET_ACCESS_KEY="$$SECRET_ACCESS_KEY" \
-        -e GIT_CONFIG_COUNT=1 \
-        -e GIT_CONFIG_KEY_0=safe.directory \
-        -e GIT_CONFIG_VALUE_0=/usr/build/tmp/replayio-node-repo \
         -v "$$BUILDKITE_AGENT_BIN:/usr/local/bin/buildkite-agent:ro" \
         -v "$$NODE_REPO:/usr/build/tmp/replayio-node-repo" \
         linux-node-build
