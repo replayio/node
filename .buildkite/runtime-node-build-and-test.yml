@@ -143,9 +143,11 @@ steps:
       buildkite-agent artifact download build_id "$$WORKDIR/"
       BUILD_ID="$$(cat "$$WORKDIR/build_id")"
       # Jest-era pin (harness last touch ~2022-02); immer main is vitest and has no .bin/jest.
+      # BK agents have npm but not yarn (build #35: exit 127 yarn: command not found).
       JEST_DIR="$$WORKDIR/jest/immer"
       mkdir -p "$$WORKDIR/jest"
       git clone --depth 1 --branch v9.0.12 https://github.com/immerjs/immer.git "$$JEST_DIR"
+      npm install -g yarn@1.22.22
       yarn --cwd "$$JEST_DIR" install --frozen-lockfile --non-interactive
       test -x "$$JEST_DIR/node_modules/.bin/jest"
       cd "$$BACKEND_DIR"
