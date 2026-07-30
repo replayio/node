@@ -6,6 +6,10 @@
 # Scratch dirs: mktemp under /tmp (BK agents are partially stateful).
 # Do not parallel-clone node into a BK artifact — different agents cannot share
 # disk; tar upload/download of the tree is pure waste. build_node_builder clones.
+#
+# NodeRepo: host checkout+out mounted over the image node path so make can
+# incremental-rebuild across jobs on the same agent. Mounting only out/ is not
+# enough — a fresh image COPY of sources resets mtimes and forces a full rebuild.
 steps:
   - trigger: "build-driver-linker"
     key: "build-driver-linker"
@@ -50,6 +54,21 @@ steps:
       BUILDKITE_DOCKER_ENVS=$$(env | awk -F= '/^BUILDKITE/{printf "-e %s ", $$1}')
       BUILDKITE_AGENT_BIN="$$(command -v buildkite-agent)"
       REPLAYIO_NODE_REF="$$BUILDKITE_COMMIT" ./scripts/docker/build_node_builder
+      NODE_REPO="/var/lib/buildkite-agent/cache/runtime-node-build/repo"
+      mkdir -p "$$NODE_REPO"
+      reclaim_node_repo() {
+        docker run --rm \
+          -v "$$NODE_REPO:/repo" \
+          --entrypoint chown \
+          linux-node-build \
+          -R "$$(id -u):$$(id -g)" /repo
+      }
+      reclaim_node_repo
+      if [ ! -d "$$NODE_REPO/.git" ]; then
+        git clone git@github.com:replayio/node.git "$$NODE_REPO"
+      fi
+      git -C "$$NODE_REPO" fetch --depth 1 origin "$$BUILDKITE_COMMIT"
+      git -C "$$NODE_REPO" checkout -f --detach FETCH_HEAD
       docker run --rm \
         $$BUILDKITE_DOCKER_ENVS \
         -e ACCESS_KEY_ID \
@@ -57,7 +76,9 @@ steps:
         -e AWS_ACCESS_KEY_ID="$$ACCESS_KEY_ID" \
         -e AWS_SECRET_ACCESS_KEY="$$SECRET_ACCESS_KEY" \
         -v "$$BUILDKITE_AGENT_BIN:/usr/local/bin/buildkite-agent:ro" \
+        -v "$$NODE_REPO:/usr/build/tmp/replayio-node-repo" \
         linux-node-build
+      reclaim_node_repo
 
   - label: "test-suite"
     key: "node-test-suite"
