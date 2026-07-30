@@ -165,6 +165,8 @@ StreamWriteResult StreamBase::Write(
     size_t count,
     uv_stream_t* send_handle,
     v8::Local<v8::Object> req_wrap_obj) {
+  v8::recordreplay::Assert("StreamBase::Write %zu", count);
+
   Environment* env = stream_env();
   int err;
 

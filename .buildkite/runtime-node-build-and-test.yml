@@ -1,0 +1,153 @@
+# NodeBKWiring build/test steps (PipelineYamlHome).
+# Emitted by replay_build_scripts/build-pipeline.py (bakes pin SHA from
+# node REPLAY_BACKEND_REV into the PIN_TOKEN placeholders).
+# ${BUILDKITE_*} remain for Buildkite interpolation at PipelineUpload.
+#
+# Scratch dirs: mktemp under /tmp (BK agents are partially stateful).
+# Do not parallel-clone node into a BK artifact — different agents cannot share
+# disk; tar upload/download of the tree is pure waste. build_node_builder clones.
+#
+# NodeRepo: host checkout+out mounted over the image node path so make can
+# incremental-rebuild across jobs on the same agent. Mounting only out/ is not
+# enough — a fresh image COPY of sources resets mtimes and forces a full rebuild.
+# Do not `git fetch --depth 1` the cached NodeRepo — shallow fetch rewrites the
+# tree and bumps gyp input mtimes → make "Regenerating Makefile" → near-full rebuild.
+# reclaim_node_repo chown -R bumps ctime on every file; with default git stat
+# checks that dirties the whole tree and `checkout -f` rewrites all sources.
+# core.trustctime=false + update-index --refresh after chown keeps mtimes.
+steps:
+  - trigger: "build-driver-linker"
+    key: "build-driver-linker"
+    build:
+      commit: "__REPLAY_BACKEND_REV__"
+      message: "Triggered from node: ${BUILDKITE_MESSAGE}"
+
+  # Plain command — do not use replay-deploy-buildkite-plugin (that emits
+  # "Deploy to <branch> environment" / preprod steps; wrong for PR CI).
+  - label: ":bust_in_silhouette: Build node"
+    key: "build-node-linux"
+    # BK default is 60m; cold node make -j4 exceeds that (see build #12).
+    timeout_in_minutes: 120
+    depends_on:
+      - "build-driver-linker"
+    agents:
+      - "deploy=true"
+      - "size=large"
+    command: |
+      set -euo pipefail
+      export DOCKER_BUILDKIT=1
+      echo "=== Disk space (build start) ==="
+      df -h
+      NODE_REPO="/var/lib/buildkite-agent/cache/runtime-node-build/repo"
+      if [ -d "$$NODE_REPO" ]; then
+        du -sh "$$NODE_REPO" "$$NODE_REPO/out" 2>/dev/null || du -sh "$$NODE_REPO" 2>/dev/null || true
+      fi
+      PIN="__REPLAY_BACKEND_REV__"
+      WORKDIR=$$(mktemp -d "/tmp/build-node-$${BUILDKITE_JOB_ID}.XXXXXX")
+      trap 'rm -rf "$$WORKDIR"' EXIT
+      BACKEND_DIR="$$WORKDIR/backend"
+      mkdir -p "$$BACKEND_DIR"
+      git -C "$$BACKEND_DIR" init
+      git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
+      git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
+      git -C "$$BACKEND_DIR" checkout FETCH_HEAD
+      cd "$$BACKEND_DIR"
+      BUILDKITE_DOCKER_ENVS=$$(env | awk -F= '/^BUILDKITE/{printf "-e %s ", $$1}')
+      BUILDKITE_AGENT_BIN="$$(command -v buildkite-agent)"
+      REPLAYIO_NODE_REF="$$BUILDKITE_COMMIT" ./scripts/docker/build_node_builder
+      mkdir -p "$$NODE_REPO"
+      reclaim_node_repo() {
+        docker run --rm \
+          -v "$$NODE_REPO:/repo" \
+          --entrypoint chown \
+          linux-node-build \
+          -R "$$(id -u):$$(id -g)" /repo
+      }
+      reclaim_node_repo
+      trap 'reclaim_node_repo; rm -rf "$$WORKDIR"' EXIT
+      if [ ! -d "$$NODE_REPO/.git" ]; then
+        git clone git@github.com:replayio/node.git "$$NODE_REPO"
+      elif [ -f "$$NODE_REPO/.git/shallow" ]; then
+        # Prior jobs used --depth 1; unshallow once so later checkouts keep mtimes.
+        git -C "$$NODE_REPO" fetch --unshallow origin || git -C "$$NODE_REPO" fetch --deepen=2147483647 origin
+      fi
+      # chown -R (reclaim) bumps ctime; without this, checkout -f rewrites all files.
+      git -C "$$NODE_REPO" config core.trustctime false
+      git -C "$$NODE_REPO" update-index --refresh || true
+      git -C "$$NODE_REPO" fetch origin "$$BUILDKITE_COMMIT"
+      echo "=== NodeRepo sync (HEAD -> $$BUILDKITE_COMMIT) ==="
+      echo "HEAD=$$(git -C "$$NODE_REPO" rev-parse HEAD 2>/dev/null || echo none)"
+      echo "dirty=$$(git -C "$$NODE_REPO" status --porcelain 2>/dev/null | wc -l)"
+      echo "diff_files=$$(git -C "$$NODE_REPO" diff --name-only HEAD "$$BUILDKITE_COMMIT" 2>/dev/null | wc -l)"
+      git -C "$$NODE_REPO" checkout -f --detach "$$BUILDKITE_COMMIT"
+      # Match build-node.yml: do not inject prod/deploy-access-keys (github-backend)
+      # into the container — that IAM user cannot s3:PutObject builds/. beefmaster
+      # docker uses the agent identity (same as the manual build-node pipeline).
+      # safe.directory is set inside the image (run_node_build.sh / buildNodeDirectly).
+      docker run --rm \
+        $$BUILDKITE_DOCKER_ENVS \
+        -v "$$BUILDKITE_AGENT_BIN:/usr/local/bin/buildkite-agent:ro" \
+        -v "$$NODE_REPO:/usr/build/tmp/replayio-node-repo" \
+        linux-node-build
+
+  - label: "test-suite"
+    key: "node-test-suite"
+    depends_on:
+      - "build-node-linux"
+    agents:
+      - "deploy=true"
+    plugins:
+      - seek-oss/aws-sm#v2.3.1:
+          region: us-east-2
+          env:
+            HASURA_ADMIN_SECRET: "prod/hasura-admin-secret"
+    command: |
+      set -euo pipefail
+      PIN="__REPLAY_BACKEND_REV__"
+      WORKDIR=$$(mktemp -d "/tmp/node-test-suite-$${BUILDKITE_JOB_ID}.XXXXXX")
+      trap 'rm -rf "$$WORKDIR"' EXIT
+      BACKEND_DIR="$$WORKDIR/backend"
+      mkdir -p "$$BACKEND_DIR"
+      git -C "$$BACKEND_DIR" init
+      git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
+      git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
+      git -C "$$BACKEND_DIR" checkout FETCH_HEAD
+      buildkite-agent artifact download build_id "$$WORKDIR/"
+      BUILD_ID="$$(cat "$$WORKDIR/build_id")"
+      cd "$$BACKEND_DIR"
+      npm ci --prefer-offline --progress=false
+      npx tsx src/build/buildNode.ts test-suite --build-id "$$BUILD_ID"
+
+  - label: "test-jest"
+    key: "node-test-jest"
+    depends_on:
+      - "build-node-linux"
+    agents:
+      - "deploy=true"
+    plugins:
+      - seek-oss/aws-sm#v2.3.1:
+          region: us-east-2
+          env:
+            HASURA_ADMIN_SECRET: "prod/hasura-admin-secret"
+    command: |
+      set -euo pipefail
+      PIN="__REPLAY_BACKEND_REV__"
+      WORKDIR=$$(mktemp -d "/tmp/node-test-jest-$${BUILDKITE_JOB_ID}.XXXXXX")
+      trap 'rm -rf "$$WORKDIR"' EXIT
+      BACKEND_DIR="$$WORKDIR/backend"
+      mkdir -p "$$BACKEND_DIR"
+      git -C "$$BACKEND_DIR" init
+      git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
+      git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
+      git -C "$$BACKEND_DIR" checkout FETCH_HEAD
+      buildkite-agent artifact download build_id "$$WORKDIR/"
+      BUILD_ID="$$(cat "$$WORKDIR/build_id")"
+      # Jest-era pin (harness last touch ~2022-02); immer main is vitest and has no .bin/jest.
+      JEST_DIR="$$WORKDIR/jest/immer"
+      mkdir -p "$$WORKDIR/jest"
+      git clone --depth 1 --branch v9.0.12 https://github.com/immerjs/immer.git "$$JEST_DIR"
+      yarn --cwd "$$JEST_DIR" install --frozen-lockfile --non-interactive
+      test -x "$$JEST_DIR/node_modules/.bin/jest"
+      cd "$$BACKEND_DIR"
+      npm ci --prefer-offline --progress=false
+      npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"

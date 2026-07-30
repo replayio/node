@@ -1,3 +1,5 @@
+# Disabled: replaced by Buildkite `runtime-node-build-and-test` (RQD-14).
+# Legacy ELB Build/Test trigger retained for manual dispatch only.
 name: Build/Test
 on:
   workflow_dispatch:
@@ -6,10 +8,6 @@ on:
         description: "Build node from scratch"
         type: boolean
         required: false
-  pull_request:
-  push:
-    branches:
-      - master
 
 jobs:
   build-test:

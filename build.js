@@ -25,8 +25,9 @@ if (localDriverDir) {
   let driverArchive = `${currentPlatform()}-recordreplay.tgz`;
   let downloadDriverRevision = process.env.DRIVER_REVISION ? process.env.DRIVER_REVISION : fs.readFileSync("REPLAY_BACKEND_REV", "utf8");
   let downloadArchive = `${currentPlatform()}-recordreplay-${downloadDriverRevision.trim().substring(0, 12)}.tgz`;
+  let downloadUrl = `https://static.replay.io/downloads/${downloadArchive}`;
   const driverArchivePath = path.join(OutDir, driverArchive);
-  spawnChecked("curl", [`https://static.replay.io/downloads/${downloadArchive}`, "-o", driverArchivePath], { stdio: "inherit" });
+  downloadDriverArchive(downloadUrl, driverArchivePath);
   spawnChecked("tar", ["xf", driverArchivePath, "-C", OutDir]);
   fs.unlinkSync(driverArchivePath);
 
@@ -81,6 +82,24 @@ spawnChecked("make", [`-j${numCPUs}`, "-C", OutDir, "BUILDTYPE=Release"], {
     RECORD_REPLAY_DONT_RECORD: "1",
   },
 });
+
+function downloadDriverArchive(downloadUrl, driverArchivePath) {
+  curl(downloadUrl, driverArchivePath);
+}
+
+function curl(url, outputPath) {
+  const prettyCmd = ["curl", "--fail", url, "-o", outputPath].join(" ");
+  console.error(prettyCmd);
+
+  const rv = spawnSync("curl", ["--fail", url, "-o", outputPath], {
+    stdio: "inherit",
+  });
+
+  if (rv.status != 0 || rv.error) {
+    console.error(rv.error);
+    throw new Error(`Target driver/linker was not found: ${url}`);
+  }
+}
 
 function spawnChecked(cmd, args, options) {
   const prettyCmd = [cmd].concat(args).join(" ");
@@ -142,5 +161,11 @@ function computeBuildId() {
   // Use the later of the two dates in the build ID.
   const date = +runtimeDate >= +driverDate ? runtimeDate : driverDate;
 
-  return `${currentPlatform()}-node-${date}-${runtimeRevision}-${driverRevision}`;
+  // Chromium twin: upload_build_artifacts.mjs buildIdExtension / backend utils.ts.
+  const buildIdExtension =
+    process.env.BUILDKITE_BRANCH !== process.env.BUILDKITE_PIPELINE_DEFAULT_BRANCH
+      ? "-dev"
+      : process.env.LOCAL_DEVELOPER_BUILD_EXTENSION || "";
+
+  return `${currentPlatform()}-node-${date}-${runtimeRevision}-${driverRevision}${buildIdExtension}`;
 }
