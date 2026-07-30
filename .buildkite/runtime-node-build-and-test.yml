@@ -142,10 +142,12 @@ steps:
       git -C "$$BACKEND_DIR" checkout FETCH_HEAD
       buildkite-agent artifact download build_id "$$WORKDIR/"
       BUILD_ID="$$(cat "$$WORKDIR/build_id")"
+      # Jest-era pin (harness last touch ~2022-02); immer main is vitest and has no .bin/jest.
       JEST_DIR="$$WORKDIR/jest/immer"
       mkdir -p "$$WORKDIR/jest"
-      git clone --depth 1 https://github.com/immerjs/immer.git "$$JEST_DIR"
-      npm --prefix "$$JEST_DIR" install --legacy-peer-deps --progress=false
+      git clone --depth 1 --branch v9.0.12 https://github.com/immerjs/immer.git "$$JEST_DIR"
+      yarn --cwd "$$JEST_DIR" install --frozen-lockfile --non-interactive
+      test -x "$$JEST_DIR/node_modules/.bin/jest"
       cd "$$BACKEND_DIR"
       npm ci --prefer-offline --progress=false
       npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"
