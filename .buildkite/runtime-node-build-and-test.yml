@@ -142,17 +142,12 @@ steps:
       git -C "$$BACKEND_DIR" checkout FETCH_HEAD
       buildkite-agent artifact download build_id "$$WORKDIR/"
       BUILD_ID="$$(cat "$$WORKDIR/build_id")"
-      # ImmerPin v9.0.12 — immer main is vitest-era. Fresh mktemp seed each job.
-      # Vendored lock: .buildkite/seeds/immer-v9.0.12/pnpm-lock.yaml
-      # node-linker=hoisted — default pnpm layout breaks ts-jest on this pin.
+      # ImmerPin v9.0.12 — immer main is vitest-era / no .bin/jest.
+      # Owners ship yarn.lock; agents lack yarn → npx yarn. Fresh mktemp seed each job.
       JEST_DIR="$$WORKDIR/jest/immer"
-      SEED_DIR="$$BUILDKITE_BUILD_CHECKOUT_PATH/.buildkite/seeds/immer-v9.0.12"
       mkdir -p "$$WORKDIR/jest"
       git clone --depth 1 --branch v9.0.12 https://github.com/immerjs/immer.git "$$JEST_DIR"
-      cp "$$SEED_DIR/pnpm-lock.yaml" "$$JEST_DIR/pnpm-lock.yaml"
-      rm -f "$$JEST_DIR/yarn.lock"
-      printf 'node-linker=hoisted\n' > "$$JEST_DIR/.npmrc"
-      npx --yes pnpm@9.15.9 --dir "$$JEST_DIR" install --frozen-lockfile
+      npx --yes yarn@1.22.22 --cwd "$$JEST_DIR" install --frozen-lockfile --non-interactive
       test -x "$$JEST_DIR/node_modules/.bin/jest"
       cd "$$BACKEND_DIR"
       npm ci --prefer-offline --progress=false
