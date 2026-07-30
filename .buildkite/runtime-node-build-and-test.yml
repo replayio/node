@@ -33,6 +33,9 @@ steps:
     agents:
       - "deploy=true"
       - "size=large"
+    # Chromium twin: artifact_paths collects build_id for downstream test steps.
+    artifact_paths:
+      - "build_id"
     command: |
       set -euo pipefail
       export DOCKER_BUILDKIT=1
@@ -89,6 +92,11 @@ steps:
         -v "$$BUILDKITE_AGENT_BIN:/usr/local/bin/buildkite-agent:ro" \
         -v "$$NODE_REPO:/usr/build/tmp/replayio-node-repo" \
         linux-node-build
+      # Publish BuildId for test-suite / test-jest (same role as chromium build_id/**).
+      BUILD_ID=$$(sed -n 's/.*gBuildId\[\] = "\([^"]*\)".*/\1/p' "$$NODE_REPO/src/node_record_replay_driver.cc" | head -n1)
+      test -n "$$BUILD_ID"
+      echo "$$BUILD_ID" > "$${BUILDKITE_BUILD_CHECKOUT_PATH}/build_id"
+      echo "BuildId=$$BUILD_ID"
 
   - label: "test-suite"
     key: "node-test-suite"
@@ -114,7 +122,9 @@ steps:
       git -C "$$BACKEND_DIR" checkout FETCH_HEAD
       buildkite-agent artifact download build_id "$$WORKDIR/"
       BUILD_ID="$$(cat "$$WORKDIR/build_id")"
+      test -n "$$BUILD_ID"
       cd "$$BACKEND_DIR"
+      unset REPLAY_LOCAL_DRIVER_DIR || true
       npm ci --prefer-offline --progress=false
       npx tsx src/build/buildNode.ts test-suite --build-id "$$BUILD_ID"
 
@@ -142,6 +152,7 @@ steps:
       git -C "$$BACKEND_DIR" checkout FETCH_HEAD
       buildkite-agent artifact download build_id "$$WORKDIR/"
       BUILD_ID="$$(cat "$$WORKDIR/build_id")"
+      test -n "$$BUILD_ID"
       # ImmerPin v9.0.12 — immer main is vitest-era / no .bin/jest.
       # Owners ship yarn.lock; agents lack yarn → npx yarn. Fresh mktemp seed each job.
       JEST_DIR="$$WORKDIR/jest/immer"
@@ -150,5 +161,6 @@ steps:
       npx --yes yarn@1.22.22 --cwd "$$JEST_DIR" install --frozen-lockfile --non-interactive
       test -x "$$JEST_DIR/node_modules/.bin/jest"
       cd "$$BACKEND_DIR"
+      unset REPLAY_LOCAL_DRIVER_DIR || true
       npm ci --prefer-offline --progress=false
       npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"
