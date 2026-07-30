@@ -143,11 +143,13 @@ steps:
       buildkite-agent artifact download build_id "$$WORKDIR/"
       BUILD_ID="$$(cat "$$WORKDIR/build_id")"
       # Jest-era pin (harness last touch ~2022-02); immer main is vitest and has no .bin/jest.
-      # BK agents have npm but not yarn (#35 exit 127). No global npm -g (#36 EACCES).
+      # Seed via pnpm (npx — agents lack a global package-manager install).
+      # ImmerPin ships yarn.lock only → pnpm import, then frozen install.
       JEST_DIR="$$WORKDIR/jest/immer"
       mkdir -p "$$WORKDIR/jest"
       git clone --depth 1 --branch v9.0.12 https://github.com/immerjs/immer.git "$$JEST_DIR"
-      npx --yes yarn@1.22.22 --cwd "$$JEST_DIR" install --frozen-lockfile --non-interactive
+      npx --yes pnpm@9.15.9 --dir "$$JEST_DIR" import
+      npx --yes pnpm@9.15.9 --dir "$$JEST_DIR" install --frozen-lockfile
       test -x "$$JEST_DIR/node_modules/.bin/jest"
       cd "$$BACKEND_DIR"
       npm ci --prefer-offline --progress=false
