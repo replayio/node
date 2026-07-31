@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <algorithm>
+#include <sstream>
 #include <vector>
 
 #include "src/codegen/compiler.h"
@@ -917,7 +919,8 @@ RUNTIME_FUNCTION(Runtime_ProfileCreateSnapshotDataBlob) {
 
 extern uint64_t* gProgressCounter;
 extern uint64_t gTargetProgress;
-extern bool gRecordReplayAssertValues;
+extern bool gRecordReplayAssertProgress;
+extern int gRecordReplayCheckProgress;
 
 extern bool RecordReplayShouldAssertForSource(const char* source);
 
@@ -960,55 +963,189 @@ static std::string ScriptNameToString(Handle<Script> script) {
   return std::string(name_raw.get());
 }
 
-RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
-  if (++*gProgressCounter == gTargetProgress) {
-    RecordReplayOnTargetProgressReached();
-  }
+// When gRecordReplayAssertProgress is set we keep track of all the progress
+// made on the main thread and associate it with main-thread assertions using
+// the recorder's assert data callbacks API. Each progress advancement is
+// associated with a single 64 bit value encoding the script ID and location
+// within that script of the function which executed.
+static std::vector<uint64_t>* gProgressData;
 
-  if (!gRecordReplayAssertValues) {
-    return ReadOnlyRoots(isolate).undefined_value();
-  }
-
-  HandleScope scope(isolate);
-  DCHECK_EQ(1, args.length());
-  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
-
-  Handle<SharedFunctionInfo> shared(function->shared(), isolate);
-  Handle<Script> script(Script::cast(shared->script()), isolate);
-  CHECK(!RecordReplayIgnoreScript(*script));
-
-  Script::PositionInfo info;
-  Script::GetPositionInfo(script, shared->StartPosition(), &info, Script::WITH_OFFSET);
-
-  std::string name = ScriptNameToString(script);
-
-  if (!RecordReplayShouldAssertForSource(name.c_str())) {
-    return ReadOnlyRoots(isolate).undefined_value();
-  }
-
-  if (!RecordReplayBytecodeAllowed()) {
-    recordreplay::Diagnostic("RecordReplayAssertExecutionProgress not allowed %s:%d:%d",
-                             name.c_str(), info.line + 1, info.column);
-  }
-  CHECK(RecordReplayBytecodeAllowed());
-
-  if (!gRecordReplayHasCheckpoint) {
-    recordreplay::Diagnostic("ExecutionProgress before first checkpoint %s:%d:%d",
-                             name.c_str(), info.line + 1, info.column);
-    CHECK(gRecordReplayHasCheckpoint);
-  }
-
-  recordreplay::Assert("ExecutionProgress %zu %s:%d:%d",
-                       (size_t)*gProgressCounter,
-                       name.c_str(), info.line + 1, info.column);
-
-  return ReadOnlyRoots(isolate).undefined_value();
+RecordReplayScrubDivergentProgressScope::
+    RecordReplayScrubDivergentProgressScope()
+    : active_(false), start_progress_(0), start_data_size_(0) {
+  if (!recordreplay::IsRecordingOrReplaying() || !IsMainThread()) return;
+  if (!recordreplay::AreEventsDisallowed()) return;
+  if (recordreplay::HasDivergedFromRecording()) return;
+  active_ = true;
+  start_progress_ = *gProgressCounter;
+  start_data_size_ = gProgressData ? gProgressData->size() : 0;
 }
 
-RUNTIME_FUNCTION(Runtime_RecordReplayTargetProgressReached) {
-  CHECK(*gProgressCounter == gTargetProgress);
-  RecordReplayOnTargetProgressReached();
-  return ReadOnlyRoots(isolate).undefined_value();
+RecordReplayScrubDivergentProgressScope::
+    ~RecordReplayScrubDivergentProgressScope() {
+  if (!active_) return;
+  if (recordreplay::HasDivergedFromRecording()) return;
+  if (start_progress_ >= *gProgressCounter) return;
+  // [RUN-1988] Divergent path advanced PC via instrumented user code.
+  *gProgressCounter = start_progress_;
+  if (start_data_size_ == 0) {
+    if (gProgressData) {
+      delete gProgressData;
+      gProgressData = nullptr;
+    }
+  } else if (gProgressData && gProgressData->size() > start_data_size_) {
+    gProgressData->resize(start_data_size_);
+  }
+}
+
+// Buffer holding data most recently reported to the recorder.
+static std::vector<uint64_t>* gReportedProgressData;
+
+static inline uint64_t BuildScriptProgressEntry(Handle<JSFunction> fun) {
+  int script_id = Script::cast(fun->shared().script()).id();
+  int start_position = fun->shared().StartPosition();
+  return (static_cast<uint64_t>(script_id) << 32) | static_cast<uint64_t>(start_position);
+}
+
+extern Handle<Script> GetScript(Isolate* isolate, int script_id);
+
+std::string GetScriptName(Handle<Script> script) {
+  if (script.is_null() || !script->name().IsString()) {
+    return "(anonymous script)";
+  }
+  std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+  return std::string(name.get());
+}
+
+std::string GetScriptLocationString(int script_id, int start_position) {
+  Isolate* isolate = Isolate::Current();
+  HandleScope scope(isolate);
+  Handle<Script> script = GetScript(isolate, script_id);
+  std::string script_name = GetScriptName(script);
+
+  Script::PositionInfo info;
+  Script::GetPositionInfo(script, start_position, &info, Script::WITH_OFFSET);
+
+  std::ostringstream os;
+  os << script_id << ":" << script_name << ":" << info.line + 1 << ":"
+     << info.column + 1;
+  return os.str();
+}
+
+static std::string GetScriptProgressEntryString(uint64_t v) {
+  int script_id = static_cast<int>(v >> 32);
+  int start_position = static_cast<int>(v);
+
+  return GetScriptLocationString(script_id, start_position);
+}
+
+static std::string JsonEscape(const std::string& s) {
+  std::ostringstream os;
+  for (char c : s) {
+    switch (c) {
+      case '"': os << "\\\""; break;
+      case '\\': os << "\\\\"; break;
+      case '\b': os << "\\b"; break;
+      case '\f': os << "\\f"; break;
+      case '\n': os << "\\n"; break;
+      case '\r': os << "\\r"; break;
+      case '\t': os << "\\t"; break;
+      default:
+        if (static_cast<unsigned char>(c) < 0x20) {
+          char buf[8];
+          snprintf(buf, sizeof(buf), "\\u%04x", c);
+          os << buf;
+        } else {
+          os << c;
+        }
+    }
+  }
+  return os.str();
+}
+
+static uint64_t ProgressAt(int64_t k, size_t replayed_size) {
+  return *gProgressCounter + k - (static_cast<int64_t>(replayed_size) - 1);
+}
+
+static const size_t kMaxDivergentFrames = 10;
+
+static void AppendDivergentFrames(std::ostringstream& os, const uint64_t* entries,
+                                  size_t size, size_t d) {
+  size_t end = std::min(size, d + kMaxDivergentFrames);
+  os << "[";
+  for (size_t k = d; k < end; k++) {
+    if (k > d) os << ", ";
+    os << "\"" << JsonEscape(GetScriptProgressEntryString(entries[k])) << "\"";
+  }
+  size_t omitted = size - end;
+  if (omitted) {
+    if (end > d) os << ", ";
+    os << "\"...truncated " << omitted << " more\"";
+  }
+  os << "]";
+}
+
+static char* GetProgressMismatchMessage(const uint64_t* recorded, size_t recorded_size,
+                                        const uint64_t* replayed, size_t replayed_size,
+                                        size_t d) {
+  std::ostringstream os;
+  os << "{ \"lastDeterministicProgress\": "
+     << ProgressAt(static_cast<int64_t>(d) - 1, replayed_size)
+     << ", \"recorded\": ";
+  AppendDivergentFrames(os, recorded, recorded_size, d);
+  os << ", \"replayed\": ";
+  AppendDivergentFrames(os, replayed, replayed_size, d);
+  os << " }";
+
+  return strdup(os.str().c_str());
+}
+
+void RecordReplayCallbackAssertGetData(void** pbuf, size_t* psize) {
+  if (!IsMainThread() || !gProgressData || gProgressData->empty()) {
+    *psize = 0;
+    return;
+  }
+
+  if (gReportedProgressData) {
+    delete gReportedProgressData;
+  }
+  gReportedProgressData = gProgressData;
+  gProgressData = nullptr;
+  *pbuf = &(*gReportedProgressData)[0];
+  *psize = gReportedProgressData->size() * sizeof(uint64_t);
+}
+
+extern void RecordReplayDescribeAssertData(const char* text);
+
+char* RecordReplayCallbackAssertOnDataMismatch(void* recorded_buf, size_t recorded_buf_size,
+                                               void* replayed_buf, size_t replayed_buf_size) {
+  const uint64_t* recorded = reinterpret_cast<const uint64_t*>(recorded_buf);
+  size_t recorded_size = recorded_buf_size / sizeof(uint64_t);
+
+  const uint64_t* replayed = reinterpret_cast<const uint64_t*>(replayed_buf);
+  size_t replayed_size = replayed_buf_size / sizeof(uint64_t);
+
+  size_t firstDivergentIndex = 0;
+  size_t common = std::min<size_t>(recorded_size, replayed_size);
+  while (firstDivergentIndex < common &&
+         recorded[firstDivergentIndex] == replayed[firstDivergentIndex]) {
+    std::string text = GetScriptProgressEntryString(recorded[firstDivergentIndex]);
+    RecordReplayDescribeAssertData(text.c_str());
+    firstDivergentIndex++;
+  }
+
+  return GetProgressMismatchMessage(recorded, recorded_size, replayed, replayed_size,
+                                    firstDivergentIndex);
+}
+
+void RecordReplayCallbackAssertDescribeData(void* buf, size_t buf_size) {
+  const uint64_t* entries = reinterpret_cast<const uint64_t*>(buf);
+  size_t size = buf_size / sizeof(uint64_t);
+
+  for (size_t i = 0; i < size; i++) {
+    std::string text = GetScriptProgressEntryString(entries[i]);
+    RecordReplayDescribeAssertData(text.c_str());
+  }
 }
 
 static std::string FrameSummaryToString(Isolate* isolate, const FrameSummary& summary) {
@@ -1064,6 +1201,61 @@ static std::string GetStackContents(Isolate* isolate, size_t max_frames) {
   }
 
   return contents.length() ? contents : std::string("<no frame>");
+}
+
+static bool gHasPrintedStack = false;
+
+RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
+  if (++*gProgressCounter == gTargetProgress) {
+    RecordReplayOnTargetProgressReached();
+  }
+
+  if (gRecordReplayAssertProgress) {
+    Handle<JSFunction> function = args.at<JSFunction>(0);
+
+    if (!gProgressData) {
+      gProgressData = new std::vector<uint64_t>();
+    }
+    gProgressData->push_back(BuildScriptProgressEntry(function));
+  }
+
+  if (gRecordReplayCheckProgress) {
+    Handle<JSFunction> function = args.at<JSFunction>(0);
+
+    Handle<SharedFunctionInfo> shared(function->shared(), isolate);
+    Handle<Script> script(Script::cast(shared->script()), isolate);
+
+    CHECK(RecordReplayBytecodeAllowed());
+    CHECK(gRecordReplayHasCheckpoint);
+    CHECK(!RecordReplayIgnoreScript(*script));
+
+    if (recordreplay::AreEventsDisallowed() &&
+        !recordreplay::HasDivergedFromRecording()) {
+      // Print JS stack if user JS was executed non-deterministically
+      // and we were not paused.
+      if (!gHasPrintedStack) {  // Prevent flood.
+        gHasPrintedStack = true;
+        HandleScope scope(isolate);
+        std::string stack = GetStackContents(isolate, 50);
+
+        recordreplay::Warning(
+            "[RUN-1919] JS ExecutionProgress in non-deterministic user JS PC=%zu "
+            "scriptId=%d @%s stack=%s",
+            *gProgressCounter, script->id(),
+            GetScriptLocationString(script->id(), shared->StartPosition())
+                .c_str(),
+            stack.c_str());
+      }
+    }
+  }
+
+  return ReadOnlyRoots(isolate).undefined_value();
+}
+
+RUNTIME_FUNCTION(Runtime_RecordReplayTargetProgressReached) {
+  CHECK(*gProgressCounter == gTargetProgress);
+  RecordReplayOnTargetProgressReached();
+  return ReadOnlyRoots(isolate).undefined_value();
 }
 
 // Assertion and instrumentation site indexes embedded in bytecodes are offset

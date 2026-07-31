@@ -3,6 +3,7 @@
 
 #include "env-inl.h"
 #include "debug_utils-inl.h"
+#include "replayio.h"
 #include <algorithm>  // find_if(), find(), move()
 #include <cmath>  // llround()
 #include <memory>  // unique_ptr(), shared_ptr(), make_shared()
@@ -546,7 +547,7 @@ NodePlatform::GetForegroundTaskRunner(Isolate* isolate) {
 
 double NodePlatform::MonotonicallyIncreasingTime() {
   // Convert nanos to seconds.
-  v8::recordreplay::AutoPassThroughEvents pt;
+  v8::replayio::AutoPassThroughEvents pt;
   return uv_hrtime() / 1e9;
 }
 

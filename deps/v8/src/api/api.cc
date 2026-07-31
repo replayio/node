@@ -10373,6 +10373,7 @@ CFunctionInfo::CFunctionInfo(const CTypeInfo& return_info,
 }
 
 static bool gRecordingOrReplaying;
+static bool gAssertsDisabled;
 static void (*gRecordReplayOnNewSource)(const char* id, const char* kind,
                                         const char* url);
 static void (*gRecordReplayOnConsoleMessage)(size_t bookmark);
@@ -10383,17 +10384,21 @@ static void (*gRecordReplaySetCommandCallback)(const char* method, CommandCallba
 
 static void (*gRecordReplayPrint)(const char* format, va_list args);
 static void (*gRecordReplayDiagnostic)(const char* format, va_list args);
+static void (*gRecordReplayWarning)(const char* format, va_list args);
 static void (*gRecordReplayOnInstrument)(const char* kind, const char* function, int offset);
 static void (*gRecordReplayAddPossibleBreakpoint)(int line, int column, const char* function, int offset);
 static void (*gRecordReplayAssert)(const char*, va_list);
 static void (*gRecordReplayAssertBytes)(const char* why, const void* ptr, size_t nbytes);
+static void (*gRecordReplayDescribeAssertData)(const char* text);
 static void (*gRecordReplayBytes)(const char* why, void* buf, size_t size);
 static uintptr_t (*gRecordReplayValue)(const char* why, uintptr_t v);
 static bool (*gRecordReplayAreEventsDisallowed)();
+static bool (*gRecordReplayAreAssertsDisabled)();
 static void (*gRecordReplayProgressReached)();
 static void (*gRecordReplayBeginPassThroughEvents)();
 static void (*gRecordReplayEndPassThroughEvents)();
 static void (*gRecordReplayBeginDisallowEvents)();
+static void (*gRecordReplayBeginDisallowEventsWithLabel)(const char* label);
 static void (*gRecordReplayEndDisallowEvents)();
 static size_t (*gRecordReplayCreateOrderedLock)(const char* name);
 static void (*gRecordReplayOrderedLock)(int lock);
@@ -10508,11 +10513,34 @@ static bool gRecordReplayInstrumentNodeInternals;
 // This is not static so that it can be tested directly, for efficiency.
 bool gRecordReplayAssertValues;
 
+// Whether JS progress sites are buffered as assert application data.
+bool gRecordReplayAssertProgress;
+
+// Enable progress CHECKs / RUN-1919. Also incremented while EventsDisallowed
+// on the main thread.
+int gRecordReplayCheckProgress;
+
 // Any source filters where JS asserts should be added.
 static std::vector<std::string> gRecordReplayJSAssertFilters;
 
+extern void RecordReplayCallbackAssertGetData(void** pbuf, size_t* psize);
+extern char* RecordReplayCallbackAssertOnDataMismatch(void* recorded,
+                                                      size_t recorded_size,
+                                                      void* replayed,
+                                                      size_t replayed_size);
+extern void RecordReplayCallbackAssertDescribeData(void* buf, size_t size);
+
+void RecordReplayDescribeAssertData(const char* text) {
+  gRecordReplayDescribeAssertData(text);
+}
+
 static void InitializeRecordReplayAsserts() {
   gRecordReplayAssertValues = !!getenv("RECORD_REPLAY_JS_ASSERTS");
+  gRecordReplayAssertProgress =
+      gRecordReplayAssertValues || !!getenv("RECORD_REPLAY_JS_PROGRESS_ASSERTS");
+  gRecordReplayCheckProgress =
+      gRecordReplayAssertValues || !!getenv("RECORD_REPLAY_JS_PROGRESS_CHECKS");
+
   if (!gRecordReplayAssertValues) {
     return;
   }
@@ -10593,8 +10621,34 @@ extern "C" void V8RecordReplayDiagnostic(const char* format, ...) {
   }
 }
 
-void recordreplay::Assert(const char* format, ...) {
+void recordreplay::Warning(const char* format, ...) {
   if (IsRecordingOrReplaying()) {
+    va_list args;
+    va_start(args, format);
+    gRecordReplayWarning(format, args);
+    va_end(args);
+  }
+}
+
+extern "C" void V8RecordReplayWarning(const char* format, ...) {
+  if (recordreplay::IsRecordingOrReplaying()) {
+    va_list args;
+    va_start(args, format);
+    gRecordReplayWarning(format, args);
+    va_end(args);
+  }
+}
+
+bool recordreplay::HasAsserts() {
+  return !gAssertsDisabled && IsRecordingOrReplaying();
+}
+
+extern "C" bool V8RecordReplayHasAsserts() {
+  return recordreplay::HasAsserts();
+}
+
+void recordreplay::Assert(const char* format, ...) {
+  if (HasAsserts()) {
     va_list ap;
     va_start(ap, format);
     gRecordReplayAssert(format, ap);
@@ -10603,7 +10657,7 @@ void recordreplay::Assert(const char* format, ...) {
 }
 
 extern "C" void V8RecordReplayAssert(const char* format, ...) {
-  if (recordreplay::IsRecordingOrReplaying()) {
+  if (recordreplay::HasAsserts()) {
     va_list ap;
     va_start(ap, format);
     gRecordReplayAssert(format, ap);
@@ -10611,14 +10665,39 @@ extern "C" void V8RecordReplayAssert(const char* format, ...) {
   }
 }
 
+void recordreplay::AssertMaybeEventsDisallowed(const char* format, ...) {
+  if (HasAsserts() &&
+      !AreEventsDisallowed("AssertMaybeEventsDisallowed")) {
+    va_list ap;
+    va_start(ap, format);
+    gRecordReplayAssert(format, ap);
+    va_end(ap);
+  }
+}
+
+extern "C" void V8RecordReplayAssertMaybeEventsDisallowedVA(const char* format, va_list args) {
+  if (recordreplay::HasAsserts() &&
+      !recordreplay::AreEventsDisallowed("AssertMaybeEventsDisallowed")) {
+    gRecordReplayAssert(format, args);
+  }
+}
+
 void recordreplay::AssertBytes(const char* why, const void* buf, size_t size) {
-  if (IsRecordingOrReplaying()) {
+  if (HasAsserts()) {
     gRecordReplayAssertBytes(why, buf, size);
   }
 }
 
 extern "C" void V8RecordReplayAssertBytes(const char* why, const void* buf, size_t size) {
   recordreplay::AssertBytes(why, buf, size);
+}
+
+bool recordreplay::AreAssertsDisabled() {
+  return gAssertsDisabled;
+}
+
+extern "C" bool V8RecordReplayAreAssertsDisabled() {
+  return recordreplay::AreAssertsDisabled();
 }
 
 uintptr_t recordreplay::RecordReplayValue(const char* why, uintptr_t v) {
@@ -10642,11 +10721,16 @@ extern "C" void V8RecordReplayBytes(const char* why, void* buf, size_t size) {
   recordreplay::RecordReplayBytes(why, buf, size);
 }
 
-bool recordreplay::AreEventsDisallowed() {
+bool recordreplay::AreEventsDisallowed(const char* why) {
+  (void)why;
   if (IsRecordingOrReplaying()) {
     return gRecordReplayAreEventsDisallowed();
   }
   return false;
+}
+
+extern "C" bool V8RecordReplayAreEventsDisallowed(const char* why) {
+  return recordreplay::AreEventsDisallowed(why);
 }
 
 void recordreplay::BeginPassThroughEvents() {
@@ -10672,13 +10756,37 @@ extern "C" void V8RecordReplayEndPassThroughEvents() {
 void recordreplay::BeginDisallowEvents() {
   if (IsRecordingOrReplaying()) {
     gRecordReplayBeginDisallowEvents();
+    if (IsMainThread())
+      ++internal::gRecordReplayCheckProgress;
   }
+}
+
+void recordreplay::BeginDisallowEventsWithLabel(const char* label) {
+  if (IsRecordingOrReplaying()) {
+    gRecordReplayBeginDisallowEventsWithLabel(label);
+    if (IsMainThread())
+      ++internal::gRecordReplayCheckProgress;
+  }
+}
+
+extern "C" void V8RecordReplayBeginDisallowEvents() {
+  recordreplay::BeginDisallowEvents();
+}
+
+extern "C" void V8RecordReplayBeginDisallowEventsWithLabel(const char* label) {
+  recordreplay::BeginDisallowEventsWithLabel(label);
 }
 
 void recordreplay::EndDisallowEvents() {
   if (IsRecordingOrReplaying()) {
+    if (IsMainThread())
+      --internal::gRecordReplayCheckProgress;
     gRecordReplayEndDisallowEvents();
   }
+}
+
+extern "C" void V8RecordReplayEndDisallowEvents() {
+  recordreplay::EndDisallowEvents();
 }
 
 void recordreplay::InvalidateRecording(const char* why) {
@@ -10903,17 +11011,22 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplaySetCommandCallback", gRecordReplaySetCommandCallback);
   RecordReplayLoadSymbol(handle, "RecordReplayPrint", gRecordReplayPrint);
   RecordReplayLoadSymbol(handle, "RecordReplayDiagnostic", gRecordReplayDiagnostic);
+  RecordReplayLoadSymbol(handle, "RecordReplayWarning", gRecordReplayWarning);
   RecordReplayLoadSymbol(handle, "RecordReplayAssert", gRecordReplayAssert);
   RecordReplayLoadSymbol(handle, "RecordReplayAssertBytes", gRecordReplayAssertBytes);
+  RecordReplayLoadSymbol(handle, "RecordReplayDescribeAssertData",
+                         gRecordReplayDescribeAssertData);
   RecordReplayLoadSymbol(handle, "RecordReplayBytes", gRecordReplayBytes);
   RecordReplayLoadSymbol(handle, "RecordReplayValue", gRecordReplayValue);
   RecordReplayLoadSymbol(handle, "RecordReplayOnInstrument", gRecordReplayOnInstrument);
   RecordReplayLoadSymbol(handle, "RecordReplayAddPossibleBreakpoint", gRecordReplayAddPossibleBreakpoint);
   RecordReplayLoadSymbol(handle, "RecordReplayAreEventsDisallowed", gRecordReplayAreEventsDisallowed);
+  RecordReplayLoadSymbol(handle, "RecordReplayAreAssertsDisabled", gRecordReplayAreAssertsDisabled);
   RecordReplayLoadSymbol(handle, "RecordReplayProgressReached", gRecordReplayProgressReached);
   RecordReplayLoadSymbol(handle, "RecordReplayBeginPassThroughEvents", gRecordReplayBeginPassThroughEvents);
   RecordReplayLoadSymbol(handle, "RecordReplayEndPassThroughEvents", gRecordReplayEndPassThroughEvents);
   RecordReplayLoadSymbol(handle, "RecordReplayBeginDisallowEvents", gRecordReplayBeginDisallowEvents);
+  RecordReplayLoadSymbol(handle, "RecordReplayBeginDisallowEventsWithLabel", gRecordReplayBeginDisallowEventsWithLabel);
   RecordReplayLoadSymbol(handle, "RecordReplayEndDisallowEvents", gRecordReplayEndDisallowEvents);
   RecordReplayLoadSymbol(handle, "RecordReplayInvalidateRecording", gRecordReplayInvalidateRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayNewCheckpoint", gRecordReplayNewCheckpoint);
@@ -10971,8 +11084,22 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayEnableProgressCheckpoints", enableProgressCheckpoints);
   enableProgressCheckpoints();
 
+  gAssertsDisabled = gRecordReplayAreAssertsDisabled();
+
   internal::gRecordReplayInstrumentNodeInternals = !!getenv("RECORD_REPLAY_INSTRUMENT_NODE");
   internal::InitializeRecordReplayAsserts();
+
+  if (internal::gRecordReplayAssertProgress) {
+    void (*setAssertDataCallbacks)(
+        void (*aGetData)(void**, size_t*),
+        char* (*aOnMismatch)(void*, size_t, void*, size_t),
+        void (*aDescribeData)(void*, size_t));
+    RecordReplayLoadSymbol(handle, "RecordReplaySetAssertDataCallbacks",
+                           setAssertDataCallbacks);
+    setAssertDataCallbacks(internal::RecordReplayCallbackAssertGetData,
+                           internal::RecordReplayCallbackAssertOnDataMismatch,
+                           internal::RecordReplayCallbackAssertDescribeData);
+  }
 
   // Set flags to disable non-deterministic posting of tasks to other threads.
   // We don't support this yet when recording/replaying.
@@ -11004,6 +11131,34 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
 
 bool IsMainThread() {
   return gMainThread == pthread_self();
+}
+
+static size_t gInReplayCode;
+
+bool recordreplay::IsInReplayCode(const char* why) {
+  (void)why;
+  return IsRecordingOrReplaying() && IsMainThread() && gInReplayCode;
+}
+
+extern "C" bool V8RecordReplayIsInReplayCode(const char* why) {
+  return recordreplay::IsInReplayCode(why);
+}
+
+void recordreplay::EnterReplayCode() {
+  CHECK(IsMainThread());
+  gInReplayCode++;
+}
+
+void recordreplay::ExitReplayCode() {
+  gInReplayCode--;
+}
+
+extern "C" void V8RecordReplayEnterReplayCode() {
+  recordreplay::EnterReplayCode();
+}
+
+extern "C" void V8RecordReplayExitReplayCode() {
+  recordreplay::ExitReplayCode();
 }
 
 const CTypeInfo& CFunctionInfo::ArgumentInfo(unsigned int index) const {

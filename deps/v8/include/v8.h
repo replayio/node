@@ -31,6 +31,8 @@
 #include "v8-version.h"   // NOLINT(build/include_directory)
 #include "v8config.h"     // NOLINT(build/include_directory)
 
+#include "replayio-macros.h"
+
 // We reserve the V8_* prefix for macros defined in V8 public API and
 // assume there are no name conflicts with the embedder's code.
 
@@ -12659,9 +12661,13 @@ static bool IsReplaying();
 
 static void Print(const char* format, ...);
 static void Diagnostic(const char* format, ...);
+static void Warning(const char* format, ...);
+static bool HasAsserts();
 static void Assert(const char* format, ...);
+static void AssertMaybeEventsDisallowed(const char* format, ...);
 static void AssertBytes(const char* why, const void* buf, size_t size);
 static void AssertScriptedCaller(Isolate* isolate, const char* why);
+static bool AreAssertsDisabled();
 
 static uintptr_t RecordReplayValue(const char* why, uintptr_t v);
 static void RecordReplayBytes(const char* why, void* buf, size_t size);
@@ -12673,21 +12679,23 @@ static void OrderedUnlock(int lock);
 static void InvalidateRecording(const char* why);
 static void NewCheckpoint();
 
-static bool AreEventsDisallowed();
 static void BeginPassThroughEvents();
 static void EndPassThroughEvents();
+
 static void BeginDisallowEvents();
+static void BeginDisallowEventsWithLabel(const char* label);
 static void EndDisallowEvents();
 
-struct AutoPassThroughEvents {
-  AutoPassThroughEvents() { BeginPassThroughEvents(); }
-  ~AutoPassThroughEvents() { EndPassThroughEvents(); }
-};
+// A "why" string should be used whenever there are substantive behavior changes
+// resulting from this check.
+static bool AreEventsDisallowed(const char* why = nullptr);
 
-struct AutoDisallowEvents {
-  AutoDisallowEvents() { BeginDisallowEvents(); }
-  ~AutoDisallowEvents() { EndDisallowEvents(); }
-};
+// A "why" string should be used whenever there are substantive behavior changes
+// resulting from this check.
+static bool IsInReplayCode(const char* why = nullptr);
+
+static void EnterReplayCode();
+static void ExitReplayCode();
 
 static void RegisterPointer(const void* ptr);
 static void UnregisterPointer(const void* ptr);

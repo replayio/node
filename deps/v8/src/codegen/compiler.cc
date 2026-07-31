@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "include/replayio.h"
 #include "src/api/api-inl.h"
 #include "src/asmjs/asm-js.h"
 #include "src/ast/prettyprinter.h"
@@ -1797,7 +1798,7 @@ bool Compiler::Compile(Isolate* isolate, Handle<SharedFunctionInfo> shared_info,
   DCHECK(!shared_info->is_compiled());
   DCHECK(!is_compiled_scope->is_compiled());
 
-  recordreplay::AutoDisallowEvents disallow;
+  replayio::AutoDisallowEvents disallow;
 
   DCHECK(AllowCompilation::IsAllowed(isolate));
   DCHECK_EQ(ThreadId::Current(), isolate->thread_id());
