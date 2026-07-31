@@ -113,13 +113,15 @@ steps:
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
       WORKDIR=$$(mktemp -d "/tmp/node-test-suite-$${BUILDKITE_JOB_ID}.XXXXXX")
-      trap 'rm -rf "$$WORKDIR"' EXIT
       BACKEND_DIR="$$WORKDIR/backend"
       mkdir -p "$$BACKEND_DIR"
       git -C "$$BACKEND_DIR" init
       git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
       git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
       git -C "$$BACKEND_DIR" checkout FETCH_HEAD
+      # LinkerZombieLeak: sweep before tests + always after (even on failure).
+      "$$BACKEND_DIR/scripts/kill-linker-processes.sh"
+      trap '"$$BACKEND_DIR/scripts/kill-linker-processes.sh"; rm -rf "$$WORKDIR"' EXIT
       buildkite-agent artifact download build_id "$$WORKDIR/"
       BUILD_ID="$$(cat "$$WORKDIR/build_id")"
       test -n "$$BUILD_ID"
@@ -145,13 +147,15 @@ steps:
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
       WORKDIR=$$(mktemp -d "/tmp/node-test-jest-$${BUILDKITE_JOB_ID}.XXXXXX")
-      trap 'rm -rf "$$WORKDIR"' EXIT
       BACKEND_DIR="$$WORKDIR/backend"
       mkdir -p "$$BACKEND_DIR"
       git -C "$$BACKEND_DIR" init
       git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
       git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
       git -C "$$BACKEND_DIR" checkout FETCH_HEAD
+      # LinkerZombieLeak: sweep before tests + always after (even on failure).
+      "$$BACKEND_DIR/scripts/kill-linker-processes.sh"
+      trap '"$$BACKEND_DIR/scripts/kill-linker-processes.sh"; rm -rf "$$WORKDIR"' EXIT
       buildkite-agent artifact download build_id "$$WORKDIR/"
       BUILD_ID="$$(cat "$$WORKDIR/build_id")"
       test -n "$$BUILD_ID"
