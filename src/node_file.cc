@@ -1010,6 +1010,9 @@ static void InternalModuleStat(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsString());
   node::Utf8Value path(env->isolate(), args[0]);
 
+  v8::recordreplay::Assert("fs::InternalModuleStat %zu", path.length());
+  v8::recordreplay::AssertBytes("fs::InternalModuleStat Path", *path, path.length());
+
   uv_fs_t req;
   int rc = uv_fs_stat(env->event_loop(), &req, *path, nullptr);
   if (rc == 0) {
@@ -1018,6 +1021,7 @@ static void InternalModuleStat(const FunctionCallbackInfo<Value>& args) {
   }
   uv_fs_req_cleanup(&req);
 
+  v8::recordreplay::Assert("fs::InternalModuleStat Result %d", rc);
   args.GetReturnValue().Set(rc);
 }
 
