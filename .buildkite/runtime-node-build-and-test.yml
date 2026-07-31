@@ -30,9 +30,10 @@ steps:
     timeout_in_minutes: 120
     depends_on:
       - "build-driver-linker"
+    # beefmaster (deploy=true+size=large) is gone; no connected agent has both.
+    # deploy=true EC2 agents can still docker-build node.
     agents:
       - "deploy=true"
-      - "size=large"
     # Chromium twin: artifact_paths collects build_id for downstream test steps.
     artifact_paths:
       - "build_id"
@@ -103,7 +104,7 @@ steps:
     depends_on:
       - "build-node-linux"
     agents:
-      - "deploy=true"
+      - "can_replay=true"
     plugins:
       - seek-oss/aws-sm#v2.3.1:
           region: us-east-2
@@ -137,7 +138,7 @@ steps:
     depends_on:
       - "build-node-linux"
     agents:
-      - "deploy=true"
+      - "can_replay=true"
     plugins:
       - seek-oss/aws-sm#v2.3.1:
           region: us-east-2
