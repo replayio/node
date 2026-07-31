@@ -126,6 +126,8 @@ steps:
       cd "$$BACKEND_DIR"
       unset REPLAY_LOCAL_DRIVER_DIR || true
       npm ci --prefer-offline --progress=false
+      export RECORD_REPLAY_ENABLE_ASSERTS=1
+      export RECORD_REPLAY_JS_PROGRESS_ASSERTS=1
       npx tsx src/build/buildNode.ts test-suite --build-id "$$BUILD_ID"
 
   - label: "test-jest"
@@ -163,4 +165,6 @@ steps:
       cd "$$BACKEND_DIR"
       unset REPLAY_LOCAL_DRIVER_DIR || true
       npm ci --prefer-offline --progress=false
+      export RECORD_REPLAY_ENABLE_ASSERTS=1
+      export RECORD_REPLAY_JS_PROGRESS_ASSERTS=1
       npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"
