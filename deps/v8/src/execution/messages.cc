@@ -312,7 +312,9 @@ MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
   const bool in_recursion = isolate->formatting_stack_trace();
   const bool has_overflowed = i::StackLimitCheck{isolate}.HasOverflowed();
   Handle<Context> error_context;
+  // Skip prepareStackTrace under DisallowEvents (may hit unbound syscalls).
   if (!in_recursion && !has_overflowed &&
+      !recordreplay::AreEventsDisallowed() &&
       error->GetCreationContext().ToHandle(&error_context)) {
     DCHECK(error_context->IsNativeContext());
 
