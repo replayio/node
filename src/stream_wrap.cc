@@ -246,6 +246,11 @@ void LibuvStreamWrap::OnUvRead(ssize_t nread, const uv_buf_t* buf) {
   Context::Scope context_scope(env()->context());
   uv_handle_type type = UV_UNKNOWN_HANDLE;
 
+  v8::recordreplay::Assert("LibuvStreamWrap::OnUvRead %zd %zu %d",
+                           nread,
+                           buf != nullptr ? buf->len : 0,
+                           is_named_pipe_ipc());
+
   if (is_named_pipe_ipc() &&
       uv_pipe_pending_count(reinterpret_cast<uv_pipe_t*>(stream())) > 0) {
     type = uv_pipe_pending_type(reinterpret_cast<uv_pipe_t*>(stream()));
@@ -254,6 +259,9 @@ void LibuvStreamWrap::OnUvRead(ssize_t nread, const uv_buf_t* buf) {
   // We should not be getting this callback if someone has already called
   // uv_close() on the handle.
   CHECK_EQ(persistent().IsEmpty(), false);
+
+  v8::recordreplay::Assert("LibuvStreamWrap::OnUvRead Type %d",
+                           static_cast<int>(type));
 
   if (nread > 0) {
     MaybeLocal<Object> pending_obj;

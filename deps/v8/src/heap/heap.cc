@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "include/replayio.h"
 #include "src/api/api-inl.h"
 #include "src/base/bits.h"
 #include "src/base/flags.h"
@@ -1678,7 +1679,7 @@ Heap::DevToolsTraceEventScope::~DevToolsTraceEventScope() {
 bool Heap::CollectGarbage(AllocationSpace space,
                           GarbageCollectionReason gc_reason,
                           const v8::GCCallbackFlags gc_callback_flags) {
-  recordreplay::AutoDisallowEvents disallow;
+  replayio::AutoDisallowEvents disallow;
   if (V8_UNLIKELY(!deserialization_complete_)) {
     // During isolate initialization heap always grows. GC is only requested
     // if a new page allocation fails. In such a case we should crash with
@@ -5237,7 +5238,7 @@ bool Heap::ShouldOptimizeForLoadTime() {
 // - either we need to optimize for memory usage,
 // - or the incremental marking is not in progress and we cannot start it.
 bool Heap::ShouldExpandOldGenerationOnSlowAllocation(LocalHeap* local_heap) {
-  recordreplay::AutoDisallowEvents disallow;
+  replayio::AutoDisallowEvents disallow;
 
   if (always_allocate() || OldGenerationSpaceAvailable() > 0) return true;
   // We reached the old generation allocation limit.
@@ -5799,7 +5800,7 @@ void Heap::NotifyBootstrapComplete() {
 
 void Heap::NotifyOldGenerationExpansion(AllocationSpace space,
                                         MemoryChunk* chunk) {
-  recordreplay::AutoDisallowEvents disallow;
+  replayio::AutoDisallowEvents disallow;
 
   // Pages created during bootstrapping may contain immortal immovable objects.
   if (!deserialization_complete()) {

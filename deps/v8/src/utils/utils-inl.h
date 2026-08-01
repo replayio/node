@@ -8,6 +8,7 @@
 #include "src/utils/utils.h"
 
 #include "include/v8-platform.h"
+#include "include/replayio.h"
 #include "src/base/platform/time.h"
 #include "src/init/v8.h"
 #include "src/strings/char-predicates-inl.h"
@@ -24,7 +25,7 @@ class V8_NODISCARD TimedScope {
 
  private:
   static inline double TimestampMs() {
-    recordreplay::AutoPassThroughEvents pt;
+    replayio::AutoPassThroughEvents pt;
     return V8::GetCurrentPlatform()->MonotonicallyIncreasingTime() *
            static_cast<double>(base::Time::kMillisecondsPerSecond);
   }

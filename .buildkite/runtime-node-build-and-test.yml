@@ -33,6 +33,9 @@ steps:
     agents:
       - "deploy=true"
       - "size=large"
+    # Chromium twin: artifact_paths collects build_id for downstream test steps.
+    artifact_paths:
+      - "build_id"
     command: |
       set -euo pipefail
       export DOCKER_BUILDKIT=1
@@ -89,13 +92,18 @@ steps:
         -v "$$BUILDKITE_AGENT_BIN:/usr/local/bin/buildkite-agent:ro" \
         -v "$$NODE_REPO:/usr/build/tmp/replayio-node-repo" \
         linux-node-build
+      # Publish BuildId for test-node / test-jest (same role as chromium build_id/**).
+      BUILD_ID=$$(sed -n 's/.*gBuildId\[\] = "\([^"]*\)".*/\1/p' "$$NODE_REPO/src/node_record_replay_driver.cc" | head -n1)
+      test -n "$$BUILD_ID"
+      echo "$$BUILD_ID" > "$${BUILDKITE_BUILD_CHECKOUT_PATH}/build_id"
+      echo "BuildId=$$BUILD_ID"
 
-  - label: "test-suite"
-    key: "node-test-suite"
+  - label: "test-node"
+    key: "node-test-node"
     depends_on:
       - "build-node-linux"
     agents:
-      - "deploy=true"
+      - "can_replay=true"
     plugins:
       - seek-oss/aws-sm#v2.3.1:
           region: us-east-2
@@ -104,26 +112,35 @@ steps:
     command: |
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
-      WORKDIR=$$(mktemp -d "/tmp/node-test-suite-$${BUILDKITE_JOB_ID}.XXXXXX")
-      trap 'rm -rf "$$WORKDIR"' EXIT
+      WORKDIR=$$(mktemp -d "/tmp/node-test-node-$${BUILDKITE_JOB_ID}.XXXXXX")
       BACKEND_DIR="$$WORKDIR/backend"
       mkdir -p "$$BACKEND_DIR"
       git -C "$$BACKEND_DIR" init
       git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
       git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
       git -C "$$BACKEND_DIR" checkout FETCH_HEAD
+      # LinkerZombieLeak: sweep before tests + always after (even on failure).
+      "$$BACKEND_DIR/scripts/kill-linker-processes.sh"
+      trap '"$$BACKEND_DIR/scripts/kill-linker-processes.sh"; rm -rf "$$WORKDIR"' EXIT
       buildkite-agent artifact download build_id "$$WORKDIR/"
       BUILD_ID="$$(cat "$$WORKDIR/build_id")"
+      test -n "$$BUILD_ID"
       cd "$$BACKEND_DIR"
+      unset REPLAY_LOCAL_DRIVER_DIR || true
       npm ci --prefer-offline --progress=false
-      npx tsx src/build/buildNode.ts test-suite --build-id "$$BUILD_ID"
+      export RECORD_REPLAY_ENABLE_ASSERTS=1
+      export RECORD_REPLAY_JS_PROGRESS_ASSERTS=1
+      # Random tests read node's test/ tree via nodePath().
+      export RECORD_REPLAY_NODE_PATH="$$BUILDKITE_BUILD_CHECKOUT_PATH"
+      test -d "$$RECORD_REPLAY_NODE_PATH/test"
+      npx tsx src/build/buildNode.ts test-node --build-id "$$BUILD_ID"
 
   - label: "test-jest"
     key: "node-test-jest"
     depends_on:
       - "build-node-linux"
     agents:
-      - "deploy=true"
+      - "can_replay=true"
     plugins:
       - seek-oss/aws-sm#v2.3.1:
           region: us-east-2
@@ -133,21 +150,28 @@ steps:
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
       WORKDIR=$$(mktemp -d "/tmp/node-test-jest-$${BUILDKITE_JOB_ID}.XXXXXX")
-      trap 'rm -rf "$$WORKDIR"' EXIT
       BACKEND_DIR="$$WORKDIR/backend"
       mkdir -p "$$BACKEND_DIR"
       git -C "$$BACKEND_DIR" init
       git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
       git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
       git -C "$$BACKEND_DIR" checkout FETCH_HEAD
+      # LinkerZombieLeak: sweep before tests + always after (even on failure).
+      "$$BACKEND_DIR/scripts/kill-linker-processes.sh"
+      trap '"$$BACKEND_DIR/scripts/kill-linker-processes.sh"; rm -rf "$$WORKDIR"' EXIT
       buildkite-agent artifact download build_id "$$WORKDIR/"
       BUILD_ID="$$(cat "$$WORKDIR/build_id")"
-      # Jest-era pin (harness last touch ~2022-02); immer main is vitest and has no .bin/jest.
+      test -n "$$BUILD_ID"
+      # ImmerPin v9.0.12 — immer main is vitest-era / no .bin/jest.
+      # Owners ship yarn.lock; agents lack yarn → npx yarn. Fresh mktemp seed each job.
       JEST_DIR="$$WORKDIR/jest/immer"
       mkdir -p "$$WORKDIR/jest"
       git clone --depth 1 --branch v9.0.12 https://github.com/immerjs/immer.git "$$JEST_DIR"
-      yarn --cwd "$$JEST_DIR" install --frozen-lockfile --non-interactive
+      npx --yes yarn@1.22.22 --cwd "$$JEST_DIR" install --frozen-lockfile --non-interactive
       test -x "$$JEST_DIR/node_modules/.bin/jest"
       cd "$$BACKEND_DIR"
+      unset REPLAY_LOCAL_DRIVER_DIR || true
       npm ci --prefer-offline --progress=false
+      export RECORD_REPLAY_ENABLE_ASSERTS=1
+      export RECORD_REPLAY_JS_PROGRESS_ASSERTS=1
       npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"

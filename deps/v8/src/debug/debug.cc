@@ -7,6 +7,7 @@
 #include <memory>
 #include <unordered_set>
 
+#include "include/replayio.h"
 #include "src/api/api-inl.h"
 #include "src/api/api-natives.h"
 #include "src/base/platform/mutex.h"
@@ -2530,7 +2531,7 @@ void Debug::StopSideEffectCheckMode() {
 
     // Don't report the exception below to the recording driver, we're not
     // interested in it and trying to enter JS here when paused causes crashes.
-    recordreplay::AutoDisallowEvents disallow;
+    replayio::AutoDisallowEvents disallow;
 
     // Convert the termination exception into a regular exception.
     isolate_->CancelTerminateExecution();
@@ -3075,7 +3076,7 @@ extern void RecordReplayAddPossibleBreakpoint(int line, int column, const char* 
 
 void PossibleBreakpointsCallback(const char* source_id) {
   CHECK(IsMainThread());
-  recordreplay::AutoDisallowEvents disallow;
+  replayio::AutoDisallowEvents disallow;
 
   Isolate* isolate = Isolate::Current();
 
@@ -3443,7 +3444,7 @@ static Eternal<Value>* gCommandCallback;
 
 char* CommandCallback(const char* command, const char* params) {
   CHECK(IsMainThread());
-  recordreplay::AutoDisallowEvents disallow;
+  replayio::AutoDisallowEvents disallow;
 
   Isolate* isolate = Isolate::Current();
   base::Optional<SaveAndSwitchContext> ssc;
@@ -3493,7 +3494,7 @@ static Eternal<Value>* gClearPauseDataCallback;
 
 void ClearPauseDataCallback() {
   CHECK(IsMainThread());
-  recordreplay::AutoDisallowEvents disallow;
+  replayio::AutoDisallowEvents disallow;
 
   if (!gClearPauseDataCallback) {
     return;

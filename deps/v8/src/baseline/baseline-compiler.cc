@@ -55,7 +55,7 @@
 namespace v8 {
 namespace internal {
 
-extern bool gRecordReplayAssertValues;
+extern bool gRecordReplayAssertProgress;
 
 namespace baseline {
 
@@ -2227,7 +2227,7 @@ void BaselineCompiler::VisitIncBlockCounter() {
 }
 
 void BaselineCompiler::VisitRecordReplayIncExecutionProgressCounter() {
-  if (gRecordReplayAssertValues) {
+  if (gRecordReplayAssertProgress) {
     CallRuntime(Runtime::kRecordReplayAssertExecutionProgress,
                 __ FunctionOperand());
   } else {
