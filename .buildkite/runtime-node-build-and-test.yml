@@ -92,14 +92,14 @@ steps:
         -v "$$BUILDKITE_AGENT_BIN:/usr/local/bin/buildkite-agent:ro" \
         -v "$$NODE_REPO:/usr/build/tmp/replayio-node-repo" \
         linux-node-build
-      # Publish BuildId for test-suite / test-jest (same role as chromium build_id/**).
+      # Publish BuildId for test-node / test-jest (same role as chromium build_id/**).
       BUILD_ID=$$(sed -n 's/.*gBuildId\[\] = "\([^"]*\)".*/\1/p' "$$NODE_REPO/src/node_record_replay_driver.cc" | head -n1)
       test -n "$$BUILD_ID"
       echo "$$BUILD_ID" > "$${BUILDKITE_BUILD_CHECKOUT_PATH}/build_id"
       echo "BuildId=$$BUILD_ID"
 
-  - label: "test-suite"
-    key: "node-test-suite"
+  - label: "test-node"
+    key: "node-test-node"
     depends_on:
       - "build-node-linux"
     agents:
@@ -112,7 +112,7 @@ steps:
     command: |
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
-      WORKDIR=$$(mktemp -d "/tmp/node-test-suite-$${BUILDKITE_JOB_ID}.XXXXXX")
+      WORKDIR=$$(mktemp -d "/tmp/node-test-node-$${BUILDKITE_JOB_ID}.XXXXXX")
       BACKEND_DIR="$$WORKDIR/backend"
       mkdir -p "$$BACKEND_DIR"
       git -C "$$BACKEND_DIR" init
@@ -133,7 +133,7 @@ steps:
       # Random tests read node's test/ tree via nodePath().
       export RECORD_REPLAY_NODE_PATH="$$BUILDKITE_BUILD_CHECKOUT_PATH"
       test -d "$$RECORD_REPLAY_NODE_PATH/test"
-      npx tsx src/build/buildNode.ts test-suite --build-id "$$BUILD_ID"
+      npx tsx src/build/buildNode.ts test-node --build-id "$$BUILD_ID"
 
   - label: "test-jest"
     key: "node-test-jest"
