@@ -3160,18 +3160,10 @@ static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isola
 
   Handle<Script> script = GetScript(isolate, script_id);
 
-  // The offset may or may not be present. If it isn't present then we parse the
-  // function ID to get the source position, otherwise use the offset as the
+  // The offset may or may not be present. If the offset is present, use it as the
   // instrumentation site to get the source position.
-  int line, column;
-  if (offset_raw->IsUndefined()) {
-    Script::PositionInfo info;
-    Script::GetPositionInfo(script, function_source_position, &info, Script::WITH_OFFSET);
-
-    // Use 1-indexed lines instead of 0-indexed.
-    line = info.line + 1;
-    column = info.column;
-  } else {
+  int line = 0, column = 0;
+  if (offset_raw->IsNumber()) {
     int bytecode_offset = offset_raw->Number();
 
     std::string key = BreakpointPositionKey(function_id, bytecode_offset);
@@ -3181,17 +3173,29 @@ static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isola
     auto iter = gBreakpointPositions->find(key);
     if (iter == gBreakpointPositions->end()) {
       GenerateBreakpointInfo(isolate, script);
-
       iter = gBreakpointPositions->find(key);
-      if (iter == gBreakpointPositions->end()) {
-        recordreplay::Diagnostic("Unknown offset %s %d for RecordReplayConvertFunctionOffsetToLocation, crashing.",
-                                 function_id.c_str(), bytecode_offset);
-        CHECK(0);
-      }
     }
 
-    line = iter->second.line_;
-    column = iter->second.column_;
+    if (iter != gBreakpointPositions->end()) {
+      line = iter->second.line_;
+      column = iter->second.column_;
+    } else {
+      recordreplay::Diagnostic("Unknown offset %s %d for RecordReplayConvertFunctionOffsetToLocation",
+                                function_id.c_str(), bytecode_offset);
+    }
+  }
+
+  // If there wasn't an offset or an unexpected unknown offset was encountered,
+  // fallback to the position of the function itself. Note that if we successfully
+  // looked up a breakpoint position the line will not be zero because it is 1-indexed,
+  // see GetInstrumentationSiteLocation.
+  if (!line) {
+    Script::PositionInfo info;
+    Script::GetPositionInfo(script, function_source_position, &info, Script::WITH_OFFSET);
+
+    // Use 1-indexed lines instead of 0-indexed.
+    line = info.line + 1;
+    column = info.column;
   }
 
   Handle<JSObject> location = NewPlainObject(isolate);
