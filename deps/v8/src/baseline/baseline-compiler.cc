@@ -2227,10 +2227,13 @@ void BaselineCompiler::VisitIncBlockCounter() {
 }
 
 void BaselineCompiler::VisitRecordReplayIncExecutionProgressCounter() {
-  if (gRecordReplayAssertProgress) {
+  // The optimized path is currently disabled.
+  // See https://linear.app/replay/issue/RUN-744
+  if ((true)/*gRecordReplayAssertProgress*/) {
     CallRuntime(Runtime::kRecordReplayAssertExecutionProgress,
                 __ FunctionOperand());
   } else {
+    /*
     BaselineAssembler::ScratchRegisterScope scratch_scope(&basm_);
     Register reg1 = scratch_scope.AcquireScratch();
     Register reg2 = scratch_scope.AcquireScratch();
@@ -2244,6 +2247,7 @@ void BaselineCompiler::VisitRecordReplayIncExecutionProgressCounter() {
     __ JumpIfCondition(Condition::kNotEqual, &done, Label::kNear);
     CallRuntime(Runtime::kRecordReplayTargetProgressReached);
     __ Bind(&done);
+    */
   }
 }
 
