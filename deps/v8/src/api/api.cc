@@ -10494,6 +10494,14 @@ void RecordReplaySetTargetProgress(uint64_t progress) {
 }
 
 void RecordReplayOnTargetProgressReached() {
+  CHECK(IsMainThread());
+  if (recordreplay::AreEventsDisallowed()) {
+    // We should not have progress updates when events disallowed.
+    if (!recordreplay::HasDivergedFromRecording()) {
+      recordreplay::Warning("OnProgressReached PC=%zu", (size_t)*gProgressCounter);
+    }
+    return;
+  }
   gRecordReplayProgressReached();
 }
 
