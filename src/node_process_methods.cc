@@ -541,6 +541,15 @@ static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) 
     auto delegate = std::make_unique<RecordReplaySessionDelegate>();
     gRecordReplayInspectorSession = agent->Connect(std::move(delegate),
                                                    /* prevent_shutdown */ false);
+    // process.exit() skips Environment destruction, so the process-owned Replay
+    // session would otherwise survive until static destruction, after V8's platform
+    // has been disposed. Reset it from AtExit, where Node normally waits for external
+    // debugger frontends to disconnect. This safely disables the debugger, but may
+    // wastefully tier WebAssembly modules back up during shutdown. A dedicated V8
+    // debugger shutdown path that skips WebAssembly tier-up could avoid that work.
+    AtExit(env, [](void*) {
+      gRecordReplayInspectorSession.reset();
+    }, nullptr);
   }
 
   std::string nmessage(message.ToString());
