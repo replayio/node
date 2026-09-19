@@ -109,6 +109,7 @@ steps:
           region: us-east-2
           env:
             HASURA_ADMIN_SECRET: "prod/hasura-admin-secret"
+            RECORD_REPLAY_API_KEY: "prod/public-api-key"
     command: |
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
@@ -127,7 +128,9 @@ steps:
       test -n "$$BUILD_ID"
       cd "$$BACKEND_DIR"
       unset REPLAY_LOCAL_DRIVER_DIR || true
-      npm ci --prefer-offline --progress=false
+      # packageManager pnpm@10.11.0; can_replay agents lack global npm write (EACCES).
+      # Backend k8s image preinstalls pnpm; here use npx (Node 25 dropped corepack).
+      npx --yes pnpm@10.11.0 install --frozen-lockfile
       export RECORD_REPLAY_ENABLE_ASSERTS=1
       export RECORD_REPLAY_JS_PROGRESS_ASSERTS=1
       # Random tests read node's test/ tree via nodePath().
@@ -146,6 +149,7 @@ steps:
           region: us-east-2
           env:
             HASURA_ADMIN_SECRET: "prod/hasura-admin-secret"
+            RECORD_REPLAY_API_KEY: "prod/public-api-key"
     command: |
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
@@ -171,7 +175,9 @@ steps:
       test -x "$$JEST_DIR/node_modules/.bin/jest"
       cd "$$BACKEND_DIR"
       unset REPLAY_LOCAL_DRIVER_DIR || true
-      npm ci --prefer-offline --progress=false
+      # packageManager pnpm@10.11.0; can_replay agents lack global npm write (EACCES).
+      # Backend k8s image preinstalls pnpm; here use npx (Node 25 dropped corepack).
+      npx --yes pnpm@10.11.0 install --frozen-lockfile
       export RECORD_REPLAY_ENABLE_ASSERTS=1
       export RECORD_REPLAY_JS_PROGRESS_ASSERTS=1
       npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"
