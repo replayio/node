@@ -127,7 +127,9 @@ steps:
       test -n "$$BUILD_ID"
       cd "$$BACKEND_DIR"
       unset REPLAY_LOCAL_DRIVER_DIR || true
-      npm ci --prefer-offline --progress=false
+      # Match backend packageManager / run_node_build.sh (Node 25 dropped corepack).
+      npm install -g pnpm@10.11.0
+      pnpm install --frozen-lockfile
       export RECORD_REPLAY_ENABLE_ASSERTS=1
       export RECORD_REPLAY_JS_PROGRESS_ASSERTS=1
       # Random tests read node's test/ tree via nodePath().
@@ -171,7 +173,9 @@ steps:
       test -x "$$JEST_DIR/node_modules/.bin/jest"
       cd "$$BACKEND_DIR"
       unset REPLAY_LOCAL_DRIVER_DIR || true
-      npm ci --prefer-offline --progress=false
+      # Match backend packageManager / run_node_build.sh (Node 25 dropped corepack).
+      npm install -g pnpm@10.11.0
+      pnpm install --frozen-lockfile
       export RECORD_REPLAY_ENABLE_ASSERTS=1
       export RECORD_REPLAY_JS_PROGRESS_ASSERTS=1
       npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"
