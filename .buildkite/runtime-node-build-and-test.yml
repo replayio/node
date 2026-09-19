@@ -109,6 +109,7 @@ steps:
           region: us-east-2
           env:
             HASURA_ADMIN_SECRET: "prod/hasura-admin-secret"
+            RECORD_REPLAY_API_KEY: "prod/public-api-key"
     command: |
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
@@ -148,6 +149,7 @@ steps:
           region: us-east-2
           env:
             HASURA_ADMIN_SECRET: "prod/hasura-admin-secret"
+            RECORD_REPLAY_API_KEY: "prod/public-api-key"
     command: |
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
