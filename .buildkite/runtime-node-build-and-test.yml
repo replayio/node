@@ -116,6 +116,8 @@ steps:
 
   - label: "test-node"
     key: "node-test-node"
+    # Default 60m is tight for ~40min test wall + setup + occasional 120s record timeouts.
+    timeout_in_minutes: 90
     depends_on:
       - "build-node-linux"
     agents:
