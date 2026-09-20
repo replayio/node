@@ -191,6 +191,7 @@ RUNTIME_FUNCTION(Runtime_UnwindAndFindExceptionHandler) {
   // when unwinding is the same as the last time when unwinding, this is a
   // frame unwind instead of an initial throw and we can ignore it.
   if (recordreplay::IsRecordingOrReplaying() &&
+      !recordreplay::AreEventsDisallowed() &&
       IsMainThread() &&
       *gProgressCounter != gLastExceptionUnwindProgress) {
     RecordReplayOnExceptionUnwind(isolate);
