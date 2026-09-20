@@ -15,6 +15,8 @@
 # reclaim_node_repo chown -R bumps ctime on every file; with default git stat
 # checks that dirties the whole tree and `checkout -f` rewrites all sources.
 # core.trustctime=false + update-index --refresh after chown keeps mtimes.
+# Wipe out/ when REPLAY_BACKEND_REV (builder image/glibc) changes or has no
+# stamp: ubuntu:22.04 objects linked under ubuntu:20.04 → __libc_single_threaded.
 steps:
   - trigger: "build-driver-linker"
     key: "build-driver-linker"
@@ -83,6 +85,15 @@ steps:
       echo "dirty=$$(git -C "$$NODE_REPO" status --porcelain 2>/dev/null | wc -l)"
       echo "diff_files=$$(git -C "$$NODE_REPO" diff --name-only HEAD "$$BUILDKITE_COMMIT" 2>/dev/null | wc -l)"
       git -C "$$NODE_REPO" checkout -f --detach "$$BUILDKITE_COMMIT"
+      BUILDER_PIN_STAMP="$$NODE_REPO/.replay-builder-pin"
+      if [ ! -f "$$BUILDER_PIN_STAMP" ] || [ "$$(cat "$$BUILDER_PIN_STAMP")" != "$$PIN" ]; then
+        if [ -d "$$NODE_REPO/out" ]; then
+          echo "=== builder PIN stamp miss/mismatch; wiping out/ (glibc ABI) ==="
+          echo "stamp=$$([ -f "$$BUILDER_PIN_STAMP" ] && cat "$$BUILDER_PIN_STAMP" || echo none) pin=$$PIN"
+          rm -rf "$$NODE_REPO/out"
+        fi
+        echo "$$PIN" > "$$BUILDER_PIN_STAMP"
+      fi
       # Match build-node.yml: do not inject prod/deploy-access-keys (github-backend)
       # into the container — that IAM user cannot s3:PutObject builds/. beefmaster
       # docker uses the agent identity (same as the manual build-node pipeline).
