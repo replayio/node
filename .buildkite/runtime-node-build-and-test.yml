@@ -15,8 +15,9 @@
 # reclaim_node_repo chown -R bumps ctime on every file; with default git stat
 # checks that dirties the whole tree and `checkout -f` rewrites all sources.
 # core.trustctime=false + update-index --refresh after chown keeps mtimes.
-# Wipe out/ when REPLAY_BACKEND_REV (builder image/glibc) changes or has no
-# stamp: ubuntu:22.04 objects linked under ubuntu:20.04 → __libc_single_threaded.
+# Wipe out/ when linux_node_build Dockerfile FROM (glibc base) changes:
+# ubuntu:22.04 objects linked under ubuntu:20.04 → __libc_single_threaded.
+# Key FROM only — not REPLAY_BACKEND_REV (pin bumps must not force full rebuild).
 steps:
   - trigger: "build-driver-linker"
     key: "build-driver-linker"
@@ -85,14 +86,18 @@ steps:
       echo "dirty=$$(git -C "$$NODE_REPO" status --porcelain 2>/dev/null | wc -l)"
       echo "diff_files=$$(git -C "$$NODE_REPO" diff --name-only HEAD "$$BUILDKITE_COMMIT" 2>/dev/null | wc -l)"
       git -C "$$NODE_REPO" checkout -f --detach "$$BUILDKITE_COMMIT"
-      BUILDER_PIN_STAMP="$$NODE_REPO/.replay-builder-pin"
-      if [ ! -f "$$BUILDER_PIN_STAMP" ] || [ "$$(cat "$$BUILDER_PIN_STAMP")" != "$$PIN" ]; then
+      # glibc ABI follows Dockerfile FROM, not backend pin SHA.
+      BUILDER_IMAGE_STAMP="$$NODE_REPO/.replay-builder-image"
+      BUILDER_IMAGE_KEY="$$(awk '/^FROM /{print; exit}' "$$BACKEND_DIR/src/build/docker/linux_node_build.Dockerfile")"
+      test -n "$$BUILDER_IMAGE_KEY"
+      rm -f "$$NODE_REPO/.replay-builder-pin"
+      if [ ! -f "$$BUILDER_IMAGE_STAMP" ] || [ "$$(cat "$$BUILDER_IMAGE_STAMP")" != "$$BUILDER_IMAGE_KEY" ]; then
         if [ -d "$$NODE_REPO/out" ]; then
-          echo "=== builder PIN stamp miss/mismatch; wiping out/ (glibc ABI) ==="
-          echo "stamp=$$([ -f "$$BUILDER_PIN_STAMP" ] && cat "$$BUILDER_PIN_STAMP" || echo none) pin=$$PIN"
+          echo "=== builder image stamp miss/mismatch; wiping out/ (glibc ABI) ==="
+          echo "stamp=$$([ -f "$$BUILDER_IMAGE_STAMP" ] && cat "$$BUILDER_IMAGE_STAMP" || echo none) key=$$BUILDER_IMAGE_KEY"
           rm -rf "$$NODE_REPO/out"
         fi
-        echo "$$PIN" > "$$BUILDER_PIN_STAMP"
+        echo "$$BUILDER_IMAGE_KEY" > "$$BUILDER_IMAGE_STAMP"
       fi
       # Match build-node.yml: do not inject prod/deploy-access-keys (github-backend)
       # into the container — that IAM user cannot s3:PutObject builds/. beefmaster
@@ -120,6 +125,7 @@ steps:
           region: us-east-2
           env:
             HASURA_ADMIN_SECRET: "prod/hasura-admin-secret"
+            RECORD_REPLAY_API_KEY: "prod/public-api-key"
     command: |
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
@@ -138,7 +144,9 @@ steps:
       test -n "$$BUILD_ID"
       cd "$$BACKEND_DIR"
       unset REPLAY_LOCAL_DRIVER_DIR || true
-      npm ci --prefer-offline --progress=false
+      # packageManager pnpm@10.11.0; can_replay agents lack global npm write (EACCES).
+      # Backend k8s image preinstalls pnpm; here use npx (Node 25 dropped corepack).
+      npx --yes pnpm@10.11.0 install --frozen-lockfile
       export RECORD_REPLAY_ENABLE_ASSERTS=1
       export RECORD_REPLAY_JS_PROGRESS_ASSERTS=1
       # Random tests read node's test/ tree via nodePath().
@@ -157,6 +165,7 @@ steps:
           region: us-east-2
           env:
             HASURA_ADMIN_SECRET: "prod/hasura-admin-secret"
+            RECORD_REPLAY_API_KEY: "prod/public-api-key"
     command: |
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
@@ -182,7 +191,9 @@ steps:
       test -x "$$JEST_DIR/node_modules/.bin/jest"
       cd "$$BACKEND_DIR"
       unset REPLAY_LOCAL_DRIVER_DIR || true
-      npm ci --prefer-offline --progress=false
+      # packageManager pnpm@10.11.0; can_replay agents lack global npm write (EACCES).
+      # Backend k8s image preinstalls pnpm; here use npx (Node 25 dropped corepack).
+      npx --yes pnpm@10.11.0 install --frozen-lockfile
       export RECORD_REPLAY_ENABLE_ASSERTS=1
       export RECORD_REPLAY_JS_PROGRESS_ASSERTS=1
       npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"
