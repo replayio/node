@@ -47,6 +47,7 @@
 #include <poll.h>
 
 extern void V8RecordReplayAssert(const char* format, ...);
+extern void V8RecordReplayAssertMaybeEventsDisallowed(const char* format, ...);
 
 #if defined(__DragonFly__)        ||                                      \
     defined(__FreeBSD__)          ||                                      \
@@ -151,7 +152,7 @@ extern char *mkdtemp(char *template); /* See issue #740 on AIX < 7 */
 
 #define POST                                                                  \
   do {                                                                        \
-    V8RecordReplayAssert("POST_WORK %d", (int)req->fs_type); \
+    V8RecordReplayAssertMaybeEventsDisallowed("POST_WORK %d", (int)req->fs_type); \
     if (cb != NULL) {                                                         \
       uv__req_register(loop, req);                                            \
       uv__work_submit(loop,                                                   \
@@ -163,7 +164,7 @@ extern char *mkdtemp(char *template); /* See issue #740 on AIX < 7 */
     }                                                                         \
     else {                                                                    \
       uv__fs_work(&req->work_req);                                            \
-      V8RecordReplayAssert("POST_WORK_DONE %d %d", (int)req->fs_type, req->result); \
+      V8RecordReplayAssertMaybeEventsDisallowed("POST_WORK_DONE %d %d", (int)req->fs_type, req->result); \
       return req->result;                                                     \
     }                                                                         \
   }                                                                           \

@@ -10683,6 +10683,16 @@ void recordreplay::AssertMaybeEventsDisallowed(const char* format, ...) {
   }
 }
 
+extern "C" void V8RecordReplayAssertMaybeEventsDisallowed(const char* format, ...) {
+  if (recordreplay::HasAsserts() &&
+      !recordreplay::AreEventsDisallowed("AssertMaybeEventsDisallowed")) {
+    va_list ap;
+    va_start(ap, format);
+    gRecordReplayAssert(format, ap);
+    va_end(ap);
+  }
+}
+
 extern "C" void V8RecordReplayAssertMaybeEventsDisallowedVA(const char* format, va_list args) {
   if (recordreplay::HasAsserts() &&
       !recordreplay::AreEventsDisallowed("AssertMaybeEventsDisallowed")) {
