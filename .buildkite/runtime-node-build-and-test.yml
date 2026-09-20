@@ -158,6 +158,8 @@ steps:
 
   - label: "test-jest"
     key: "node-test-jest"
+    # Default 60m is tight for ~40min test wall + dual-repo seed + occasional 60s timeouts.
+    timeout_in_minutes: 90
     depends_on:
       - "build-node-linux"
     agents:
@@ -184,13 +186,19 @@ steps:
       buildkite-agent artifact download build_id "$$WORKDIR/"
       BUILD_ID="$$(cat "$$WORKDIR/build_id")"
       test -n "$$BUILD_ID"
+      # JestRepos seed (historical allowlist). Skip babel/redwood/gatsby — monorepo build/bootstrap.
       # ImmerPin v9.0.12 — immer main is vitest-era / no .bin/jest.
       # Owners ship yarn.lock; agents lack yarn → npx yarn. Fresh mktemp seed each job.
-      JEST_DIR="$$WORKDIR/jest/immer"
       mkdir -p "$$WORKDIR/jest"
-      git clone --depth 1 --branch v9.0.12 https://github.com/immerjs/immer.git "$$JEST_DIR"
-      npx --yes yarn@1.22.22 --cwd "$$JEST_DIR" install --frozen-lockfile --non-interactive
-      test -x "$$JEST_DIR/node_modules/.bin/jest"
+      JEST_IMMER="$$WORKDIR/jest/immer"
+      git clone --depth 1 --branch v9.0.12 https://github.com/immerjs/immer.git "$$JEST_IMMER"
+      npx --yes yarn@1.22.22 --cwd "$$JEST_IMMER" install --frozen-lockfile --non-interactive
+      test -x "$$JEST_IMMER/node_modules/.bin/jest"
+      # javascript-algorithms: lockfile + jest, no build (historical JestRepos entry).
+      JEST_ALGOS="$$WORKDIR/jest/javascript-algorithms"
+      git clone --depth 1 https://github.com/trekhleb/javascript-algorithms.git "$$JEST_ALGOS"
+      npm --prefix "$$JEST_ALGOS" ci --prefer-offline --progress=false
+      test -x "$$JEST_ALGOS/node_modules/.bin/jest"
       cd "$$BACKEND_DIR"
       unset REPLAY_LOCAL_DRIVER_DIR || true
       # packageManager pnpm@10.11.0; can_replay agents lack global npm write (EACCES).
