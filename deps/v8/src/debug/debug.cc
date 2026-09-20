@@ -3548,6 +3548,16 @@ bool RecordReplayIgnoreScript(Script script) {
   return rv;
 }
 
+// Whether we are divergently calling into user JS without having paused first.
+// Node uses !RecordReplayIgnoreScript (no gRegisteredScripts set).
+bool RecordReplayIsDivergentUserJSWithoutPause(
+    const SharedFunctionInfo& shared) {
+  return recordreplay::AreEventsDisallowed() &&
+         !recordreplay::HasDivergedFromRecording() &&
+         shared.script().IsScript() &&
+         !RecordReplayIgnoreScript(Script::cast(shared.script()));
+}
+
 static bool RecordReplayIgnoreScriptById(Isolate* isolate, int script_id) {
   Handle<Script> script = GetScript(isolate, script_id);
   return RecordReplayIgnoreScript(*script);
