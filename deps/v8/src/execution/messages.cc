@@ -335,9 +335,28 @@ class V8_NODISCARD PrepareStackTraceScope {
 }  // namespace
 
 // static
-MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
-                                                 Handle<JSObject> error,
-                                                 Handle<Object> raw_stack) {
+namespace {
+
+bool ShouldRecordReplayFormattedString() {
+  return recordreplay::IsRecordingOrReplaying() &&
+         !recordreplay::AreEventsDisallowed() && IsMainThread();
+}
+
+std::string ToStdString(Handle<String> value) {
+  int length = 0;
+  std::unique_ptr<char[]> chars =
+      value->ToCString(ALLOW_NULLS, ROBUST_STRING_TRAVERSAL, &length);
+  return std::string(chars.get(), length);
+}
+
+MaybeHandle<String> FromStdString(Isolate* isolate, const std::string& str) {
+  return isolate->factory()->NewStringFromUtf8(
+      base::Vector<const char>(str.data(), str.size()));
+}
+
+MaybeHandle<Object> FormatStackTraceImpl(Isolate* isolate,
+                                         Handle<JSObject> error,
+                                         Handle<Object> raw_stack) {
   DCHECK(raw_stack->IsFixedArray());
   Handle<FixedArray> elems = Handle<FixedArray>::cast(raw_stack);
 
@@ -444,6 +463,44 @@ MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
   return builder.Finish();
 }
 
+}  // namespace
+
+// [PRO-1150] Error.stack can differ between recording and replaying even
+// though the same code runs: which frames V8 reports depends on JIT state (a
+// native API function such as runMicrotasks only gets a frame when its caller
+// is optimized), and the replay deoptimizes code the recording never did.
+// Record the formatted stack and use the recorded one when replaying, as the
+// Chromium fork does. Node formats through its prepareStackTrace callback,
+// whose result need not be a string, so whether one was recorded is recorded
+// as well.
+MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
+                                                 Handle<JSObject> error,
+                                                 Handle<Object> raw_stack) {
+  MaybeHandle<Object> maybe_result =
+      FormatStackTraceImpl(isolate, error, raw_stack);
+  if (!ShouldRecordReplayFormattedString()) {
+    return maybe_result;
+  }
+
+  Handle<Object> result;
+  bool is_string = maybe_result.ToHandle(&result) && result->IsString();
+  bool recorded_string = recordreplay::RecordReplayValue(
+      "ErrorUtils::FormatStackTrace IsString", is_string);
+  if (!recorded_string) {
+    return maybe_result;
+  }
+
+  std::string str;
+  if (is_string) {
+    str = ToStdString(Handle<String>::cast(result));
+  }
+  recordreplay::RecordReplayString("ErrorUtils::FormatStackTrace", str);
+  if (maybe_result.is_null()) {
+    return maybe_result;
+  }
+  return FromStdString(isolate, str);
+}
+
 Handle<String> MessageFormatter::Format(Isolate* isolate, MessageTemplate index,
                                         Handle<Object> arg0,
                                         Handle<Object> arg1,
@@ -521,7 +578,15 @@ MaybeHandle<String> MessageFormatter::Format(Isolate* isolate,
     }
   }
 
-  return builder.Finish();
+  MaybeHandle<String> rv = builder.Finish();
+  Handle<String> message;
+  if (ShouldRecordReplayFormattedString() && rv.ToHandle(&message)) {
+    // [PRO-1150] Replay error messages, as the Chromium fork does.
+    std::string str = ToStdString(message);
+    recordreplay::RecordReplayString("MessageFormatter::Format", str);
+    rv = FromStdString(isolate, str);
+  }
+  return rv;
 }
 
 MaybeHandle<JSObject> ErrorUtils::Construct(Isolate* isolate,

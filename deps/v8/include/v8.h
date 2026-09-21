@@ -12671,6 +12671,7 @@ static bool AreAssertsDisabled();
 
 static uintptr_t RecordReplayValue(const char* why, uintptr_t v);
 static void RecordReplayBytes(const char* why, void* buf, size_t size);
+static void RecordReplayString(const char* why, std::string& str);
 
 static size_t CreateOrderedLock(const char* name);
 static void OrderedLock(int lock);

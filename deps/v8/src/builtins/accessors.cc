@@ -805,14 +805,18 @@ void Accessors::ErrorStackGetter(
     return;
   }
 
-  // Replace the structured stack-trace with the formatting result.
-  MaybeHandle<Object> result = Object::SetProperty(
-      isolate, holder, isolate->factory()->stack_trace_symbol(),
-      formatted_stack_trace, StoreOrigin::kMaybeKeyed,
-      Just(ShouldThrow::kThrowOnError));
-  if (result.is_null()) {
-    isolate->OptionalRescheduleException(false);
-    return;
+  // Replace the structured stack-trace with the formatting result. Not while
+  // events are disallowed: a replay-only read (such as an inspector preview)
+  // would leave a stack that wasn't recorded for the program to read later.
+  if (!recordreplay::AreEventsDisallowed()) {
+    MaybeHandle<Object> result = Object::SetProperty(
+        isolate, holder, isolate->factory()->stack_trace_symbol(),
+        formatted_stack_trace, StoreOrigin::kMaybeKeyed,
+        Just(ShouldThrow::kThrowOnError));
+    if (result.is_null()) {
+      isolate->OptionalRescheduleException(false);
+      return;
+    }
   }
 
   v8::Local<v8::Value> value = Utils::ToLocal(formatted_stack_trace);
