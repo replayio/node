@@ -3646,6 +3646,21 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
   string_table_.reset(new StringTable(this));
   bigint_processor_ = bigint::Processor::New(new BigIntPlatform(this));
 
+  if (FLAG_lazy_compile_dispatcher && recordreplay::IsRecordingOrReplaying() &&
+      IsMainThread()) {
+    // Replay: the dispatcher compiles functions on worker threads, which post
+    // the main thread's finalize task when they finish, and the main thread
+    // installs a function's bytecode in that task or, if it calls the function
+    // first, waits for the worker (LazyCompileDispatcher::FinishNow). Both
+    // depend on the workers' timing, so a recording doesn't replay reliably.
+    // The flags are left as requested, so the recording is invalidated instead.
+    const char* flag = FLAG_parallel_compile_tasks
+                           ? "--parallel-compile-tasks"
+                           : "--lazy-compile-dispatcher";
+    std::string why =
+        std::string("V8 flag ") + flag + " is not supported when recording";
+    recordreplay::InvalidateRecording(why.c_str());
+  }
   compiler_dispatcher_ = new LazyCompileDispatcher(
       this, V8::GetCurrentPlatform(), FLAG_stack_size);
   baseline_batch_compiler_ = new baseline::BaselineBatchCompiler(this);
