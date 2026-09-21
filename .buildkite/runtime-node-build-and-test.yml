@@ -28,6 +28,11 @@ steps:
     key: "build-node-linux"
     # BK default is 60m; cold node make -j4 exceeds that (see build #12).
     timeout_in_minutes: 120
+    # AgentLost exit_status:-1 (BK #102 mid-make) is intermittent infra — auto-retry.
+    retry:
+      automatic:
+        - exit_status: -1
+          limit: 2
     depends_on:
       - "build-driver-linker"
     agents:
@@ -187,9 +192,15 @@ steps:
       git clone --depth 1 --branch v9.0.12 https://github.com/immerjs/immer.git "$$JEST_IMMER"
       npx --yes yarn@1.22.22 --cwd "$$JEST_IMMER" install --frozen-lockfile --non-interactive
       test -x "$$JEST_IMMER/node_modules/.bin/jest"
-      # javascript-algorithms: lockfile + jest, no build (historical JestRepos entry).
+      # javascript-algorithms: pin Jest 29.4.1 era — Jest 30 circus runner.js
+      # Validation Error under record (BK #103); stock OK.
       JEST_ALGOS="$$WORKDIR/jest/javascript-algorithms"
-      git clone --depth 1 https://github.com/trekhleb/javascript-algorithms.git "$$JEST_ALGOS"
+      JEST_ALGOS_PIN=024884517f3dc68fbf376de45bab4e32838347dd
+      mkdir -p "$$JEST_ALGOS"
+      git -C "$$JEST_ALGOS" init
+      git -C "$$JEST_ALGOS" remote add origin https://github.com/trekhleb/javascript-algorithms.git
+      git -C "$$JEST_ALGOS" fetch --depth 1 origin "$$JEST_ALGOS_PIN"
+      git -C "$$JEST_ALGOS" checkout --detach FETCH_HEAD
       npm --prefix "$$JEST_ALGOS" ci --prefer-offline --progress=false
       test -x "$$JEST_ALGOS/node_modules/.bin/jest"
       cd "$$BACKEND_DIR"
