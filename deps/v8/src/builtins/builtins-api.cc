@@ -6,6 +6,7 @@
 #include "src/api/api-natives.h"
 #include "src/builtins/builtins-utils-inl.h"
 #include "src/builtins/builtins.h"
+#include "src/debug/debug.h"
 #include "src/logging/log.h"
 #include "src/logging/runtime-call-stats-scope.h"
 #include "src/objects/objects-inl.h"
@@ -52,6 +53,8 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> HandleApiCallHelper(
     Isolate* isolate, Handle<HeapObject> function,
     Handle<HeapObject> new_target, Handle<FunctionTemplateInfo> fun_data,
     Handle<Object> receiver, BuiltinArguments args) {
+  // Cover HandleApiCall / CallApiCallback as well as InvokeApiFunction.
+  RecordReplayScrubDivergentProgressScope scrub_divergent_progress;
   Handle<JSReceiver> js_receiver;
   JSReceiver raw_holder;
   if (is_construct) {
@@ -171,6 +174,7 @@ MaybeHandle<Object> Builtins::InvokeApiFunction(Isolate* isolate,
                                                 int argc, Handle<Object> args[],
                                                 Handle<HeapObject> new_target) {
   RCS_SCOPE(isolate, RuntimeCallCounterId::kInvokeApiFunction);
+  RecordReplayScrubDivergentProgressScope scrub_divergent_progress;
   DCHECK(function->IsFunctionTemplateInfo() ||
          (function->IsJSFunction() &&
           JSFunction::cast(*function).shared().IsApiFunction()));
@@ -236,6 +240,7 @@ MaybeHandle<Object> Builtins::InvokeApiFunction(Isolate* isolate,
 // a function (without new).
 V8_WARN_UNUSED_RESULT static Object HandleApiCallAsFunctionOrConstructor(
     Isolate* isolate, bool is_construct_call, BuiltinArguments args) {
+  RecordReplayScrubDivergentProgressScope scrub_divergent_progress;
   Handle<Object> receiver = args.receiver();
 
   // Get the object called.
