@@ -10436,7 +10436,7 @@ void RecordReplayOnConsoleMessage(size_t bookmark) {
   gRecordReplayOnConsoleMessage(bookmark);
 }
 
-static Handle<Object>* gCurrentException;
+Handle<Object>* gCurrentException;
 
 extern "C" void V8RecordReplayGetCurrentException(MaybeLocal<Value>* exception) {
   CHECK(IsMainThread());
@@ -10676,6 +10676,16 @@ extern "C" void V8RecordReplayAssert(const char* format, ...) {
 void recordreplay::AssertMaybeEventsDisallowed(const char* format, ...) {
   if (HasAsserts() &&
       !AreEventsDisallowed("AssertMaybeEventsDisallowed")) {
+    va_list ap;
+    va_start(ap, format);
+    gRecordReplayAssert(format, ap);
+    va_end(ap);
+  }
+}
+
+extern "C" void V8RecordReplayAssertMaybeEventsDisallowed(const char* format, ...) {
+  if (recordreplay::HasAsserts() &&
+      !recordreplay::AreEventsDisallowed("AssertMaybeEventsDisallowed")) {
     va_list ap;
     va_start(ap, format);
     gRecordReplayAssert(format, ap);

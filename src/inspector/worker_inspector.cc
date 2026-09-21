@@ -88,6 +88,11 @@ void ParentInspectorHandle::WorkerStarted(
 std::unique_ptr<inspector::InspectorSession> ParentInspectorHandle::Connect(
     std::unique_ptr<inspector::InspectorSessionDelegate> delegate,
     bool prevent_shutdown) {
+  // Worker inspection is NYI when recording/replaying.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return nullptr;
+  }
+
   return parent_thread_->Connect(std::move(delegate), prevent_shutdown);
 }
 

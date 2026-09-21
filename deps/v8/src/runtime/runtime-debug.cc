@@ -1180,7 +1180,7 @@ static std::string FrameSummaryToString(Isolate* isolate, const FrameSummary& su
   return std::string(location);
 }
 
-static std::string GetStackContents(Isolate* isolate, size_t max_frames) {
+std::string GetStackContents(Isolate* isolate, size_t max_frames) {
   size_t num_frames = 0;
 
   std::string contents;
@@ -1239,7 +1239,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
         std::string stack = GetStackContents(isolate, 50);
 
         recordreplay::Warning(
-            "[RUN-1919] JS ExecutionProgress in non-deterministic user JS PC=%zu "
+            "NonDeterministicUserJS:UNGATED:JSProgress PC=%zu "
             "scriptId=%d @%s stack=%s",
             *gProgressCounter, script->id(),
             GetScriptLocationString(script->id(), shared->StartPosition())

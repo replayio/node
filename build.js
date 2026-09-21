@@ -44,7 +44,9 @@ let driverString = "";
 for (let i = 0; i < driverContents.length; i++) {
   driverString += `\\${driverContents[i].toString(8)}`;
 }
-fs.writeFileSync(
+// Chromium twin: writeFileSyncIfChanged — skip mtime bump when driver+BuildId
+// unchanged so make does not rebuild the ~40MB driver TU.
+writeFileSyncIfChanged(
   `${node}/src/node_record_replay_driver.cc`,
   `
 namespace node {
@@ -85,6 +87,24 @@ spawnChecked("make", [`-j${numCPUs}`, "-C", OutDir, "BUILDTYPE=Release"], {
 
 function downloadDriverArchive(downloadUrl, driverArchivePath) {
   curl(downloadUrl, driverArchivePath);
+}
+
+function writeFileSyncIfChanged(filename, newContents) {
+  let changed = false;
+  try {
+    const oldContents = fs.readFileSync(filename, "utf8");
+    changed = oldContents != newContents;
+  } catch (e) {
+    changed = true;
+  }
+
+  if (!changed) {
+    console.log(`[build] Skipping ${filename} because it hasn't changed.`);
+  } else {
+    fs.writeFileSync(filename, newContents);
+  }
+
+  return changed;
 }
 
 function curl(url, outputPath) {

@@ -73,6 +73,7 @@ void MessageHandler::DefaultMessageReport(Isolate* isolate,
   }
 }
 
+extern Handle<Object>* gCurrentException;
 extern "C" size_t V8RecordReplayNewBookmark();
 
 Handle<JSMessageObject> MessageHandler::MakeMessageObject(
@@ -97,11 +98,42 @@ Handle<JSMessageObject> MessageHandler::MakeMessageObject(
       stack_frames.is_null() ? Handle<Object>::cast(factory->undefined_value())
                              : Handle<Object>::cast(stack_frames);
 
+  // This code gets called when handling exceptions and
+  // |V8RecordReplayNewBookmark| might call into Replay's own JavaScript
+  // event/command handling code. We thus need to store current exception
+  // state, and then reset it after we have finished.
   int record_replay_bookmark = 0;
   if (!recordreplay::AreEventsDisallowed() &&
       AllowJavascriptExecution::IsAllowed(isolate) &&
       IsMainThread()) {
+    Handle<Object> exception;
+    if (isolate->has_pending_exception()) {
+      exception = Handle<Object>(isolate->pending_exception(), isolate);
+      isolate->clear_pending_exception();
+      gCurrentException = &exception;
+    }
+    Handle<Object> message;
+    if (isolate->has_pending_message()) {
+      message = Handle<Object>(isolate->pending_message(), isolate);
+      isolate->clear_pending_message();
+    }
+    Handle<Object> scheduledException;
+    if (isolate->has_scheduled_exception()) {
+      scheduledException = Handle<Object>(isolate->scheduled_exception(), isolate);
+      isolate->clear_scheduled_exception();
+    }
     record_replay_bookmark = (int)V8RecordReplayNewBookmark();
+    gCurrentException = nullptr;
+    CHECK(!isolate->has_pending_exception());
+    if (!exception.is_null()) {
+      isolate->set_pending_exception(*exception);
+    }
+    if (!message.is_null()) {
+      isolate->set_pending_message(*message);
+    }
+    if (!scheduledException.is_null()) {
+      isolate->set_scheduled_exception(*scheduledException);
+    }
   }
 
   Handle<JSMessageObject> message_obj = factory->NewJSMessageObject(

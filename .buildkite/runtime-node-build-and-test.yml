@@ -28,11 +28,16 @@ steps:
     key: "build-node-linux"
     # BK default is 60m; cold node make -j4 exceeds that (see build #12).
     timeout_in_minutes: 120
+    # AgentLost exit_status:-1 (BK #102 mid-make) is intermittent infra — auto-retry.
+    retry:
+      automatic:
+        - exit_status: -1
+          limit: 2
     depends_on:
       - "build-driver-linker"
+    # Heavy Node compile — not a deploy job.
     agents:
-      - "deploy=true"
-      - "size=large"
+      - "build-runtime=true"
     # Chromium twin: artifact_paths collects build_id for downstream test steps.
     artifact_paths:
       - "build_id"
@@ -102,8 +107,9 @@ steps:
         echo "$$BUILDER_IMAGE_KEY" > "$$BUILDER_IMAGE_STAMP"
       fi
       # Match build-node.yml: do not inject prod/deploy-access-keys (github-backend)
-      # into the container — that IAM user cannot s3:PutObject builds/. beefmaster
-      # docker uses the agent identity (same as the manual build-node pipeline).
+      # into the container — that IAM user cannot s3:PutObject builds/. build-runtime
+      # EC2s (beefiermaster / runner-*) docker uses the agent identity (same as the
+      # manual build-node pipeline).
       # safe.directory is set inside the image (run_node_build.sh / buildNodeDirectly).
       docker run --rm \
         $$BUILDKITE_DOCKER_ENVS \
@@ -127,6 +133,7 @@ steps:
           region: us-east-2
           env:
             HASURA_ADMIN_SECRET: "prod/hasura-admin-secret"
+            RECORD_REPLAY_API_KEY: "prod/public-api-key"
     command: |
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
@@ -145,7 +152,9 @@ steps:
       test -n "$$BUILD_ID"
       cd "$$BACKEND_DIR"
       unset REPLAY_LOCAL_DRIVER_DIR || true
-      npm ci --prefer-offline --progress=false
+      # packageManager pnpm@10.11.0; can_replay agents lack global npm write (EACCES).
+      # Backend k8s image preinstalls pnpm; here use npx (Node 25 dropped corepack).
+      npx --yes pnpm@10.11.0 install --frozen-lockfile
       export RECORD_REPLAY_ENABLE_ASSERTS=1
       export RECORD_REPLAY_JS_PROGRESS_ASSERTS=1
       # Random tests read node's test/ tree via nodePath().
@@ -164,6 +173,7 @@ steps:
           region: us-east-2
           env:
             HASURA_ADMIN_SECRET: "prod/hasura-admin-secret"
+            RECORD_REPLAY_API_KEY: "prod/public-api-key"
     command: |
       set -euo pipefail
       PIN="__REPLAY_BACKEND_REV__"
@@ -180,16 +190,19 @@ steps:
       buildkite-agent artifact download build_id "$$WORKDIR/"
       BUILD_ID="$$(cat "$$WORKDIR/build_id")"
       test -n "$$BUILD_ID"
+      # JestRepos seed: immer only. Skip javascript-algorithms/babel/redwood/gatsby.
       # ImmerPin v9.0.12 — immer main is vitest-era / no .bin/jest.
       # Owners ship yarn.lock; agents lack yarn → npx yarn. Fresh mktemp seed each job.
-      JEST_DIR="$$WORKDIR/jest/immer"
       mkdir -p "$$WORKDIR/jest"
-      git clone --depth 1 --branch v9.0.12 https://github.com/immerjs/immer.git "$$JEST_DIR"
-      npx --yes yarn@1.22.22 --cwd "$$JEST_DIR" install --frozen-lockfile --non-interactive
-      test -x "$$JEST_DIR/node_modules/.bin/jest"
+      JEST_IMMER="$$WORKDIR/jest/immer"
+      git clone --depth 1 --branch v9.0.12 https://github.com/immerjs/immer.git "$$JEST_IMMER"
+      npx --yes yarn@1.22.22 --cwd "$$JEST_IMMER" install --frozen-lockfile --non-interactive
+      test -x "$$JEST_IMMER/node_modules/.bin/jest"
       cd "$$BACKEND_DIR"
       unset REPLAY_LOCAL_DRIVER_DIR || true
-      npm ci --prefer-offline --progress=false
+      # packageManager pnpm@10.11.0; can_replay agents lack global npm write (EACCES).
+      # Backend k8s image preinstalls pnpm; here use npx (Node 25 dropped corepack).
+      npx --yes pnpm@10.11.0 install --frozen-lockfile
       export RECORD_REPLAY_ENABLE_ASSERTS=1
       export RECORD_REPLAY_JS_PROGRESS_ASSERTS=1
       npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"
