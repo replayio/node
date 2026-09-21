@@ -18,6 +18,7 @@
 #include "src/base/bits.h"
 #include "src/base/debug/stack_trace.h"
 #include "src/base/overflowing-math.h"
+#include "src/base/replayio.h"
 #include "src/base/utils/random-number-generator.h"
 #include "src/builtins/accessors.h"
 #include "src/builtins/builtins.h"
@@ -409,6 +410,15 @@ MaybeHandle<String> Object::ConvertToString(Isolate* isolate,
     }
     if (input->IsBigInt()) {
       return BigInt::ToString(isolate, Handle<BigInt>::cast(input));
+    }
+    // ToPrimitive can run user Symbol.toPrimitive / toString / valueOf (see
+    // MustNotRunUserJS). That happens when the inspector describes a logged
+    // Date for Replay's own session: this V8's descriptionForDate converts the
+    // Date with ToString. Upstream V8 made Date descriptions side-effect free
+    // (25c69ecbc14, "[inspector] Side-effect free DateMirror descriptions"),
+    // so this can be dropped once deps/v8 includes that.
+    if (replayio::MustNotRunUserJS()) {
+      return isolate->factory()->object_to_string();
     }
     ASSIGN_RETURN_ON_EXCEPTION(
         isolate, input,
