@@ -83,18 +83,24 @@ steps:
       echo "dirty=$$(git -C "$$NODE_REPO" status --porcelain 2>/dev/null | wc -l)"
       echo "diff_files=$$(git -C "$$NODE_REPO" diff --name-only HEAD "$$BUILDKITE_COMMIT" 2>/dev/null | wc -l)"
       git -C "$$NODE_REPO" checkout -f --detach "$$BUILDKITE_COMMIT"
-      # Cached out/ objects are only linkable by the toolchain that built them.
-      # The image follows the pinned backend rev's Dockerfile (ubuntu 20.04 g++ 9
-      # vs 22.04 g++ 11), so wipe out/ when it changes instead of failing at link
-      # with undefined GLIBCXX symbols.
-      TOOLCHAIN=$$(docker run --rm --entrypoint g++ linux-node-build -dumpfullversion)
-      STAMP="$$NODE_REPO/out/.toolchain"
-      if [ -f "$$STAMP" ] && [ "$$(cat "$$STAMP")" != "$$TOOLCHAIN" ]; then
-        echo "=== Toolchain g++ $$(cat "$$STAMP") -> $$TOOLCHAIN; wiping out/ for a cold build ==="
-        rm -rf "$$NODE_REPO/out"
+      # Cached out/ objects are only linkable by the toolchain that built them:
+      # the image comes from the pinned backend rev's Dockerfile (ubuntu 20.04
+      # g++ 9 vs 22.04 g++ 11), and mixing them fails at link with undefined
+      # GLIBCXX symbols. Wipe out/ only when that FROM changes (not on pin bump);
+      # no stamp means unknown objects, so wipe those too.
+      BUILDER_IMAGE_STAMP="$$NODE_REPO/.replay-builder-image"
+      BUILDER_IMAGE_KEY="$$(awk '/^FROM /{print; exit}' "$$BACKEND_DIR/src/build/docker/linux_node_build.Dockerfile")"
+      test -n "$$BUILDER_IMAGE_KEY"
+      # Drop the stamp an earlier revision of this guard keyed on the pin.
+      rm -f "$$NODE_REPO/.replay-builder-pin"
+      if [ ! -f "$$BUILDER_IMAGE_STAMP" ] || [ "$$(cat "$$BUILDER_IMAGE_STAMP")" != "$$BUILDER_IMAGE_KEY" ]; then
+        if [ -d "$$NODE_REPO/out" ]; then
+          echo "=== builder image FROM changed; wiping out/ ==="
+          echo "stamp=$$([ -f "$$BUILDER_IMAGE_STAMP" ] && cat "$$BUILDER_IMAGE_STAMP" || echo none) key=$$BUILDER_IMAGE_KEY"
+          rm -rf "$$NODE_REPO/out"
+        fi
+        echo "$$BUILDER_IMAGE_KEY" > "$$BUILDER_IMAGE_STAMP"
       fi
-      mkdir -p "$$NODE_REPO/out"
-      echo "$$TOOLCHAIN" > "$$STAMP"
       # Match build-node.yml: do not inject prod/deploy-access-keys (github-backend)
       # into the container — that IAM user cannot s3:PutObject builds/. beefmaster
       # docker uses the agent identity (same as the manual build-node pipeline).
