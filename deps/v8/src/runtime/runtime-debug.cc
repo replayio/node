@@ -6,6 +6,7 @@
 #include <sstream>
 #include <vector>
 
+#include "src/base/replayio.h"
 #include "src/codegen/compiler.h"
 #include "src/common/globals.h"
 #include "src/debug/debug-coverage.h"
@@ -970,6 +971,34 @@ static std::string ScriptNameToString(Handle<Script> script) {
 // within that script of the function which executed.
 static std::vector<uint64_t>* gProgressData;
 
+RecordReplayScrubDivergentProgressScope::
+    RecordReplayScrubDivergentProgressScope()
+    : active_(false), start_progress_(0), start_data_size_(0) {
+  if (!recordreplay::IsRecordingOrReplaying() || !IsMainThread()) return;
+  if (!recordreplay::AreEventsDisallowed()) return;
+  if (recordreplay::HasDivergedFromRecording()) return;
+  active_ = true;
+  start_progress_ = *gProgressCounter;
+  start_data_size_ = gProgressData ? gProgressData->size() : 0;
+}
+
+RecordReplayScrubDivergentProgressScope::
+    ~RecordReplayScrubDivergentProgressScope() {
+  if (!active_) return;
+  if (recordreplay::HasDivergedFromRecording()) return;
+  if (start_progress_ >= *gProgressCounter) return;
+  // [RUN-1988] Divergent path advanced PC via instrumented user code.
+  *gProgressCounter = start_progress_;
+  if (start_data_size_ == 0) {
+    if (gProgressData) {
+      delete gProgressData;
+      gProgressData = nullptr;
+    }
+  } else if (gProgressData && gProgressData->size() > start_data_size_) {
+    gProgressData->resize(start_data_size_);
+  }
+}
+
 // Buffer holding data most recently reported to the recorder.
 static std::vector<uint64_t>* gReportedProgressData;
 
@@ -1152,7 +1181,7 @@ static std::string FrameSummaryToString(Isolate* isolate, const FrameSummary& su
   return std::string(location);
 }
 
-static std::string GetStackContents(Isolate* isolate, size_t max_frames) {
+std::string GetStackContents(Isolate* isolate, size_t max_frames) {
   size_t num_frames = 0;
 
   std::string contents;
@@ -1175,14 +1204,14 @@ static std::string GetStackContents(Isolate* isolate, size_t max_frames) {
   return contents.length() ? contents : std::string("<no frame>");
 }
 
-RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
+static bool gHasPrintedStack = false;
+
+static void OnExecutionProgress(Isolate* isolate, Handle<JSFunction> function) {
   if (++*gProgressCounter == gTargetProgress) {
     RecordReplayOnTargetProgressReached();
   }
 
   if (gRecordReplayAssertProgress) {
-    Handle<JSFunction> function = args.at<JSFunction>(0);
-
     if (!gProgressData) {
       gProgressData = new std::vector<uint64_t>();
     }
@@ -1190,16 +1219,36 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   }
 
   if (gRecordReplayCheckProgress) {
-    Handle<JSFunction> function = args.at<JSFunction>(0);
-
     Handle<SharedFunctionInfo> shared(function->shared(), isolate);
     Handle<Script> script(Script::cast(shared->script()), isolate);
 
     CHECK(RecordReplayBytecodeAllowed());
     CHECK(gRecordReplayHasCheckpoint);
     CHECK(!RecordReplayIgnoreScript(*script));
-  }
 
+    if (replayio::MustNotRunUserJS()) {
+      // Print JS stack if user JS was executed non-deterministically
+      // and we were not paused.
+      if (!gHasPrintedStack) {  // Prevent flood.
+        gHasPrintedStack = true;
+        HandleScope scope(isolate);
+        std::string stack = GetStackContents(isolate, 50);
+
+        recordreplay::Warning(
+            "NonDeterministicUserJSUngated",
+            {{"trigger", "JSProgress"},
+             {"progress", *gProgressCounter},
+             {"scriptId", script->id()},
+             {"location", GetScriptLocationString(script->id(),
+                                                  shared->StartPosition())},
+             {"jsStack", stack}});
+      }
+    }
+  }
+}
+
+RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
+  OnExecutionProgress(isolate, args.at<JSFunction>(0));
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
@@ -1207,6 +1256,24 @@ RUNTIME_FUNCTION(Runtime_RecordReplayTargetProgressReached) {
   CHECK(*gProgressCounter == gTargetProgress);
   RecordReplayOnTargetProgressReached();
   return ReadOnlyRoots(isolate).undefined_value();
+}
+
+// The baseline JIT's variant of Runtime_RecordReplayAssertExecutionProgress
+// takes the accumulator and returns it. The calling frame's baseline code can
+// be discarded while the call is on the stack (e.g. when a breakpoint is set),
+// and the frame then resumes in the interpreter with the call's result as its
+// accumulator.
+RUNTIME_FUNCTION(Runtime_RecordReplayBaselineExecutionProgress) {
+  OnExecutionProgress(isolate, args.at<JSFunction>(0));
+  return args[1];
+}
+
+// Called by the baseline JIT once the progress counter it incremented inline
+// reaches the target progress.
+RUNTIME_FUNCTION(Runtime_RecordReplayBaselineTargetProgressReached) {
+  CHECK(*gProgressCounter == gTargetProgress);
+  RecordReplayOnTargetProgressReached();
+  return args[0];
 }
 
 // Assertion and instrumentation site indexes embedded in bytecodes are offset
@@ -1381,23 +1448,26 @@ static inline void OnInstrumentation(Isolate* isolate,
   }
 
   RecordReplayInstrument(site.kind_, site.function_id_.c_str(),
-                         site.bytecode_offset_);
+                         site.function_index_);
 }
 
 extern bool gRecordReplayInstrumentationEnabled;
 
-RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
+static void OnInstrumentationSite(Isolate* isolate, RuntimeArguments& args) {
   if (!gRecordReplayInstrumentationEnabled) {
-    return ReadOnlyRoots(isolate).undefined_value();
+    return;
   }
 
   HandleScope scope(isolate);
-  DCHECK_EQ(2, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
   CONVERT_NUMBER_CHECKED(int32_t, index, Int32, args[1]);
 
   OnInstrumentation(isolate, function, index);
+}
 
+RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
+  DCHECK_EQ(2, args.length());
+  OnInstrumentationSite(isolate, args);
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
@@ -1409,9 +1479,9 @@ int RecordReplayCurrentGeneratorIdRaw() {
   return gCurrentGeneratorId;
 }
 
-RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentationGenerator) {
+static void OnGeneratorInstrumentationSite(Isolate* isolate,
+                                           RuntimeArguments& args) {
   HandleScope scope(isolate);
-  DCHECK_EQ(3, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
   CONVERT_NUMBER_CHECKED(int32_t, index, Int32, args[1]);
   CONVERT_ARG_HANDLE_CHECKED(JSGeneratorObject, generator_object, 2);
@@ -1427,8 +1497,30 @@ RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentationGenerator) {
   }
 
   gCurrentGeneratorId = 0;
+}
 
+RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentationGenerator) {
+  DCHECK_EQ(3, args.length());
+  OnGeneratorInstrumentationSite(isolate, args);
   return ReadOnlyRoots(isolate).undefined_value();
+}
+
+// The baseline JIT's variants of the instrumentation calls take the
+// accumulator as their last argument and return it, like
+// Runtime_RecordReplayBaselineExecutionProgress: the accumulator is live
+// around these sites (after ResumeGenerator), and the frame resumes in the
+// interpreter with the call's result as its accumulator if its baseline code
+// is discarded meanwhile.
+RUNTIME_FUNCTION(Runtime_RecordReplayBaselineInstrumentation) {
+  DCHECK_EQ(3, args.length());
+  OnInstrumentationSite(isolate, args);
+  return args[2];
+}
+
+RUNTIME_FUNCTION(Runtime_RecordReplayBaselineInstrumentationGenerator) {
+  DCHECK_EQ(4, args.length());
+  OnGeneratorInstrumentationSite(isolate, args);
+  return args[3];
 }
 
 }  // namespace internal
