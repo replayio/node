@@ -35,8 +35,7 @@ steps:
           limit: 2
     depends_on:
       - "build-driver-linker"
-    # Heavy Node compile — not a deploy job. Shared with Chromium build EC2s via
-    # build-runtime=true (see backend/charts/buildkite-agent/ec2-agent-tags.yaml).
+    # Heavy Node compile — not a deploy job.
     agents:
       - "build-runtime=true"
     # Chromium twin: artifact_paths collects build_id for downstream test steps.
