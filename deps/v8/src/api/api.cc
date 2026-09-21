@@ -2530,6 +2530,12 @@ i::ScriptDetails GetScriptDetails(
 
 }  // namespace
 
+namespace internal {
+extern void RecordReplayRegisterCompiledScript(
+    Isolate* isolate,
+    MaybeDirectHandle<SharedFunctionInfo> maybe_function_info);
+}  // namespace internal
+
 MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundInternal(
     Isolate* v8_isolate, Source* source, CompileOptions options,
     NoCacheReason no_cache_reason) {
@@ -2586,6 +2592,8 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundInternal(
         i_isolate, str, script_details, options, no_cache_reason,
         i::NOT_NATIVES_CODE, &source->compilation_details);
   }
+
+  i::RecordReplayRegisterCompiledScript(i_isolate, maybe_function_info);
 
   if (!maybe_function_info.ToHandle(&result)) return {};
   DCHECK(!i::HeapLayout::InReadOnlySpace(*result));
@@ -2793,9 +2801,12 @@ i::MaybeDirectHandle<i::SharedFunctionInfo> CompileStreamedSource(
                        origin.GetHostDefinedOptions(), origin.Options());
   i::ScriptStreamingData* data = v8_source->impl();
   i::IsCompiledScope is_compiled_scope;
-  return i::Compiler::GetSharedFunctionInfoForStreamedScript(
-      i_isolate, str, script_details, data, &is_compiled_scope,
-      &v8_source->compilation_details());
+  i::MaybeDirectHandle<i::SharedFunctionInfo> maybe_function_info =
+      i::Compiler::GetSharedFunctionInfoForStreamedScript(
+          i_isolate, str, script_details, data, &is_compiled_scope,
+          &v8_source->compilation_details());
+  i::RecordReplayRegisterCompiledScript(i_isolate, maybe_function_info);
+  return maybe_function_info;
 }
 
 }  // namespace
@@ -12243,10 +12254,25 @@ bool RecordReplayShouldAssertForSource(const char* source) {
 
 bool gRecordReplayHasCheckpoint;
 
+extern void RecordReplayRegisterScriptsBeforeFirstCheckpoint();
+
+// The recording starts the progress counter from zero at the first checkpoint,
+// and nothing should advance it before: node takes the first checkpoint
+// (StartExecution) before any instrumented JS runs. The reset is defensive; it
+// is safe, as nothing before the first checkpoint is addressed by progress and
+// recording and replaying run the same code before it.
+static void RecordReplayBeforeFirstCheckpoint() {
+  if (*gProgressCounter) {
+    recordreplay::Warning("ProgressBeforeFirstCheckpoint",
+                          {{"progress", *gProgressCounter}});
+  }
+  *gProgressCounter = 0;
+}
+
 } // namespace internal
 
 bool recordreplay::IsRecordingOrReplaying(const char* feature, const char* subfeature) {
-  return gRecordingOrReplaying && (!feature || FeatureEnabled(feature, subfeature));
+  return internal::gRecordReplayIsRecordingOrReplaying && (!feature || FeatureEnabled(feature, subfeature));
 }
 
 bool recordreplay::FeatureEnabled(const char* feature, const char* subfeature) {
@@ -12503,15 +12529,29 @@ void recordreplay::InvalidateRecording(const char* why) {
 
 void recordreplay::NewCheckpoint() {
   if (IsRecordingOrReplaying()) {
+    bool first = !internal::gRecordReplayHasCheckpoint;
+    if (first) {
+      internal::RecordReplayBeforeFirstCheckpoint();
+    }
     internal::gRecordReplayHasCheckpoint = true;
     gRecordReplayNewCheckpoint();
+    if (first) {
+      internal::RecordReplayRegisterScriptsBeforeFirstCheckpoint();
+    }
   }
 }
 
 void RecordReplayNewCheckpointFlushed() {
   if (recordreplay::IsRecordingOrReplaying()) {
+    bool first = !internal::gRecordReplayHasCheckpoint;
+    if (first) {
+      internal::RecordReplayBeforeFirstCheckpoint();
+    }
     internal::gRecordReplayHasCheckpoint = true;
     gRecordReplayNewCheckpointFlushed();
+    if (first) {
+      internal::RecordReplayRegisterScriptsBeforeFirstCheckpoint();
+    }
   }
 }
 
