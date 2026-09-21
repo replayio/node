@@ -4,6 +4,9 @@
 
 #include "src/execution/execution.h"
 
+#include <sstream>
+#include <string>
+
 #include "src/api/api-inl.h"
 #include "src/debug/debug.h"
 #include "src/execution/frames.h"
@@ -19,6 +22,11 @@
 
 namespace v8 {
 namespace internal {
+
+extern bool RecordReplayIsDivergentUserJSWithoutPause(
+    Tagged<SharedFunctionInfo> shared);
+extern uint64_t* gProgressCounter;
+extern std::string GetStackContents(Isolate* isolate, size_t max_frames);
 
 namespace {
 
@@ -265,11 +273,61 @@ MaybeDirectHandle<Context> NewScriptContext(
   return result;
 }
 
+static std::string GetFunctionScriptName(Isolate* isolate,
+                                         DirectHandle<JSFunction> function) {
+  if (!IsScript(function->shared()->script())) {
+    return "<not-script>";
+  }
+  Handle<Script> script(Cast<Script>(function->shared()->script()),
+                        isolate);
+  if (IsUndefined(script->name())) {
+    return "<none>";
+  }
+  std::unique_ptr<char[]> name = Cast<String>(script->name())->ToCString();
+  return std::string(name.get());
+}
+
+// Get a description of a function's location for logging etc.
+static std::string GetFunctionLocationInfo(Isolate* isolate,
+                                           DirectHandle<JSFunction> function) {
+  if (!IsScript(function->shared()->script())) {
+    return "<not-script>";
+  }
+
+  Handle<Script> script(Cast<Script>(function->shared()->script()),
+                        isolate);
+
+  Script::PositionInfo info;
+  Script::GetPositionInfo(script, function->shared()->StartPosition(), &info,
+                          Script::OffsetFlag::kWithOffset);
+
+  std::ostringstream os;
+  // Chromium ternary is inverted (always -1); emit real scriptId.
+  os << "scriptId=" << script->id();
+  os << " @" << GetFunctionScriptName(isolate, function) << ":"
+     << info.line + 1 << ":" << info.column;
+  return os.str();
+}
+
+// Block C++→JS entry that can run registered user JS while events are disallowed.
+static MaybeHandle<Object> RecordReplayBlockNonDeterministicUserJs(
+    Isolate* isolate, const char* kind, const std::string& detail) {
+  // Node lacks PrintCurrentStackTrace(ostream); reuse GetStackContents.
+  std::string stack = GetStackContents(isolate, 50);
+  recordreplay::Warning("NonDeterministicUserJSBlocked",
+                        {{"trigger", kind},
+                         {"progress", *gProgressCounter},
+                         {"detail", detail},
+                         {"jsStack", stack}});
+  return isolate->factory()->undefined_value();
+}
+
 V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
                                                  const InvokeParams& params) {
   RCS_SCOPE(isolate, RuntimeCallCounterId::kInvoke);
   DCHECK(!IsJSGlobalObject(*params.receiver));
   DCHECK_LE(params.args.size(), FixedArray::kMaxLength);
+  RecordReplayScrubDivergentProgressScope scrub_divergent_progress;
   DCHECK(!isolate->has_exception());
   // Runtime code must be able to get the "current" isolate from TLS, and this
   // must equal the isolate we execute in.
@@ -327,12 +385,12 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
     }
 #ifdef DEBUG
     if (function->shared()->is_script()) {
-      DCHECK(params.IsScript());
+      DCHECK(IsScript(params));
       DCHECK(IsJSGlobalProxy(*params.receiver));
       DCHECK_EQ(params.args.size(), 1);
       DCHECK(IsFixedArray(*params.args[0]));
     } else {
-      DCHECK(!params.IsScript());
+      DCHECK(!IsScript(params));
     }
 #endif
     // Set up a ScriptContext when running scripts that need it.
@@ -370,6 +428,15 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
     return isolate->factory()->undefined_value();
   }
   isolate->IncrementJavascriptExecutionCounter();
+
+  // User JS must not run on divergent paths unless paused.
+  if (IsJSFunction(*params.target)) {
+    DirectHandle<JSFunction> function = Cast<JSFunction>(params.target);
+    if (RecordReplayIsDivergentUserJSWithoutPause(function->shared())) {
+      return RecordReplayBlockNonDeterministicUserJs(
+          isolate, "JSInvoke", GetFunctionLocationInfo(isolate, function));
+    }
+  }
 
   if (params.execution_target == Execution::Target::kCallable) {
     DirectHandle<NativeContext> context = isolate->native_context();
