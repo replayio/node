@@ -664,6 +664,10 @@ class V8_EXPORT_PRIVATE PropertyIterator {
   virtual bool has_native_setter() = 0;
   virtual Maybe<PropertyAttribute> attributes() = 0;
   virtual Maybe<PropertyDescriptor> descriptor() = 0;
+  // Whether the property is a lazy data property (Object::SetLazyDataProperty)
+  // whose holder still has its replace-on-access getter, so reading its
+  // descriptor runs it.
+  virtual bool RecordReplayIsUnloadedLazyDataProperty() = 0;
 
   virtual bool is_own() = 0;
   virtual bool is_array_index() = 0;

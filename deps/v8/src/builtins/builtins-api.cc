@@ -8,6 +8,7 @@
 #include "src/builtins/builtins-utils-inl.h"
 #include "src/builtins/builtins.h"
 #include "src/common/assert-scope.h"
+#include "src/debug/debug.h"
 #include "src/logging/log.h"
 #include "src/logging/runtime-call-stats-scope.h"
 #include "src/objects/objects-inl.h"
@@ -58,6 +59,8 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> HandleApiCallHelper(
     Isolate* isolate, DirectHandle<HeapObject> new_target,
     DirectHandle<FunctionTemplateInfo> fun_data, DirectHandle<Object> receiver,
     Address* argv, int argc) {
+  // Cover HandleApiCall / CallApiCallback as well as InvokeApiFunction.
+  RecordReplayScrubDivergentProgressScope scrub_divergent_progress;
   Handle<JSReceiver> js_receiver;
   if (is_construct) {
     DCHECK(IsTheHole(*receiver, isolate));
@@ -168,6 +171,7 @@ MaybeHandle<Object> Builtins::InvokeApiFunction(
     base::Vector<const DirectHandle<Object>> args,
     DirectHandle<HeapObject> new_target) {
   RCS_SCOPE(isolate, RuntimeCallCounterId::kInvokeApiFunction);
+  RecordReplayScrubDivergentProgressScope scrub_divergent_progress;
 
   // Do proper receiver conversion for non-strict mode api functions.
   if (!is_construct && !IsJSReceiver(*receiver)) {
@@ -203,6 +207,7 @@ HandleApiCallAsFunctionOrConstructorDelegate(Isolate* isolate,
                                              bool is_construct_call,
                                              BuiltinArguments args) {
   DirectHandle<Object> receiver = args.receiver();
+  RecordReplayScrubDivergentProgressScope scrub_divergent_progress;
 
   // Get the object called.
   Tagged<JSObject> obj = Cast<JSObject>(*receiver);
