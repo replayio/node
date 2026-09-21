@@ -804,6 +804,17 @@ class StackTraceBuilder {
   }
 
   bool IsNotHidden(Handle<JSFunction> function) {
+    // Hide API functions from every kind of frame, not just builtin exit
+    // frames: an API call made from optimized code shows up in that frame's
+    // summary instead, so the check below only in AppendBuiltinExitFrame made
+    // stack traces depend on whether the caller was optimized. Backported from
+    // upstream V8 3312b952d14 ("Introduce BuiltinExitFrame::Summarize()").
+    // TODO(szuend): Remove this check once the flag is enabled
+    //               by default.
+    if (!FLAG_experimental_stack_trace_frames &&
+        function->shared().IsApiFunction()) {
+      return false;
+    }
     // Functions defined not in user scripts are not visible unless directly
     // exposed, in which case the native flag is set.
     // The --builtins-in-stack-traces command line flag allows including
