@@ -6,6 +6,7 @@
 
 #include "src/common/assert-scope.h"
 #include "src/common/globals.h"
+#include "src/execution/isolate.h"
 #include "src/interpreter/bytecode-array-writer.h"
 #include "src/interpreter/bytecode-jump-table.h"
 #include "src/interpreter/bytecode-label.h"
@@ -24,6 +25,8 @@ extern int RegisterAssertValueSite(const std::string& desc,
 extern int RegisterInstrumentationSite(const char* kind, int source_position,
                                        int bytecode_offset);
 extern bool gRecordReplayAssertValues;
+extern bool RecordReplayShouldEmitOpcodes(Isolate* isolate, int script_id,
+                                          bool record_replay_ignore);
 
 namespace interpreter {
 
@@ -48,7 +51,7 @@ class RegisterTransferWriter final
 };
 
 BytecodeArrayBuilder::BytecodeArrayBuilder(
-    Zone* zone, int parameter_count, int locals_count,
+    Zone* zone, int parameter_count, int locals_count, int script_id,
     bool record_replay_ignore, FeedbackVectorSpec* feedback_vector_spec,
     SourcePositionTableBuilder::RecordingMode source_position_mode)
     : zone_(zone),
@@ -71,8 +74,9 @@ BytecodeArrayBuilder::BytecodeArrayBuilder(
         zone->New<RegisterTransferWriter>(this));
   }
 
-  if (recordreplay::IsRecordingOrReplaying() && IsMainThread() &&
-      !record_replay_ignore) {
+  Isolate* isolate = IsMainThread() ? Isolate::Current() : nullptr;
+  if (RecordReplayShouldEmitOpcodes(isolate, script_id,
+                                    record_replay_ignore)) {
     emit_record_replay_opcodes_ = true;
   }
 }

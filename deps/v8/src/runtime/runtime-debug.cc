@@ -1180,7 +1180,7 @@ static std::string FrameSummaryToString(Isolate* isolate, const FrameSummary& su
   return std::string(location);
 }
 
-static std::string GetStackContents(Isolate* isolate, size_t max_frames) {
+std::string GetStackContents(Isolate* isolate, size_t max_frames) {
   size_t num_frames = 0;
 
   std::string contents;
