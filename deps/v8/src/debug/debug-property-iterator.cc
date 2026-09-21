@@ -170,6 +170,28 @@ v8::Maybe<v8::debug::PropertyDescriptor> DebugPropertyIterator::descriptor() {
   });
 }
 
+bool DebugPropertyIterator::RecordReplayIsUnloadedLazyDataProperty() {
+  if (stage_ == kExoticIndices) return false;
+  Handle<JSReceiver> receiver =
+      PrototypeIterator::GetCurrent<JSReceiver>(prototype_iterator_);
+  PropertyKey key(isolate_, raw_name());
+  if (key.is_element()) return false;
+  // Node defines lazy globals, which is_native_accessor() doesn't report on a
+  // global proxy, so look through its access check.
+  LookupIterator it(isolate_, receiver, key, LookupIterator::OWN);
+  for (; it.IsFound(); it.Next()) {
+    if (it.state() == LookupIterator::ACCESS_CHECK) {
+      if (!it.HasAccess()) return false;
+      continue;
+    }
+    if (it.state() != LookupIterator::ACCESSOR) return false;
+    Handle<Object> structure = it.GetAccessors();
+    return IsAccessorInfo(*structure) &&
+           Handle<AccessorInfo>::cast(structure)->replace_on_access();
+  }
+  return false;
+}
+
 bool DebugPropertyIterator::is_own() { return is_own_; }
 
 bool DebugPropertyIterator::is_array_index() {

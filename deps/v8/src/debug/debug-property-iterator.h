@@ -38,6 +38,7 @@ class DebugPropertyIterator final : public debug::PropertyIterator {
   bool has_native_setter() override;
   v8::Maybe<v8::PropertyAttribute> attributes() override;
   v8::Maybe<v8::debug::PropertyDescriptor> descriptor() override;
+  bool RecordReplayIsUnloadedLazyDataProperty() override;
 
   bool is_own() override;
   bool is_array_index() override;

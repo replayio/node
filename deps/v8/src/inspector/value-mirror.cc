@@ -17,6 +17,7 @@
 #include "include/v8-typed-array.h"
 #include "include/v8-wasm.h"
 #include "src/base/optional.h"
+#include "src/base/replayio.h"
 #include "src/debug/debug-interface.h"
 #include "src/inspector/v8-debugger.h"
 #include "src/inspector/v8-deep-serializer.h"
@@ -263,6 +264,13 @@ String16 descriptionForError(v8::Local<v8::Context> context,
   v8::Isolate* isolate = context->GetIsolate();
   v8::TryCatch tryCatch(isolate);
   String16 className = toProtocolString(isolate, object->GetConstructorName());
+
+  // Get("stack"|"message") can run user accessors and prepareStackTrace (see
+  // MustNotRunUserJS). Replay's own session never reads Error descriptions
+  // (previews are built in pauses), so any placeholder works.
+  if (v8::replayio::MustNotRunUserJS()) {
+    return className + " (Divergent message + stack retrieval skipped)";
+  }
 
   v8::base::Optional<String16> stack;
   {
@@ -1555,6 +1563,19 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
         enumerable = !(attributes & v8::PropertyAttribute::DontEnum);
         configurable = !(attributes & v8::PropertyAttribute::DontDelete);
         isAccessorProperty = getterMirror || setterMirror;
+      } else if (v8::recordreplay::AreEventsDisallowed() &&
+                 iterator->RecordReplayIsUnloadedLazyDataProperty()) {
+        // is_native_accessor() misses a lazy data property on a global proxy,
+        // and reading its descriptor runs its getter, which for node's lazy
+        // globals loads a module. Replay's own session describes values with
+        // events disallowed, where that would change the program's state
+        // unrecorded (see MustNotRunUserJS) or, in a pause that diverged, make
+        // system calls the recording doesn't have. It stays an accessor for
+        // the viewer to call.
+        getterMirror = createNativeGetter(context, object, v8Name);
+        enumerable = !(attributes & v8::PropertyAttribute::DontEnum);
+        configurable = !(attributes & v8::PropertyAttribute::DontDelete);
+        isAccessorProperty = true;
       } else {
         v8::TryCatch tryCatchDescriptor(isolate);
         v8::debug::PropertyDescriptor descriptor;
@@ -1580,8 +1601,17 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
             setterMirror = ValueMirror::create(context, descriptor.set);
           }
           isAccessorProperty = getterMirror || setterMirror;
+          // Reading a getter that reports no script id, to show its value
+          // instead of the accessor, runs user JS for any callable a program
+          // can define that way: a bound function, a proxy, an API function.
+          // V8 10.2 replaced the side-effect-free CallFunctionOn() this used
+          // with a plain Get(), so the side effects now happen. Replay's own
+          // session describes values with events disallowed, where nothing
+          // the program does is recorded (see MustNotRunUserJS), so there the
+          // property has to stay an accessor for the viewer to call.
           if (name != "__proto__" && !getterFunction.IsEmpty() &&
               getterFunction->ScriptId() == v8::UnboundScript::kNoScriptId &&
+              !v8::replayio::MustNotRunUserJS() &&
               !doesAttributeHaveObservableSideEffectOnGet(context, object,
                                                           v8Name)) {
             v8::TryCatch tryCatchFunction(isolate);
