@@ -5,6 +5,7 @@
 #include "src/codegen/compiler.h"
 
 #include <algorithm>
+#include <atomic>
 #include <memory>
 
 #include "include/replayio.h"
@@ -1808,6 +1809,14 @@ bool BackgroundCompileTask::is_streaming_compilation() const {
   return function_literal_id_ == kFunctionLiteralIdTopLevel;
 }
 
+// For use when checking that record/replay opcodes are only emitted
+// for the main thread.
+static std::atomic<size_t> gNumRunningBackgroundCompileTasks;
+
+size_t NumRunningBackgroundCompileTasks() {
+  return gNumRunningBackgroundCompileTasks;
+}
+
 void BackgroundCompileTask::Run() {
   RwxMemoryWriteScope::SetDefaultPermissionsForNewThread();
   DCHECK_NE(ThreadId::Current(), isolate_for_local_isolate_->thread_id());
@@ -1828,6 +1837,8 @@ void BackgroundCompileTask::RunOnMainThread(Isolate* isolate) {
 
 void BackgroundCompileTask::Run(
     LocalIsolate* isolate, ReusableUnoptimizedCompileState* reusable_state) {
+  gNumRunningBackgroundCompileTasks++;
+
   TimedHistogramScope timer(timer_);
 
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.compile"),
@@ -1940,6 +1951,8 @@ void BackgroundCompileTask::Run(
   outer_function_sfi_ = isolate->heap()->NewPersistentMaybeHandle(maybe_result);
   DCHECK(isolate->heap()->ContainsPersistentHandle(script_.location()));
   persistent_handles_ = isolate->heap()->DetachPersistentHandles();
+
+  gNumRunningBackgroundCompileTasks--;
 }
 
 // A class which traverses the constant pools of newly compiled
