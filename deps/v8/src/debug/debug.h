@@ -659,6 +659,23 @@ class SuppressDebug {
   bool old_state_;
 };
 
+// [RUN-1988] On EventsDisallowed paths, rewind Progress if instrumented user JS
+// advanced it. Used at C++→JS / API callback entries.
+class RecordReplayScrubDivergentProgressScope {
+ public:
+  RecordReplayScrubDivergentProgressScope();
+  ~RecordReplayScrubDivergentProgressScope();
+  RecordReplayScrubDivergentProgressScope(
+      const RecordReplayScrubDivergentProgressScope&) = delete;
+  RecordReplayScrubDivergentProgressScope& operator=(
+      const RecordReplayScrubDivergentProgressScope&) = delete;
+
+ private:
+  bool active_;
+  uint64_t start_progress_;
+  size_t start_data_size_;
+};
+
 }  // namespace internal
 }  // namespace v8
 
