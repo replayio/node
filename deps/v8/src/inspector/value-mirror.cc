@@ -8,6 +8,7 @@
 #include <cmath>
 
 #include "src/base/optional.h"
+#include "src/base/replayio.h"
 #include "src/debug/debug-interface.h"
 #include "src/inspector/v8-debugger.h"
 #include "src/inspector/v8-inspector-impl.h"
@@ -251,6 +252,13 @@ String16 descriptionForError(v8::Local<v8::Context> context,
   v8::Isolate* isolate = context->GetIsolate();
   v8::TryCatch tryCatch(isolate);
   String16 className = toProtocolString(isolate, object->GetConstructorName());
+
+  // Get("stack"|"message") can run user accessors and prepareStackTrace (see
+  // MustNotRunUserJS). Replay's own session never reads Error descriptions
+  // (previews are built in pauses), so any placeholder works.
+  if (v8::replayio::MustNotRunUserJS()) {
+    return className + " (Divergent message + stack retrieval skipped)";
+  }
 
   v8::base::Optional<String16> stack;
   {
