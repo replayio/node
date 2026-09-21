@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <optional>
+#include <unordered_map>
 
 #include "include/replayio.h"
 #include "src/api/api-inl.h"
@@ -4030,7 +4031,22 @@ bool RecordReplayIgnoreScriptByURL(const char* url) {
   return !strncmp(url, "node:", 5);
 }
 
-static void RecordReplayRegisterScript(DirectHandle<Script> script) {
+typedef std::unordered_set<int> ScriptIdSet;
+static ScriptIdSet* gRegisteredScripts;
+
+// Whether a compile emits record/replay instrumentation: its flags say so,
+// which compiles take from the script they compile into, as decided once when
+// the script was created (ParseInfo::CreateScript). Bytecode generated off the
+// main thread is never instrumented; scripts created there aren't either.
+bool RecordReplayShouldEmitOpcodes(bool record_replay_ignore) {
+  return recordreplay::IsRecordingOrReplaying() && IsMainThread() &&
+         !record_replay_ignore;
+}
+
+bool RecordReplayHasRegisteredScript(Script script) {
+  return IsMainThread() && gRegisteredScripts &&
+         gRegisteredScripts->find(script.id()) != gRegisteredScripts->end();
+}
   CHECK(IsMainThread());
 
   if (!gRecordReplayScripts) {

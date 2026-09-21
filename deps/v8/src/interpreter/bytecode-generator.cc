@@ -51,9 +51,6 @@
 
 namespace v8 {
 namespace internal {
-
-extern bool RecordReplayIgnoreScript(Script script);
-
 namespace interpreter {
 
 // Scoped class tracking context objects created by the visitor. Represents
@@ -1511,11 +1508,6 @@ using NullContextScopeFor = typename NullContextScopeHelper<Isolate>::Type;
 template <typename IsolateT>
 Handle<BytecodeArray> BytecodeGenerator::FinalizeBytecode(
     IsolateT* isolate, Handle<Script> script) {
-  if (recordreplay::IsRecordingOrReplaying() && IsMainThread()) {
-    CHECK(info()->flags().record_replay_ignore() ==
-          RecordReplayIgnoreScript(*script));
-  }
-
   DCHECK_EQ(ThreadId::Current(), isolate->thread_id());
 #ifdef DEBUG
   // Unoptimized compilation should be context-independent. Verify that we don't
