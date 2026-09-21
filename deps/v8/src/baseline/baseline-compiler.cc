@@ -2227,6 +2227,12 @@ void BaselineCompiler::VisitIncBlockCounter() {
 }
 
 void BaselineCompiler::VisitRecordReplayIncExecutionProgressCounter() {
+  // The bytecode is declared with ImplicitRegisterUse::kNone, so the register
+  // optimizer may keep a pending store live in the accumulator across it (e.g.
+  // the rest parameter array right after CreateRestParameter). The runtime
+  // call returns in the accumulator register, so preserve it as the
+  // interpreter handler does.
+  SaveAccumulatorScope accumulator_scope(&basm_);
   // The optimized path is currently disabled.
   // See https://linear.app/replay/issue/RUN-744
   if ((true)/*gRecordReplayAssertProgress*/) {
