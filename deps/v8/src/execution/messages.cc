@@ -339,8 +339,10 @@ MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
   const bool in_recursion = isolate->formatting_stack_trace();
   const bool has_overflowed = i::StackLimitCheck{isolate}.HasOverflowed();
   Handle<NativeContext> error_context;
+  // Skip prepareStackTrace under DisallowEvents (may hit unbound syscalls).
   if (!in_recursion && !has_overflowed &&
       error->GetCreationContext(isolate).ToHandle(&error_context)) {
+      !recordreplay::AreEventsDisallowed() &&
     if (isolate->HasPrepareStackTraceCallback()) {
       PrepareStackTraceScope scope(isolate);
 
