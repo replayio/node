@@ -5,6 +5,7 @@
 #include "src/debug/debug.h"
 
 #include <memory>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "include/replayio.h"
@@ -3358,6 +3359,53 @@ bool RecordReplayIgnoreScriptByURL(const char* url) {
   return !strncmp(url, "node:", 5);
 }
 
+typedef std::unordered_set<int> ScriptIdSet;
+static ScriptIdSet* gRegisteredScripts;
+
+typedef std::unordered_map<int, bool> ScriptIdBoolMap;
+typedef std::unordered_map<Isolate*, ScriptIdBoolMap> IsolateOpcodeEmitMap;
+static IsolateOpcodeEmitMap* gOpcodeEmitByScript = nullptr;
+static base::Mutex* gOpcodeEmitByScriptMutex = new base::Mutex;
+
+// Node lacks embedder HasDefaultContext; never permanently disable emit.
+static bool RecordReplayHasDefaultContext() { return true; }
+
+// Compiles diverge (GC bytecode flush, cache ageing, etc.); freeze first emit
+// decision per (isolate, script_id). Keep IsMainThread gate (no BCT counter).
+bool RecordReplayShouldEmitOpcodes(Isolate* isolate, int script_id,
+                                   bool record_replay_ignore) {
+  const bool base_emit_opcodes =
+      recordreplay::IsRecordingOrReplaying() && IsMainThread() &&
+      RecordReplayHasDefaultContext() && !record_replay_ignore;
+  if (script_id == v8::UnboundScript::kNoScriptId || isolate == nullptr) {
+    return base_emit_opcodes;
+  }
+  base::MutexGuard guard(gOpcodeEmitByScriptMutex);
+  if (!gOpcodeEmitByScript) {
+    gOpcodeEmitByScript = new IsolateOpcodeEmitMap;
+  }
+  ScriptIdBoolMap& emit_by_script = (*gOpcodeEmitByScript)[isolate];
+  auto it = emit_by_script.find(script_id);
+  if (it != emit_by_script.end()) {
+    return it->second;
+  }
+  emit_by_script[script_id] = base_emit_opcodes;
+  return base_emit_opcodes;
+}
+
+bool RecordReplayHasRegisteredScript(Script script) {
+  return IsMainThread() && gRegisteredScripts &&
+         gRegisteredScripts->find(script.id()) != gRegisteredScripts->end();
+}
+
+bool RecordReplayIsDivergentUserJSWithoutPause(
+    const SharedFunctionInfo& shared) {
+  return recordreplay::AreEventsDisallowed() &&
+         !recordreplay::HasDivergedFromRecording() &&
+         shared.script().IsScript() &&
+         RecordReplayHasRegisteredScript(Script::cast(shared.script()));
+}
+
 static void RecordReplayRegisterScript(Handle<Script> script) {
   CHECK(IsMainThread());
 
@@ -3395,6 +3443,11 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
       url = std::string("file://") + name_str;
     }
   }
+
+  if (!gRegisteredScripts) {
+    gRegisteredScripts = new ScriptIdSet;
+  }
+  gRegisteredScripts->insert(script->id());
 
   RecordReplayOnNewSource(isolate, id.get(), "scriptSource", url.length() ? url.c_str() : nullptr);
 
@@ -3546,16 +3599,6 @@ bool RecordReplayIgnoreScript(Script script) {
   bool rv = RecordReplayIgnoreScriptRaw(script);
   (*gShouldIgnoreScripts)[script.id()] = rv;
   return rv;
-}
-
-// Whether we are divergently calling into user JS without having paused first.
-// Node uses !RecordReplayIgnoreScript (no gRegisteredScripts set).
-bool RecordReplayIsDivergentUserJSWithoutPause(
-    const SharedFunctionInfo& shared) {
-  return recordreplay::AreEventsDisallowed() &&
-         !recordreplay::HasDivergedFromRecording() &&
-         shared.script().IsScript() &&
-         !RecordReplayIgnoreScript(Script::cast(shared.script()));
 }
 
 static bool RecordReplayIgnoreScriptById(Isolate* isolate, int script_id) {
