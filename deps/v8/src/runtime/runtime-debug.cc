@@ -970,6 +970,34 @@ static std::string ScriptNameToString(Handle<Script> script) {
 // within that script of the function which executed.
 static std::vector<uint64_t>* gProgressData;
 
+RecordReplayScrubDivergentProgressScope::
+    RecordReplayScrubDivergentProgressScope()
+    : active_(false), start_progress_(0), start_data_size_(0) {
+  if (!recordreplay::IsRecordingOrReplaying() || !IsMainThread()) return;
+  if (!recordreplay::AreEventsDisallowed()) return;
+  if (recordreplay::HasDivergedFromRecording()) return;
+  active_ = true;
+  start_progress_ = *gProgressCounter;
+  start_data_size_ = gProgressData ? gProgressData->size() : 0;
+}
+
+RecordReplayScrubDivergentProgressScope::
+    ~RecordReplayScrubDivergentProgressScope() {
+  if (!active_) return;
+  if (recordreplay::HasDivergedFromRecording()) return;
+  if (start_progress_ >= *gProgressCounter) return;
+  // [RUN-1988] Divergent path advanced PC via instrumented user code.
+  *gProgressCounter = start_progress_;
+  if (start_data_size_ == 0) {
+    if (gProgressData) {
+      delete gProgressData;
+      gProgressData = nullptr;
+    }
+  } else if (gProgressData && gProgressData->size() > start_data_size_) {
+    gProgressData->resize(start_data_size_);
+  }
+}
+
 // Buffer holding data most recently reported to the recorder.
 static std::vector<uint64_t>* gReportedProgressData;
 
@@ -1152,7 +1180,7 @@ static std::string FrameSummaryToString(Isolate* isolate, const FrameSummary& su
   return std::string(location);
 }
 
-static std::string GetStackContents(Isolate* isolate, size_t max_frames) {
+std::string GetStackContents(Isolate* isolate, size_t max_frames) {
   size_t num_frames = 0;
 
   std::string contents;
@@ -1174,6 +1202,8 @@ static std::string GetStackContents(Isolate* isolate, size_t max_frames) {
 
   return contents.length() ? contents : std::string("<no frame>");
 }
+
+static bool gHasPrintedStack = false;
 
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   if (++*gProgressCounter == gTargetProgress) {
@@ -1198,6 +1228,25 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
     CHECK(RecordReplayBytecodeAllowed());
     CHECK(gRecordReplayHasCheckpoint);
     CHECK(!RecordReplayIgnoreScript(*script));
+
+    if (recordreplay::AreEventsDisallowed() &&
+        !recordreplay::HasDivergedFromRecording()) {
+      // Print JS stack if user JS was executed non-deterministically
+      // and we were not paused.
+      if (!gHasPrintedStack) {  // Prevent flood.
+        gHasPrintedStack = true;
+        HandleScope scope(isolate);
+        std::string stack = GetStackContents(isolate, 50);
+
+        recordreplay::Warning(
+            "NonDeterministicUserJS:UNGATED:JSProgress PC=%zu "
+            "scriptId=%d @%s stack=%s",
+            *gProgressCounter, script->id(),
+            GetScriptLocationString(script->id(), shared->StartPosition())
+                .c_str(),
+            stack.c_str());
+      }
+    }
   }
 
   return ReadOnlyRoots(isolate).undefined_value();

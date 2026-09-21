@@ -3398,6 +3398,14 @@ bool RecordReplayHasRegisteredScript(Script script) {
          gRegisteredScripts->find(script.id()) != gRegisteredScripts->end();
 }
 
+bool RecordReplayIsDivergentUserJSWithoutPause(
+    const SharedFunctionInfo& shared) {
+  return recordreplay::AreEventsDisallowed() &&
+         !recordreplay::HasDivergedFromRecording() &&
+         shared.script().IsScript() &&
+         RecordReplayHasRegisteredScript(Script::cast(shared.script()));
+}
+
 static void RecordReplayRegisterScript(Handle<Script> script) {
   CHECK(IsMainThread());
 
