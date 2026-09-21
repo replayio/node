@@ -372,6 +372,11 @@ class V8_EXPORT_PRIVATE ParseInfo {
   LanguageMode language_mode_ : 1;
 };
 
+// Replay: sets a compile's instrumentation flags from the script it compiles
+// into, as decided when that script was created.
+void RecordReplayInheritCompileFlags(UnoptimizedCompileFlags& flags,
+                                     Script script);
+
 }  // namespace internal
 }  // namespace v8
 
