@@ -15,9 +15,6 @@
 # reclaim_node_repo chown -R bumps ctime on every file; with default git stat
 # checks that dirties the whole tree and `checkout -f` rewrites all sources.
 # core.trustctime=false + update-index --refresh after chown keeps mtimes.
-# Wipe out/ when linux_node_build Dockerfile FROM (glibc base) changes:
-# ubuntu:22.04 objects linked under ubuntu:20.04 → __libc_single_threaded.
-# Key FROM only — not REPLAY_BACKEND_REV (pin bumps must not force full rebuild).
 steps:
   - trigger: "build-driver-linker"
     key: "build-driver-linker"
@@ -86,14 +83,14 @@ steps:
       echo "dirty=$$(git -C "$$NODE_REPO" status --porcelain 2>/dev/null | wc -l)"
       echo "diff_files=$$(git -C "$$NODE_REPO" diff --name-only HEAD "$$BUILDKITE_COMMIT" 2>/dev/null | wc -l)"
       git -C "$$NODE_REPO" checkout -f --detach "$$BUILDKITE_COMMIT"
-      # glibc ABI follows Dockerfile FROM, not backend pin SHA.
+      # Wipe out/ only when linux_node_build Dockerfile FROM changes (not on pin bump).
       BUILDER_IMAGE_STAMP="$$NODE_REPO/.replay-builder-image"
       BUILDER_IMAGE_KEY="$$(awk '/^FROM /{print; exit}' "$$BACKEND_DIR/src/build/docker/linux_node_build.Dockerfile")"
       test -n "$$BUILDER_IMAGE_KEY"
       rm -f "$$NODE_REPO/.replay-builder-pin"
       if [ ! -f "$$BUILDER_IMAGE_STAMP" ] || [ "$$(cat "$$BUILDER_IMAGE_STAMP")" != "$$BUILDER_IMAGE_KEY" ]; then
         if [ -d "$$NODE_REPO/out" ]; then
-          echo "=== builder image stamp miss/mismatch; wiping out/ (glibc ABI) ==="
+          echo "=== builder image FROM changed; wiping out/ ==="
           echo "stamp=$$([ -f "$$BUILDER_IMAGE_STAMP" ] && cat "$$BUILDER_IMAGE_STAMP" || echo none) key=$$BUILDER_IMAGE_KEY"
           rm -rf "$$NODE_REPO/out"
         fi
@@ -116,8 +113,6 @@ steps:
 
   - label: "test-node"
     key: "node-test-node"
-    # Default 60m is tight for ~40min test wall + setup + occasional 120s record timeouts.
-    timeout_in_minutes: 90
     depends_on:
       - "build-node-linux"
     agents:
@@ -158,8 +153,6 @@ steps:
 
   - label: "test-jest"
     key: "node-test-jest"
-    # Default 60m is tight for ~40min test wall + dual-repo seed + occasional 60s timeouts.
-    timeout_in_minutes: 90
     depends_on:
       - "build-node-linux"
     agents:
