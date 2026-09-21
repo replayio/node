@@ -154,6 +154,14 @@ void Script::set_is_repl_mode(bool value) {
   set_flags(IsReplModeBit::update(flags(), value));
 }
 
+bool Script::record_replay_instrumented() const {
+  return RecordReplayInstrumentedBit::decode(flags());
+}
+
+void Script::set_record_replay_instrumented(bool value) {
+  set_flags(RecordReplayInstrumentedBit::update(flags(), value));
+}
+
 ScriptOriginOptions Script::origin_options() {
   return ScriptOriginOptions(OriginOptionsBits::decode(flags()));
 }
