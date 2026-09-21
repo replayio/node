@@ -5,6 +5,7 @@
 #include "src/codegen/compiler.h"
 
 #include <algorithm>
+#include <atomic>
 #include <memory>
 
 #include "include/replayio.h"
@@ -1910,6 +1911,14 @@ bool BackgroundCompileTask::is_streaming_compilation() const {
   return function_literal_id_ == kFunctionLiteralIdTopLevel;
 }
 
+// For use when checking that record/replay opcodes are only emitted
+// for the main thread.
+static std::atomic<size_t> gNumRunningBackgroundCompileTasks;
+
+size_t NumRunningBackgroundCompileTasks() {
+  return gNumRunningBackgroundCompileTasks;
+}
+
 void BackgroundCompileTask::Run() {
   DCHECK_NE(ThreadId::Current(), isolate_for_local_isolate_->thread_id());
   LocalIsolate isolate(isolate_for_local_isolate_, ThreadKind::kBackground);
@@ -1934,6 +1943,7 @@ void BackgroundCompileTask::Run(
       compilation_details_
           ? &compilation_details_->background_time_in_microseconds
           : nullptr);
+  gNumRunningBackgroundCompileTasks++;
 
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.compile"),
                "BackgroundCompileTask::Run");
@@ -2045,6 +2055,8 @@ void BackgroundCompileTask::Run(
   outer_function_sfi_ = isolate->heap()->NewPersistentMaybeHandle(maybe_result);
   DCHECK(isolate->heap()->ContainsPersistentHandle(script_.location()));
   persistent_handles_ = isolate->heap()->DetachPersistentHandles();
+
+  gNumRunningBackgroundCompileTasks--;
 }
 
 // A class which traverses the constant pools of newly compiled

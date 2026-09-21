@@ -14,6 +14,8 @@ bitfield struct ScriptFlags extends uint31 {
   break_on_entry: bool: 1 bit;
   produce_compile_hints: bool: 1 bit;
   deserialized: bool: 1 bit;
+  // Replay: whether the script's bytecode has record/replay instrumentation.
+  record_replay_instrumented: bool: 1 bit;
 }
 
 extern class Script extends Struct {
