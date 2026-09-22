@@ -3239,6 +3239,10 @@ MaybeHandle<Code> Compiler::GetOptimizedCodeForOSR(Isolate* isolate,
                                                    Handle<JSFunction> function,
                                                    BytecodeOffset osr_offset,
                                                    JavaScriptFrame* osr_frame) {
+  // The point at which optimized compilations occur can vary between recording
+  // and replaying. Same label as Chromium Compiler::CompileOptimizedOSR.
+  replayio::AutoDisallowEvents disallow("Compiler::CompileOptimizedOSR");
+
   DCHECK(!osr_offset.IsNone());
   DCHECK_NOT_NULL(osr_frame);
   return GetOptimizedCode(isolate, function, ConcurrencyMode::kNotConcurrent,
