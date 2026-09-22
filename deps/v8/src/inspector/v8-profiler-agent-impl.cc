@@ -9,6 +9,7 @@
 #include "include/v8-profiler.h"
 #include "src/base/atomicops.h"
 #include "src/base/platform/time.h"
+#include "src/base/replayio.h"
 #include "src/debug/debug-interface.h"
 #include "src/inspector/protocol/Protocol.h"
 #include "src/inspector/string-util.h"
@@ -172,7 +173,8 @@ V8ProfilerAgentImpl::V8ProfilerAgentImpl(
     : m_session(session),
       m_isolate(m_session->inspector()->isolate()),
       m_state(state),
-      m_frontend(frontendChannel) {}
+      m_frontend(frontendChannel),
+      m_replay_owned(session->replayOwned()) {}
 
 V8ProfilerAgentImpl::~V8ProfilerAgentImpl() {
   if (m_profiler) m_profiler->Dispose();
@@ -250,6 +252,8 @@ Response V8ProfilerAgentImpl::setSamplingInterval(int interval) {
 }
 
 void V8ProfilerAgentImpl::restore() {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_isolate, "V8ProfilerAgentImpl::restore");
   DCHECK(!m_enabled);
   if (m_state->booleanProperty(ProfilerAgentState::profilerEnabled, false)) {
     m_enabled = true;
@@ -423,6 +427,9 @@ Response V8ProfilerAgentImpl::takePreciseCoverage(
 
 void V8ProfilerAgentImpl::triggerPreciseCoverageDeltaUpdate(
     const String16& occasion) {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_isolate,
+      "V8ProfilerAgentImpl::triggerPreciseCoverageDeltaUpdate");
   if (!m_state->booleanProperty(ProfilerAgentState::preciseCoverageStarted,
                                 false)) {
     return;

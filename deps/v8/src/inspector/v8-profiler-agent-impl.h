@@ -33,6 +33,7 @@ class V8ProfilerAgentImpl : public protocol::Profiler::Backend {
   V8ProfilerAgentImpl& operator=(const V8ProfilerAgentImpl&) = delete;
 
   bool enabled() const { return m_enabled; }
+  bool replayOwned() const { return m_replay_owned; }
   void restore();
 
   Response enable() override;
@@ -71,6 +72,7 @@ class V8ProfilerAgentImpl : public protocol::Profiler::Backend {
   protocol::DictionaryValue* m_state;
   protocol::Profiler::Frontend m_frontend;
   bool m_enabled = false;
+  bool m_replay_owned = false;
   bool m_recordingCPUProfile = false;
   class ProfileDescriptor;
   std::vector<ProfileDescriptor> m_startedProfiles;
