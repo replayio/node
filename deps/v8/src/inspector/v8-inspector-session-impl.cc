@@ -9,6 +9,7 @@
 #include "../../third_party/inspector_protocol/crdtp/json.h"
 #include "src/base/logging.h"
 #include "src/base/macros.h"
+#include "src/base/replayio.h"
 #include "src/inspector/injected-script.h"
 #include "src/inspector/inspected-context.h"
 #include "src/inspector/protocol/Protocol.h"
@@ -100,6 +101,8 @@ V8InspectorSessionImpl::V8InspectorSessionImpl(V8InspectorImpl* inspector,
       m_inspector(inspector),
       m_channel(channel),
       m_customObjectFormatterEnabled(false),
+      // ReplaySession connect is under AutoDisallowEvents; DevTools connect is not.
+      m_replay_owned(v8::recordreplay::AreEventsDisallowed()),
       m_dispatcher(this),
       m_state(ParseState(savedState)),
       m_runtimeAgent(nullptr),
@@ -146,6 +149,10 @@ V8InspectorSessionImpl::V8InspectorSessionImpl(V8InspectorImpl* inspector,
 
 V8InspectorSessionImpl::~V8InspectorSessionImpl() {
   v8::Isolate::Scope scope(m_inspector->isolate());
+  v8::replayio::AutoMaybeMarkReplayCode mark(m_replay_owned);
+  v8::replayio::AutoMaybeDisallowEvents disallow(
+      m_replay_owned, m_inspector->isolate(),
+      "V8InspectorSessionImpl::~V8InspectorSessionImpl");
   discardInjectedScripts();
   m_consoleAgent->disable();
   m_profilerAgent->disable();
@@ -222,12 +229,19 @@ void V8InspectorSessionImpl::FlushProtocolNotifications() {
 }
 
 void V8InspectorSessionImpl::reset() {
+  v8::replayio::AutoMaybeMarkReplayCode mark(m_replay_owned);
+  v8::replayio::AutoMaybeDisallowEvents disallow(
+      m_replay_owned, m_inspector->isolate(), "V8InspectorSessionImpl::reset");
   m_debuggerAgent->reset();
   m_runtimeAgent->reset();
   discardInjectedScripts();
 }
 
 void V8InspectorSessionImpl::discardInjectedScripts() {
+  v8::replayio::AutoMaybeMarkReplayCode mark(m_replay_owned);
+  v8::replayio::AutoMaybeDisallowEvents disallow(
+      m_replay_owned, m_inspector->isolate(),
+      "V8InspectorSessionImpl::discardInjectedScripts");
   m_inspectedObjects.clear();
   int sessionId = m_sessionId;
   m_inspector->forEachContext(m_contextGroupId,
