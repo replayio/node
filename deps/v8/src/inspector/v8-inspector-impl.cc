@@ -53,6 +53,8 @@
 #include "src/inspector/v8-stack-trace-impl.h"
 #include "src/inspector/value-mirror.h"
 
+#include "src/base/replayio.h"
+
 namespace v8_inspector {
 
 std::unique_ptr<V8Inspector> V8Inspector::create(v8::Isolate* isolate,
@@ -214,6 +216,10 @@ uint64_t V8InspectorImpl::isolateId() {
 }
 
 void V8InspectorImpl::contextCreated(const V8ContextInfo& info) {
+  const bool replay_owned = v8::replayio::CheckReplayOwned();
+  v8::replayio::AutoMaybeMarkReplayCode mark(replay_owned);
+  v8::replayio::AutoMaybeDisallowEvents disallow(
+      replay_owned, m_isolate, "V8InspectorImpl::contextCreated");
   int contextId = ++m_lastContextId;
   auto* context = new InspectedContext(this, info, contextId);
   m_contextIdToGroupIdMap[contextId] = info.contextGroupId;
@@ -265,6 +271,10 @@ void V8InspectorImpl::contextCollected(int groupId, int contextId) {
 }
 
 void V8InspectorImpl::resetContextGroup(int contextGroupId) {
+  const bool replay_owned = v8::replayio::CheckReplayOwned();
+  v8::replayio::AutoMaybeMarkReplayCode mark(replay_owned);
+  v8::replayio::AutoMaybeDisallowEvents disallow(
+      replay_owned, m_isolate, "V8InspectorImpl::resetContextGroup");
   m_consoleStorageMap.erase(contextGroupId);
   m_muteExceptionsMap.erase(contextGroupId);
   auto contextsIt = m_contexts.find(contextGroupId);
@@ -429,10 +439,12 @@ void V8InspectorImpl::forEachSession(
 
   // Retrieve by ids each time since |callback| may destroy some contexts.
   for (auto& sessionId : ids) {
-    it = m_sessions.find(contextGroupId);
-    if (it == m_sessions.end()) continue;
-    auto sessionIt = it->second.find(sessionId);
-    if (sessionIt != it->second.end()) callback(sessionIt->second);
+    V8InspectorSessionImpl* session = sessionById(contextGroupId, sessionId);
+    const bool replay_owned = session && session->replayOwned();
+    v8::replayio::AutoMaybeMarkReplayCode mark(replay_owned);
+    v8::replayio::AutoMaybeDisallowEvents disallow(
+        replay_owned, m_isolate, "V8InspectorImpl::forEachSession");
+    if (session) callback(session);
   }
 }
 

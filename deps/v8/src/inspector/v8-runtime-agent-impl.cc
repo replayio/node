@@ -41,6 +41,7 @@
 #include "include/v8-function.h"
 #include "include/v8-inspector.h"
 #include "include/v8-microtask-queue.h"
+#include "src/base/replayio.h"
 #include "src/debug/debug-interface.h"
 #include "src/inspector/injected-script.h"
 #include "src/inspector/inspected-context.h"
@@ -346,8 +347,8 @@ V8RuntimeAgentImpl::V8RuntimeAgentImpl(
       m_state(state),
       m_frontend(FrontendChannel),
       m_inspector(session->inspector()),
-      m_debuggerBarrier(debuggerBarrier),
-      m_enabled(false) {}
+      m_enabled(false),
+      m_replay_owned(session->replayOwned()) {}
 
 V8RuntimeAgentImpl::~V8RuntimeAgentImpl() = default;
 
@@ -1061,6 +1062,10 @@ void V8RuntimeAgentImpl::addBindings(InspectedContext* context) {
 }
 
 void V8RuntimeAgentImpl::restore() {
+  v8::replayio::AutoMaybeMarkReplayCode mark(m_replay_owned);
+  v8::replayio::AutoMaybeDisallowEvents disallow(
+      m_replay_owned, m_inspector->isolate(), "V8RuntimeAgentImpl::restore");
+
   if (!m_state->booleanProperty(V8RuntimeAgentImplState::runtimeEnabled, false))
     return;
   m_frontend.executionContextsCleared();
@@ -1170,7 +1175,7 @@ void V8RuntimeAgentImpl::inspect(
 }
 
 void V8RuntimeAgentImpl::messageAdded(V8ConsoleMessage* message) {
-  if (m_enabled) reportMessage(message, true);
+  if (m_enabled) reportMessage(message, /*generatePreview=*/!m_replay_owned);
 }
 
 bool V8RuntimeAgentImpl::reportMessage(V8ConsoleMessage* message,
