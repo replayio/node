@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <queue>
 
+#include "include/replayio.h"
 #include "src/api/api-inl.h"
 #include "src/asmjs/asm-js.h"
 #include "src/base/enum-set.h"
@@ -1259,6 +1260,8 @@ bool CompileLazy(Isolate* isolate, Handle<WasmModuleObject> module_object,
 
 void TriggerTierUp(Isolate* isolate, NativeModule* native_module,
                    int func_index) {
+  replayio::AutoDisallowEvents disallow("wasm::TriggerTierUp");
+
   CompilationStateImpl* compilation_state =
       Impl(native_module->compilation_state());
   WasmCompilationUnit tiering_unit{func_index, ExecutionTier::kTurbofan,
