@@ -338,6 +338,9 @@ class V8_NODISCARD PrepareStackTraceScope {
 // static
 namespace {
 
+// Main thread only, like the rest of the fork's replay hooks: worker isolates
+// aren't instrumented or deoptimized by the replay, so their stacks have no
+// replay-specific reason to differ.
 bool ShouldRecordReplayFormattedString(const char* feature) {
   return recordreplay::IsRecordingOrReplaying(feature) &&
          !recordreplay::AreEventsDisallowed() && IsMainThread();
