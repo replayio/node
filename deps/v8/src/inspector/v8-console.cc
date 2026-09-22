@@ -10,6 +10,7 @@
 #include "include/v8-inspector.h"
 #include "include/v8-microtask-queue.h"
 #include "src/base/macros.h"
+#include "src/base/replayio.h"
 #include "src/inspector/injected-script.h"
 #include "src/inspector/inspected-context.h"
 #include "src/inspector/string-util.h"
@@ -631,6 +632,11 @@ static void setFunctionBreakpoint(ConsoleHelper& helper, int sessionId,
                                   bool enable) {
   V8InspectorSessionImpl* session = helper.session(sessionId);
   if (session == nullptr) return;
+  const bool replay_owned = session->replayOwned();
+  v8::replayio::AutoMaybeMarkReplayCode mark(replay_owned);
+  v8::replayio::AutoMaybeDisallowEvents disallow(
+      replay_owned, session->inspector()->isolate(),
+      "V8Console::setFunctionBreakpoint");
   if (!session->debuggerAgent()->enabled()) return;
   if (enable) {
     session->debuggerAgent()->setBreakpointFor(function, condition, source);
@@ -734,6 +740,11 @@ static void inspectImpl(const v8::FunctionCallbackInfo<v8::Value>& info,
     hints->setBoolean("queryObjects", true);
   }
   if (V8InspectorSessionImpl* session = helper.session(sessionId)) {
+    const bool replay_owned = session->replayOwned();
+    v8::replayio::AutoMaybeMarkReplayCode mark(replay_owned);
+    v8::replayio::AutoMaybeDisallowEvents disallow(
+        replay_owned, session->inspector()->isolate(),
+        "V8Console::inspectImpl");
     session->runtimeAgent()->inspect(std::move(wrappedObject), std::move(hints),
                                      helper.contextId());
   }
@@ -780,6 +791,11 @@ void V8Console::inspectedObject(const v8::FunctionCallbackInfo<v8::Value>& info,
   v8::debug::ConsoleCallArguments args(info);
   ConsoleHelper helper(args, v8::debug::ConsoleContext(), m_inspector);
   if (V8InspectorSessionImpl* session = helper.session(sessionId)) {
+    const bool replay_owned = session->replayOwned();
+    v8::replayio::AutoMaybeMarkReplayCode mark(replay_owned);
+    v8::replayio::AutoMaybeDisallowEvents disallow(
+        replay_owned, session->inspector()->isolate(),
+        "V8Console::inspectedObject");
     V8InspectorSession::Inspectable* object = session->inspectedObject(num);
     v8::Isolate* isolate = info.GetIsolate();
     if (object)
