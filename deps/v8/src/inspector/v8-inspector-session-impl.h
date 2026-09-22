@@ -49,6 +49,7 @@ class V8InspectorSessionImpl : public V8InspectorSession,
   V8RuntimeAgentImpl* runtimeAgent() { return m_runtimeAgent.get(); }
   int contextGroupId() const { return m_contextGroupId; }
   int sessionId() const { return m_sessionId; }
+  bool replayOwned() const { return m_replay_owned; }
 
   std::unique_ptr<V8InspectorSession::CommandLineAPIScope>
   initializeCommandLineAPIScope(int executionContextId) override;
@@ -121,6 +122,10 @@ class V8InspectorSessionImpl : public V8InspectorSession,
   V8InspectorImpl* m_inspector;
   V8Inspector::Channel* m_channel;
   bool m_customObjectFormatterEnabled;
+  // Seeded at connect: true for ReplaySession (under AutoDisallowEvents).
+  // Owned-session work sites key AutoMaybeMarkReplayCode +
+  // AutoMaybeDisallowEvents off this flag.
+  bool m_replay_owned;
 
   protocol::UberDispatcher m_dispatcher;
   std::unique_ptr<protocol::DictionaryValue> m_state;
