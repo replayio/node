@@ -5,6 +5,7 @@
 #include "src/execution/messages.h"
 
 #include <memory>
+#include <vector>
 
 #include "src/api/api-inl.h"
 #include "src/ast/ast.h"
@@ -318,8 +319,53 @@ class V8_NODISCARD PrepareStackTraceScope {
   Isolate* isolate_;
 };
 
+// Main thread only, like the rest of the fork's replay hooks: worker isolates
+// aren't instrumented or deoptimized by the replay, so their stacks have no
+// replay-specific reason to differ.
+bool ShouldRecordReplayFormattedString(const char* feature) {
+  return recordreplay::IsRecordingOrReplaying(feature) &&
+         !recordreplay::AreEventsDisallowed() && IsMainThread();
+}
+
+// Records a string's UTF-16 code units while recording and returns a string
+// made of the recorded ones while replaying. Copying code units instead of
+// converting to UTF-8 keeps NULs and unpaired surrogates intact.
+Handle<String> RecordReplayStringHandle(const char* why, Isolate* isolate,
+                                        Handle<String> input) {
+  if (!recordreplay::IsRecordingOrReplaying(why)) {
+    return input;
+  }
+  std::vector<base::uc16> units(input->length());
+  String::WriteToFlat(*input, units.data(), 0, input->length());
+  size_t length = recordreplay::RecordReplayValue(why, units.size());
+  units.resize(length);
+  if (length) {
+    recordreplay::RecordReplayBytes(why, units.data(),
+                                    length * sizeof(base::uc16));
+  }
+  return isolate->factory()
+      ->NewStringFromTwoByte(
+          base::Vector<const base::uc16>(units.data(), units.size()))
+      .ToHandleChecked();
+}
+
+MaybeHandle<String> RecordReplayStringHandle(const char* why, Isolate* isolate,
+                                             MaybeHandle<String> input) {
+  if (input.is_null()) {
+    return input;
+  }
+  return RecordReplayStringHandle(why, isolate, input.ToHandleChecked());
+}
+
+MaybeHandle<Object> FormatStackTraceImpl(Isolate* isolate,
+                                         Handle<JSObject> error,
+                                         Handle<Object> raw_stack);
+
 }  // namespace
 
+// Node formats every stack through its prepareStackTrace callback, which can
+// return any value, so this records around the whole formatting and records
+// whether the result was a string.
 // static
 MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
                                                  Handle<JSObject> error,
@@ -328,6 +374,37 @@ MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
     return isolate->factory()->empty_string();
   }
   DCHECK(IsFixedArray(*raw_stack));
+
+  MaybeHandle<Object> maybe_result =
+      FormatStackTraceImpl(isolate, error, raw_stack);
+  if (!ShouldRecordReplayFormattedString("ErrorUtils::FormatStackTrace")) {
+    return maybe_result;
+  }
+
+  // [PRO-1150] Replay Error.stack
+  Handle<Object> result;
+  bool is_string = maybe_result.ToHandle(&result) && IsString(*result);
+  bool recorded_string = recordreplay::RecordReplayValue(
+      "ErrorUtils::FormatStackTrace IsString", is_string);
+  if (!recorded_string) {
+    return maybe_result;
+  }
+
+  Handle<String> recorded = RecordReplayStringHandle(
+      "ErrorUtils::FormatStackTrace", isolate,
+      is_string ? Handle<String>::cast(result)
+                : isolate->factory()->empty_string());
+  if (maybe_result.is_null()) {
+    return maybe_result;
+  }
+  return recorded;
+}
+
+namespace {
+
+MaybeHandle<Object> FormatStackTraceImpl(Isolate* isolate,
+                                         Handle<JSObject> error,
+                                         Handle<Object> raw_stack) {
   Handle<FixedArray> elems = Handle<FixedArray>::cast(raw_stack);
 
   const bool in_recursion = isolate->formatting_stack_trace();
@@ -435,6 +512,8 @@ MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
 
   return builder.Finish();
 }
+
+}  // namespace
 
 Handle<String> MessageFormatter::Format(
     Isolate* isolate, MessageTemplate index,
@@ -564,7 +643,12 @@ MaybeHandle<String> MessageFormatter::TryFormat(
           args.size() - remaining_args.size(), args.size(), template_string);
   }
 
-  return builder.Finish();
+  MaybeHandle<String> rv = builder.Finish();
+  if (ShouldRecordReplayFormattedString("MessageFormatter::Format")) {
+    // [PRO-1150] Replay error messages.
+    rv = RecordReplayStringHandle("MessageFormatter::Format", isolate, rv);
+  }
+  return rv;
 }
 
 MaybeHandle<JSObject> ErrorUtils::Construct(Isolate* isolate,
@@ -1108,7 +1192,10 @@ MaybeHandle<Object> ErrorUtils::GetFormattedStack(
         FormatStackTrace(isolate, error_object,
                          handle(error_stack_data->call_site_infos(), isolate)),
         Object);
-    error_stack_data->set_formatted_stack(*formatted_stack);
+    if (!recordreplay::AreEventsDisallowed()) {
+      // [PRO-2368] Don't cache the formatted stack during replay-only invocations.
+      error_stack_data->set_formatted_stack(*formatted_stack);
+    }
     return formatted_stack;
   }
 
