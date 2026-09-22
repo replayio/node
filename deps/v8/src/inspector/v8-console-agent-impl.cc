@@ -4,6 +4,7 @@
 
 #include "src/inspector/v8-console-agent-impl.h"
 
+#include "src/base/replayio.h"
 #include "src/inspector/protocol/Protocol.h"
 #include "src/inspector/v8-console-message.h"
 #include "src/inspector/v8-inspector-impl.h"
@@ -22,7 +23,8 @@ V8ConsoleAgentImpl::V8ConsoleAgentImpl(
     : m_session(session),
       m_state(state),
       m_frontend(frontendChannel),
-      m_enabled(false) {}
+      m_enabled(false),
+      m_replay_owned(session->replayOwned()) {}
 
 V8ConsoleAgentImpl::~V8ConsoleAgentImpl() = default;
 
@@ -44,6 +46,9 @@ Response V8ConsoleAgentImpl::disable() {
 Response V8ConsoleAgentImpl::clearMessages() { return Response::Success(); }
 
 void V8ConsoleAgentImpl::restore() {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_session->inspector()->isolate(),
+      "V8ConsoleAgentImpl::restore");
   if (!m_state->booleanProperty(ConsoleAgentState::consoleEnabled, false))
     return;
   enable();

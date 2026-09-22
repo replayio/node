@@ -32,6 +32,7 @@ class V8ConsoleAgentImpl : public protocol::Console::Backend {
   void messageAdded(V8ConsoleMessage*);
   void reset();
   bool enabled();
+  bool replayOwned() const { return m_replay_owned; }
 
  private:
   void reportAllMessages();
@@ -41,6 +42,7 @@ class V8ConsoleAgentImpl : public protocol::Console::Backend {
   protocol::DictionaryValue* m_state;
   protocol::Console::Frontend m_frontend;
   bool m_enabled;
+  bool m_replay_owned;
 };
 
 }  // namespace v8_inspector
