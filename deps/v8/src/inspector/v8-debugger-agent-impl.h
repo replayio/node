@@ -165,6 +165,7 @@ class V8DebuggerAgentImpl : public protocol::Debugger::Backend {
       std::unique_ptr<protocol::Runtime::RemoteObject>* out_exception) override;
 
   bool enabled() const { return m_enableState == kEnabled; }
+  bool replayOwned() const { return m_replay_owned; }
 
   void setBreakpointFor(v8::Local<v8::Function> function,
                         v8::Local<v8::String> condition,
@@ -257,6 +258,7 @@ class V8DebuggerAgentImpl : public protocol::Debugger::Backend {
   V8Debugger* m_debugger;
   V8InspectorSessionImpl* m_session;
   EnableState m_enableState;
+  bool m_replay_owned;
   protocol::DictionaryValue* m_state;
   protocol::Debugger::Frontend m_frontend;
   v8::Isolate* m_isolate;
