@@ -343,18 +343,16 @@ bool ShouldRecordReplayFormattedString(const char* feature) {
          !recordreplay::AreEventsDisallowed() && IsMainThread();
 }
 
-// Record a string's UTF-16 code units while recording and return a string
+// Records a string's UTF-16 code units while recording and returns a string
 // made of the recorded ones while replaying. Copying code units instead of
-// converting to UTF-8 keeps NULs and unpaired surrogates intact, so the
-// program sees the same string it would without being recorded.
-Handle<String> RecordReplayStringContents(Isolate* isolate, const char* why,
-                                          MaybeHandle<String> maybe_value) {
-  std::vector<base::uc16> units;
-  Handle<String> value;
-  if (maybe_value.ToHandle(&value)) {
-    units.resize(value->length());
-    String::WriteToFlat(*value, units.data(), 0, value->length());
+// converting to UTF-8 keeps NULs and unpaired surrogates intact.
+Handle<String> RecordReplayStringHandle(const char* why, Isolate* isolate,
+                                        Handle<String> input) {
+  if (!recordreplay::IsRecordingOrReplaying(why)) {
+    return input;
   }
+  std::vector<base::uc16> units(input->length());
+  String::WriteToFlat(*input, units.data(), 0, input->length());
   size_t length = recordreplay::RecordReplayValue(why, units.size());
   units.resize(length);
   if (length) {
@@ -365,6 +363,14 @@ Handle<String> RecordReplayStringContents(Isolate* isolate, const char* why,
       ->NewStringFromTwoByte(
           base::Vector<const base::uc16>(units.data(), units.size()))
       .ToHandleChecked();
+}
+
+MaybeHandle<String> RecordReplayStringHandle(const char* why, Isolate* isolate,
+                                             MaybeHandle<String> input) {
+  if (input.is_null()) {
+    return input;
+  }
+  return RecordReplayStringHandle(why, isolate, input.ToHandleChecked());
 }
 
 MaybeHandle<Object> FormatStackTraceImpl(Isolate* isolate,
@@ -503,9 +509,10 @@ MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
     return maybe_result;
   }
 
-  Handle<String> recorded = RecordReplayStringContents(
-      isolate, "ErrorUtils::FormatStackTrace",
-      is_string ? Handle<String>::cast(result) : MaybeHandle<String>());
+  Handle<String> recorded = RecordReplayStringHandle(
+      "ErrorUtils::FormatStackTrace", isolate,
+      is_string ? Handle<String>::cast(result)
+                : isolate->factory()->empty_string());
   if (maybe_result.is_null()) {
     return maybe_result;
   }
@@ -590,10 +597,9 @@ MaybeHandle<String> MessageFormatter::Format(Isolate* isolate,
   }
 
   MaybeHandle<String> rv = builder.Finish();
-  if (ShouldRecordReplayFormattedString("MessageFormatter::Format") &&
-      !rv.is_null()) {
+  if (ShouldRecordReplayFormattedString("MessageFormatter::Format")) {
     // [PRO-1150] Replay error messages, as the Chromium fork does.
-    rv = RecordReplayStringContents(isolate, "MessageFormatter::Format", rv);
+    rv = RecordReplayStringHandle("MessageFormatter::Format", isolate, rv);
   }
   return rv;
 }
