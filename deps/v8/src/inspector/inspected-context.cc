@@ -122,9 +122,10 @@ InjectedScript* InspectedContext::getInjectedScript(int sessionId) {
   return it == m_injectedScripts.end() ? nullptr : it->second.get();
 }
 
-InjectedScript* InspectedContext::createInjectedScript(int sessionId) {
+InjectedScript* InspectedContext::createInjectedScript(int sessionId,
+                                                       bool replayOwned) {
   std::unique_ptr<InjectedScript> injectedScript =
-      std::make_unique<InjectedScript>(this, sessionId);
+      std::make_unique<InjectedScript>(this, sessionId, replayOwned);
   CHECK(m_injectedScripts.find(sessionId) == m_injectedScripts.end());
   m_injectedScripts[sessionId] = std::move(injectedScript);
   return getInjectedScript(sessionId);
