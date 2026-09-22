@@ -2791,7 +2791,7 @@ static int GetSourceIdProperty(Isolate* isolate, Handle<Object> obj) {
 }
 
 // Get the script from an ID.
-static MaybeHandle<Script> MaybeGetScript(Isolate* isolate, int script_id) {
+MaybeHandle<Script> MaybeGetScript(Isolate* isolate, int script_id) {
   CHECK(gRecordReplayScripts);
   auto iter = gRecordReplayScripts->find(script_id);
   if (iter == gRecordReplayScripts->end()) {
