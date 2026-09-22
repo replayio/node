@@ -10373,6 +10373,7 @@ CFunctionInfo::CFunctionInfo(const CTypeInfo& return_info,
 }
 
 static bool gRecordingOrReplaying;
+static bool gHasDisabledFeatures;
 static bool gAssertsDisabled;
 static void (*gRecordReplayOnNewSource)(const char* id, const char* kind,
                                         const char* url);
@@ -10393,6 +10394,8 @@ static void (*gRecordReplayDescribeAssertData)(const char* text);
 static void (*gRecordReplayBytes)(const char* why, void* buf, size_t size);
 static uintptr_t (*gRecordReplayValue)(const char* why, uintptr_t v);
 static bool (*gRecordReplayAreEventsDisallowed)();
+static bool (*gRecordReplayFeatureEnabled)(const char* feature, const char* subfeature);
+static bool (*gRecordReplayHasDisabledFeatures)();
 static bool (*gRecordReplayAreAssertsDisabled)();
 static void (*gRecordReplayProgressReached)();
 static void (*gRecordReplayBeginPassThroughEvents)();
@@ -10589,8 +10592,15 @@ bool gRecordReplayHasCheckpoint;
 
 } // namespace internal
 
-bool recordreplay::IsRecordingOrReplaying() {
-  return gRecordingOrReplaying;
+bool recordreplay::IsRecordingOrReplaying(const char* feature, const char* subfeature) {
+  return gRecordingOrReplaying && (!feature || FeatureEnabled(feature, subfeature));
+}
+
+bool recordreplay::FeatureEnabled(const char* feature, const char* subfeature) {
+  if (!gHasDisabledFeatures) {
+    return true;
+  }
+  return gRecordReplayFeatureEnabled(feature, subfeature);
 }
 
 void recordreplay::Print(const char* format, ...) {
@@ -11039,6 +11049,9 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayOnInstrument", gRecordReplayOnInstrument);
   RecordReplayLoadSymbol(handle, "RecordReplayAddPossibleBreakpoint", gRecordReplayAddPossibleBreakpoint);
   RecordReplayLoadSymbol(handle, "RecordReplayAreEventsDisallowed", gRecordReplayAreEventsDisallowed);
+  RecordReplayLoadSymbol(handle, "RecordReplayFeatureEnabled", gRecordReplayFeatureEnabled);
+  RecordReplayLoadSymbol(handle, "RecordReplayHasDisabledFeatures", gRecordReplayHasDisabledFeatures);
+  gHasDisabledFeatures = gRecordReplayHasDisabledFeatures();
   RecordReplayLoadSymbol(handle, "RecordReplayAreAssertsDisabled", gRecordReplayAreAssertsDisabled);
   RecordReplayLoadSymbol(handle, "RecordReplayProgressReached", gRecordReplayProgressReached);
   RecordReplayLoadSymbol(handle, "RecordReplayBeginPassThroughEvents", gRecordReplayBeginPassThroughEvents);
