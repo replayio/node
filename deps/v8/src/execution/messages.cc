@@ -333,11 +333,6 @@ class V8_NODISCARD PrepareStackTraceScope {
   Isolate* isolate_;
 };
 
-}  // namespace
-
-// static
-namespace {
-
 // Main thread only, like the rest of the fork's replay hooks: worker isolates
 // aren't instrumented or deoptimized by the replay, so their stacks have no
 // replay-specific reason to differ.
@@ -375,6 +370,46 @@ MaybeHandle<String> RecordReplayStringHandle(const char* why, Isolate* isolate,
   }
   return RecordReplayStringHandle(why, isolate, input.ToHandleChecked());
 }
+
+MaybeHandle<Object> FormatStackTraceImpl(Isolate* isolate,
+                                         Handle<JSObject> error,
+                                         Handle<Object> raw_stack);
+
+}  // namespace
+
+// Node formats every stack through its prepareStackTrace callback, which can
+// return any value, so this records around the whole formatting and records
+// whether the result was a string.
+// static
+MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
+                                                 Handle<JSObject> error,
+                                                 Handle<Object> raw_stack) {
+  MaybeHandle<Object> maybe_result =
+      FormatStackTraceImpl(isolate, error, raw_stack);
+  if (!ShouldRecordReplayFormattedString("ErrorUtils::FormatStackTrace")) {
+    return maybe_result;
+  }
+
+  // [PRO-1150] Replay Error.stack
+  Handle<Object> result;
+  bool is_string = maybe_result.ToHandle(&result) && result->IsString();
+  bool recorded_string = recordreplay::RecordReplayValue(
+      "ErrorUtils::FormatStackTrace IsString", is_string);
+  if (!recorded_string) {
+    return maybe_result;
+  }
+
+  Handle<String> recorded = RecordReplayStringHandle(
+      "ErrorUtils::FormatStackTrace", isolate,
+      is_string ? Handle<String>::cast(result)
+                : isolate->factory()->empty_string());
+  if (maybe_result.is_null()) {
+    return maybe_result;
+  }
+  return recorded;
+}
+
+namespace {
 
 MaybeHandle<Object> FormatStackTraceImpl(Isolate* isolate,
                                          Handle<JSObject> error,
@@ -486,37 +521,6 @@ MaybeHandle<Object> FormatStackTraceImpl(Isolate* isolate,
 }
 
 }  // namespace
-
-// Node formats every stack through its prepareStackTrace callback, which can
-// return any value, so this records around the whole formatting and records
-// whether the result was a string.
-MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
-                                                 Handle<JSObject> error,
-                                                 Handle<Object> raw_stack) {
-  MaybeHandle<Object> maybe_result =
-      FormatStackTraceImpl(isolate, error, raw_stack);
-  if (!ShouldRecordReplayFormattedString("ErrorUtils::FormatStackTrace")) {
-    return maybe_result;
-  }
-
-  // [PRO-1150] Replay Error.stack
-  Handle<Object> result;
-  bool is_string = maybe_result.ToHandle(&result) && result->IsString();
-  bool recorded_string = recordreplay::RecordReplayValue(
-      "ErrorUtils::FormatStackTrace IsString", is_string);
-  if (!recorded_string) {
-    return maybe_result;
-  }
-
-  Handle<String> recorded = RecordReplayStringHandle(
-      "ErrorUtils::FormatStackTrace", isolate,
-      is_string ? Handle<String>::cast(result)
-                : isolate->factory()->empty_string());
-  if (maybe_result.is_null()) {
-    return maybe_result;
-  }
-  return recorded;
-}
 
 Handle<String> MessageFormatter::Format(Isolate* isolate, MessageTemplate index,
                                         Handle<Object> arg0,
