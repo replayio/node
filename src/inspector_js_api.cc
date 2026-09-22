@@ -165,7 +165,7 @@ class JSBindingsConnection : public AsyncWrap {
 
 static bool InspectorEnabled(Environment* env) {
   Agent* agent = env->inspector_agent();
-  return agent->IsListening() || agent->HasNonOwnedSession();
+  return agent->IsActive();
 }
 
 void SetConsoleExtensionInstaller(const FunctionCallbackInfo<Value>& info) {
@@ -197,7 +197,8 @@ void InspectorConsoleCall(const FunctionCallbackInfo<Value>& info) {
   Local<Context> context = isolate->GetCurrentContext();
   CHECK_GE(info.Length(), 2);
   SlicedArguments call_args(info, /* start */ 2);
-  if (InspectorEnabled(env)) {
+  Agent* agent = env->inspector_agent();
+  if (InspectorEnabled(env) && !agent->ShouldSkipInspectorConsoleHalf()) {
     Local<Value> inspector_method = info[0];
     CHECK(inspector_method->IsFunction());
     if (!env->is_in_inspector_console_call()) {

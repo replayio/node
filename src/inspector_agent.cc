@@ -577,12 +577,14 @@ class NodeInspectorClient : public V8InspectorClient {
     return false;
   }
 
-  bool hasNonOwnedSessions() {
+  bool hasOnlyReplayOwnedSessions() {
+    if (channels_.empty())
+      return false;
     for (const auto& id_channel : channels_) {
       if (!id_channel.second->replayOwned())
-        return true;
+        return false;
     }
-    return false;
+    return true;
   }
 
   bool notifyWaitingForDisconnect() {
@@ -925,10 +927,12 @@ bool Agent::IsActive() {
   return io_ != nullptr || client_->IsActive();
 }
 
-bool Agent::HasNonOwnedSession() {
+bool Agent::ShouldSkipInspectorConsoleHalf() {
+  if (IsListening())
+    return false;
   if (client_ == nullptr)
     return false;
-  return client_->hasNonOwnedSessions();
+  return client_->hasOnlyReplayOwnedSessions();
 }
 
 void Agent::SetParentHandle(
