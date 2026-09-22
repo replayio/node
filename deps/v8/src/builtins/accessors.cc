@@ -806,13 +806,16 @@ void Accessors::ErrorStackGetter(
   }
 
   // Replace the structured stack-trace with the formatting result.
-  MaybeHandle<Object> result = Object::SetProperty(
-      isolate, holder, isolate->factory()->stack_trace_symbol(),
-      formatted_stack_trace, StoreOrigin::kMaybeKeyed,
-      Just(ShouldThrow::kThrowOnError));
-  if (result.is_null()) {
-    isolate->OptionalRescheduleException(false);
-    return;
+  if (!recordreplay::AreEventsDisallowed()) {
+    // [PRO-2368] Don't cache the formatted stack during replay-only invocations.
+    MaybeHandle<Object> result = Object::SetProperty(
+        isolate, holder, isolate->factory()->stack_trace_symbol(),
+        formatted_stack_trace, StoreOrigin::kMaybeKeyed,
+        Just(ShouldThrow::kThrowOnError));
+    if (result.is_null()) {
+      isolate->OptionalRescheduleException(false);
+      return;
+    }
   }
 
   v8::Local<v8::Value> value = Utils::ToLocal(formatted_stack_trace);
