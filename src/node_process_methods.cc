@@ -544,9 +544,8 @@ static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) 
     // process.exit() skips Environment destruction, so the process-owned Replay
     // session would otherwise survive until static destruction, after V8's platform
     // has been disposed. Reset it from AtExit, where Node normally waits for external
-    // debugger frontends to disconnect. This safely disables the debugger, but may
-    // wastefully tier WebAssembly modules back up during shutdown. A dedicated V8
-    // debugger shutdown path that skips WebAssembly tier-up could avoid that work.
+    // debugger frontends to disconnect. This safely disables the debugger, which
+    // leaves WebAssembly modules tiered down (see V8Debugger::disable).
     AtExit(env, [](void*) {
       gRecordReplayInspectorSession.reset();
     }, nullptr);
