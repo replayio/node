@@ -10,6 +10,7 @@
 #include "include/v8-profiler.h"
 #include "include/v8-version.h"
 #include "src/base/platform/mutex.h"
+#include "src/base/replayio.h"
 #include "src/inspector/injected-script.h"
 #include "src/inspector/inspected-context.h"
 #include "src/inspector/protocol/Protocol.h"
@@ -188,6 +189,7 @@ V8HeapProfilerAgentImpl::V8HeapProfilerAgentImpl(
       m_frontend(frontendChannel),
       m_state(state),
       m_hasTimer(false),
+      m_replay_owned(session->replayOwned()),
       m_async_gc(std::make_shared<AsyncGC>()) {}
 
 V8HeapProfilerAgentImpl::~V8HeapProfilerAgentImpl() {
@@ -197,6 +199,8 @@ V8HeapProfilerAgentImpl::~V8HeapProfilerAgentImpl() {
 }
 
 void V8HeapProfilerAgentImpl::restore() {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_isolate, "V8HeapProfilerAgentImpl::restore");
   if (m_state->booleanProperty(HeapProfilerAgentState::heapProfilerEnabled,
                                false))
     m_frontend.resetProfiles();
@@ -362,6 +366,9 @@ Response V8HeapProfilerAgentImpl::getHeapObjectId(
 }
 
 void V8HeapProfilerAgentImpl::requestHeapStatsUpdate() {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_isolate,
+      "V8HeapProfilerAgentImpl::requestHeapStatsUpdate");
   HeapStatsStream stream(&m_frontend);
   v8::SnapshotObjectId lastSeenObjectId =
       m_isolate->GetHeapProfiler()->GetHeapStats(&stream);
