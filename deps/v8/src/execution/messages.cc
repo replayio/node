@@ -487,14 +487,9 @@ MaybeHandle<Object> FormatStackTraceImpl(Isolate* isolate,
 
 }  // namespace
 
-// [PRO-1150] Error.stack can differ between recording and replaying even
-// though the same code runs: which frames V8 reports depends on JIT state (a
-// native API function such as runMicrotasks only gets a frame when its caller
-// is optimized), and the replay deoptimizes code the recording never did.
-// Record the formatted stack and use the recorded one when replaying, as the
-// Chromium fork does. Node formats through its prepareStackTrace callback,
-// whose result need not be a string, so whether one was recorded is recorded
-// as well.
+// Node formats every stack through its prepareStackTrace callback, which can
+// return any value, so this records around the whole formatting and records
+// whether the result was a string.
 MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
                                                  Handle<JSObject> error,
                                                  Handle<Object> raw_stack) {
@@ -504,6 +499,7 @@ MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
     return maybe_result;
   }
 
+  // [PRO-1150] Replay Error.stack
   Handle<Object> result;
   bool is_string = maybe_result.ToHandle(&result) && result->IsString();
   bool recorded_string = recordreplay::RecordReplayValue(
@@ -601,7 +597,7 @@ MaybeHandle<String> MessageFormatter::Format(Isolate* isolate,
 
   MaybeHandle<String> rv = builder.Finish();
   if (ShouldRecordReplayFormattedString("MessageFormatter::Format")) {
-    // [PRO-1150] Replay error messages, as the Chromium fork does.
+    // [PRO-1150] Replay error messages.
     rv = RecordReplayStringHandle("MessageFormatter::Format", isolate, rv);
   }
   return rv;

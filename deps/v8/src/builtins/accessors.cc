@@ -805,10 +805,9 @@ void Accessors::ErrorStackGetter(
     return;
   }
 
-  // Replace the structured stack-trace with the formatting result. Not while
-  // events are disallowed: a replay-only read (such as an inspector preview)
-  // would leave a stack that wasn't recorded for the program to read later.
+  // Replace the structured stack-trace with the formatting result.
   if (!recordreplay::AreEventsDisallowed()) {
+    // [PRO-2368] Don't cache the formatted stack during replay-only invocations.
     MaybeHandle<Object> result = Object::SetProperty(
         isolate, holder, isolate->factory()->stack_trace_symbol(),
         formatted_stack_trace, StoreOrigin::kMaybeKeyed,
