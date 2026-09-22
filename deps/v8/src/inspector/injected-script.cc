@@ -40,6 +40,7 @@
 #include "include/v8-function.h"
 #include "include/v8-inspector.h"
 #include "include/v8-microtask-queue.h"
+#include "src/base/replayio.h"
 #include "src/debug/debug-interface.h"
 #include "src/inspector/custom-preview.h"
 #include "src/inspector/inspected-context.h"
@@ -221,7 +222,8 @@ class InjectedScript::ProtocolPromiseHandler {
         m_replMode(replMode),
         m_throwOnSideEffect(throwOnSideEffect),
         m_callback(std::move(callback)),
-        m_evaluationResult(m_inspector->isolate(), evaluationResult) {
+        m_evaluationResult(m_inspector->isolate(), evaluationResult),
+        m_replay_owned(session->replayOwned()) {
     m_evaluationResult.SetWeak(reinterpret_cast<PromiseHandlerTracker::Id*>(id),
                                cleanup, v8::WeakCallbackType::kParameter);
   }
@@ -239,6 +241,9 @@ class InjectedScript::ProtocolPromiseHandler {
   }
 
   void thenCallback(v8::Local<v8::Value> value) {
+    v8::replayio::AutoMaybeReplayOwned replay_owned(
+        m_replay_owned, m_inspector->isolate(),
+        "InjectedScript::EvaluateCallback::thenCallback");
     // We don't need the m_evaluationResult in the `thenCallback`, but we also
     // don't want `cleanup` running in case we re-enter JS.
     m_evaluationResult.Reset();
@@ -287,6 +292,9 @@ class InjectedScript::ProtocolPromiseHandler {
   }
 
   void catchCallback(v8::Local<v8::Value> result) {
+    v8::replayio::AutoMaybeReplayOwned replay_owned(
+        m_replay_owned, m_inspector->isolate(),
+        "InjectedScript::EvaluateCallback::catchCallback");
     // Hold strongly onto m_evaluationResult now to prevent `cleanup` from
     // running in case any code below triggers GC.
     m_evaluationResult.ClearWeak();
@@ -397,10 +405,13 @@ class InjectedScript::ProtocolPromiseHandler {
   bool m_throwOnSideEffect;
   std::weak_ptr<EvaluateCallback> m_callback;
   v8::Global<v8::Promise> m_evaluationResult;
+  bool m_replay_owned;
 };
 
-InjectedScript::InjectedScript(InspectedContext* context, int sessionId)
-    : m_context(context), m_sessionId(sessionId) {}
+InjectedScript::InjectedScript(InspectedContext* context, int sessionId,
+                               bool replayOwned)
+    : m_context(context), m_sessionId(sessionId),
+      m_replay_owned(replayOwned) {}
 
 InjectedScript::~InjectedScript() { discardEvaluateCallbacks(); }
 
@@ -614,6 +625,8 @@ Response InjectedScript::wrapObject(
     const WrapOptions& wrapOptions,
     v8::MaybeLocal<v8::Value> customPreviewConfig, int maxCustomPreviewDepth,
     std::unique_ptr<protocol::Runtime::RemoteObject>* result) {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_context->isolate(), "InjectedScript::wrapObject");
   v8::Local<v8::Context> context = m_context->context();
   v8::Context::Scope contextScope(context);
   std::unique_ptr<ValueMirror> mirror = ValueMirror::create(context, value);
@@ -776,6 +789,9 @@ void InjectedScript::addPromiseCallback(
 }
 
 void InjectedScript::discardEvaluateCallbacks() {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_context->isolate(),
+      "InjectedScript::discardEvaluateCallbacks");
   while (!m_evaluateCallbacks.empty()) {
     EvaluateCallback::sendFailure(
         *m_evaluateCallbacks.begin(), this,
@@ -816,6 +832,9 @@ void InjectedScript::releaseObjectGroup(const String16& objectGroup) {
 }
 
 void InjectedScript::setCustomObjectFormatterEnabled(bool enabled) {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_context->isolate(),
+      "InjectedScript::setCustomObjectFormatterEnabled");
   m_customPreviewEnabled = enabled;
 }
 
@@ -1234,6 +1253,11 @@ InjectedScript::ProtocolPromiseHandler* PromiseHandlerTracker::get(
 void PromiseHandlerTracker::sendFailure(
     InjectedScript::ProtocolPromiseHandler* handler,
     const protocol::DispatchResponse& response) const {
+  // V8 12.4 reports a collected or torn down promise from here, where the
+  // handler's own sendPromiseCollected did before.
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      handler->m_replay_owned, handler->m_inspector->isolate(),
+      "InjectedScript::EvaluateCallback::sendFailure");
   V8InspectorImpl* inspector = handler->m_inspector;
   V8InspectorSessionImpl* session =
       inspector->sessionById(handler->m_contextGroupId, handler->m_sessionId);

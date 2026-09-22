@@ -30,6 +30,7 @@ class V8HeapProfilerAgentImpl : public protocol::HeapProfiler::Backend {
   V8HeapProfilerAgentImpl(const V8HeapProfilerAgentImpl&) = delete;
   V8HeapProfilerAgentImpl& operator=(const V8HeapProfilerAgentImpl&) = delete;
   void restore();
+  bool replayOwned() const { return m_replay_owned; }
 
   void collectGarbage(
       std::unique_ptr<CollectGarbageCallback> callback) override;
@@ -90,6 +91,7 @@ class V8HeapProfilerAgentImpl : public protocol::HeapProfiler::Backend {
   bool m_hasTimer;
   double m_timerDelayInSeconds;
   std::shared_ptr<AsyncCallbacks> m_asyncCallbacks;
+  bool m_replay_owned;
 };
 
 }  // namespace v8_inspector
