@@ -577,16 +577,6 @@ class NodeInspectorClient : public V8InspectorClient {
     return false;
   }
 
-  bool hasOnlyReplayOwnedSessions() {
-    if (channels_.empty())
-      return false;
-    for (const auto& id_channel : channels_) {
-      if (!id_channel.second->replayOwned())
-        return false;
-    }
-    return true;
-  }
-
   bool notifyWaitingForDisconnect() {
     bool retaining_context = false;
     for (const auto& id_channel : channels_) {
@@ -616,7 +606,11 @@ class NodeInspectorClient : public V8InspectorClient {
   }
 
   bool IsActive() {
-    return !channels_.empty();
+    for (const auto& id_channel : channels_) {
+      if (!id_channel.second->replayOwned())
+        return true;
+    }
+    return false;
   }
 
  private:
@@ -925,14 +919,6 @@ bool Agent::IsActive() {
   if (client_ == nullptr)
     return false;
   return io_ != nullptr || client_->IsActive();
-}
-
-bool Agent::ShouldSkipInspectorConsoleHalf() {
-  if (IsListening())
-    return false;
-  if (client_ == nullptr)
-    return false;
-  return client_->hasOnlyReplayOwnedSessions();
 }
 
 void Agent::SetParentHandle(

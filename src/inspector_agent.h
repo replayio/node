@@ -58,7 +58,6 @@ class Agent {
   // if either the user explicitly opted into inspector (e.g. with the
   // --inspect command line flag) or if inspector JS API had been used.
   bool IsActive();
-  bool ShouldSkipInspectorConsoleHalf();
 
   // Blocks till frontend connects and sends "runIfWaitingForDebugger"
   void WaitForConnect();

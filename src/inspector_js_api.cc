@@ -197,8 +197,7 @@ void InspectorConsoleCall(const FunctionCallbackInfo<Value>& info) {
   Local<Context> context = isolate->GetCurrentContext();
   CHECK_GE(info.Length(), 2);
   SlicedArguments call_args(info, /* start */ 2);
-  Agent* agent = env->inspector_agent();
-  if (InspectorEnabled(env) && !agent->ShouldSkipInspectorConsoleHalf()) {
+  if (InspectorEnabled(env)) {
     Local<Value> inspector_method = info[0];
     CHECK(inspector_method->IsFunction());
     if (!env->is_in_inspector_console_call()) {
