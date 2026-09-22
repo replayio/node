@@ -5,6 +5,7 @@
 #include "src/codegen/compiler.h"
 
 #include <algorithm>
+#include <atomic>
 #include <memory>
 
 #include "include/replayio.h"
@@ -1614,7 +1615,17 @@ class V8_NODISCARD OffThreadParseInfoScope {
 
 }  // namespace
 
+// For use when checking that record/replay opcodes are only emitted
+// for the main thread.
+static std::atomic<size_t> gNumRunningBackgroundCompileTasks;
+
+size_t NumRunningBackgroundCompileTasks() {
+  return gNumRunningBackgroundCompileTasks;
+}
+
 void BackgroundCompileTask::Run() {
+  gNumRunningBackgroundCompileTasks++;
+
   TimedHistogramScope timer(timer_);
   base::Optional<OffThreadParseInfoScope> off_thread_scope(
       base::in_place, info_.get(), worker_thread_runtime_call_stats_,
@@ -1689,6 +1700,8 @@ void BackgroundCompileTask::Run() {
       info_.reset();
     }
   }
+
+  gNumRunningBackgroundCompileTasks--;
 }
 
 MaybeHandle<SharedFunctionInfo> BackgroundCompileTask::GetOuterFunctionSfi(
