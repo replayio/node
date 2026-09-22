@@ -13,6 +13,7 @@
 #include "v8-fast-api-calls.h"
 #include "v8.h"
 #include "v8-inspector.h"
+#include "replayio.h"
 
 #include <vector>
 
@@ -539,8 +540,12 @@ static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) 
     inspector::Agent* agent = env->inspector_agent();
 
     auto delegate = std::make_unique<RecordReplaySessionDelegate>();
-    gRecordReplayInspectorSession = agent->Connect(std::move(delegate),
-                                                   /* prevent_shutdown */ false);
+    {
+      v8::replayio::AutoMarkReplayCode mark;
+      v8::replayio::AutoDisallowEvents disallow;
+      gRecordReplayInspectorSession = agent->Connect(std::move(delegate),
+                                                     /* prevent_shutdown */ false);
+    }
     // process.exit() skips Environment destruction, so the process-owned Replay
     // session would otherwise survive until static destruction, after V8's platform
     // has been disposed. Reset it from AtExit, where Node normally waits for external
