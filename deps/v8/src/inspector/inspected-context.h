@@ -53,7 +53,7 @@ class InspectedContext {
   V8InspectorImpl* inspector() const { return m_inspector; }
 
   InjectedScript* getInjectedScript(int sessionId);
-  InjectedScript* createInjectedScript(int sessionId);
+  InjectedScript* createInjectedScript(int sessionId, bool replayOwned);
   void discardInjectedScript(int sessionId);
 
   bool addInternalObject(v8::Local<v8::Object> object,
