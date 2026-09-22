@@ -165,7 +165,7 @@ class JSBindingsConnection : public AsyncWrap {
 
 static bool InspectorEnabled(Environment* env) {
   Agent* agent = env->inspector_agent();
-  return agent->IsActive();
+  return agent->IsListening() || agent->HasNonOwnedSession();
 }
 
 void SetConsoleExtensionInstaller(const FunctionCallbackInfo<Value>& info) {

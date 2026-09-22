@@ -216,7 +216,8 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
                        std::shared_ptr<MainThreadHandle> main_thread_,
                        bool prevent_shutdown)
       : delegate_(std::move(delegate)), prevent_shutdown_(prevent_shutdown),
-        retaining_context_(false) {
+        retaining_context_(false),
+        replay_owned_(v8::recordreplay::AreEventsDisallowed()) {
     session_ = inspector->connect(CONTEXT_GROUP_ID, this, StringView());
     node_dispatcher_ = std::make_unique<protocol::UberDispatcher>(this);
     tracing_agent_ =
@@ -265,6 +266,10 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
 
   bool preventShutdown() {
     return prevent_shutdown_;
+  }
+
+  bool replayOwned() {
+    return replay_owned_;
   }
 
   bool notifyWaitingForDisconnect() {
@@ -324,6 +329,7 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   std::unique_ptr<protocol::UberDispatcher> node_dispatcher_;
   bool prevent_shutdown_;
   bool retaining_context_;
+  bool replay_owned_;
 };
 
 class SameThreadInspectorSession : public InspectorSession {
@@ -566,6 +572,14 @@ class NodeInspectorClient : public V8InspectorClient {
     for (const auto& id_channel : channels_) {
       // Other sessions are "invisible" more most purposes
       if (id_channel.second->preventShutdown())
+        return true;
+    }
+    return false;
+  }
+
+  bool hasNonOwnedSessions() {
+    for (const auto& id_channel : channels_) {
+      if (!id_channel.second->replayOwned())
         return true;
     }
     return false;
@@ -909,6 +923,12 @@ bool Agent::IsActive() {
   if (client_ == nullptr)
     return false;
   return io_ != nullptr || client_->IsActive();
+}
+
+bool Agent::HasNonOwnedSession() {
+  if (client_ == nullptr)
+    return false;
+  return client_->hasNonOwnedSessions();
 }
 
 void Agent::SetParentHandle(
