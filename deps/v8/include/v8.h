@@ -12655,7 +12655,11 @@ class V8_EXPORT recordreplay {
   public:
 
 static void SetRecordingOrReplaying(void* handle);
-static bool IsRecordingOrReplaying();
+// Whether this process is recording or replaying, and when a feature is
+// given, whether the driver has left that feature enabled.
+static bool IsRecordingOrReplaying(const char* feature = nullptr,
+                                   const char* subfeature = nullptr);
+static bool FeatureEnabled(const char* feature, const char* subfeature = nullptr);
 static bool IsRecording();
 static bool IsReplaying();
 

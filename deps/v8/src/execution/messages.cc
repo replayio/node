@@ -338,8 +338,8 @@ class V8_NODISCARD PrepareStackTraceScope {
 // static
 namespace {
 
-bool ShouldRecordReplayFormattedString() {
-  return recordreplay::IsRecordingOrReplaying() &&
+bool ShouldRecordReplayFormattedString(const char* feature) {
+  return recordreplay::IsRecordingOrReplaying(feature) &&
          !recordreplay::AreEventsDisallowed() && IsMainThread();
 }
 
@@ -491,7 +491,7 @@ MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
                                                  Handle<Object> raw_stack) {
   MaybeHandle<Object> maybe_result =
       FormatStackTraceImpl(isolate, error, raw_stack);
-  if (!ShouldRecordReplayFormattedString()) {
+  if (!ShouldRecordReplayFormattedString("ErrorUtils::FormatStackTrace")) {
     return maybe_result;
   }
 
@@ -590,7 +590,8 @@ MaybeHandle<String> MessageFormatter::Format(Isolate* isolate,
   }
 
   MaybeHandle<String> rv = builder.Finish();
-  if (ShouldRecordReplayFormattedString() && !rv.is_null()) {
+  if (ShouldRecordReplayFormattedString("MessageFormatter::Format") &&
+      !rv.is_null()) {
     // [PRO-1150] Replay error messages, as the Chromium fork does.
     rv = RecordReplayStringContents(isolate, "MessageFormatter::Format", rv);
   }
