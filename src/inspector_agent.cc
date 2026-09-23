@@ -217,9 +217,7 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
                        std::shared_ptr<MainThreadHandle> main_thread_,
                        bool prevent_shutdown)
       : delegate_(std::move(delegate)), prevent_shutdown_(prevent_shutdown),
-        retaining_context_(false),
-        isolate_(env->isolate()),
-        replay_owned_(v8::recordreplay::AreEventsDisallowed()) {
+        retaining_context_(false) {
     session_ = inspector->connect(CONTEXT_GROUP_ID, this, StringView());
     node_dispatcher_ = std::make_unique<protocol::UberDispatcher>(this);
     tracing_agent_ =
@@ -279,8 +277,6 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
     return retaining_context_;
   }
 
-  bool replayOwned() const { return replay_owned_; }
-
  private:
   void sendResponse(
       int callId,
@@ -296,15 +292,6 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   void flushProtocolNotifications() override { }
 
   void sendMessageToFrontend(const StringView& message) {
-    if (replay_owned_) {
-      v8::replayio::AutoMarkReplayCode mark;
-      v8::replayio::AutoDisallowEvents disallow(
-          "ChannelImpl::sendMessageToFrontend", isolate_);
-      std::string raw_message = protocol::StringUtil::StringViewToUtf8(message);
-      delegate_->SendMessageToFrontend(message);
-      return;
-    }
-    std::string raw_message = protocol::StringUtil::StringViewToUtf8(message);
     delegate_->SendMessageToFrontend(message);
   }
 
@@ -337,8 +324,6 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   std::unique_ptr<protocol::UberDispatcher> node_dispatcher_;
   bool prevent_shutdown_;
   bool retaining_context_;
-  v8::Isolate* isolate_;
-  bool replay_owned_;
 };
 
 class SameThreadInspectorSession : public InspectorSession {
