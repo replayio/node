@@ -116,7 +116,15 @@ void V8Debugger::disable() {
   m_pauseOnNextCallRequested = false;
   m_pauseOnAsyncCall = false;
 #if V8_ENABLE_WEBASSEMBLY
-  v8::debug::TierUpAllModulesPerIsolate(m_isolate);
+  // When recording or replaying, Node's Replay session keeps the debugger
+  // enabled until it is destroyed at exit, so there is nothing to tier up for.
+  // Tiering up would recompile the modules in an order that depends on their
+  // addresses, which differ when replaying, and the wasm code GC that the
+  // replaced code triggers then happens at different points, so the replay
+  // diverges from the recording.
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    v8::debug::TierUpAllModulesPerIsolate(m_isolate);
+  }
 #endif  // V8_ENABLE_WEBASSEMBLY
   v8::debug::SetDebugDelegate(m_isolate, nullptr);
   m_isolate->RemoveNearHeapLimitCallback(&V8Debugger::nearHeapLimitCallback,
