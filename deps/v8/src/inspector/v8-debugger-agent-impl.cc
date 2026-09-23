@@ -8,6 +8,7 @@
 
 #include "../../third_party/inspector_protocol/crdtp/json.h"
 #include "include/v8-inspector.h"
+#include "src/base/replayio.h"
 #include "src/base/safe_conversions.h"
 #include "src/debug/debug-interface.h"
 #include "src/inspector/injected-script.h"
@@ -357,6 +358,7 @@ V8DebuggerAgentImpl::V8DebuggerAgentImpl(
       m_debugger(m_inspector->debugger()),
       m_session(session),
       m_enabled(false),
+      m_replay_owned(session->replayOwned()),
       m_state(state),
       m_frontend(frontendChannel),
       m_isolate(m_inspector->isolate()) {}
@@ -439,6 +441,9 @@ Response V8DebuggerAgentImpl::disable() {
 }
 
 void V8DebuggerAgentImpl::restore() {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_inspector->isolate(),
+      "V8DebuggerAgentImpl::restore");
   DCHECK(!m_enabled);
   if (!m_state->booleanProperty(DebuggerAgentState::debuggerEnabled, false))
     return;
@@ -479,6 +484,9 @@ Response V8DebuggerAgentImpl::setBreakpointsActive(bool active) {
 }
 
 Response V8DebuggerAgentImpl::setSkipAllPauses(bool skip) {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_inspector->isolate(),
+      "V8DebuggerAgentImpl::setSkipAllPauses");
   m_state->setBoolean(DebuggerAgentState::skipAllPauses, skip);
   m_skipAllPauses = skip;
   return Response::Success();
@@ -1105,6 +1113,9 @@ void V8DebuggerAgentImpl::clearBreakDetails() {
 void V8DebuggerAgentImpl::schedulePauseOnNextStatement(
     const String16& breakReason,
     std::unique_ptr<protocol::DictionaryValue> data) {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_inspector->isolate(),
+      "V8DebuggerAgentImpl::schedulePauseOnNextStatement");
   if (isPaused() || !acceptsPause(false) || !m_breakpointsActive) return;
   if (m_breakReason.empty()) {
     m_debugger->setPauseOnNextCall(true, m_session->contextGroupId());
@@ -1113,6 +1124,9 @@ void V8DebuggerAgentImpl::schedulePauseOnNextStatement(
 }
 
 void V8DebuggerAgentImpl::cancelPauseOnNextStatement() {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_inspector->isolate(),
+      "V8DebuggerAgentImpl::cancelPauseOnNextStatement");
   if (isPaused() || !acceptsPause(false) || !m_breakpointsActive) return;
   if (m_breakReason.size() == 1) {
     m_debugger->setPauseOnNextCall(false, m_session->contextGroupId());
@@ -1135,6 +1149,9 @@ Response V8DebuggerAgentImpl::pause() {
 }
 
 Response V8DebuggerAgentImpl::resume(Maybe<bool> terminateOnResume) {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_inspector->isolate(),
+      "V8DebuggerAgentImpl::resume");
   if (!isPaused()) return Response::ServerError(kDebuggerNotPaused);
   m_session->releaseObjectGroup(kBacktraceObjectGroup);
   m_debugger->continueProgram(m_session->contextGroupId(),
@@ -1144,6 +1161,9 @@ Response V8DebuggerAgentImpl::resume(Maybe<bool> terminateOnResume) {
 
 Response V8DebuggerAgentImpl::stepOver(
     Maybe<protocol::Array<protocol::Debugger::LocationRange>> inSkipList) {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_inspector->isolate(),
+      "V8DebuggerAgentImpl::stepOver");
   if (!isPaused()) return Response::ServerError(kDebuggerNotPaused);
 
   if (inSkipList.isJust()) {
@@ -1913,6 +1933,9 @@ void V8DebuggerAgentImpl::didContinue() {
 void V8DebuggerAgentImpl::breakProgram(
     const String16& breakReason,
     std::unique_ptr<protocol::DictionaryValue> data) {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_inspector->isolate(),
+      "V8DebuggerAgentImpl::breakProgram");
   if (!enabled() || m_skipAllPauses || !m_debugger->canBreakProgram()) return;
   std::vector<BreakReason> currentScheduledReason;
   currentScheduledReason.swap(m_breakReason);
@@ -1968,6 +1991,9 @@ void V8DebuggerAgentImpl::reset() {
 }
 
 void V8DebuggerAgentImpl::ScriptCollected(const V8DebuggerScript* script) {
+  v8::replayio::AutoMaybeReplayOwned replay_owned(
+      m_replay_owned, m_inspector->isolate(),
+      "V8DebuggerAgentImpl::ScriptCollected");
   DCHECK_NE(m_scripts.find(script->scriptId()), m_scripts.end());
   m_cachedScriptIds.push_back(script->scriptId());
   // TODO(alph): Properly calculate size when sources are one-byte strings.

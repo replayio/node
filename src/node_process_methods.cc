@@ -13,6 +13,7 @@
 #include "v8-fast-api-calls.h"
 #include "v8.h"
 #include "v8-inspector.h"
+#include "replayio.h"
 
 #include <vector>
 
@@ -506,6 +507,9 @@ static std::unique_ptr<inspector::InspectorSession> gRecordReplayInspectorSessio
 class RecordReplaySessionDelegate : public inspector::InspectorSessionDelegate {
  public:
   void SendMessageToFrontend(const v8_inspector::StringView& message) override {
+    v8::replayio::AutoMarkReplayCode mark;
+    v8::replayio::AutoDisallowEvents disallow(
+        "RecordReplay_SendMessageToFrontend");
     CHECK(v8::IsMainThread());
 
     if (recordreplay::IsRecordingFinished()) {
@@ -539,8 +543,13 @@ static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) 
     inspector::Agent* agent = env->inspector_agent();
 
     auto delegate = std::make_unique<RecordReplaySessionDelegate>();
-    gRecordReplayInspectorSession = agent->Connect(std::move(delegate),
-                                                   /* prevent_shutdown */ false);
+    {
+      v8::replayio::AutoMarkReplayCode mark;
+      v8::replayio::AutoDisallowEvents disallow(
+          "RecordReplaySendCDPMessage::Connect");
+      gRecordReplayInspectorSession = agent->Connect(std::move(delegate),
+                                                     /* prevent_shutdown */ false);
+    }
     // process.exit() skips Environment destruction, so the process-owned Replay
     // session would otherwise survive until static destruction, after V8's platform
     // has been disposed. Reset it from AtExit, where Node normally waits for external
@@ -554,7 +563,11 @@ static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) 
 
   std::string nmessage(message.ToString());
   v8_inspector::StringView messageView((const uint8_t*)nmessage.c_str(), nmessage.length());
-  gRecordReplayInspectorSession->Dispatch(messageView);
+  {
+    v8::replayio::AutoMarkReplayCode mark;
+    v8::replayio::AutoDisallowEvents disallow("RecordReplaySendCDPMessage");
+    gRecordReplayInspectorSession->Dispatch(messageView);
+  }
 }
 
 // Called from javascript.

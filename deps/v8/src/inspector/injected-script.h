@@ -67,12 +67,13 @@ class EvaluateCallback {
 
 class InjectedScript final {
  public:
-  InjectedScript(InspectedContext*, int sessionId);
+  InjectedScript(InspectedContext*, int sessionId, bool replayOwned);
   ~InjectedScript();
   InjectedScript(const InjectedScript&) = delete;
   InjectedScript& operator=(const InjectedScript&) = delete;
 
   InspectedContext* context() const { return m_context; }
+  bool replayOwned() const { return m_replay_owned; }
 
   Response getProperties(
       v8::Local<v8::Object>, const String16& groupName, bool ownProperties,
@@ -236,6 +237,7 @@ class InjectedScript final {
 
   InspectedContext* m_context;
   int m_sessionId;
+  bool m_replay_owned;
   v8::Global<v8::Value> m_lastEvaluationResult;
   v8::Global<v8::Object> m_commandLineAPI;
   int m_lastBoundObjectId = 1;

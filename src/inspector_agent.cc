@@ -18,6 +18,7 @@
 #include "timer_wrap-inl.h"
 #include "v8-inspector.h"
 #include "v8-platform.h"
+#include "replayio.h"
 
 #include "libplatform/libplatform.h"
 
@@ -291,7 +292,6 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   void flushProtocolNotifications() override { }
 
   void sendMessageToFrontend(const StringView& message) {
-    std::string raw_message = protocol::StringUtil::StringViewToUtf8(message);
     delegate_->SendMessageToFrontend(message);
   }
 
