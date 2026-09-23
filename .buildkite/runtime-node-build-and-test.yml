@@ -123,7 +123,7 @@ steps:
         -v "$$BUILDKITE_AGENT_BIN:/usr/local/bin/buildkite-agent:ro" \
         -v "$$NODE_REPO:/usr/build/tmp/replayio-node-repo" \
         linux-node-build
-      # Publish BuildId for test-node / test-jest (same role as chromium build_id/**).
+      # Publish BuildId for test-node-* / test-jest-repos (same role as chromium build_id/**).
       BUILD_ID=$$(sed -n 's/.*gBuildId\[\] = "\([^"]*\)".*/\1/p' "$$NODE_REPO/src/node_record_replay_driver.cc" | head -n1)
       test -n "$$BUILD_ID"
       echo "$$BUILD_ID" > "$${BUILDKITE_BUILD_CHECKOUT_PATH}/build_id"
@@ -167,7 +167,9 @@ steps:
       # Random tests read node's test/ tree via nodePath().
       export RECORD_REPLAY_NODE_PATH="$$BUILDKITE_BUILD_CHECKOUT_PATH"
       test -d "$$RECORD_REPLAY_NODE_PATH/test"
-      npx tsx src/build/buildNode.ts test-node --build-id "$$BUILD_ID"
+      # backend#13395: test-node → test-node-recording + test-node-core.
+      npx tsx src/build/buildNode.ts test-node-recording --build-id "$$BUILD_ID"
+      npx tsx src/build/buildNode.ts test-node-core --build-id "$$BUILD_ID"
 
   - label: "test-jest"
     key: "node-test-jest"
@@ -212,4 +214,5 @@ steps:
       npx --yes pnpm@10.11.0 install --frozen-lockfile
       export RECORD_REPLAY_ENABLE_ASSERTS=1
       export RECORD_REPLAY_JS_PROGRESS_ASSERTS=1
-      npx tsx src/build/buildNode.ts test-jest --build-id "$$BUILD_ID"
+      # backend#13395: test-jest → test-jest-repos.
+      npx tsx src/build/buildNode.ts test-jest-repos --build-id "$$BUILD_ID"
