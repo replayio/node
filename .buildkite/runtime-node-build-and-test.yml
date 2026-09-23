@@ -46,7 +46,14 @@ steps:
       export DOCKER_BUILDKIT=1
       echo "=== Disk space (build start) ==="
       df -h
-      NODE_REPO="/var/lib/buildkite-agent/cache/runtime-node-build/repo"
+      # One cached checkout + out/ per Node version: out/Makefile is generated from
+      # the tree's .gyp files, so a checkout shared between Node lines (e.g. 16.14.3
+      # master and 16.20.3 rewrites) breaks make whenever CI switches between them.
+      # The step runs in the Buildkite checkout of $$BUILDKITE_COMMIT, so read the
+      # version from there.
+      NODE_VERSION=$$(awk '/^#define NODE_(MAJOR|MINOR|PATCH)_VERSION /{v = v (v ? "." : "") $$3} END {print v}' src/node_version.h)
+      test -n "$$NODE_VERSION"
+      NODE_REPO="/var/lib/buildkite-agent/cache/runtime-node-build/repo-$$NODE_VERSION"
       if [ -d "$$NODE_REPO" ]; then
         du -sh "$$NODE_REPO" "$$NODE_REPO/out" 2>/dev/null || du -sh "$$NODE_REPO" 2>/dev/null || true
       fi
