@@ -5339,8 +5339,8 @@ void BytecodeGenerator::VisitCall(Call* expr) {
     return VisitCallSuper(expr);
   }
 
-  size_t start_locations_size =
-      builder()->record_replay_instrumentation_site_locations_.size();
+  int start_instrumentation_count =
+      builder()->record_replay_instrumentation_site_counter_;
 
   // We compile the call differently depending on the presence of spreads and
   // their positions.
@@ -5548,8 +5548,8 @@ void BytecodeGenerator::VisitCall(Call* expr) {
   //       Example: `/*BREAK1*/o.func/*BREAK2*/();`
 
   if (expr->call_head_token_position() &&
-      start_locations_size !=
-          builder()->record_replay_instrumentation_site_locations_.size()) {
+      start_instrumentation_count !=
+          builder()->record_replay_instrumentation_site_counter_) {
     // Has arguments and visiting them added breakpoints.
     // Move this to a position that is assured not to conflict with any other
     // AST node.

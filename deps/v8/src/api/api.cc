@@ -10386,8 +10386,8 @@ static void (*gRecordReplaySetCommandCallback)(const char* method, CommandCallba
 static void (*gRecordReplayPrint)(const char* format, va_list args);
 static void (*gRecordReplayDiagnostic)(const char* format, va_list args);
 static void (*gRecordReplayWarning)(const char* format, va_list args);
-static void (*gRecordReplayOnInstrument)(const char* kind, const char* function, int offset);
-static void (*gRecordReplayAddPossibleBreakpoint)(int line, int column, const char* function, int offset);
+static void (*gRecordReplayOnInstrument)(const char* kind, const char* function, int function_index);
+static void (*gRecordReplayAddPossibleBreakpoint)(int line, int column, const char* function, int function_index);
 static void (*gRecordReplayAssert)(const char*, va_list);
 static void (*gRecordReplayAssertBytes)(const char* why, const void* ptr, size_t nbytes);
 static void (*gRecordReplayDescribeAssertData)(const char* text);
@@ -10508,8 +10508,8 @@ void RecordReplayOnTargetProgressReached() {
   gRecordReplayProgressReached();
 }
 
-void RecordReplayInstrument(const char* kind, const char* function, int offset) {
-  gRecordReplayOnInstrument(kind, function, offset);
+void RecordReplayInstrument(const char* kind, const char* function, int function_index) {
+  gRecordReplayOnInstrument(kind, function, function_index);
 }
 
 extern char* CommandCallback(const char* command, const char* params);
@@ -10999,8 +10999,8 @@ size_t RecordReplayElapsedTimeMs() {
 
 namespace internal {
 
-void RecordReplayAddPossibleBreakpoint(int line, int column, const char* function, int offset) {
-  gRecordReplayAddPossibleBreakpoint(line, column, function, offset);
+void RecordReplayAddPossibleBreakpoint(int line, int column, const char* function, int function_index) {
+  gRecordReplayAddPossibleBreakpoint(line, column, function, function_index);
 }
 
 } // namespace internal
