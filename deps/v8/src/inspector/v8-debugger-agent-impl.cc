@@ -1475,6 +1475,21 @@ Response V8DebuggerAgentImpl::getPendingException(
   return Response::Success();
 }
 
+extern "C" bool V8RecordReplayCurrentReturnValue(v8::Local<v8::Value>* object);
+
+Response V8DebuggerAgentImpl::getReturnValue(
+    Maybe<RemoteObject>* out_returnValue) {
+  v8::Local<v8::Value> return_value;
+  if (!V8RecordReplayCurrentReturnValue(&return_value)) {
+    return Response::Success();
+  }
+
+  v8::Local<v8::Context> context = m_isolate->GetCurrentContext();
+  *out_returnValue =
+    m_session->wrapObject(context, return_value, String16(), false);
+  return Response::Success();
+}
+
 Response V8DebuggerAgentImpl::currentCallFrames(
     std::unique_ptr<Array<CallFrame>>* result) {
   if (!isPaused()) {
