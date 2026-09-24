@@ -167,9 +167,43 @@ steps:
       # Random tests read node's test/ tree via nodePath().
       export RECORD_REPLAY_NODE_PATH="$$BUILDKITE_BUILD_CHECKOUT_PATH"
       test -d "$$RECORD_REPLAY_NODE_PATH/test"
-      # backend#13395: test-node → test-node-recording + test-node-core.
-      npx tsx src/build/buildNode.ts test-node-recording --build-id "$$BUILD_ID"
       npx tsx src/build/buildNode.ts test-node-core --build-id "$$BUILD_ID"
+
+  - label: "test-node-recording"
+    key: "node-test-node-recording"
+    depends_on:
+      - "build-node-linux"
+    agents:
+      - "can_replay=true"
+    plugins:
+      - seek-oss/aws-sm#v2.3.1:
+          region: us-east-2
+          env:
+            HASURA_ADMIN_SECRET: "prod/hasura-admin-secret"
+            RECORD_REPLAY_API_KEY: "prod/public-api-key"
+    command: |
+      set -euo pipefail
+      PIN="__REPLAY_BACKEND_REV__"
+      WORKDIR=$$(mktemp -d "/tmp/node-test-node-recording-$${BUILDKITE_JOB_ID}.XXXXXX")
+      BACKEND_DIR="$$WORKDIR/backend"
+      mkdir -p "$$BACKEND_DIR"
+      git -C "$$BACKEND_DIR" init
+      git -C "$$BACKEND_DIR" remote add origin git@github.com:replayio/backend.git
+      git -C "$$BACKEND_DIR" fetch --depth 1 origin "$$PIN"
+      git -C "$$BACKEND_DIR" checkout FETCH_HEAD
+      # LinkerZombieLeak: sweep before tests + always after (even on failure).
+      "$$BACKEND_DIR/scripts/kill-linker-processes.sh"
+      trap '"$$BACKEND_DIR/scripts/kill-linker-processes.sh"; rm -rf "$$WORKDIR"' EXIT
+      buildkite-agent artifact download build_id "$$WORKDIR/"
+      BUILD_ID="$$(cat "$$WORKDIR/build_id")"
+      test -n "$$BUILD_ID"
+      cd "$$BACKEND_DIR"
+      unset REPLAY_LOCAL_DRIVER_DIR || true
+      # packageManager pnpm@10.11.0; can_replay agents lack global npm write (EACCES).
+      # Backend k8s image preinstalls pnpm; here use npx (Node 25 dropped corepack).
+      npx --yes pnpm@10.11.0 install --frozen-lockfile
+      # test/node-recording vitest suite; it sets the assert env vars itself.
+      npx tsx src/build/buildNode.ts test-node-recording --build-id "$$BUILD_ID"
 
   - label: "test-jest"
     key: "node-test-jest"
