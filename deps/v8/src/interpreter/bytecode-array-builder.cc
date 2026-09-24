@@ -23,7 +23,7 @@ namespace internal {
 extern int RegisterAssertValueSite(const std::string& desc,
                                    int source_position);
 extern int RegisterInstrumentationSite(const char* kind, int source_position,
-                                       int bytecode_offset);
+                                       int function_index);
 extern bool gRecordReplayAssertValues;
 extern bool RecordReplayShouldEmitOpcodes(Isolate* isolate, int script_id,
                                           bool record_replay_ignore);
@@ -1385,10 +1385,11 @@ int BytecodeArrayBuilder::RecordReplayRegisterInstrumentationSite(
   }
   record_replay_instrumentation_site_locations_.insert(source_position);
 
-  // Chromium's v8 uses function_index since:
-  // https://github.com/replayio/chromium-v8/pull/222
-  int bytecode_offset = bytecode_array_writer_.size();
-  return RegisterInstrumentationSite(kind, source_position, bytecode_offset);
+  // some of the instrumentations bypass the above location-based deduplication mechanism (mainly the ones added with kNoSourcePosition)
+  // so to ensure unique function indices to be used for all registered instrumentation sites
+  // we use a dedicated counter for this
+  int function_index = ++record_replay_instrumentation_site_counter_;
+  return RegisterInstrumentationSite(kind, source_position, function_index);
 }
 
 bool BytecodeArrayBuilder::EmitRecordReplayInstrumentationOpcodes() const {
@@ -1414,9 +1415,8 @@ BytecodeArrayBuilder::RecordReplayInstrumentationGenerator(
   // need to emit InstrumentationGenerator opcodes so that generator objects
   // will be associated with IDs at consistent points.
   if (emit_record_replay_opcodes_) {
-    int bytecode_offset = bytecode_array_writer_.size();
     int index =
-        RegisterInstrumentationSite(kind, kNoSourcePosition, bytecode_offset);
+        RecordReplayRegisterInstrumentationSite(kind, kNoSourcePosition);
     OutputRecordReplayInstrumentationGenerator(index, generator_object);
   }
   return *this;

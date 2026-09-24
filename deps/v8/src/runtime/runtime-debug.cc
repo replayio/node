@@ -1328,7 +1328,8 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
 struct InstrumentationSite {
   const char* kind_ = nullptr;
   int source_position_ = 0;
-  int bytecode_offset_ = 0;
+  // The index of this site within its function.
+  int function_index_ = 0;
 
   // Set on the first use of the instrumentation site.
   std::string function_id_;
@@ -1339,12 +1340,12 @@ typedef std::vector<InstrumentationSite> InstrumentationSiteVector;
 static InstrumentationSiteVector* gInstrumentationSites;
 
 int RegisterInstrumentationSite(const char* kind, int source_position,
-                                int bytecode_offset) {
+                                int function_index) {
   CHECK(IsMainThread());
   InstrumentationSite site;
   site.kind_ = kind;
   site.source_position_ = source_position;
-  site.bytecode_offset_ = bytecode_offset;
+  site.function_index_ = function_index;
   if (!gInstrumentationSites) {
     gInstrumentationSites = new InstrumentationSiteVector();
   }
@@ -1373,11 +1374,11 @@ int InstrumentationSiteSourcePosition(int index) {
   return GetInstrumentationSite("SourcePosition", index).source_position_;
 }
 
-int InstrumentationSiteBytecodeOffset(int index) {
-  return GetInstrumentationSite("BytecodeOffset", index).bytecode_offset_;
+int InstrumentationSiteFunctionIndex(int index) {
+  return GetInstrumentationSite("Rank", index).function_index_;
 }
 
-extern void RecordReplayInstrument(const char* kind, const char* function, int offset);
+extern void RecordReplayInstrument(const char* kind, const char* function, int function_index);
 
 // Enable to dump locations of each function to stderr.
 static bool gDumpFunctionLocations;
@@ -1430,7 +1431,7 @@ static inline void OnInstrumentation(Isolate* isolate,
   }
 
   RecordReplayInstrument(site.kind_, site.function_id_.c_str(),
-                         site.bytecode_offset_);
+                         site.function_index_);
 }
 
 extern bool gRecordReplayInstrumentationEnabled;
