@@ -3629,6 +3629,24 @@ void BytecodeGraphBuilder::VisitRecordReplayInstrumentationGenerator() {
   environment()->RecordAfterState(node, Environment::kAttachFrameState);
 }
 
+void BytecodeGraphBuilder::VisitRecordReplayInstrumentationReturn() {
+  // Disabled if instrumentation is disabled, as in VisitRecordReplayInstrumentation.
+  if (!gRecordReplayInstrumentationEnabled) {
+    return;
+  }
+
+  PrepareEagerCheckpoint();
+  Node* closure = GetFunctionClosure();
+  uint32_t index = bytecode_iterator().GetIndexOperand(0);
+  Node* index_slot = jsgraph()->Constant(index);
+  Node* return_value = environment()->LookupRegister(
+      bytecode_iterator().GetRegisterOperand(1));
+  const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayInstrumentationReturn);
+
+  Node* node = NewNode(op, closure, index_slot, return_value);
+  environment()->RecordAfterState(node, Environment::kAttachFrameState);
+}
+
 void BytecodeGraphBuilder::VisitRecordReplayAssertValue() {
   PrepareEagerCheckpoint();
   Node* closure = GetFunctionClosure();

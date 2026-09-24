@@ -3622,7 +3622,12 @@ void BytecodeGenerator::BuildReturn(int source_position) {
   }
   builder()->SetStatementPosition(source_position,
                                   /* record_replay_breakpoint */ false);
-  builder()->RecordReplayInstrumentation("exit");
+  if (builder()->EmitRecordReplayInstrumentationOpcodes()) {
+    RegisterAllocationScope register_scope(this);
+    Register return_value = register_allocator()->NewRegister();
+    builder()->StoreAccumulatorInRegister(return_value);
+    builder()->RecordReplayInstrumentationReturn("exit", return_value);
+  }
   builder()->Return();
 }
 

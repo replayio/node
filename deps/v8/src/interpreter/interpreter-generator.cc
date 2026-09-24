@@ -2809,6 +2809,16 @@ IGNITION_HANDLER(RecordReplayInstrumentationGenerator, InterpreterAssembler) {
   Dispatch();
 }
 
+IGNITION_HANDLER(RecordReplayInstrumentationReturn, InterpreterAssembler) {
+  TNode<Context> context = GetContext();
+  TNode<Object> closure = LoadRegister(Register::function_closure());
+  TNode<Smi> index = BytecodeOperandIdxSmi(0);
+  TNode<Object> return_value = LoadRegisterAtOperandIndex(1);
+  CallRuntime(Runtime::kRecordReplayInstrumentationReturn,
+              context, closure, index, return_value);
+  Dispatch();
+}
+
 IGNITION_HANDLER(RecordReplayAssertValue, InterpreterAssembler) {
   TNode<Context> context = GetContext();
   TNode<Object> closure = LoadRegister(Register::function_closure());

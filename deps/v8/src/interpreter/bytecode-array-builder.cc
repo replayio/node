@@ -1422,6 +1422,18 @@ BytecodeArrayBuilder::RecordReplayInstrumentationGenerator(
   return *this;
 }
 
+BytecodeArrayBuilder& BytecodeArrayBuilder::RecordReplayInstrumentationReturn(
+    const char* kind, Register return_value, int source_position) {
+  if (EmitRecordReplayInstrumentationOpcodes()) {
+    int index =
+        RecordReplayRegisterInstrumentationSite(kind, source_position);
+    if (index >= 0) {
+      OutputRecordReplayInstrumentationReturn(index, return_value);
+    }
+  }
+  return *this;
+}
+
 BytecodeArrayBuilder& BytecodeArrayBuilder::ForInEnumerate(Register receiver) {
   OutputForInEnumerate(receiver);
   return *this;
