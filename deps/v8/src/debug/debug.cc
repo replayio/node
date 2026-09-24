@@ -2962,7 +2962,13 @@ static void ForEachInstrumentationOpInRange(
   const std::function<void(Handle<Script> script, int bytecode_offset,
                            const std::string& function_id, int line, int column)> callback) {
   int script_id = GetSourceIdProperty(isolate, params);
-  Handle<Script> script = GetScript(isolate, script_id);
+  MaybeHandle<Script> maybe_script = MaybeGetScript(isolate, script_id);
+
+  if (maybe_script.is_null()) {
+    return;
+  }
+
+  Handle<Script> script = maybe_script.ToHandleChecked();
 
   int beginLine = 1, beginColumn = 0;
   DecodeLocationProperty(isolate, params, "begin", &beginLine, &beginColumn);
@@ -3086,7 +3092,13 @@ void PossibleBreakpointsCallback(const char* source_id) {
 
   HandleScope scope(isolate);
 
-  Handle<Script> script = GetScript(isolate, atoi(source_id));
+  MaybeHandle<Script> maybe_script = MaybeGetScript(isolate, atoi(source_id));
+
+  if (maybe_script.is_null()) {
+    return;
+  }
+
+  Handle<Script> script = maybe_script.ToHandleChecked();
 
   std::string currentFunctionId;
 
