@@ -57,7 +57,7 @@ namespace node {
 `
 );
 
-const numCPUs = os.cpus().length;
+const numCPUs = Math.max(1, +process.env.JOBS || os.cpus().length - 1);
 
 function getSanitizedEnv() {
   const env = { ...process.env };
