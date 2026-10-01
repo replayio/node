@@ -16,7 +16,13 @@ namespace internal {
 // cleanup task if there are remaining dirty FinalizationRegistries on the list.
 class FinalizationRegistryCleanupTask : public CancelableTask {
  public:
-  explicit FinalizationRegistryCleanupTask(Heap* heap);
+  // Record/replay: a kReplayTracked task is posted by
+  // ReplayFinalizationRegistries::Poll and runs for a registry whose cleanup
+  // is driven by the recording.
+  enum ReplayMode { kDefault, kReplayTracked };
+
+  explicit FinalizationRegistryCleanupTask(Heap* heap,
+                                           ReplayMode replay_mode = kDefault);
   ~FinalizationRegistryCleanupTask() override = default;
   FinalizationRegistryCleanupTask(const FinalizationRegistryCleanupTask&) =
       delete;
@@ -27,6 +33,7 @@ class FinalizationRegistryCleanupTask : public CancelableTask {
   void SlowAssertNoActiveJavaScript();
 
   Heap* heap_;
+  ReplayMode replay_mode_;
 };
 
 }  // namespace internal

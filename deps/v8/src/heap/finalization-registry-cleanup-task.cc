@@ -10,13 +10,15 @@
 #include "src/execution/v8threads.h"
 #include "src/heap/heap-inl.h"
 #include "src/objects/js-weak-refs-inl.h"
+#include "src/replay/finalization-registry.h"
 #include "src/tracing/trace-event.h"
 
 namespace v8 {
 namespace internal {
 
-FinalizationRegistryCleanupTask::FinalizationRegistryCleanupTask(Heap* heap)
-    : CancelableTask(heap->isolate()), heap_(heap) {}
+FinalizationRegistryCleanupTask::FinalizationRegistryCleanupTask(
+    Heap* heap, ReplayMode replay_mode)
+    : CancelableTask(heap->isolate()), heap_(heap), replay_mode_(replay_mode) {}
 
 void FinalizationRegistryCleanupTask::SlowAssertNoActiveJavaScript() {
 #ifdef ENABLE_SLOW_DCHECKS
@@ -47,8 +49,17 @@ void FinalizationRegistryCleanupTask::RunInternal() {
   // There could be no dirty FinalizationRegistries. When a context is disposed
   // by the embedder, its FinalizationRegistries are removed from the dirty
   // list.
-  if (!heap_->DequeueDirtyJSFinalizationRegistry().ToHandle(
-          &finalization_registry)) {
+  if (replay_mode_ == kReplayTracked) {
+    if (!replayio::ReplayFinalizationRegistries::TakeRegistryForTask(isolate)
+             .ToHandle(&finalization_registry)) {
+      replayio::ReplayFinalizationRegistries::Poll(isolate);
+      return;
+    }
+  } else if (!(replayio::ReplayFinalizationRegistries::Enabled()
+                   ? heap_->RecordReplayDequeueDirtyJSFinalizationRegistry(
+                         false)
+                   : heap_->DequeueDirtyJSFinalizationRegistry())
+                  .ToHandle(&finalization_registry)) {
     return;
   }
   finalization_registry->set_scheduled_for_cleanup(false);
@@ -91,6 +102,11 @@ void FinalizationRegistryCleanupTask::RunInternal() {
       !finalization_registry->scheduled_for_cleanup()) {
     auto nop = [](HeapObject, ObjectSlot, Object) {};
     heap_->EnqueueDirtyJSFinalizationRegistry(*finalization_registry, nop);
+  }
+
+  if (replay_mode_ == kReplayTracked) {
+    replayio::ReplayFinalizationRegistries::Poll(isolate);
+    return;
   }
 
   // Repost if there are remaining dirty FinalizationRegistries.
