@@ -4,6 +4,8 @@
 
 #include "src/heap/cppgc/sweeper.h"
 
+#include "include/replayio.h"
+
 #include <atomic>
 #include <memory>
 #include <vector>
@@ -661,6 +663,7 @@ class Sweeper::SweeperImpl final {
   ~SweeperImpl() { CancelSweepers(); }
 
   void Start(SweepingConfig config, cppgc::Platform* platform) {
+    v8::replayio::AutoDisallowEvents disallow("SweeperImpl::Start");
     StatsCollector::EnabledScope stats_scope(stats_collector_,
                                              StatsCollector::kAtomicSweep);
     is_in_progress_ = true;
@@ -697,6 +700,8 @@ class Sweeper::SweeperImpl final {
   }
 
   bool SweepForAllocationIfRunning(NormalPageSpace* space, size_t size) {
+    v8::replayio::AutoDisallowEvents disallow("Sweeper::SweepForAllocationIfRunning");
+
     if (!is_in_progress_) return false;
 
     // Bail out for recursive sweeping calls. This can happen when finalizers
@@ -735,6 +740,8 @@ class Sweeper::SweeperImpl final {
   }
 
   void FinishIfRunning() {
+    v8::replayio::AutoDisallowEvents disallow("SweeperImpl::FinishIfRunning");
+
     if (!is_in_progress_) return;
 
     // Bail out for recursive sweeping calls. This can happen when finalizers

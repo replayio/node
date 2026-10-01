@@ -2687,8 +2687,18 @@ char* Isolate::RestoreThread(char* from) {
   return from + sizeof(ThreadLocalTop);
 }
 
+namespace {
+long CountManagedPtrDestructors(ManagedPtrDestructor* head) {
+  long count = 0;
+  for (; head; head = head->next_) ++count;
+  return count;
+}
+}  // namespace
+
 void Isolate::ReleaseSharedPtrs() {
   base::MutexGuard lock(&managed_ptr_destructors_mutex_);
+  recordreplay::Assert("Isolate::ReleaseSharedPtrs %ld",
+                       CountManagedPtrDestructors(managed_ptr_destructors_head_));
   while (managed_ptr_destructors_head_) {
     ManagedPtrDestructor* l = managed_ptr_destructors_head_;
     ManagedPtrDestructor* n = nullptr;
@@ -2719,6 +2729,9 @@ void Isolate::RegisterManagedPtrDestructor(ManagedPtrDestructor* destructor) {
   }
   destructor->next_ = managed_ptr_destructors_head_;
   managed_ptr_destructors_head_ = destructor;
+  recordreplay::Assert(
+      "Isolate::RegisterManagedPtrDestructor %ld",
+      CountManagedPtrDestructors(managed_ptr_destructors_head_));
 }
 
 void Isolate::UnregisterManagedPtrDestructor(ManagedPtrDestructor* destructor) {
