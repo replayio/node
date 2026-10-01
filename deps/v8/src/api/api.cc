@@ -11186,7 +11186,9 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   }
 
   // Set flags to disable non-deterministic posting of tasks to other threads.
-  // We don't support this yet when recording/replaying.
+  // Node's platform can't run these when recording/replaying: GC tasks posted
+  // to the main thread are dropped, and jobs can't be handed to worker threads
+  // while events are disallowed (see DefaultJobState::NotifyConcurrencyIncrease).
   internal::FLAG_concurrent_array_buffer_sweeping = false;
   internal::FLAG_concurrent_marking = false;
   internal::FLAG_concurrent_sweeping = false;
@@ -11197,8 +11199,11 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   internal::FLAG_parallel_scavenge = false;
   internal::FLAG_scavenge_task = false;
 
-  // Incremental GC is also disabled for now.
-  internal::FLAG_incremental_marking = false;
+  // Incremental marking is what starts major GCs once the old generation
+  // allocation limit is reached, so it is only disabled while replaying.
+  if (IsReplaying() || !FeatureEnabled("v8-flags-gc", nullptr)) {
+    internal::FLAG_incremental_marking = false;
+  }
 
   // Disable wasm background compilation. The wasm module compiler is extremely
   // complicated and getting this it to behave consistently when replaying in
