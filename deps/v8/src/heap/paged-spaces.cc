@@ -4,6 +4,8 @@
 
 #include "src/heap/paged-spaces.h"
 
+#include "include/replayio.h"
+
 #include "src/base/optional.h"
 #include "src/base/platform/mutex.h"
 #include "src/execution/isolate.h"
@@ -570,6 +572,8 @@ base::Optional<std::pair<Address, size_t>> PagedSpace::RawRefillLabBackground(
   DCHECK(identity() == OLD_SPACE || identity() == MAP_SPACE);
   DCHECK_EQ(origin, AllocationOrigin::kRuntime);
 
+  replayio::AutoDisallowEvents disallow("ConcurrentAllocator::AllocateFromSpaceFreeList");
+
   auto result = TryAllocationFromFreeListBackground(
       local_heap, min_size_in_bytes, max_size_in_bytes, alignment, origin);
   if (result) return result;
@@ -879,6 +883,8 @@ bool PagedSpace::RawRefillLabMain(int size_in_bytes, AllocationOrigin origin) {
   // Allocation in this space has failed.
   DCHECK_GE(size_in_bytes, 0);
   const int kMaxPagesToSweep = 1;
+
+  replayio::AutoDisallowEvents disallow("PagedSpaceBase::RawRefillLabMain");
 
   if (TryAllocationFromFreeListMain(size_in_bytes, origin)) return true;
 

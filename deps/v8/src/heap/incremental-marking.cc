@@ -4,6 +4,8 @@
 
 #include "src/heap/incremental-marking.h"
 
+#include "include/replayio.h"
+
 #include "src/codegen/compilation-cache.h"
 #include "src/execution/vm-state-inl.h"
 #include "src/heap/concurrent-marking.h"
@@ -59,6 +61,7 @@ IncrementalMarking::IncrementalMarking(Heap* heap,
 
 void IncrementalMarking::MarkBlackAndVisitObjectDueToLayoutChange(
     HeapObject obj) {
+  replayio::AutoDisallowEvents disallow("IncrementalMarking::MarkBlackAndVisitObjectDueToLayoutChange");
   TRACE_EVENT0("v8", "V8.GCIncrementalMarkingLayoutChange");
   TRACE_GC(heap()->tracer(), GCTracer::Scope::MC_INCREMENTAL_LAYOUT_CHANGE);
   marking_state()->WhiteToGrey(obj);

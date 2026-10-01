@@ -211,7 +211,7 @@ MemoryReducer::State MemoryReducer::Step(const State& state,
 }
 
 void MemoryReducer::ScheduleTimer(double delay_ms) {
-  if (recordreplay::IsRecordingOrReplaying()) {
+  if (recordreplay::IsRecordingOrReplaying("gc-changes", "MemoryReducer::ScheduleTimer")) {
     return;
   }
   DCHECK_LT(0, delay_ms);

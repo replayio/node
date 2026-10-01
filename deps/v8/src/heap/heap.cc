@@ -1534,6 +1534,7 @@ void ReportDuplicates(int size, std::vector<HeapObject>* objects) {
 }  // anonymous namespace
 
 void Heap::CollectAllAvailableGarbage(GarbageCollectionReason gc_reason) {
+  replayio::AutoDisallowEvents disallow("Heap::CollectAllAvailableGarbage");
   // Since we are ignoring the return value, the exact choice of space does
   // not matter, so long as we do not specify NEW_SPACE, which would not
   // cause a full GC.
@@ -1603,6 +1604,8 @@ void Heap::PreciseCollectAllGarbage(int flags,
 }
 
 void Heap::ReportExternalMemoryPressure() {
+  replayio::AutoDisallowEvents disallow("Heap::ReportExternalMemoryPressure");
+
   const GCCallbackFlags kGCCallbackFlagsForExternalMemory =
       static_cast<GCCallbackFlags>(
           kGCCallbackFlagSynchronousPhantomCallbackProcessing |
@@ -1680,7 +1683,7 @@ Heap::DevToolsTraceEventScope::~DevToolsTraceEventScope() {
 bool Heap::CollectGarbage(AllocationSpace space,
                           GarbageCollectionReason gc_reason,
                           const v8::GCCallbackFlags gc_callback_flags) {
-  replayio::AutoDisallowEvents disallow;
+  replayio::AutoDisallowEvents disallow("Heap::CollectGarbage");
   if (V8_UNLIKELY(!deserialization_complete_)) {
     // During isolate initialization heap always grows. GC is only requested
     // if a new page allocation fails. In such a case we should crash with
@@ -1914,6 +1917,8 @@ void Heap::StartIncrementalMarking(int gc_flags,
                                    GCCallbackFlags gc_callback_flags) {
   DCHECK(incremental_marking()->IsStopped());
 
+  replayio::AutoDisallowEvents disallow("Heap::StartIncrementalMarking");
+
   // Sweeping needs to be completed such that markbits are all cleared before
   // starting marking again.
   CompleteSweepingFull();
@@ -1951,6 +1956,7 @@ void Heap::CompleteSweepingFull() {
 
 void Heap::StartIncrementalMarkingIfAllocationLimitIsReached(
     int gc_flags, const GCCallbackFlags gc_callback_flags) {
+  replayio::AutoDisallowEvents disallow("Heap::StartIncrementalMarkingIfAllocationLimitIsReached");
   if (incremental_marking()->IsStopped()) {
     switch (IncrementalMarkingLimitReached()) {
       case IncrementalMarkingLimit::kHardLimit:
@@ -2178,13 +2184,6 @@ GCTracer::Scope::ScopeId CollectorScopeId(GarbageCollector collector) {
 
 size_t Heap::PerformGarbageCollection(
     GarbageCollector collector, const v8::GCCallbackFlags gc_callback_flags) {
-  // For now we are completely disabling GC in the old space when recording/replaying
-  // to avoid crashes and needing to deal with non-deterministic behavior that
-  // can be triggered by sweeping.
-  if (recordreplay::IsRecordingOrReplaying() &&
-      collector == GarbageCollector::MARK_COMPACTOR) {
-    return 0;
-  }
   DisallowJavascriptExecution no_js(isolate());
 
   if (IsYoungGenerationCollector(collector)) {
@@ -2355,6 +2354,8 @@ void Heap::CompleteSweepingYoung(GarbageCollector collector) {
 }
 
 void Heap::EnsureSweepingCompleted(HeapObject object) {
+  replayio::AutoDisallowEvents disallow("Heap::EnsureSweepingCompletedForObject");
+
   if (!mark_compact_collector()->sweeping_in_progress()) return;
 
   BasicMemoryChunk* basic_chunk = BasicMemoryChunk::FromHeapObject(object);
@@ -3700,6 +3701,7 @@ void Heap::ActivateMemoryReducerIfNeeded() {
   const int kMinCommittedMemory = 7 * Page::kPageSize;
   if (ms_count_ == 0 && CommittedMemory() > kMinCommittedMemory &&
       isolate()->IsIsolateInBackground()) {
+    replayio::AutoDisallowEvents disallow("Heap::ActivateMemoryReducerIfNeeded");
     MemoryReducer::Event event;
     event.type = MemoryReducer::kPossibleGarbage;
     event.time_ms = MonotonicallyIncreasingTimeInMs();
@@ -4083,6 +4085,8 @@ void Heap::CheckMemoryPressure() {
 }
 
 void Heap::CollectGarbageOnMemoryPressure() {
+  replayio::AutoDisallowEvents disallow("Heap::CollectGarbageOnMemoryPressure");
+
   const int kGarbageThresholdInBytes = 8 * MB;
   const double kGarbageThresholdAsFractionOfTotalMemory = 0.1;
   // This constant is the maximum response time in RAIL performance model.
@@ -4120,6 +4124,8 @@ void Heap::CollectGarbageOnMemoryPressure() {
 
 void Heap::MemoryPressureNotification(MemoryPressureLevel level,
                                       bool is_isolate_locked) {
+  replayio::AutoDisallowEvents disallow("Heap::MemoryPressureNotification");
+
   TRACE_EVENT1("devtools.timeline,v8", "V8.MemoryPressureNotification", "level",
                static_cast<int>(level));
   MemoryPressureLevel previous =
@@ -5239,7 +5245,12 @@ bool Heap::ShouldOptimizeForLoadTime() {
 // - either we need to optimize for memory usage,
 // - or the incremental marking is not in progress and we cannot start it.
 bool Heap::ShouldExpandOldGenerationOnSlowAllocation(LocalHeap* local_heap) {
-  replayio::AutoDisallowEvents disallow;
+  replayio::AutoDisallowEvents disallow("Heap::ShouldExpandOldGenerationOnSlowAllocation");
+
+  // Always allow background threads to allocate while replaying without triggering GC.
+  // Waiting on a main thread GC can introduce deadlocks if the main thread
+  // is itself waiting on an ordered lock which this thread is next in line to acquire.
+  if (recordreplay::IsReplaying() && local_heap && !local_heap->is_main_thread()) return true;
 
   if (always_allocate() || OldGenerationSpaceAvailable() > 0) return true;
   // We reached the old generation allocation limit.
@@ -5269,7 +5280,7 @@ bool Heap::ShouldExpandOldGenerationOnSlowAllocation(LocalHeap* local_heap) {
   if (incremental_marking()->IsStopped() &&
       IncrementalMarkingLimitReached() == IncrementalMarkingLimit::kNoLimit &&
       // Incremental marking is disabled when recording/replaying.
-      !recordreplay::IsRecordingOrReplaying()) {
+      !recordreplay::IsRecordingOrReplaying("gc-changes", "NoIncrementalMarking")) {
     // We cannot start incremental marking.
     return false;
   }
@@ -5801,7 +5812,7 @@ void Heap::NotifyBootstrapComplete() {
 
 void Heap::NotifyOldGenerationExpansion(AllocationSpace space,
                                         MemoryChunk* chunk) {
-  replayio::AutoDisallowEvents disallow;
+  replayio::AutoDisallowEvents disallow("Heap::NotifyOldGenerationExpansion");
 
   // Pages created during bootstrapping may contain immortal immovable objects.
   if (!deserialization_complete()) {
@@ -5884,6 +5895,8 @@ void Heap::RegisterExternallyReferencedObject(Address* location) {
 }
 
 void Heap::StartTearDown() {
+  replayio::AutoDisallowEvents disallow("Heap::StartTearDown");
+
   // Finish any ongoing sweeping to avoid stray background tasks still accessing
   // the heap during teardown.
   CompleteSweepingFull();

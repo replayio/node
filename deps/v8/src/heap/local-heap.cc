@@ -4,6 +4,8 @@
 
 #include "src/heap/local-heap.h"
 
+#include "include/replayio.h"
+
 #include <atomic>
 #include <memory>
 
@@ -188,6 +190,7 @@ void LocalHeap::UnparkSlowPath() {
     CHECK(state_.compare_exchange_strong(expected, kSafepointRequested));
     heap_->CollectGarbageForBackground(this);
   } else {
+    replayio::AutoDisallowEvents disallow("LocalHeap::UnparkSlowPath");
     while (true) {
       ThreadState expected = kParked;
       if (!state_.compare_exchange_strong(expected, kRunning)) {
@@ -211,6 +214,7 @@ void LocalHeap::SafepointSlowPath() {
     CHECK_EQ(kSafepointRequested, state_relaxed());
     heap_->CollectGarbageForBackground(this);
   } else {
+    replayio::AutoDisallowEvents disallow("LocalHeap::SafepointSlowPath");
     TRACE_GC1(heap_->tracer(), GCTracer::Scope::BACKGROUND_SAFEPOINT,
               ThreadKind::kBackground);
     ThreadState expected = kSafepointRequested;
@@ -244,6 +248,8 @@ bool LocalHeap::TryPerformCollection() {
     heap_->CollectGarbageForBackground(this);
     return true;
   } else {
+    replayio::AutoDisallowEvents disallow("LocalHeap::TryPerformCollection");
+
     heap_->collection_barrier_->RequestGC();
 
     LocalHeap* main_thread = heap_->main_thread_local_heap();
@@ -281,6 +287,8 @@ bool LocalHeap::TryPerformCollection() {
 Address LocalHeap::PerformCollectionAndAllocateAgain(
     int object_size, AllocationType type, AllocationOrigin origin,
     AllocationAlignment alignment) {
+  replayio::AutoDisallowEvents disallow("LocalHeap::PerformCollectionAndAllocateAgain");
+
   CHECK(!allocation_failed_);
   CHECK(!main_thread_parked_);
   allocation_failed_ = true;

@@ -11197,10 +11197,8 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   internal::FLAG_parallel_scavenge = false;
   internal::FLAG_scavenge_task = false;
 
-  // Incremental/compacting GC are also disabled for now. These could probably
-  // be supported for now it's not worth the bother.
+  // Incremental GC is also disabled for now.
   internal::FLAG_incremental_marking = false;
-  internal::FLAG_never_compact = true;
 
   // Disable wasm background compilation. The wasm module compiler is extremely
   // complicated and getting this it to behave consistently when replaying in
