@@ -495,7 +495,10 @@ Environment::~Environment() {
   // FreeEnvironment() should have set this.
   CHECK(is_stopping());
 
-  if (options_->heap_snapshot_near_heap_limit > heap_limit_snapshot_taken_) {
+  // InitializeDiagnostics() doesn't add the callback in Replay recordings, and
+  // removing a callback that isn't there is fatal.
+  if (options_->heap_snapshot_near_heap_limit > heap_limit_snapshot_taken_ &&
+      !v8::recordreplay::IsRecordingOrReplaying()) {
     isolate_->RemoveNearHeapLimitCallback(Environment::NearHeapLimitCallback,
                                           0);
   }
