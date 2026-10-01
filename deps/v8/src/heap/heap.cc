@@ -1389,6 +1389,8 @@ class V8_NODISCARD GCCallbacksScope {
 };
 
 void Heap::HandleGCRequest() {
+  replayio::AutoDisallowEvents disallow("Heap::HandleGCRequest");
+
   if (FLAG_stress_scavenge > 0 && stress_scavenge_observer_->HasRequestedGC()) {
     CollectAllGarbage(NEW_SPACE, GarbageCollectionReason::kTesting);
     stress_scavenge_observer_->RequestedGCDone();
@@ -3733,6 +3735,8 @@ size_t Heap::NewSpaceCapacity() {
 
 void Heap::FinalizeIncrementalMarkingIfComplete(
     GarbageCollectionReason gc_reason) {
+  replayio::AutoDisallowEvents disallow("Heap::FinalizeIncrementalMarkingIfComplete");
+
   if (incremental_marking()->IsMarking() &&
       (incremental_marking()->IsReadyToOverApproximateWeakClosure() ||
        (!incremental_marking()->finalize_marking_completed() &&
@@ -3778,6 +3782,8 @@ void Heap::InvokeIncrementalMarkingEpilogueCallbacks() {
 
 void Heap::FinalizeIncrementalMarkingIncrementally(
     GarbageCollectionReason gc_reason) {
+  replayio::AutoDisallowEvents disallow("Heap::FinalizeIncrementalMarkingIncrementally");
+
   if (FLAG_trace_incremental_marking) {
     isolate()->PrintWithTimestamp(
         "[IncrementalMarking] (%s).\n",
