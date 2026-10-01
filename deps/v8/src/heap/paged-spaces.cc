@@ -617,6 +617,11 @@ base::Optional<std::pair<Address, size_t>> PagedSpace::RawRefillLabBackground(
       DCHECK_EQ(Heap::GetFillToAlign(result->first, alignment), 0);
       return result;
     }
+    recordreplay::Diagnostic("[RUN-851] ConcurrentAllocator::AllocateFromSpaceFreeList TryExpandBackgroundFailed");
+  } else {
+    recordreplay::Diagnostic("[RUN-851] ConcurrentAllocator::AllocateFromSpaceFreeList CantExpand %d %d",
+                             heap()->ShouldExpandOldGenerationOnSlowAllocation(local_heap),
+                             heap()->CanExpandOldGenerationBackground(local_heap, AreaSize()));
   }
 
   if (collector->sweeping_in_progress()) {
