@@ -99,6 +99,8 @@ LocalHeap::LocalHeap(Heap* heap, ThreadKind kind,
 }
 
 LocalHeap::~LocalHeap() {
+  recordreplay::Diagnostic("LocalHeap Destroy %p", this);
+
   // Park thread since removing the local heap could block.
   EnsureParkedBeforeDestruction();
 
@@ -185,12 +187,13 @@ void LocalHeap::ParkSlowPath(ThreadState current_state) {
 }
 
 void LocalHeap::UnparkSlowPath() {
+  replayio::AutoDisallowEvents disallow("LocalHeap::UnparkSlowPath");
+
   if (is_main_thread()) {
     ThreadState expected = kParkedSafepointRequested;
     CHECK(state_.compare_exchange_strong(expected, kSafepointRequested));
     heap_->CollectGarbageForBackground(this);
   } else {
-    replayio::AutoDisallowEvents disallow("LocalHeap::UnparkSlowPath");
     while (true) {
       ThreadState expected = kParked;
       if (!state_.compare_exchange_strong(expected, kRunning)) {
@@ -210,11 +213,12 @@ void LocalHeap::EnsureParkedBeforeDestruction() {
 }
 
 void LocalHeap::SafepointSlowPath() {
+  replayio::AutoDisallowEvents disallow("LocalHeap::SafepointSlowPath");
+
   if (is_main_thread()) {
     CHECK_EQ(kSafepointRequested, state_relaxed());
     heap_->CollectGarbageForBackground(this);
   } else {
-    replayio::AutoDisallowEvents disallow("LocalHeap::SafepointSlowPath");
     TRACE_GC1(heap_->tracer(), GCTracer::Scope::BACKGROUND_SAFEPOINT,
               ThreadKind::kBackground);
     ThreadState expected = kSafepointRequested;
