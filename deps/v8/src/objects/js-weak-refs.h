@@ -34,6 +34,9 @@ class JSFinalizationRegistry : public JSObject {
   DECL_ACCESSORS(cleared_cells, HeapObject)
   DECL_ACCESSORS(key_map, Object)
 
+  DECL_INT_ACCESSORS(replay_id)
+  DECL_ACCESSORS(replay_cells, Object)
+
   DECL_ACCESSORS(next_dirty, Object)
 
   DECL_INT_ACCESSORS(flags)

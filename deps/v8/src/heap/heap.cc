@@ -90,6 +90,7 @@
 #include "src/objects/slots-atomic-inl.h"
 #include "src/objects/slots-inl.h"
 #include "src/regexp/regexp.h"
+#include "src/replay/finalization-registry.h"
 #include "src/snapshot/embedded/embedded-data.h"
 #include "src/snapshot/serializer-deserializer.h"
 #include "src/snapshot/snapshot.h"
@@ -6689,8 +6690,12 @@ void Heap::SetInterpreterEntryTrampolineForProfiling(Code code) {
 
 void Heap::PostFinalizationRegistryCleanupTaskIfNeeded() {
   // Only one cleanup task is posted at a time.
-  if (!HasDirtyJSFinalizationRegistries() ||
-      is_finalization_registry_cleanup_task_posted_) {
+  if (is_finalization_registry_cleanup_task_posted_) return;
+  // Cleanup of replay-tracked registries is scheduled by
+  // ReplayFinalizationRegistries::Poll instead.
+  if (replayio::ReplayFinalizationRegistries::Enabled()
+          ? !RecordReplayHasDirtyJSFinalizationRegistries(false)
+          : !HasDirtyJSFinalizationRegistries()) {
     return;
   }
   auto taskrunner = V8::GetCurrentPlatform()->GetForegroundTaskRunner(
@@ -6745,6 +6750,47 @@ MaybeHandle<JSFinalizationRegistry> Heap::DequeueDirtyJSFinalizationRegistry() {
   return {};
 }
 
+bool Heap::RecordReplayHasDirtyJSFinalizationRegistries(bool tracked) {
+  Object current = dirty_js_finalization_registries_list();
+  while (!current.IsUndefined(isolate())) {
+    JSFinalizationRegistry finalization_registry =
+        JSFinalizationRegistry::cast(current);
+    if ((finalization_registry.replay_id() != 0) == tracked) return true;
+    current = finalization_registry.next_dirty();
+  }
+  return false;
+}
+
+MaybeHandle<JSFinalizationRegistry>
+Heap::RecordReplayDequeueDirtyJSFinalizationRegistry(bool tracked) {
+  Isolate* isolate = this->isolate();
+  Object prev = ReadOnlyRoots(isolate).undefined_value();
+  Object current = dirty_js_finalization_registries_list();
+  while (!current.IsUndefined(isolate)) {
+    JSFinalizationRegistry finalization_registry =
+        JSFinalizationRegistry::cast(current);
+    if ((finalization_registry.replay_id() != 0) != tracked) {
+      prev = current;
+      current = finalization_registry.next_dirty();
+      continue;
+    }
+    if (prev.IsUndefined(isolate)) {
+      set_dirty_js_finalization_registries_list(
+          finalization_registry.next_dirty());
+    } else {
+      JSFinalizationRegistry::cast(prev).set_next_dirty(
+          finalization_registry.next_dirty());
+    }
+    if (finalization_registry == dirty_js_finalization_registries_list_tail()) {
+      set_dirty_js_finalization_registries_list_tail(prev);
+    }
+    finalization_registry.set_next_dirty(
+        ReadOnlyRoots(isolate).undefined_value());
+    return handle(finalization_registry, isolate);
+  }
+  return {};
+}
+
 void Heap::RemoveDirtyFinalizationRegistriesOnContext(NativeContext context) {
   DisallowGarbageCollection no_gc;
 
@@ -6790,6 +6836,20 @@ void Heap::KeepDuringJob(Handle<JSReceiver> target) {
 
 void Heap::ClearKeptObjects() {
   set_weak_refs_keep_during_job(ReadOnlyRoots(isolate()).undefined_value());
+
+  // Cleanup of replay-tracked registries is scheduled from here and not from
+  // the GC, so that the decision is made at a point that replays. The poll runs
+  // at every microtask checkpoint with events allowed.
+  //
+  // Tradeoff: a GC that dirties a registry inside an unordered task is not
+  // followed by a checkpoint, so its cleanup waits for the end of the next
+  // ordered task. Callbacks run later than upstream in that case; nothing
+  // diverges.
+  //
+  // If this delay ever matters, add a second poll just before the event loop
+  // goes idle. That needs an embedder hook from node's platform to the
+  // isolate, for the main thread and workers.
+  replayio::ReplayFinalizationRegistries::Poll(isolate());
 }
 
 size_t Heap::NumberOfTrackedHeapObjectTypes() {

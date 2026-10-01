@@ -10394,6 +10394,7 @@ static void (*gRecordReplayDescribeAssertData)(const char* text);
 static void (*gRecordReplayBytes)(const char* why, void* buf, size_t size);
 static uintptr_t (*gRecordReplayValue)(const char* why, uintptr_t v);
 static bool (*gRecordReplayAreEventsDisallowed)();
+static bool (*gRecordReplayAreEventsPassedThrough)();
 static bool (*gRecordReplayFeatureEnabled)(const char* feature, const char* subfeature);
 static bool (*gRecordReplayHasDisabledFeatures)();
 static bool (*gRecordReplayAreAssertsDisabled)();
@@ -10761,6 +10762,18 @@ extern "C" bool V8RecordReplayAreEventsDisallowed(const char* why) {
   return recordreplay::AreEventsDisallowed(why);
 }
 
+bool recordreplay::AreEventsPassedThrough(const char* why) {
+  (void)why;
+  if (IsRecordingOrReplaying()) {
+    return gRecordReplayAreEventsPassedThrough();
+  }
+  return false;
+}
+
+extern "C" bool V8RecordReplayAreEventsPassedThrough(const char* why) {
+  return recordreplay::AreEventsPassedThrough(why);
+}
+
 void recordreplay::BeginPassThroughEvents() {
   if (IsRecordingOrReplaying()) {
     gRecordReplayBeginPassThroughEvents();
@@ -11049,6 +11062,7 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayOnInstrument", gRecordReplayOnInstrument);
   RecordReplayLoadSymbol(handle, "RecordReplayAddPossibleBreakpoint", gRecordReplayAddPossibleBreakpoint);
   RecordReplayLoadSymbol(handle, "RecordReplayAreEventsDisallowed", gRecordReplayAreEventsDisallowed);
+  RecordReplayLoadSymbol(handle, "RecordReplayAreEventsPassedThrough", gRecordReplayAreEventsPassedThrough);
   RecordReplayLoadSymbol(handle, "RecordReplayFeatureEnabled", gRecordReplayFeatureEnabled);
   RecordReplayLoadSymbol(handle, "RecordReplayHasDisabledFeatures", gRecordReplayHasDisabledFeatures);
   gHasDisabledFeatures = gRecordReplayHasDisabledFeatures();

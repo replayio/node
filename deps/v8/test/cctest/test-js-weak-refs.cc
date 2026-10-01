@@ -31,6 +31,7 @@ Handle<JSFinalizationRegistry> ConstructJSFinalizationRegistry(
       JSObject::New(finalization_registry_fun, finalization_registry_fun,
                     Handle<AllocationSite>::null())
           .ToHandleChecked());
+  finalization_registry->set_replay_id(0);
 #ifdef VERIFY_HEAP
   finalization_registry->JSFinalizationRegistryVerify(isolate);
 #endif  // VERIFY_HEAP

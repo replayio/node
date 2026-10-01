@@ -6,6 +6,9 @@ namespace runtime {
 
 extern runtime JSWeakRefAddToKeptObjects(implicit context: Context)(JSReceiver);
 
+extern runtime JSReplayWeakRefDeref(implicit context: Context)(
+    JSWeakRef): JSAny;
+
 }  // namespace runtime
 
 namespace weakref {
@@ -43,7 +46,7 @@ WeakRefDeref(js-implicit context: NativeContext, receiver: JSAny)(): JSAny {
       MessageTemplate::kIncompatibleMethodReceiver, 'WeakRef.prototype.deref',
       receiver);
   // 3. Let target be the value of weakRef.[[WeakRefTarget]].
-  const target = weakRef.target;
+  const target = runtime::JSReplayWeakRefDeref(weakRef);
   // 4. If target is not empty,
   //   a. Perform ! AddToKeptObjects(target).
   //   b. Return target.

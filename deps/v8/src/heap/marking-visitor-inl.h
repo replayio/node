@@ -5,6 +5,7 @@
 #ifndef V8_HEAP_MARKING_VISITOR_INL_H_
 #define V8_HEAP_MARKING_VISITOR_INL_H_
 
+#include "include/v8.h"
 #include "src/heap/marking-visitor.h"
 #include "src/heap/objects-visiting-inl.h"
 #include "src/heap/objects-visiting.h"
@@ -341,6 +342,11 @@ int MarkingVisitorBase<ConcreteVisitor, MarkingState>::VisitJSWeakRef(
     Map map, JSWeakRef weak_ref) {
   int size = concrete_visitor()->VisitJSObjectSubclass(map, weak_ref);
   if (size == 0) return 0;
+  // When replaying, the recording decides when deref() stops returning the
+  // target.
+  if (recordreplay::IsReplaying()) {
+    VisitPointer(weak_ref, weak_ref.RawField(JSWeakRef::kTargetOffset));
+  }
   if (weak_ref.target().IsHeapObject()) {
     HeapObject target = HeapObject::cast(weak_ref.target());
     concrete_visitor()->SynchronizePageAccess(target);
@@ -366,6 +372,10 @@ int MarkingVisitorBase<ConcreteVisitor, MarkingState>::VisitWeakCell(
   int size = WeakCell::BodyDescriptor::SizeOf(map, weak_cell);
   this->VisitMapPointer(weak_cell);
   WeakCell::BodyDescriptor::IterateBody(map, weak_cell, size, this);
+  // When replaying, the recording decides when a tracked cell is cleared.
+  if (recordreplay::IsReplaying() && weak_cell.replay_id() != 0) {
+    VisitPointer(weak_cell, weak_cell.RawField(WeakCell::kTargetOffset));
+  }
   HeapObject target = weak_cell.relaxed_target();
   HeapObject unregister_token = weak_cell.relaxed_unregister_token();
   concrete_visitor()->SynchronizePageAccess(target);
