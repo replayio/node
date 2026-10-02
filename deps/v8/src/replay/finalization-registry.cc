@@ -10,6 +10,7 @@
 #include "src/objects/dictionary-inl.h"
 #include "src/objects/js-weak-refs-inl.h"
 #include "src/replay/replay-isolate-data.h"
+#include "src/replay/replayio.h"
 
 namespace v8 {
 namespace replayio {
@@ -18,17 +19,9 @@ namespace i = internal;
 
 namespace {
 
-// Whether the current point replays, so that values can be recorded/replayed
-// and ids handed out consistently.
-bool EventsAvailable() {
-  return !recordreplay::AreEventsDisallowed() &&
-         !recordreplay::AreEventsPassedThrough() &&
-         !recordreplay::HasDivergedFromRecording();
-}
-
 i::Handle<i::JSFinalizationRegistry> LookupRegistry(i::Isolate* isolate,
                                                     int id) {
-  auto& registries = isolate->EnsureReplayData()->finalization_registries();
+  auto& registries = isolate->replay_data()->retained_finalization_registries();
   auto it = registries.find(id);
   CHECK_WITH_MSG(it != registries.end(),
                  "Recorded FinalizationRegistry cleanup for unknown registry");
@@ -37,51 +30,53 @@ i::Handle<i::JSFinalizationRegistry> LookupRegistry(i::Isolate* isolate,
   return i::Handle<i::JSFinalizationRegistry>::cast(Utils::OpenHandle(*local));
 }
 
-// Runs inside the GC, so this only notes the id for the next Poll().
+// Runs inside the GC, so this only notes the id for the next poll.
 void OnRecordedRegistryCollected(
-    const v8::WeakCallbackInfo<RecordedFinalizationRegistry>& info) {
-  RecordedFinalizationRegistry* recorded = info.GetParameter();
+    const v8::WeakCallbackInfo<ReplayIsolateData::RecordedFinalizationRegistry>&
+        info) {
+  ReplayIsolateData::RecordedFinalizationRegistry* recorded =
+      info.GetParameter();
   recorded->registry.Reset();
   recorded->data->collected_finalization_registries().push_back(recorded->id);
 }
 
-}  // namespace
-
-bool ReplayFinalizationRegistries::Enabled() {
+bool Enabled() {
   return recordreplay::IsRecordingOrReplaying("finalization-registry");
 }
 
+}  // namespace
+
 void ReplayFinalizationRegistries::OnConstruct(
     i::Isolate* isolate, i::Handle<i::JSFinalizationRegistry> registry) {
-  if (!Enabled() || !EventsAvailable()) return;
+  if (!Enabled() || !AreEventsAvailable()) return;
 
   int id = isolate->EnsureReplayData()->NewFinalizationRegistryId();
   recordreplay::Assert("FinalizationRegistry.construct %d", id);
-  registry->set_replay_id(id);
+  registry->set_record_replay_id(id);
 }
 
 void ReplayFinalizationRegistries::OnRegister(
     i::Isolate* isolate, i::Handle<i::JSFinalizationRegistry> registry,
     i::Handle<i::WeakCell> cell) {
-  if (!registry->replay_id()) return;
+  if (!registry->record_replay_id()) return;
 
   if (recordreplay::HasDivergedFromRecording()) {
-    cell->set_replay_id(kUndeliverableCellId);
+    cell->set_record_replay_id(kUndeliverableCellId);
     return;
   }
 
   // The recording cannot describe when this cell is cleared, and the registry's
   // other cells are delivered from the recording.
   CHECK_WITH_MSG(
-      EventsAvailable(),
-      "FinalizationRegistry.prototype.register on a replay-tracked registry "
-      "while events are disallowed");
+      AreEventsAvailable(),
+      "FinalizationRegistry.prototype.register on a tracked registry at a "
+      "point which does not replay");
 
   ReplayIsolateData* data = isolate->EnsureReplayData();
   int id = data->NewWeakCellId();
   recordreplay::Assert("FinalizationRegistry.register %d %d",
-                       registry->replay_id(), id);
-  cell->set_replay_id(id);
+                       registry->record_replay_id(), id);
+  cell->set_record_replay_id(id);
   data->set_has_registered_weak_cells();
 
   v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate);
@@ -89,10 +84,11 @@ void ReplayFinalizationRegistries::OnRegister(
 
   if (!recordreplay::IsReplaying()) {
     auto& recorded = data->recorded_finalization_registries();
-    if (!recorded.count(registry->replay_id())) {
-      auto entry = std::make_unique<RecordedFinalizationRegistry>();
+    if (!recorded.count(registry->record_replay_id())) {
+      auto entry =
+          std::make_unique<ReplayIsolateData::RecordedFinalizationRegistry>();
       entry->data = data;
-      entry->id = registry->replay_id();
+      entry->id = registry->record_replay_id();
       entry->registry.Reset(v8_isolate, local);
       entry->registry.SetWeak(entry.get(), OnRecordedRegistryCollected,
                               v8::WeakCallbackType::kParameter);
@@ -102,35 +98,37 @@ void ReplayFinalizationRegistries::OnRegister(
   }
 
   i::Handle<i::SimpleNumberDictionary> cells;
-  if (registry->replay_cells().IsUndefined(isolate)) {
+  if (registry->record_replay_cells().IsUndefined(isolate)) {
     cells = i::SimpleNumberDictionary::New(isolate, 1);
     // The recording can deliver callbacks of a registry which is no longer
     // reachable, as long as the recording's GC did not collect it.
-    data->finalization_registries().emplace(
-        registry->replay_id(), v8::Global<v8::Value>(v8_isolate, local));
+    data->retained_finalization_registries().emplace(
+        registry->record_replay_id(), v8::Global<v8::Value>(v8_isolate, local));
   } else {
-    cells = i::handle(i::SimpleNumberDictionary::cast(registry->replay_cells()),
-                      isolate);
+    cells = i::handle(
+        i::SimpleNumberDictionary::cast(registry->record_replay_cells()),
+        isolate);
   }
   cells = i::SimpleNumberDictionary::Set(isolate, cells, id, cell);
-  registry->set_replay_cells(*cells);
+  registry->set_record_replay_cells(*cells);
 }
 
 void ReplayFinalizationRegistries::OnUnregisterCell(
     i::Isolate* isolate, i::JSFinalizationRegistry registry, i::WeakCell cell) {
-  if (!cell.replay_id() || recordreplay::HasDivergedFromRecording()) return;
+  if (!cell.record_replay_id() || recordreplay::HasDivergedFromRecording())
+    return;
 
   // The other side would still have this cell registered, and deliver it or
   // look for it according to the recording.
   CHECK_WITH_MSG(
-      EventsAvailable(),
-      "FinalizationRegistry.prototype.unregister on a replay-tracked registry "
-      "while events are disallowed");
+      AreEventsAvailable(),
+      "FinalizationRegistry.prototype.unregister on a tracked registry at a "
+      "point which does not replay");
 
-  if (registry.replay_cells().IsUndefined(isolate)) return;
+  if (registry.record_replay_cells().IsUndefined(isolate)) return;
   i::SimpleNumberDictionary cells =
-      i::SimpleNumberDictionary::cast(registry.replay_cells());
-  i::InternalIndex entry = cells.FindEntry(isolate, cell.replay_id());
+      i::SimpleNumberDictionary::cast(registry.record_replay_cells());
+  i::InternalIndex entry = cells.FindEntry(isolate, cell.record_replay_id());
   if (entry.is_found()) {
     cells.ClearEntry(entry);
     cells.ElementRemoved();
@@ -139,12 +137,13 @@ void ReplayFinalizationRegistries::OnUnregisterCell(
 
 bool ReplayFinalizationRegistries::NextCell(
     i::Isolate* isolate, i::Handle<i::JSFinalizationRegistry> registry) {
-  if (!registry->replay_id()) return true;
-  if (!EventsAvailable()) return false;
+  if (!registry->record_replay_id()) return true;
+  if (!AreEventsAvailable()) return false;
 
   uintptr_t id = 0;
   if (recordreplay::IsRecording() && registry->NeedsCleanup()) {
-    int cell_id = i::WeakCell::cast(registry->cleared_cells()).replay_id();
+    int cell_id =
+        i::WeakCell::cast(registry->cleared_cells()).record_replay_id();
     CHECK_GT(cell_id, 0);
     id = cell_id;
   }
@@ -152,75 +151,73 @@ bool ReplayFinalizationRegistries::NextCell(
   if (!id) return false;
 
   if (recordreplay::IsReplaying()) {
-    CHECK_WITH_MSG(!registry->replay_cells().IsUndefined(isolate),
+    CHECK_WITH_MSG(!registry->record_replay_cells().IsUndefined(isolate),
                    "Recorded FinalizationRegistry cleanup for unknown cell");
     i::Handle<i::SimpleNumberDictionary> cells = i::handle(
-        i::SimpleNumberDictionary::cast(registry->replay_cells()), isolate);
+        i::SimpleNumberDictionary::cast(registry->record_replay_cells()),
+        isolate);
     i::InternalIndex entry =
         cells->FindEntry(isolate, static_cast<uint32_t>(id));
     CHECK_WITH_MSG(entry.is_found(),
                    "Recorded FinalizationRegistry cleanup for unknown cell");
     i::WeakCell cell = i::WeakCell::cast(cells->ValueAt(entry));
+    // Nullify assumes an active cell, and the replay's GC clearing a tracked
+    // cell on its own would otherwise go unnoticed.
+    CHECK_WITH_MSG(!cell.target().IsUndefined(isolate),
+                   "Tracked FinalizationRegistry cell cleared while replaying");
     // Do what the recording's GC did when it found the target dead: this moves
     // the cell to the head of the cleared list, where the cleanup loop pops it.
     cell.Nullify(isolate, [](i::HeapObject, i::ObjectSlot, i::Object) {});
     cells = i::SimpleNumberDictionary::DeleteEntry(isolate, cells, entry);
-    registry->set_replay_cells(*cells);
+    registry->set_record_replay_cells(*cells);
   }
   return true;
 }
 
-void ReplayFinalizationRegistries::Poll(i::Isolate* isolate) {
-  ReplayIsolateData* data = isolate->replay_data();
-  if (!data || !data->has_registered_weak_cells()) return;
-  if (!Enabled() || !EventsAvailable()) return;
+bool ReplayFinalizationRegistries::ShouldPostCleanupTask(i::Isolate* isolate) {
+  return !isolate->replay_data()
+              ->is_finalization_registry_cleanup_task_posted() &&
+         isolate->heap()->RecordReplayHasDirtyJSFinalizationRegistries(
+             i::Heap::RecordReplayTracking::kTracked);
+}
 
-  i::Heap* heap = isolate->heap();
-  uintptr_t post = recordreplay::IsRecording() &&
-                   !data->finalization_registry_task_posted() &&
-                   heap->RecordReplayHasDirtyJSFinalizationRegistries(true);
-
-  // One value carries both whether to post the cleanup task and how many
-  // registries the recording's GC collected since the last poll.
-  std::vector<int> collected;
-  if (recordreplay::IsRecording()) {
-    collected.swap(data->collected_finalization_registries());
-    for (int id : collected) data->recorded_finalization_registries().erase(id);
-  }
-  uintptr_t value = recordreplay::RecordReplayValue(
-      "FinalizationRegistry.schedule", post | (collected.size() << 1));
-  post = value & 1;
-  if (size_t collected_count = value >> 1) {
-    collected.resize(collected_count);
-    recordreplay::RecordReplayBytes("FinalizationRegistry.collected",
-                                    collected.data(),
-                                    collected_count * sizeof(int));
-    // The recording cannot deliver from these registries anymore.
-    if (recordreplay::IsReplaying()) {
-      for (int id : collected) data->finalization_registries().erase(id);
-    }
-  }
-  if (!post) return;
-
-  data->set_finalization_registry_task_posted(true);
+void ReplayFinalizationRegistries::PostCleanupTask(i::Isolate* isolate) {
+  isolate->replay_data()->set_is_finalization_registry_cleanup_task_posted(
+      true);
   auto taskrunner = i::V8::GetCurrentPlatform()->GetForegroundTaskRunner(
       reinterpret_cast<v8::Isolate*>(isolate));
   taskrunner->PostNonNestableTask(
       std::make_unique<i::FinalizationRegistryCleanupTask>(
-          heap, i::FinalizationRegistryCleanupTask::kReplayTracked));
+          isolate->heap(), i::Heap::RecordReplayTracking::kTracked));
+}
+
+void ReplayFinalizationRegistries::TakeCollected(i::Isolate* isolate,
+                                                 std::vector<int>* ids) {
+  ReplayIsolateData* data = isolate->replay_data();
+  ids->swap(data->collected_finalization_registries());
+  for (int id : *ids) data->recorded_finalization_registries().erase(id);
+}
+
+void ReplayFinalizationRegistries::ReleaseCollected(
+    i::Isolate* isolate, const std::vector<int>& ids) {
+  // The recording cannot deliver from these registries anymore.
+  ReplayIsolateData* data = isolate->replay_data();
+  for (int id : ids) data->retained_finalization_registries().erase(id);
 }
 
 i::MaybeHandle<i::JSFinalizationRegistry>
 ReplayFinalizationRegistries::TakeRegistryForTask(i::Isolate* isolate) {
-  isolate->EnsureReplayData()->set_finalization_registry_task_posted(false);
-  if (!EventsAvailable()) return {};
+  isolate->replay_data()->set_is_finalization_registry_cleanup_task_posted(
+      false);
+  if (!AreEventsAvailable()) return {};
 
   i::MaybeHandle<i::JSFinalizationRegistry> registry;
   uintptr_t id = 0;
   if (recordreplay::IsRecording()) {
-    registry =
-        isolate->heap()->RecordReplayDequeueDirtyJSFinalizationRegistry(true);
-    if (!registry.is_null()) id = registry.ToHandleChecked()->replay_id();
+    registry = isolate->heap()->RecordReplayDequeueDirtyJSFinalizationRegistry(
+        i::Heap::RecordReplayTracking::kTracked);
+    if (!registry.is_null())
+      id = registry.ToHandleChecked()->record_replay_id();
   }
   id = recordreplay::RecordReplayValue("FinalizationRegistry.task", id);
   if (recordreplay::IsReplaying() && id) {
