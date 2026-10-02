@@ -81,15 +81,19 @@ void DirHandle::New(const FunctionCallbackInfo<Value>& args) {
 
 DirHandle::~DirHandle() {
   CHECK(!closing_);  // We should not be deleting while explicitly closing!
+  GCClose();         // Close synchronously and emit warning
+  CHECK(closed_);    // We have to be closed at the point
+}
 
-  // When recording/replaying we can't close directories at non-deterministic
-  // points. Let the directory leak.
+void DirHandle::OnGCCollect() {
+  // When recording/replaying, the GC collects this at points which differ
+  // between the two, and closing it here schedules JS (a process warning).
+  // Leak it instead. An explicit close() is unaffected, and the cleanup hook
+  // still closes the directory when the environment is torn down.
   if (v8::recordreplay::IsRecordingOrReplaying()) {
     return;
   }
-
-  GCClose();         // Close synchronously and emit warning
-  CHECK(closed_);    // We have to be closed at the point
+  BaseObject::OnGCCollect();
 }
 
 void DirHandle::MemoryInfo(MemoryTracker* tracker) const {
