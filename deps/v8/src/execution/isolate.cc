@@ -2740,21 +2740,26 @@ char* Isolate::RestoreThread(char* from) {
 }
 
 namespace {
-long CountManagedPtrDestructors(ManagedPtrDestructor* head) {
-  long count = 0;
-  for (; head; head = head->next_) ++count;
-  return count;
+// The number of registered destructors is only the same when replaying if
+// ManagedObjectFinalizerSecondPass leaves unregistering to
+// Isolate::ReleaseSharedPtrs. Otherwise it depends on when the GC runs.
+bool ManagedPtrDestructorCountIsDeterministic() {
+  return recordreplay::IsRecordingOrReplaying("leak-references",
+                                              "ManagedPtrDestructorCount");
 }
 }  // namespace
 
 void Isolate::ReleaseSharedPtrs() {
   base::MutexGuard lock(&managed_ptr_destructors_mutex_);
-  recordreplay::Assert("Isolate::ReleaseSharedPtrs %ld",
-                       CountManagedPtrDestructors(managed_ptr_destructors_head_));
+  if (ManagedPtrDestructorCountIsDeterministic()) {
+    recordreplay::Assert("Isolate::ReleaseSharedPtrs %zu",
+                         managed_ptr_destructors_count_);
+  }
   while (managed_ptr_destructors_head_) {
     ManagedPtrDestructor* l = managed_ptr_destructors_head_;
     ManagedPtrDestructor* n = nullptr;
     managed_ptr_destructors_head_ = nullptr;
+    managed_ptr_destructors_count_ = 0;
     for (; l != nullptr; l = n) {
       l->destructor_(l->shared_ptr_ptr_);
       n = l->next_;
@@ -2781,9 +2786,11 @@ void Isolate::RegisterManagedPtrDestructor(ManagedPtrDestructor* destructor) {
   }
   destructor->next_ = managed_ptr_destructors_head_;
   managed_ptr_destructors_head_ = destructor;
-  recordreplay::Assert(
-      "Isolate::RegisterManagedPtrDestructor %ld",
-      CountManagedPtrDestructors(managed_ptr_destructors_head_));
+  managed_ptr_destructors_count_++;
+  if (ManagedPtrDestructorCountIsDeterministic()) {
+    recordreplay::Assert("Isolate::RegisterManagedPtrDestructor %zu",
+                         managed_ptr_destructors_count_);
+  }
 }
 
 void Isolate::UnregisterManagedPtrDestructor(ManagedPtrDestructor* destructor) {
@@ -2797,6 +2804,8 @@ void Isolate::UnregisterManagedPtrDestructor(ManagedPtrDestructor* destructor) {
   if (destructor->next_) destructor->next_->prev_ = destructor->prev_;
   destructor->prev_ = nullptr;
   destructor->next_ = nullptr;
+  DCHECK_GT(managed_ptr_destructors_count_, 0u);
+  managed_ptr_destructors_count_--;
 }
 
 #if V8_ENABLE_WEBASSEMBLY
