@@ -1,6 +1,8 @@
 #ifndef V8_REPLAY_FINALIZATION_REGISTRY_H_
 #define V8_REPLAY_FINALIZATION_REGISTRY_H_
 
+#include <vector>
+
 #include "src/handles/handles.h"
 #include "src/handles/maybe-handles.h"
 
@@ -19,36 +21,40 @@ namespace replayio {
 // replaying, so the recording is the source of truth:
 //
 // - When recording, the GC clears cells as usual but does not schedule the
-//   cleanup task. Poll() schedules it from a point that replays, and the
-//   cleanup loop records the id of each cell right before its callback runs.
-// - When replaying, the GC treats the targets of cells as strong, so it never
-//   clears one. Poll() schedules the task where the recording did, and the
-//   cleanup loop clears the cells named by the recording before running their
-//   callbacks. Tracked registries with registered cells are retained until
-//   the recording shows that its GC collected them.
+//   cleanup task. ReplayGCPoll::Poll schedules it from a point that replays,
+//   and the cleanup loop records the id of each cell right before its callback
+//   runs.
+// - When replaying, the GC treats the targets of tracked cells as strong, so it
+//   never clears one. ReplayGCPoll::Poll schedules the task where the recording
+//   did, and the cleanup loop clears the cells named by the recording before
+//   running their callbacks. Tracked registries with registered cells are
+//   retained until the recording shows that its GC collected them.
 //
 // Only registries constructed at a point which replays are handled this way
-// ("tracked", JSFinalizationRegistry::replay_id != 0). Other registries get
+// ("tracked", JSFinalizationRegistry::record_replay_id != 0), and none is
+// unless the "finalization-registry" feature is active. Other registries get
 // the default handling when both recording and replaying.
 class ReplayFinalizationRegistries {
  public:
-  // WeakCell::replay_id of a cell in a tracked registry which was registered
-  // after diverging from the recording. It is retained but never delivered.
+  // WeakCell::record_replay_id of a cell in a tracked registry which was
+  // registered after diverging from the recording. It is retained but never
+  // delivered.
   static constexpr int kUndeliverableCellId = -1;
-
-  // Whether the "finalization-registry" feature is active. When it is not,
-  // FinalizationRegistry behaves as it does without this class.
-  static bool Enabled();
 
   static void OnConstruct(
       internal::Isolate* isolate,
       internal::Handle<internal::JSFinalizationRegistry> registry);
+  // Crashes for a tracked registry when the current point does not replay and
+  // the process has not diverged, as the recording could not describe when the
+  // new cell is cleared.
   static void OnRegister(
       internal::Isolate* isolate,
       internal::Handle<internal::JSFinalizationRegistry> registry,
       internal::Handle<internal::WeakCell> cell);
 
-  // Called when unregister() removes |cell| from |registry|. Cannot GC.
+  // Called when unregister() removes |cell| from |registry|. Cannot GC. Crashes
+  // for a tracked cell when the current point does not replay and the process
+  // has not diverged.
   static void OnUnregisterCell(internal::Isolate* isolate,
                                internal::JSFinalizationRegistry registry,
                                internal::WeakCell cell);
@@ -60,11 +66,19 @@ class ReplayFinalizationRegistries {
       internal::Isolate* isolate,
       internal::Handle<internal::JSFinalizationRegistry> registry);
 
-  // Schedules the cleanup task for tracked registries where the recording
-  // did. Called at the end of every microtask checkpoint.
-  static void Poll(internal::Isolate* isolate);
+  // The pieces ReplayGCPoll::Poll records/replays. When recording: whether a
+  // cleanup task for tracked registries has to be posted, and the ids of the
+  // registries the GC collected since the last poll.
+  static bool ShouldPostCleanupTask(internal::Isolate* isolate);
+  static void TakeCollected(internal::Isolate* isolate, std::vector<int>* ids);
+  // When replaying: stop retaining the registries with these ids.
+  static void ReleaseCollected(internal::Isolate* isolate,
+                               const std::vector<int>& ids);
+  // On both sides: post the cleanup task for tracked registries.
+  static void PostCleanupTask(internal::Isolate* isolate);
 
-  // Picks the tracked registry the cleanup task posted by Poll() runs for.
+  // Picks the tracked registry the cleanup task posted by PostCleanupTask()
+  // runs for.
   static internal::MaybeHandle<internal::JSFinalizationRegistry>
   TakeRegistryForTask(internal::Isolate* isolate);
 };

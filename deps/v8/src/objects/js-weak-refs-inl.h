@@ -31,8 +31,9 @@ ACCESSORS(JSFinalizationRegistry, active_cells, HeapObject, kActiveCellsOffset)
 ACCESSORS(JSFinalizationRegistry, cleared_cells, HeapObject,
           kClearedCellsOffset)
 ACCESSORS(JSFinalizationRegistry, key_map, Object, kKeyMapOffset)
-SMI_ACCESSORS(JSFinalizationRegistry, replay_id, kReplayIdOffset)
-ACCESSORS(JSFinalizationRegistry, replay_cells, Object, kReplayCellsOffset)
+SMI_ACCESSORS(JSFinalizationRegistry, record_replay_id, kRecordReplayIdOffset)
+ACCESSORS(JSFinalizationRegistry, record_replay_cells, Object,
+          kRecordReplayCellsOffset)
 SMI_ACCESSORS(JSFinalizationRegistry, flags, kFlagsOffset)
 ACCESSORS(JSFinalizationRegistry, next_dirty, Object, kNextDirtyOffset)
 CAST_ACCESSOR(JSFinalizationRegistry)
