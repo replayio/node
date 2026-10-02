@@ -548,10 +548,14 @@ void AsyncWrap::EmitDestroy(Environment* env, double async_id) {
     return;
   }
 
-  // This is called non-deterministically due to GC activity. For now we no-op
-  // it when recording/replaying, but could record/replay the set of IDs to
-  // destroy instead.
-  if (v8::recordreplay::IsRecordingOrReplaying()) {
+  // When recording/replaying, a destroy which comes from the GC (a weak
+  // callback, or a wrap deleted by one) happens at points which differ between
+  // the two. Those run with events disallowed, and are dropped. Other destroys,
+  // e.g. from emitDestroy() or an explicit close, happen at the same points
+  // and are delivered. This could record/replay the set of IDs the GC destroys
+  // instead.
+  if (v8::recordreplay::IsRecordingOrReplaying() &&
+      v8::recordreplay::AreEventsDisallowed("AsyncWrap::EmitDestroy")) {
     return;
   }
 
@@ -562,7 +566,10 @@ void AsyncWrap::EmitDestroy(Environment* env, double async_id) {
   // If the list gets very large empty it faster using a Microtask.
   // Microtasks can't be added in GC context therefore we use an
   // interrupt to get this Microtask scheduled as fast as possible.
-  if (env->destroy_async_id_list()->size() == 16384) {
+  // Interrupts are not replayed at the same points, so when recording/replaying
+  // the list is only emptied by the immediate above.
+  if (env->destroy_async_id_list()->size() == 16384 &&
+      !v8::recordreplay::IsRecordingOrReplaying()) {
     env->RequestInterrupt([](Environment* env) {
       env->context()->GetMicrotaskQueue()->EnqueueMicrotask(
         env->isolate(),
