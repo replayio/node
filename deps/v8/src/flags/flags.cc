@@ -11,6 +11,7 @@
 #include <cstring>
 #include <sstream>
 
+#include "include/v8.h"
 #include "src/base/functional.h"
 #include "src/base/logging.h"
 #include "src/base/platform/platform.h"
@@ -805,6 +806,16 @@ void ComputeFlagListHash() {
   std::string args(modified_args_as_string.str());
   flag_hash = static_cast<uint32_t>(
       base::hash_range(args.c_str(), args.c_str() + args.length()));
+
+  // Some flags are set differently when recording and when replaying (see
+  // recordreplay::SetRecordingOrReplaying). Use the hash from the recording
+  // when replaying, so that everything derived from it behaves the same.
+  if (recordreplay::IsRecordingOrReplaying() && IsMainThread() &&
+      !recordreplay::AreEventsDisallowed("FlagList::Hash") &&
+      !recordreplay::AreEventsPassedThrough("FlagList::Hash")) {
+    flag_hash = static_cast<uint32_t>(
+        recordreplay::RecordReplayValue("FlagList::Hash", flag_hash));
+  }
 }
 
 template <class A, class B>

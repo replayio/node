@@ -10751,8 +10751,7 @@ extern "C" void V8RecordReplayBytes(const char* why, void* buf, size_t size) {
 }
 
 bool recordreplay::AreEventsDisallowed(const char* why) {
-  (void)why;
-  if (IsRecordingOrReplaying()) {
+  if (IsRecordingOrReplaying("disallow-events", why)) {
     return gRecordReplayAreEventsDisallowed();
   }
   return false;
@@ -10763,8 +10762,7 @@ extern "C" bool V8RecordReplayAreEventsDisallowed(const char* why) {
 }
 
 bool recordreplay::AreEventsPassedThrough(const char* why) {
-  (void)why;
-  if (IsRecordingOrReplaying()) {
+  if (IsRecordingOrReplaying("pass-through-events", why)) {
     return gRecordReplayAreEventsPassedThrough();
   }
   return false;
@@ -11147,7 +11145,9 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   }
 
   // Set flags to disable non-deterministic posting of tasks to other threads.
-  // We don't support this yet when recording/replaying.
+  // Node's platform can't run these when recording/replaying: GC tasks posted
+  // to the main thread are dropped, and jobs can't be handed to worker threads
+  // while events are disallowed (see DefaultJobState::NotifyConcurrencyIncrease).
   internal::FLAG_concurrent_array_buffer_sweeping = false;
   internal::FLAG_concurrent_marking = false;
   internal::FLAG_concurrent_sweeping = false;
@@ -11158,10 +11158,16 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   internal::FLAG_parallel_scavenge = false;
   internal::FLAG_scavenge_task = false;
 
-  // Incremental/compacting GC are also disabled for now. These could probably
-  // be supported for now it's not worth the bother.
-  internal::FLAG_incremental_marking = false;
-  internal::FLAG_never_compact = true;
+  // Incremental marking is what starts major GCs once the old generation
+  // allocation limit is reached, so it is only disabled while replaying.
+  if (IsReplaying() || !FeatureEnabled("v8-flags-gc", nullptr)) {
+    internal::FLAG_incremental_marking = false;
+  }
+
+  // For now the compilation cache is only used when recording.
+  if (IsReplaying() || !FeatureEnabled("v8-flags-compilation-cache", nullptr)) {
+    internal::FLAG_compilation_cache = false;
+  }
 
   // Disable wasm background compilation. The wasm module compiler is extremely
   // complicated and getting this it to behave consistently when replaying in

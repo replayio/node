@@ -2410,7 +2410,7 @@ void HeapSnapshotJSONSerializer::SerializeImpl() {
   // Heap contents can vary when recording vs. replaying, and we don't want
   // these variances to affect behavior when replaying. We could record/replay
   // the snapshot itself, but it is simpler to just disable this functionality.
-  if (recordreplay::IsRecordingOrReplaying()) {
+  if (recordreplay::IsRecordingOrReplaying("gc-changes", "HeapSnapshotJSONSerializer::SerializeImpl")) {
     writer_->AddString("{}");
     return;
   }
