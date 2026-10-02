@@ -10785,8 +10785,7 @@ extern "C" void V8RecordReplayBytes(const char* why, void* buf, size_t size) {
 }
 
 bool recordreplay::AreEventsDisallowed(const char* why) {
-  (void)why;
-  if (IsRecordingOrReplaying()) {
+  if (IsRecordingOrReplaying("disallow-events", why)) {
     return gRecordReplayAreEventsDisallowed();
   }
   return false;
@@ -10797,8 +10796,7 @@ extern "C" bool V8RecordReplayAreEventsDisallowed(const char* why) {
 }
 
 bool recordreplay::AreEventsPassedThrough(const char* why) {
-  (void)why;
-  if (IsRecordingOrReplaying()) {
+  if (IsRecordingOrReplaying("pass-through-events", why)) {
     return gRecordReplayAreEventsPassedThrough();
   }
   return false;
@@ -11203,6 +11201,11 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   // allocation limit is reached, so it is only disabled while replaying.
   if (IsReplaying() || !FeatureEnabled("v8-flags-gc", nullptr)) {
     internal::FLAG_incremental_marking = false;
+  }
+
+  // For now the compilation cache is only used when recording.
+  if (IsReplaying() || !FeatureEnabled("v8-flags-compilation-cache", nullptr)) {
+    internal::FLAG_compilation_cache = false;
   }
 
   // Disable wasm background compilation. The wasm module compiler is extremely
