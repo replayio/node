@@ -424,7 +424,13 @@ IntervalHistogram::IntervalHistogram(
       HistogramImpl(options),
       interval_(interval),
       on_interval_(std::move(on_interval)) {
-  MakeWeak();
+  // When replaying, the histogram is held strongly, and its handle is listed
+  // as active until the recording saw the GC collect it (see
+  // IsHandleOwnerAlive in node_process_methods.cc). Collecting it only leaks
+  // its handle when recording/replaying (see HandleWrap::OnGCCollect).
+  if (!v8::recordreplay::IsReplaying()) {
+    MakeWeak();
+  }
   uv_timer_init(env->event_loop(), &timer_);
 }
 

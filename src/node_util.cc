@@ -1,6 +1,7 @@
 #include "base_object-inl.h"
 #include "node_errors.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "util-inl.h"
 
 namespace node {
@@ -265,12 +266,7 @@ class WeakReference : public BaseObject {
 
   // Makes the target's liveness match the recording at a point which replays.
   void RecordReplayTargetLiveness() {
-    if (!v8::recordreplay::IsRecordingOrReplaying() ||
-        v8::recordreplay::AreEventsDisallowed() ||
-        v8::recordreplay::AreEventsPassedThrough() ||
-        v8::recordreplay::HasDivergedFromRecording()) {
-      return;
-    }
+    if (!recordreplay::AreEventsAvailable()) return;
     bool alive = v8::recordreplay::RecordReplayValue("WeakReference alive",
                                                      !target_.IsEmpty());
     if (!alive) {
