@@ -809,6 +809,14 @@ void Reference::SecondPassCallback(
     return;
   }
   reference->_secondPassParameter = nullptr;
+  // When recording/replaying, the GC collects the value at points which differ
+  // between the two, and the finalizer would be scheduled from here. Leave the
+  // reference unfinalized instead: it stays on the env's list, so ~napi_env__
+  // finalizes it at environment teardown like any other live reference.
+  if (v8::recordreplay::IsRecordingOrReplaying() &&
+      v8::recordreplay::AreEventsDisallowed("Reference::SecondPassCallback")) {
+    return;
+  }
   reference->Finalize();
 }
 
