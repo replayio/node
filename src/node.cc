@@ -1129,7 +1129,7 @@ static void* OpenDriverHandle() {
 // applied as a V8 flag after the command line's, which it overrides, so that
 // the arguments (and process.execArgv) stay the same when replaying.
 static void ApplyRecordReplayMaxOldSpace() {
-  if (!gRecordReplayMaxOldSpaceMb) {
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
     return;
   }
   size_t mb = gRecordReplayMaxOldSpaceMb();
@@ -1155,9 +1155,8 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   RecordReplayLoadSymbol(handle, "RecordReplayAttach", gRecordReplayAttach);
   RecordReplayLoadSymbol(handle, "RecordReplayRecordCommandLineArguments",
                          gRecordReplayRecordCommandLineArguments);
-  // Optional, drivers before this was added don't have it.
-  CastPointer(dlsym(handle, "RecordReplayMaxOldSpaceMb"),
-              &gRecordReplayMaxOldSpaceMb);
+  RecordReplayLoadSymbol(handle, "RecordReplayMaxOldSpaceMb",
+                         gRecordReplayMaxOldSpaceMb);
   RecordReplayLoadSymbol(handle, "RecordReplaySaveRecording", gRecordReplaySaveRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayRememberRecording", gRecordReplayRememberRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayAddMetadata", gRecordReplayAddMetadata);
