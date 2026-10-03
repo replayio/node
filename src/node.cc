@@ -978,6 +978,7 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
 
 static void (*gRecordReplayAttach)(const char* buildId);
 static void (*gRecordReplayRecordCommandLineArguments)(int*, char***);
+static size_t (*gRecordReplayMaxOldSpaceMb)();
 static void (*gRecordReplaySaveRecording)(const char* dir);
 static void (*gRecordReplayRememberRecording)();
 static void (*gRecordReplayAddMetadata)(const char* metadata);
@@ -1123,6 +1124,22 @@ static void* OpenDriverHandle() {
   return handle;
 }
 
+// The driver can give the JS heap a different old space limit when recording
+// and when replaying, e.g. to make the replay's GC run at other points. It is
+// applied as a V8 flag after the command line's, which it overrides, so that
+// the arguments (and process.execArgv) stay the same when replaying.
+static void ApplyRecordReplayMaxOldSpace() {
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+  size_t mb = gRecordReplayMaxOldSpaceMb();
+  if (!mb) {
+    return;
+  }
+  std::string flag = "--max-old-space-size=" + std::to_string(mb);
+  V8::SetFlagsFromString(flag.c_str(), flag.size());
+}
+
 static void InitializeRecordReplay(int* pargc, char*** pargv) {
   if (getenv("RECORD_REPLAY_DONT_RECORD")) {
     return;
@@ -1138,6 +1155,8 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   RecordReplayLoadSymbol(handle, "RecordReplayAttach", gRecordReplayAttach);
   RecordReplayLoadSymbol(handle, "RecordReplayRecordCommandLineArguments",
                          gRecordReplayRecordCommandLineArguments);
+  RecordReplayLoadSymbol(handle, "RecordReplayMaxOldSpaceMb",
+                         gRecordReplayMaxOldSpaceMb);
   RecordReplayLoadSymbol(handle, "RecordReplaySaveRecording", gRecordReplaySaveRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayRememberRecording", gRecordReplayRememberRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayAddMetadata", gRecordReplayAddMetadata);
@@ -1215,6 +1234,8 @@ InitializationResult InitializeOncePerProcess(
       return result;
     }
   }
+
+  ApplyRecordReplayMaxOldSpace();
 
   if (per_process::cli_options->use_largepages == "on" ||
       per_process::cli_options->use_largepages == "silent") {
