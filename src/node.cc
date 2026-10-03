@@ -978,7 +978,7 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
 
 static void (*gRecordReplayAttach)(const char* buildId);
 static void (*gRecordReplayRecordCommandLineArguments)(int*, char***);
-static size_t (*gRecordReplayMaxOldSpaceMB)();
+static size_t (*gRecordReplayMaxOldSpaceMb)();
 static void (*gRecordReplaySaveRecording)(const char* dir);
 static void (*gRecordReplayRememberRecording)();
 static void (*gRecordReplayAddMetadata)(const char* metadata);
@@ -1129,10 +1129,10 @@ static void* OpenDriverHandle() {
 // applied as a V8 flag after the command line's, which it overrides, so that
 // the arguments (and process.execArgv) stay the same when replaying.
 static void ApplyRecordReplayMaxOldSpace() {
-  if (!gRecordReplayMaxOldSpaceMB) {
+  if (!gRecordReplayMaxOldSpaceMb) {
     return;
   }
-  size_t mb = gRecordReplayMaxOldSpaceMB();
+  size_t mb = gRecordReplayMaxOldSpaceMb();
   if (!mb) {
     return;
   }
@@ -1156,8 +1156,8 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   RecordReplayLoadSymbol(handle, "RecordReplayRecordCommandLineArguments",
                          gRecordReplayRecordCommandLineArguments);
   // Optional, drivers before this was added don't have it.
-  CastPointer(dlsym(handle, "RecordReplayMaxOldSpaceMB"),
-              &gRecordReplayMaxOldSpaceMB);
+  CastPointer(dlsym(handle, "RecordReplayMaxOldSpaceMb"),
+              &gRecordReplayMaxOldSpaceMb);
   RecordReplayLoadSymbol(handle, "RecordReplaySaveRecording", gRecordReplaySaveRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayRememberRecording", gRecordReplayRememberRecording);
   RecordReplayLoadSymbol(handle, "RecordReplayAddMetadata", gRecordReplayAddMetadata);
