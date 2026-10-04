@@ -985,6 +985,7 @@ static void (*gRecordReplayAddMetadata)(const char* metadata);
 static void (*gRecordReplayFinishRecording)();
 static void (*gBeginCallbackRegion)();
 static void (*gEndCallbackRegion)();
+static void (*gMarkNextDlopenAsAddon)();
 static const char* (*gRecordReplayGetRecordingId)();
 static char* (*gGetUnusableRecordingReason)();
 static void* (*gJSONCreateString)(const char*);
@@ -1010,6 +1011,12 @@ void BeginCallbackRegion() {
 void EndCallbackRegion() {
   if (v8::recordreplay::IsRecordingOrReplaying()) {
     gEndCallbackRegion();
+  }
+}
+
+void MarkNextDlopenAsAddon() {
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    gMarkNextDlopenAsAddon();
   }
 }
 
@@ -1165,6 +1172,7 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   RecordReplayLoadSymbol(handle, "RecordReplayGetUnusableRecordingReason", gGetUnusableRecordingReason);
   RecordReplayLoadSymbol(handle, "RecordReplayBeginCallbackRegion", gBeginCallbackRegion);
   RecordReplayLoadSymbol(handle, "RecordReplayEndCallbackRegion", gEndCallbackRegion);
+  RecordReplayLoadSymbol(handle, "RecordReplayMarkNextDlopenAsAddon", gMarkNextDlopenAsAddon);
   RecordReplayLoadSymbol(handle, "RecordReplayJSONCreateString", gJSONCreateString);
   RecordReplayLoadSymbol(handle, "RecordReplayJSONCreateArray", gJSONCreateArray);
   RecordReplayLoadSymbol(handle, "RecordReplayJSONCreateObject", gJSONCreateObject);
