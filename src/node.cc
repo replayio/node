@@ -986,6 +986,7 @@ static void (*gRecordReplayFinishRecording)();
 static void (*gBeginCallbackRegion)();
 static void (*gEndCallbackRegion)();
 static void (*gMarkNextDlopenAsAddon)(const char* name);
+static bool (*gIsInsideInterceptedCallback)();
 static const char* (*gRecordReplayGetRecordingId)();
 static char* (*gGetUnusableRecordingReason)();
 static void* (*gJSONCreateString)(const char*);
@@ -1018,6 +1019,11 @@ void MarkNextDlopenAsAddon(const char* name) {
   if (v8::recordreplay::IsRecordingOrReplaying()) {
     gMarkNextDlopenAsAddon(name);
   }
+}
+
+bool IsInsideInterceptedCallback() {
+  return v8::recordreplay::IsRecordingOrReplaying() &&
+         gIsInsideInterceptedCallback();
 }
 
 } // namespace recordreplay
@@ -1173,6 +1179,8 @@ static void InitializeRecordReplay(int* pargc, char*** pargv) {
   RecordReplayLoadSymbol(handle, "RecordReplayBeginCallbackRegion", gBeginCallbackRegion);
   RecordReplayLoadSymbol(handle, "RecordReplayEndCallbackRegion", gEndCallbackRegion);
   RecordReplayLoadSymbol(handle, "RecordReplayMarkNextDlopenAsAddon", gMarkNextDlopenAsAddon);
+  RecordReplayLoadSymbol(handle, "RecordReplayIsInsideInterceptedCallback",
+                         gIsInsideInterceptedCallback);
   RecordReplayLoadSymbol(handle, "RecordReplayJSONCreateString", gJSONCreateString);
   RecordReplayLoadSymbol(handle, "RecordReplayJSONCreateArray", gJSONCreateArray);
   RecordReplayLoadSymbol(handle, "RecordReplayJSONCreateObject", gJSONCreateObject);

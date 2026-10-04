@@ -1159,6 +1159,11 @@ void EndCallbackRegion();
 // thread as an addon, which doesn't run when replaying.
 void MarkNextDlopenAsAddon(const char* name);
 
+// Whether a binary module is running code for a callback which the driver
+// recorded, or is replaying. Its N-API calls are then made at the same points
+// when replaying, which isn't the case for other module code (e.g. finalizers).
+bool IsInsideInterceptedCallback();
+
 struct AutoCallbackRegion {
   AutoCallbackRegion() { BeginCallbackRegion(); }
   ~AutoCallbackRegion() { EndCallbackRegion(); }
