@@ -311,14 +311,14 @@ static std::string WriteRecordedReportFile(Isolate* isolate,
   } else if (filename == "stderr") {
     fd = 2;
   } else {
-    std::string path = filename;
+    std::string report_directory;
     {
       Mutex::ScopedLock lock(per_process::cli_options_mutex);
-      const std::string& report_directory =
-          per_process::cli_options->report_directory;
-      if (report_directory.length() > 0) {
-        path = report_directory + node::kPathSeparator + filename;
-      }
+      report_directory = per_process::cli_options->report_directory;
+    }
+    std::string path = filename;
+    if (report_directory.length() > 0) {
+      path = report_directory + node::kPathSeparator + filename;
     }
     uv_fs_t req;
     fd = uv_fs_open(nullptr, &req, path.c_str(),
@@ -326,8 +326,11 @@ static std::string WriteRecordedReportFile(Isolate* isolate,
                     nullptr);
     uv_fs_req_cleanup(&req);
     if (fd < 0) {
-      WriteAll(2, "\nFailed to open Node.js report file: " + path +
-                               " (errno: " + std::to_string(-fd) + ")\n");
+      std::string failure = "\nFailed to open Node.js report file: " + filename;
+      if (report_directory.length() > 0) {
+        failure += " directory: " + report_directory;
+      }
+      WriteAll(2, failure + " (errno: " + std::to_string(-fd) + ")\n");
       return "";
     }
     WriteAll(2, "\nWriting Node.js report to file: " + filename);
