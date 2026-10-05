@@ -266,7 +266,7 @@ class WeakReference : public BaseObject {
 
   // Makes the target's liveness match the recording at a point which replays.
   void RecordReplayTargetLiveness() {
-    if (!recordreplay::AreEventsAvailable()) return;
+    if (!recordreplay::AreEventsRecorded()) return;
     bool alive = v8::recordreplay::RecordReplayValue("WeakReference alive",
                                                      !target_.IsEmpty());
     if (!alive) {

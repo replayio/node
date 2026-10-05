@@ -311,7 +311,7 @@ static void GetActiveRequestsInfo(const FunctionCallbackInfo<Value>& args) {
 // are held strongly (see IntervalHistogram) until then.
 static bool IsHandleOwnerAlive(HandleWrap* w) {
   bool alive = !w->persistent().IsEmpty();
-  if (recordreplay::AreEventsAvailable()) {
+  if (recordreplay::AreEventsRecorded()) {
     alive = v8::recordreplay::RecordReplayValue("HandleWrap owner alive", alive);
     CHECK(!alive || !w->persistent().IsEmpty());
   }

@@ -450,7 +450,7 @@ class ThreadSafeFunction : public node::AsyncResource {
 // Whether the module's current N-API call is also made when replaying, which
 // is the case for calls in callbacks the driver intercepts.
 static bool RecordReplayInModuleCallback() {
-  return node::recordreplay::AreEventsAvailable() &&
+  return node::recordreplay::AreEventsRecorded() &&
          node::recordreplay::IsInsideInterceptedCallback();
 }
 

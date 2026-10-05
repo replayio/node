@@ -576,7 +576,7 @@ namespace {
 // driver intercepted are replayed instead, at the same points. Its other calls,
 // e.g. from finalizers, don't happen when replaying.
 bool RecordReplayInModuleCallback() {
-  return node::recordreplay::AreEventsAvailable() &&
+  return node::recordreplay::AreEventsRecorded() &&
          node::recordreplay::IsInsideInterceptedCallback();
 }
 
@@ -665,7 +665,7 @@ void Reference::RecordReplayFlushClearedRefs(napi_env env) {
 }
 
 void Reference::RecordReplayPoll(v8::Isolate* isolate, void* data) {
-  if (node::recordreplay::AreEventsAvailable()) {
+  if (node::recordreplay::AreEventsRecorded()) {
     RecordReplayFlushClearedRefs(static_cast<napi_env>(data));
   }
 }
