@@ -59,8 +59,8 @@ using v8::String;
 using v8::Value;
 
 // Where the recording can't be used, e.g. in an evaluation while paused, the
-// bindings below would report the replaying machine instead of the recorded
-// one, and the system calls they make aren't in the recording, so
+// bindings below would report (or change) the replaying machine instead of the
+// recorded one, and the system calls they make aren't in the recording, so
 // they throw there instead (recordreplay::ThrowIfEventsUnavailable).
 
 static void GetHostname(const FunctionCallbackInfo<Value>& args) {
@@ -385,6 +385,10 @@ static void GetUserInfo(const FunctionCallbackInfo<Value>& args) {
 
 
 static void SetPriority(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
+                                             "os.setPriority")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
 
   CHECK_EQ(args.Length(), 3);
