@@ -58,11 +58,6 @@ using v8::Object;
 using v8::String;
 using v8::Value;
 
-// Where the recording can't be used, e.g. in an evaluation while paused, the
-// bindings below would report (or change) the replaying machine instead of the
-// recorded one, and the system calls they make aren't in the recording, so
-// they throw there instead (recordreplay::ThrowIfEventsUnavailable).
-
 static void GetHostname(const FunctionCallbackInfo<Value>& args) {
   if (recordreplay::ThrowIfEventsUnavailable(args, "os.hostname")) {
     return;
