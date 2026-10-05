@@ -1164,6 +1164,10 @@ void MarkNextDlopenAsAddon(const char* name);
 // when replaying, which isn't the case for other module code (e.g. finalizers).
 bool IsInsideInterceptedCallback();
 
+// Whether the recording can be used at this point: we're recording or
+// replaying, events aren't disallowed and the replay hasn't diverged.
+bool AreEventsAvailable();
+
 struct AutoCallbackRegion {
   AutoCallbackRegion() { BeginCallbackRegion(); }
   ~AutoCallbackRegion() { EndCallbackRegion(); }

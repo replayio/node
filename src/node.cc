@@ -1026,10 +1026,14 @@ bool IsInsideInterceptedCallback() {
          gIsInsideInterceptedCallback();
 }
 
+bool AreEventsAvailable() {
+  return v8::recordreplay::IsRecordingOrReplaying() &&
+         !v8::recordreplay::AreEventsDisallowed() &&
+         !v8::recordreplay::HasDivergedFromRecording();
+}
+
 bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name) {
-  if (!v8::recordreplay::IsRecordingOrReplaying() ||
-      !(v8::recordreplay::AreEventsDisallowed("divergent-side-effect") ||
-        v8::recordreplay::HasDivergedFromRecording())) {
+  if (!v8::recordreplay::IsRecordingOrReplaying() || AreEventsAvailable()) {
     return false;
   }
   std::string message = std::string("Cannot replay operation ") +

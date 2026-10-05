@@ -67,7 +67,6 @@ static void WriteNodeReport(Isolate* isolate,
                             std::ostream& out,
                             Local<Value> error,
                             bool compact);
-static bool RecordReplayEventsAvailable();
 static std::string RecordedNodeReport(Isolate* isolate,
                                       Environment* env,
                                       const char* message,
@@ -128,7 +127,7 @@ std::string TriggerNodeReport(Isolate* isolate,
     }
   }
 
-  if (RecordReplayEventsAvailable()) {
+  if (node::recordreplay::AreEventsAvailable()) {
     return WriteRecordedReportFile(isolate, env, message, trigger, filename,
                                    error);
   }
@@ -197,19 +196,11 @@ void GetNodeReport(Isolate* isolate,
                    const char* trigger,
                    Local<Value> error,
                    std::ostream& out) {
-  if (RecordReplayEventsAvailable()) {
+  if (node::recordreplay::AreEventsAvailable()) {
     out << RecordedNodeReport(isolate, env, message, trigger, "", error, false);
     return;
   }
   WriteNodeReport(isolate, env, message, trigger, "", out, error, false);
-}
-
-// Whether the recording can be used here, so that the report can be recorded
-// and replayed.
-static bool RecordReplayEventsAvailable() {
-  return v8::recordreplay::IsRecordingOrReplaying() &&
-         !v8::recordreplay::AreEventsDisallowed() &&
-         !v8::recordreplay::HasDivergedFromRecording();
 }
 
 // Reports when recording/replaying: the replay has to report exactly the
