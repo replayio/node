@@ -88,9 +88,10 @@ DirHandle::~DirHandle() {
 void DirHandle::OnGCCollect() {
   // When recording/replaying, the GC collects this at points which differ
   // between the two, and closing it here schedules JS (a process warning).
-  // Leak it instead. An explicit close() is unaffected, and the cleanup hook
-  // still closes the directory when the environment is torn down.
-  if (v8::recordreplay::IsRecordingOrReplaying()) {
+  // Leak it while it is open instead. An explicit close() is unaffected, and
+  // the cleanup hook still closes the directory when the environment is torn
+  // down. Once closed, destroying it has no effect beyond freeing memory.
+  if (v8::recordreplay::IsRecordingOrReplaying() && !closed_) {
     return;
   }
   BaseObject::OnGCCollect();
