@@ -22,6 +22,7 @@
 #include <ctime>
 #include <cwctype>
 #include <fstream>
+#include <sstream>
 
 constexpr int NODE_REPORT_VERSION = 2;
 constexpr int NANOS_PER_SEC = 1000 * 1000 * 1000;
@@ -65,6 +66,20 @@ static void WriteNodeReport(Isolate* isolate,
                             std::ostream& out,
                             Local<Value> error,
                             bool compact);
+static bool RecordReplayEventsAvailable();
+static std::string RecordedNodeReport(Isolate* isolate,
+                                      Environment* env,
+                                      const char* message,
+                                      const char* trigger,
+                                      const std::string& filename,
+                                      Local<Value> error,
+                                      bool compact);
+static std::string WriteRecordedReportFile(Isolate* isolate,
+                                           Environment* env,
+                                           const char* message,
+                                           const char* trigger,
+                                           const std::string& filename,
+                                           Local<Value> error);
 static void PrintVersionInformation(JSONWriter* writer);
 static void PrintJavaScriptErrorStack(JSONWriter* writer,
                                       Isolate* isolate,
@@ -110,6 +125,11 @@ std::string TriggerNodeReport(Isolate* isolate,
       filename = *DiagnosticFilename(env != nullptr ? env->thread_id() : 0,
           "report", "json");
     }
+  }
+
+  if (RecordReplayEventsAvailable()) {
+    return WriteRecordedReportFile(isolate, env, message, trigger, filename,
+                                   error);
   }
 
   // Open the report file stream for writing. Supports stdout/err,
@@ -176,7 +196,133 @@ void GetNodeReport(Isolate* isolate,
                    const char* trigger,
                    Local<Value> error,
                    std::ostream& out) {
+  if (RecordReplayEventsAvailable()) {
+    out << RecordedNodeReport(isolate, env, message, trigger, "", error, false);
+    return;
+  }
   WriteNodeReport(isolate, env, message, trigger, "", out, error, false);
+}
+
+// Whether the recording can be used here, so that the report can be recorded
+// and replayed.
+static bool RecordReplayEventsAvailable() {
+  return v8::recordreplay::IsRecordingOrReplaying() &&
+         !v8::recordreplay::AreEventsDisallowed() &&
+         !v8::recordreplay::HasDivergedFromRecording();
+}
+
+// Reports when recording/replaying: the replay has to report exactly the
+// report the recording made. The system calls a report makes (uname,
+// getrusage, the network interfaces...) are recorded like any others, but
+// several sections are read from the process's own memory and differ in the
+// replaying process: V8's heap statistics, the native stack, the libuv
+// handles' addresses and the loaded libraries (dl_iterate_phdr isn't replayed).
+//
+// We record the finished report text rather than each of those inputs. It's
+// small (around 16 KB), recorded in one place, and doesn't have to follow the
+// report's contents as node changes them, while some inputs, like stack frames
+// and pointers, have no meaningful replayed value. The replay still generates
+// the report before using the recorded text: generating it makes the recorded
+// system calls in order, and for a report on an error it runs the program's
+// code (getters, toString(), Error.prepareStackTrace), which has to run when
+// replaying as well. Generating reports without an error with events passed
+// through while recording would let the replay skip generating them; we
+// haven't needed that. Throwing on reports instead isn't an option: they are
+// mostly made in error handlers and on crashes.
+//
+// Where the recording can be used, generate the report into a string, and use
+// the recorded string when replaying.
+static std::string RecordedNodeReport(Isolate* isolate,
+                                      Environment* env,
+                                      const char* message,
+                                      const char* trigger,
+                                      const std::string& filename,
+                                      Local<Value> error,
+                                      bool compact) {
+  std::ostringstream report;
+  WriteNodeReport(
+      isolate, env, message, trigger, filename, report, error, compact);
+  std::string text = report.str();
+  size_t length =
+      v8::recordreplay::RecordReplayValue("NodeReport length", text.length());
+  text.resize(length);
+  if (length) {
+    v8::recordreplay::RecordReplayBytes("NodeReport", &text[0], length);
+  }
+  return text;
+}
+
+// Writes all of text to fd with a write call per chunk the system takes.
+static void WriteRecordedText(uv_file fd, const std::string& text) {
+  size_t written = 0;
+  while (written < text.length()) {
+    uv_fs_t req;
+    uv_buf_t buf = uv_buf_init(const_cast<char*>(text.data()) + written,
+                               text.length() - written);
+    int rv = uv_fs_write(nullptr, &req, fd, &buf, 1, -1, nullptr);
+    uv_fs_req_cleanup(&req);
+    if (rv <= 0) {
+      return;
+    }
+    written += rv;
+  }
+}
+
+// TriggerNodeReport when recording/replaying. The report and the messages
+// about it are written with plain system calls rather than C++ streams, whose
+// calls differ when replaying with another C++ standard library.
+static std::string WriteRecordedReportFile(Isolate* isolate,
+                                           Environment* env,
+                                           const char* message,
+                                           const char* trigger,
+                                           const std::string& filename,
+                                           Local<Value> error) {
+  uv_file fd;
+  if (filename == "stdout") {
+    fd = 1;
+  } else if (filename == "stderr") {
+    fd = 2;
+  } else {
+    std::string path = filename;
+    {
+      Mutex::ScopedLock lock(per_process::cli_options_mutex);
+      const std::string& report_directory =
+          per_process::cli_options->report_directory;
+      if (report_directory.length() > 0) {
+        path = report_directory + node::kPathSeparator + filename;
+      }
+    }
+    uv_fs_t req;
+    fd = uv_fs_open(nullptr, &req, path.c_str(),
+                    UV_FS_O_WRONLY | UV_FS_O_CREAT | UV_FS_O_TRUNC, 0644,
+                    nullptr);
+    uv_fs_req_cleanup(&req);
+    if (fd < 0) {
+      WriteRecordedText(2, "\nFailed to open Node.js report file: " + path +
+                               " (errno: " + std::to_string(-fd) + ")\n");
+      return "";
+    }
+    WriteRecordedText(2, "\nWriting Node.js report to file: " + filename);
+  }
+
+  bool compact;
+  {
+    Mutex::ScopedLock lock(per_process::cli_options_mutex);
+    compact = per_process::cli_options->report_compact;
+  }
+  WriteRecordedText(fd, RecordedNodeReport(isolate, env, message, trigger,
+                                           filename, error, compact));
+
+  if (fd > 2) {
+    uv_fs_t req;
+    uv_fs_close(nullptr, &req, fd, nullptr);
+    uv_fs_req_cleanup(&req);
+  }
+  // Do not mix JSON and free-form text on stderr.
+  if (filename != "stderr") {
+    WriteRecordedText(2, "\nNode.js report completed\n");
+  }
+  return filename;
 }
 
 // Internal function to coordinate and write the various
