@@ -571,19 +571,12 @@ void RefBase::Finalize(bool is_env_teardown) {
 
 namespace {
 
-// Whether the recording can be used at this point.
-bool RecordReplayEventsAvailable() {
-  return v8::recordreplay::IsRecordingOrReplaying() &&
-         !v8::recordreplay::AreEventsDisallowed() &&
-         !v8::recordreplay::HasDivergedFromRecording();
-}
-
 // Whether the module's current call into N-API is also made when replaying.
 // Module code doesn't run when replaying: the calls it made in callbacks the
 // driver intercepted are replayed instead, at the same points. Its other calls,
 // e.g. from finalizers, don't happen when replaying.
 bool RecordReplayInModuleCallback() {
-  return RecordReplayEventsAvailable() &&
+  return node::recordreplay::AreEventsAvailable() &&
          node::recordreplay::IsInsideInterceptedCallback();
 }
 
@@ -673,7 +666,7 @@ void Reference::RecordReplayFlushClearedRefs(napi_env env) {
 }
 
 void Reference::RecordReplayPoll(v8::Isolate* isolate, void* data) {
-  if (RecordReplayEventsAvailable()) {
+  if (node::recordreplay::AreEventsAvailable()) {
     RecordReplayFlushClearedRefs(static_cast<napi_env>(data));
   }
 }

@@ -21,6 +21,7 @@
 
 #include "env-inl.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "string_bytes.h"
 
 #ifdef __MINGW32__
@@ -57,22 +58,8 @@ using v8::Object;
 using v8::String;
 using v8::Value;
 
-// When recording/replaying, sometimes when side effects aren't allowed we want
-// to avoid interacting with the system in potentially new ways, as this can cause
-// the associated command to e.g. get an object's contents to fail. In this case
-// we return an "unavailable" string.
-static bool MaybeMarkUnavailable(const FunctionCallbackInfo<Value>& args) {
-  if (!v8::recordreplay::AllowSideEffects()) {
-    Environment* env = Environment::GetCurrent(args);
-    args.GetReturnValue().Set(
-      String::NewFromUtf8(env->isolate(), "unavailable").ToLocalChecked());
-    return true;
-  }
-  return false;
-}
-
 static void GetHostname(const FunctionCallbackInfo<Value>& args) {
-  if (MaybeMarkUnavailable(args)) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.hostname")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
@@ -92,7 +79,9 @@ static void GetHostname(const FunctionCallbackInfo<Value>& args) {
 }
 
 static void GetOSInformation(const FunctionCallbackInfo<Value>& args) {
-  if (MaybeMarkUnavailable(args)) {
+  // os.type(), os.release() and os.version() are read once, when the os module
+  // is loaded.
+  if (recordreplay::ThrowIfEventsUnavailable(args, "require('os')")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
@@ -118,7 +107,7 @@ static void GetOSInformation(const FunctionCallbackInfo<Value>& args) {
 }
 
 static void GetCPUInfo(const FunctionCallbackInfo<Value>& args) {
-  if (MaybeMarkUnavailable(args)) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.cpus")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
@@ -159,7 +148,7 @@ static void GetCPUInfo(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetFreeMemory(const FunctionCallbackInfo<Value>& args) {
-  if (MaybeMarkUnavailable(args)) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.freemem")) {
     return;
   }
   double amount = static_cast<double>(uv_get_free_memory());
@@ -168,7 +157,7 @@ static void GetFreeMemory(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetTotalMemory(const FunctionCallbackInfo<Value>& args) {
-  if (MaybeMarkUnavailable(args)) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.totalmem")) {
     return;
   }
   double amount = static_cast<double>(uv_get_total_memory());
@@ -177,7 +166,7 @@ static void GetTotalMemory(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetUptime(const FunctionCallbackInfo<Value>& args) {
-  if (MaybeMarkUnavailable(args)) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.uptime")) {
     return;
   }
   double uptime;
@@ -188,7 +177,7 @@ static void GetUptime(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetLoadAvg(const FunctionCallbackInfo<Value>& args) {
-  if (MaybeMarkUnavailable(args)) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.loadavg")) {
     return;
   }
   CHECK(args[0]->IsFloat64Array());
@@ -201,7 +190,7 @@ static void GetLoadAvg(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetInterfaceAddresses(const FunctionCallbackInfo<Value>& args) {
-  if (MaybeMarkUnavailable(args)) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.networkInterfaces")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
@@ -282,7 +271,7 @@ static void GetInterfaceAddresses(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetHomeDirectory(const FunctionCallbackInfo<Value>& args) {
-  if (MaybeMarkUnavailable(args)) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.homedir")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
@@ -306,7 +295,7 @@ static void GetHomeDirectory(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetUserInfo(const FunctionCallbackInfo<Value>& args) {
-  if (MaybeMarkUnavailable(args)) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.userInfo")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
@@ -381,6 +370,9 @@ static void GetUserInfo(const FunctionCallbackInfo<Value>& args) {
 
 
 static void SetPriority(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.setPriority")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
 
   CHECK_EQ(args.Length(), 3);
@@ -401,7 +393,7 @@ static void SetPriority(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetPriority(const FunctionCallbackInfo<Value>& args) {
-  if (MaybeMarkUnavailable(args)) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.getPriority")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
