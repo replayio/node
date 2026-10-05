@@ -422,6 +422,8 @@ namespace recordreplay {
 // (or change) the replaying process instead of the recorded one. Matches
 // RecordReplayThrowIfEventsUnavailable in the Chromium fork.
 bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name);
+bool ThrowIfEventsUnavailable(const v8::FunctionCallbackInfo<v8::Value>& args,
+                              const char* operation_name);
 
 }  // namespace recordreplay
 

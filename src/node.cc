@@ -1042,6 +1042,12 @@ bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name) {
   return true;
 }
 
+bool ThrowIfEventsUnavailable(const v8::FunctionCallbackInfo<v8::Value>& args,
+                              const char* operation_name) {
+  return ThrowIfEventsUnavailable(Environment::GetCurrent(args),
+                                  operation_name);
+}
+
 } // namespace recordreplay
 
 void RecordReplayFinishRecording() {

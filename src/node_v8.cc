@@ -160,8 +160,7 @@ static inline double RecordReplayDouble(const char* why, double d) {
 }
 
 void UpdateHeapStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
-                                             "v8.getHeapStatistics")) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "v8.getHeapStatistics")) {
     return;
   }
   BindingData* data = Environment::GetBindingData<BindingData>(args);
@@ -177,7 +176,7 @@ void UpdateHeapStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
 
 
 void UpdateHeapSpaceStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
+  if (recordreplay::ThrowIfEventsUnavailable(args,
                                              "v8.getHeapSpaceStatistics")) {
     return;
   }
@@ -198,7 +197,7 @@ void UpdateHeapSpaceStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
 }
 
 void UpdateHeapCodeStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
+  if (recordreplay::ThrowIfEventsUnavailable(args,
                                              "v8.getHeapCodeStatistics")) {
     return;
   }

@@ -64,8 +64,7 @@ using v8::Value;
 // they throw there instead (recordreplay::ThrowIfEventsUnavailable).
 
 static void GetHostname(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
-                                             "os.hostname")) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.hostname")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
@@ -87,8 +86,7 @@ static void GetHostname(const FunctionCallbackInfo<Value>& args) {
 static void GetOSInformation(const FunctionCallbackInfo<Value>& args) {
   // os.type(), os.release() and os.version() are read once, when the os module
   // is loaded.
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
-                                             "require('os')")) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "require('os')")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
@@ -114,8 +112,7 @@ static void GetOSInformation(const FunctionCallbackInfo<Value>& args) {
 }
 
 static void GetCPUInfo(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
-                                             "os.cpus")) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.cpus")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
@@ -156,8 +153,7 @@ static void GetCPUInfo(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetFreeMemory(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
-                                             "os.freemem")) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.freemem")) {
     return;
   }
   double amount = static_cast<double>(uv_get_free_memory());
@@ -166,8 +162,7 @@ static void GetFreeMemory(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetTotalMemory(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
-                                             "os.totalmem")) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.totalmem")) {
     return;
   }
   double amount = static_cast<double>(uv_get_total_memory());
@@ -176,8 +171,7 @@ static void GetTotalMemory(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetUptime(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
-                                             "os.uptime")) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.uptime")) {
     return;
   }
   double uptime;
@@ -188,8 +182,7 @@ static void GetUptime(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetLoadAvg(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
-                                             "os.loadavg")) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.loadavg")) {
     return;
   }
   CHECK(args[0]->IsFloat64Array());
@@ -202,8 +195,7 @@ static void GetLoadAvg(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetInterfaceAddresses(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
-                                             "os.networkInterfaces")) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.networkInterfaces")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
@@ -284,8 +276,7 @@ static void GetInterfaceAddresses(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetHomeDirectory(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
-                                             "os.homedir")) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.homedir")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
@@ -309,8 +300,7 @@ static void GetHomeDirectory(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetUserInfo(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
-                                             "os.userInfo")) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.userInfo")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
@@ -385,8 +375,7 @@ static void GetUserInfo(const FunctionCallbackInfo<Value>& args) {
 
 
 static void SetPriority(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
-                                             "os.setPriority")) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.setPriority")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
@@ -409,8 +398,7 @@ static void SetPriority(const FunctionCallbackInfo<Value>& args) {
 
 
 static void GetPriority(const FunctionCallbackInfo<Value>& args) {
-  if (recordreplay::ThrowIfEventsUnavailable(Environment::GetCurrent(args),
-                                             "os.getPriority")) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.getPriority")) {
     return;
   }
   Environment* env = Environment::GetCurrent(args);
