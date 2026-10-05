@@ -126,6 +126,9 @@ inline Local<ArrayBuffer> get_fields_array_buffer(
 // passed to the function.
 static void CPUUsage(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.cpuUsage")) {
+    return;
+  }
   uv_rusage_t rusage;
 
   // Call libuv to get the values we'll return.
@@ -186,6 +189,9 @@ static void Kill(const FunctionCallbackInfo<Value>& args) {
 
 static void Rss(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.memoryUsage.rss")) {
+    return;
+  }
 
   size_t rss;
   int err = uv_resident_set_memory(&rss);
@@ -197,6 +203,9 @@ static void Rss(const FunctionCallbackInfo<Value>& args) {
 
 static void MemoryUsage(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.memoryUsage")) {
+    return;
+  }
 
   Isolate* isolate = env->isolate();
   // V8 memory usage
@@ -326,6 +335,9 @@ void GetActiveHandlesInfo(const FunctionCallbackInfo<Value>& args) {
 
 static void ResourceUsage(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.resourceUsage")) {
+    return;
+  }
 
   uv_rusage_t rusage;
   int err = uv_getrusage(&rusage);

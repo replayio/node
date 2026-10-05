@@ -415,6 +415,16 @@ std::string Basename(const std::string& str, const std::string& extension);
 
 node_module napi_module_to_node_module(const napi_module* mod);
 
+namespace recordreplay {
+
+// Throws a TypeError and returns true where the recording can't be used, e.g.
+// in an evaluation while paused, where operation_name would otherwise report
+// (or change) the replaying process instead of the recorded one. Matches
+// RecordReplayThrowIfEventsUnavailable in the Chromium fork.
+bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name);
+
+}  // namespace recordreplay
+
 }  // namespace node
 
 #endif  // defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS

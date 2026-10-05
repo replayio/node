@@ -1026,6 +1026,18 @@ bool IsInsideInterceptedCallback() {
          gIsInsideInterceptedCallback();
 }
 
+bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name) {
+  if (!v8::recordreplay::IsRecordingOrReplaying() ||
+      !(v8::recordreplay::AreEventsDisallowed("divergent-side-effect") ||
+        v8::recordreplay::HasDivergedFromRecording())) {
+    return false;
+  }
+  std::string message = std::string("Cannot replay operation ") +
+                         operation_name + " because it was not recorded.";
+  env->ThrowTypeError(message.c_str());
+  return true;
+}
+
 } // namespace recordreplay
 
 void RecordReplayFinishRecording() {
