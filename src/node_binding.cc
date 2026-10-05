@@ -331,8 +331,7 @@ bool DLib::Open() {
   handle_ = dlopen(filename_.c_str(), flags_);
   v8::recordreplay::Assert("DLib::Open %s %d", filename_.c_str(), !!handle_);
   if (handle_ != nullptr) return true;
-  const char* err = dlerror();
-  errmsg_ = err != nullptr ? err : "dlopen failed";
+  errmsg_ = dlerror();
   return false;
 }
 
