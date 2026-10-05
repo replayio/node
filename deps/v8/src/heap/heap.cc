@@ -6697,6 +6697,19 @@ void Heap::PostFinalizationRegistryCleanupTaskIfNeeded() {
           RecordReplayTracking::kUntracked)) {
     return;
   }
+  // The cleanup of a registry without a record/replay id would run at a point
+  // which depends on when the GC ran, which differs between recording and
+  // replaying. Leave its cleared cells uncollected instead.
+  if (recordreplay::IsRecordingOrReplaying()) {
+    static bool reported = false;
+    if (!reported) {
+      reported = true;
+      recordreplay::Diagnostic(
+          "LeakMemory FinalizationRegistry cleanup: registry has no "
+          "record/replay id");
+    }
+    return;
+  }
   auto taskrunner = V8::GetCurrentPlatform()->GetForegroundTaskRunner(
       reinterpret_cast<v8::Isolate*>(isolate()));
   auto task = std::make_unique<FinalizationRegistryCleanupTask>(this);

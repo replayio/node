@@ -55,10 +55,27 @@ void ReplayFinalizationRegistries::OnConstruct(
   registry->set_record_replay_id(id);
 }
 
+bool ReplayFinalizationRegistries::Adopt(
+    i::Isolate* isolate, i::Handle<i::JSFinalizationRegistry> registry) {
+  if (registry->record_replay_id()) return true;
+  if (!Enabled() || !AreEventsAvailable()) return false;
+  // Cells registered before now have no ids, so the recording could not
+  // describe when they are cleared.
+  if (!registry->active_cells().IsUndefined(isolate) ||
+      !registry->cleared_cells().IsUndefined(isolate)) {
+    return false;
+  }
+
+  int id = isolate->EnsureReplayData()->NewFinalizationRegistryId();
+  recordreplay::Assert("FinalizationRegistry.adopt %d", id);
+  registry->set_record_replay_id(id);
+  return true;
+}
+
 void ReplayFinalizationRegistries::OnRegister(
     i::Isolate* isolate, i::Handle<i::JSFinalizationRegistry> registry,
     i::Handle<i::WeakCell> cell) {
-  if (!registry->record_replay_id()) return;
+  if (!Adopt(isolate, registry)) return;
 
   if (recordreplay::HasDivergedFromRecording()) {
     cell->set_record_replay_id(kUndeliverableCellId);

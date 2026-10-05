@@ -44,6 +44,12 @@ class ReplayFinalizationRegistries {
   static void OnConstruct(
       internal::Isolate* isolate,
       internal::Handle<internal::JSFinalizationRegistry> registry);
+  // Gives a registry which has no record/replay id and no cells one, so that
+  // registries constructed where no id could be assigned (e.g. deserialized
+  // from a snapshot) are tracked from their first use. Returns whether the
+  // registry has an id afterwards.
+  static bool Adopt(internal::Isolate* isolate,
+                    internal::Handle<internal::JSFinalizationRegistry> registry);
   // Crashes for a tracked registry when the current point does not replay and
   // the process has not diverged, as the recording could not describe when the
   // new cell is cleared.

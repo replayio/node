@@ -193,10 +193,9 @@ FinalizationRegistryRegister(
     record_replay_id: 0
   };
   // The cell gets its record/replay id before a marker can reach it through
-  // the registry.
-  if (finalizationRegistry.record_replay_id != 0) {
-    runtime::RecordReplayFinalizationRegistryRegister(finalizationRegistry, cell);
-  }
+  // the registry. A registry without an id, e.g. one deserialized from a
+  // snapshot, gets one here when it has no cells yet.
+  runtime::RecordReplayFinalizationRegistryRegister(finalizationRegistry, cell);
   // 7. Append cell to finalizationRegistry.[[Cells]].
   PushCell(finalizationRegistry, cell);
   if (unregisterToken != Undefined) {
