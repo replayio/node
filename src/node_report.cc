@@ -127,6 +127,9 @@ std::string TriggerNodeReport(Isolate* isolate,
     }
   }
 
+  // Where the recording can't be used, the report is made as without it, e.g.
+  // on a fatal error during GC, where events are disallowed and the process
+  // aborts right after.
   if (node::recordreplay::AreEventsAvailable()) {
     return WriteRecordedReportFile(isolate, env, message, trigger, filename,
                                    error);
