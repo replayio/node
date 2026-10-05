@@ -8,6 +8,7 @@
 #include "node_mutex.h"
 #include "node_worker.h"
 #include "util.h"
+#include "replayio.h"
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -23,6 +24,8 @@
 #include <cwctype>
 #include <fstream>
 #include <sstream>
+#include <utility>
+#include <vector>
 
 constexpr int NODE_REPORT_VERSION = 2;
 constexpr int NANOS_PER_SEC = 1000 * 1000 * 1000;
@@ -57,6 +60,12 @@ using v8::Value;
 
 namespace per_process = node::per_process;
 
+// What a report shows about the JavaScript error it is made for.
+struct JavaScriptErrorInfo {
+  std::string stack;
+  std::vector<std::pair<std::string, std::string>> properties;
+};
+
 // Internal/static function declarations
 static void WriteNodeReport(Isolate* isolate,
                             Environment* env,
@@ -65,7 +74,8 @@ static void WriteNodeReport(Isolate* isolate,
                             const std::string& filename,
                             std::ostream& out,
                             Local<Value> error,
-                            bool compact);
+                            bool compact,
+                            const JavaScriptErrorInfo* js_error = nullptr);
 static bool RecordReplayEventsAvailable();
 static std::string RecordedNodeReport(Isolate* isolate,
                                       Environment* env,
@@ -81,13 +91,14 @@ static std::string WriteRecordedReportFile(Isolate* isolate,
                                            const std::string& filename,
                                            Local<Value> error);
 static void PrintVersionInformation(JSONWriter* writer);
+static JavaScriptErrorInfo ReadJavaScriptError(Isolate* isolate,
+                                               Local<Value> error,
+                                               const char* trigger);
 static void PrintJavaScriptErrorStack(JSONWriter* writer,
-                                      Isolate* isolate,
-                                      Local<Value> error,
-                                      const char* trigger);
-static void PrintJavaScriptErrorProperties(JSONWriter* writer,
-                                           Isolate* isolate,
-                                           Local<Value> error);
+                                      const std::string& stack);
+static void PrintJavaScriptErrorProperties(
+    JSONWriter* writer,
+    const std::vector<std::pair<std::string, std::string>>& properties);
 static void PrintNativeStack(JSONWriter* writer);
 static void PrintResourceUsage(JSONWriter* writer);
 static void PrintGCStatistics(JSONWriter* writer, Isolate* isolate);
@@ -212,26 +223,25 @@ static bool RecordReplayEventsAvailable() {
 }
 
 // Reports when recording/replaying: the replay has to report exactly the
-// report the recording made. The system calls a report makes (uname,
-// getrusage, the network interfaces...) are recorded like any others, but
-// several sections are read from the process's own memory and differ in the
-// replaying process: V8's heap statistics, the native stack, the libuv
-// handles' addresses and the loaded libraries (dl_iterate_phdr isn't replayed).
+// report the recording made, but several sections are read from the process's
+// own memory and differ in the replaying process: V8's heap statistics, the
+// native stack, the libuv handles' addresses and the loaded libraries
+// (dl_iterate_phdr isn't replayed).
 //
-// We record the finished report text rather than each of those inputs. It's
+// So the finished report text is recorded rather than each of its inputs. It's
 // small (around 16 KB), recorded in one place, and doesn't have to follow the
 // report's contents as node changes them, while some inputs, like stack frames
-// and pointers, have no meaningful replayed value. The replay still generates
-// the report before using the recorded text: generating it makes the recorded
-// system calls in order, and for a report on an error it runs the program's
-// code (getters, toString(), Error.prepareStackTrace), which has to run when
-// replaying as well. Generating reports without an error with events passed
-// through while recording would let the replay skip generating them; we
-// haven't needed that. Throwing on reports instead isn't an option: they are
-// mostly made in error handlers and on crashes.
+// and pointers, have no meaningful replayed value. Throwing on reports instead
+// isn't an option: they are mostly made in error handlers and on crashes.
 //
-// Where the recording can be used, generate the report into a string, and use
-// the recorded string when replaying.
+// Making a report is split in two:
+// - The JavaScript error the report is made for is read normally, recorded
+//   and replayed like any other code. Reading it runs the program's code
+//   (getters, toString(), Error.prepareStackTrace), which has to run the same
+//   way when replaying.
+// - The rest of the report is generated with events passed through when
+//   recording, so none of its system calls, locks or values are recorded, and
+//   isn't generated at all when replaying: the replay uses the recorded text.
 static std::string RecordedNodeReport(Isolate* isolate,
                                       Environment* env,
                                       const char* message,
@@ -239,10 +249,18 @@ static std::string RecordedNodeReport(Isolate* isolate,
                                       const std::string& filename,
                                       Local<Value> error,
                                       bool compact) {
-  std::ostringstream report;
-  WriteNodeReport(
-      isolate, env, message, trigger, filename, report, error, compact);
-  std::string text = report.str();
+  JavaScriptErrorInfo js_error;
+  if (isolate != nullptr) {
+    js_error = ReadJavaScriptError(isolate, error, trigger);
+  }
+  std::string text;
+  if (v8::recordreplay::IsRecording()) {
+    v8::replayio::AutoPassThroughEvents pass_through;
+    std::ostringstream report;
+    WriteNodeReport(isolate, env, message, trigger, filename, report, error,
+                    compact, &js_error);
+    text = report.str();
+  }
   size_t length =
       v8::recordreplay::RecordReplayValue("NodeReport length", text.length());
   text.resize(length);
@@ -334,7 +352,8 @@ static void WriteNodeReport(Isolate* isolate,
                             const std::string& filename,
                             std::ostream& out,
                             Local<Value> error,
-                            bool compact) {
+                            bool compact,
+                            const JavaScriptErrorInfo* js_error) {
   // Obtain the current time and the pid.
   TIME_TYPE tm_struct;
   DiagnosticFilename::LocalTime(&tm_struct);
@@ -419,12 +438,17 @@ static void WriteNodeReport(Isolate* isolate,
   writer.json_objectend();
 
   if (isolate != nullptr) {
+    JavaScriptErrorInfo error_info;
+    if (js_error == nullptr) {
+      error_info = ReadJavaScriptError(isolate, error, trigger);
+      js_error = &error_info;
+    }
     writer.json_objectstart("javascriptStack");
     // Report summary JavaScript error stack backtrace
-    PrintJavaScriptErrorStack(&writer, isolate, error, trigger);
+    PrintJavaScriptErrorStack(&writer, js_error->stack);
 
     // Report summary JavaScript error properties backtrace
-    PrintJavaScriptErrorProperties(&writer, isolate, error);
+    PrintJavaScriptErrorProperties(&writer, js_error->properties);
     writer.json_objectend();  // the end of 'javascriptStack'
 
     // Report V8 Heap and Garbage Collector information
@@ -625,17 +649,18 @@ static void PrintNetworkInterfaceInfo(JSONWriter* writer) {
   }
 }
 
-static void PrintJavaScriptErrorProperties(JSONWriter* writer,
-                                           Isolate* isolate,
-                                           Local<Value> error) {
-  writer->json_objectstart("errorProperties");
+// Read the error's own properties other than its stack and message as
+// strings. This runs the program's getters and toString() methods.
+static std::vector<std::pair<std::string, std::string>>
+ReadJavaScriptErrorProperties(Isolate* isolate, Local<Value> error) {
+  std::vector<std::pair<std::string, std::string>> properties;
   if (!error.IsEmpty() && error->IsObject()) {
     TryCatch try_catch(isolate);
     Local<Object> error_obj = error.As<Object>();
     Local<Context> context = error_obj->GetIsolate()->GetCurrentContext();
     Local<Array> keys;
     if (!error_obj->GetOwnPropertyNames(context).ToLocal(&keys)) {
-      return writer->json_objectend();  // the end of 'errorProperties'
+      return properties;
     }
     uint32_t keys_length = keys->Length();
     for (uint32_t i = 0; i < keys_length; i++) {
@@ -652,9 +677,19 @@ static void PrintJavaScriptErrorProperties(JSONWriter* writer,
       String::Utf8Value k(isolate, key);
       if (!strcmp(*k, "stack") || !strcmp(*k, "message")) continue;
       String::Utf8Value v(isolate, value_string);
-      writer->json_keyvalue(std::string(*k, k.length()),
-                            std::string(*v, v.length()));
+      properties.emplace_back(std::string(*k, k.length()),
+                              std::string(*v, v.length()));
     }
+  }
+  return properties;
+}
+
+static void PrintJavaScriptErrorProperties(
+    JSONWriter* writer,
+    const std::vector<std::pair<std::string, std::string>>& properties) {
+  writer->json_objectstart("errorProperties");
+  for (const auto& property : properties) {
+    writer->json_keyvalue(property.first, property.second);
   }
   writer->json_objectend();  // the end of 'errorProperties'
 }
@@ -688,21 +723,30 @@ static Maybe<std::string> ErrorToString(Isolate* isolate,
   return Just<>(std::string(*sv, sv.length()));
 }
 
+// Read the JavaScript error's stack and properties for a report. This runs
+// the program's code: getters, toString() and Error.prepareStackTrace.
+static JavaScriptErrorInfo ReadJavaScriptError(Isolate* isolate,
+                                               Local<Value> error,
+                                               const char* trigger) {
+  JavaScriptErrorInfo info;
+  {
+    TryCatch try_catch(isolate);
+    HandleScope scope(isolate);
+    Local<Context> context = isolate->GetCurrentContext();
+    if ((!strcmp(trigger, "FatalError")) ||
+        (!strcmp(trigger, "Signal")) ||
+        (!ErrorToString(isolate, context, error).To(&info.stack))) {
+      info.stack = "No stack.\nUnavailable.\n";
+    }
+  }
+  info.properties = ReadJavaScriptErrorProperties(isolate, error);
+  return info;
+}
+
 // Report the JavaScript stack.
 static void PrintJavaScriptErrorStack(JSONWriter* writer,
-                                      Isolate* isolate,
-                                      Local<Value> error,
-                                      const char* trigger) {
-  TryCatch try_catch(isolate);
-  HandleScope scope(isolate);
-  Local<Context> context = isolate->GetCurrentContext();
-  std::string ss = "";
-  if ((!strcmp(trigger, "FatalError")) ||
-      (!strcmp(trigger, "Signal")) ||
-      (!ErrorToString(isolate, context, error).To(&ss))) {
-    ss = "No stack.\nUnavailable.\n";
-  }
-
+                                      const std::string& stack) {
+  std::string ss = stack;
   int line = ss.find('\n');
   if (line == -1) {
     writer->json_keyvalue("message", ss);
