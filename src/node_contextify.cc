@@ -1043,7 +1043,7 @@ ContextifyScript::ContextifyScript(Environment* env, Local<Object> object)
   // recording/replaying, the GC collects this at points which differ between
   // the two, so keep it alive instead; the cleanup hook frees it when the
   // environment is torn down.
-  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+  if (!recordreplay::EnterLeakMemory("ContextifyScript")) {
     MakeWeak();
   }
   env->id_to_script_map.emplace(id_, this);

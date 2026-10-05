@@ -91,7 +91,7 @@ void DirHandle::OnGCCollect() {
   // Leak it while it is open instead. An explicit close() is unaffected, and
   // the cleanup hook still closes the directory when the environment is torn
   // down. Once closed, destroying it has no effect beyond freeing memory.
-  if (v8::recordreplay::IsRecordingOrReplaying() && !closed_) {
+  if (!closed_ && recordreplay::EnterLeakMemory("DirHandle")) {
     return;
   }
   BaseObject::OnGCCollect();
