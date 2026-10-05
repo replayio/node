@@ -653,12 +653,11 @@ void Reference::RecordReplayFlushClearedRefs(napi_env env) {
       auto iter = env->record_replay_refs.find(id);
       if (iter != env->record_replay_refs.end()) {
         Reference* reference = iter->second;
+        // Do what the GC's weak callback did when recording: it reset the
+        // persistent in its first pass, and its second pass left the reference
+        // unfinalized (see SecondPassCallback), so that ~napi_env__ finalizes
+        // it at environment teardown on both sides.
         reference->_persistent.Reset();
-        // Do what the GC's second pass did when recording: the finalizer only
-        // runs module code, and the replayed calls gave none or one which does
-        // nothing, then the reference is deleted if the module already asked
-        // for that, or is marked finalized so that deleting it later does.
-        reference->Finalize();
       }
     }
   }
