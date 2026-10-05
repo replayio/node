@@ -280,8 +280,8 @@ static std::string RecordedNodeReport(Isolate* isolate,
   return text;
 }
 
-// Writes all of text to fd with a write call per chunk the system takes.
-static void WriteRecordedText(uv_file fd, const std::string& text) {
+// Writes all of text to fd, with as many write calls as the system takes.
+static void WriteAll(uv_file fd, const std::string& text) {
   size_t written = 0;
   while (written < text.length()) {
     uv_fs_t req;
@@ -326,11 +326,11 @@ static std::string WriteRecordedReportFile(Isolate* isolate,
                     nullptr);
     uv_fs_req_cleanup(&req);
     if (fd < 0) {
-      WriteRecordedText(2, "\nFailed to open Node.js report file: " + path +
+      WriteAll(2, "\nFailed to open Node.js report file: " + path +
                                " (errno: " + std::to_string(-fd) + ")\n");
       return "";
     }
-    WriteRecordedText(2, "\nWriting Node.js report to file: " + filename);
+    WriteAll(2, "\nWriting Node.js report to file: " + filename);
   }
 
   bool compact;
@@ -338,7 +338,7 @@ static std::string WriteRecordedReportFile(Isolate* isolate,
     Mutex::ScopedLock lock(per_process::cli_options_mutex);
     compact = per_process::cli_options->report_compact;
   }
-  WriteRecordedText(fd, RecordedNodeReport(isolate, env, message, trigger,
+  WriteAll(fd, RecordedNodeReport(isolate, env, message, trigger,
                                            filename, error, compact));
 
   if (fd > 2) {
@@ -348,7 +348,7 @@ static std::string WriteRecordedReportFile(Isolate* isolate,
   }
   // Do not mix JSON and free-form text on stderr.
   if (filename != "stderr") {
-    WriteRecordedText(2, "\nNode.js report completed\n");
+    WriteAll(2, "\nNode.js report completed\n");
   }
   return filename;
 }
