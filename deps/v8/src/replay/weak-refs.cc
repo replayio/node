@@ -63,7 +63,9 @@ void ReplayWeakRefs::OnTargetCleared(i::Isolate* isolate,
   // Runs inside the GC, so this only notes the id for the next poll.
   int id = weak_ref.record_replay_id();
   if (!id) return;
-  isolate->replay_data()->cleared_weak_refs().push_back(id);
+  ReplayIsolateData* data = isolate->replay_data();
+  if (!data) return;
+  data->cleared_weak_refs().push_back(id);
 }
 
 void ReplayWeakRefs::TakeCleared(i::Isolate* isolate, std::vector<int>* ids) {
