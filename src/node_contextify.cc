@@ -1037,7 +1037,15 @@ bool ContextifyScript::EvalMachine(Environment* env,
 ContextifyScript::ContextifyScript(Environment* env, Local<Object> object)
     : BaseObject(env, object),
       id_(env->get_next_script_id()) {
-  MakeWeak();
+  // A function the script created can call import() after the script object
+  // was dropped, and ImportModuleDynamically then looks this up by id and
+  // passes the script object to the importModuleDynamically callback. When
+  // recording/replaying, the GC collects this at points which differ between
+  // the two, so keep it alive instead; the cleanup hook frees it when the
+  // environment is torn down.
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    MakeWeak();
+  }
   env->id_to_script_map.emplace(id_, this);
 }
 
