@@ -985,7 +985,7 @@ static void (*gRecordReplayAddMetadata)(const char* metadata);
 static void (*gRecordReplayFinishRecording)();
 static void (*gBeginCallbackRegion)();
 static void (*gEndCallbackRegion)();
-static void (*gMarkNextDlopenAsAddon)();
+static void (*gMarkNextDlopenAsAddon)(const char* name);
 static const char* (*gRecordReplayGetRecordingId)();
 static char* (*gGetUnusableRecordingReason)();
 static void* (*gJSONCreateString)(const char*);
@@ -1014,9 +1014,9 @@ void EndCallbackRegion() {
   }
 }
 
-void MarkNextDlopenAsAddon() {
+void MarkNextDlopenAsAddon(const char* name) {
   if (v8::recordreplay::IsRecordingOrReplaying()) {
-    gMarkNextDlopenAsAddon();
+    gMarkNextDlopenAsAddon(name);
   }
 }
 

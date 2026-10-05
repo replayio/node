@@ -1155,9 +1155,9 @@ bool IsRecordingFinished();
 void BeginCallbackRegion();
 void EndCallbackRegion();
 
-// Lets the driver load the library opened by the next dlopen() on this thread
-// as an addon, which doesn't run when replaying.
-void MarkNextDlopenAsAddon();
+// Lets the driver load the library opened by the next dlopen() of name on this
+// thread as an addon, which doesn't run when replaying.
+void MarkNextDlopenAsAddon(const char* name);
 
 struct AutoCallbackRegion {
   AutoCallbackRegion() { BeginCallbackRegion(); }
