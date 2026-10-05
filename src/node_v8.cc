@@ -20,12 +20,12 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "node_v8.h"
-#include "node_internals.h"
 #include "base_object-inl.h"
 #include "env-inl.h"
 #include "memory_tracker-inl.h"
 #include "node.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "util-inl.h"
 #include "v8.h"
 
