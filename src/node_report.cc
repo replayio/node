@@ -500,6 +500,10 @@ static void WriteNodeReport(Isolate* isolate,
     std::vector<std::string> worker_infos;
     size_t expected_results = 0;
 
+    // When recording, each worker records its subreport on its own thread,
+    // which the replay never requests, since it doesn't generate this report.
+    // That's only fine because requesting the interrupt already invalidates
+    // the recording (Environment::RequestInterruptFromV8).
     env->ForEachWorker([&](Worker* w) {
       expected_results += w->RequestInterrupt([&](Environment* env) {
         std::ostringstream os;
