@@ -42,5 +42,5 @@ for a; do args+=("${a//$root\//$rel/}"); done
 # libstdc++ include dirs) when that file exists. Paths are exec_root-relative.
 sr=.rbe/sysroot
 inputs=$sr/usr/lib/gcc/x86_64-linux-gnu/10/crtbegin.o,$sr/usr/include/c++/10,$sr/usr/include/x86_64-linux-gnu/c++/10
-exec "$tc/reclient/rewrapper" -cfg="$tc/rewrapper.cfg" -exec_root="$root" -inputs="$inputs" \
+exec "$tc/reclient/rewrapper" -cfg="$tc/rewrapper_linux.cfg" -exec_root="$root" -inputs="$inputs" \
   "$rel/.rbe/llvm/bin/$tool" --sysroot="$rel/.rbe/sysroot" "${flags[@]}" "${args[@]}"
