@@ -129,6 +129,63 @@ steps:
       echo "$$BUILD_ID" > "$${BUILDKITE_BUILD_CHECKOUT_PATH}/build_id"
       echo "BuildId=$$BUILD_ID"
 
+  # RBE prototype: same commit built with reclient/EngFlow (replay_build_scripts/rbe).
+  # Fully independent of build-node-linux: own cached checkout (rbe-repo-*), own
+  # toolchain, nothing depends on it and it publishes nothing. Compare its
+  # duration with build-node-linux before switching over.
+  - label: ":satellite: Build node (RBE prototype)"
+    key: "build-node-linux-rbe"
+    soft_fail: true
+    timeout_in_minutes: 60
+    depends_on:
+      - "build-driver-linker"
+    agents:
+      - "build-runtime=true"
+    plugins:
+      - seek-oss/aws-sm#v2.3.1:
+          region: us-east-2
+          file:
+            - path: "engflow.crt"
+              secret-id: engflow-certificate
+            - path: "engflow.key"
+              secret-id: engflow-key
+    artifact_paths:
+      - "rbe-logs/**/*"
+    command: |
+      set -euo pipefail
+      NODE_VERSION=$$(awk '/^#define NODE_(MAJOR|MINOR|PATCH)_VERSION /{v = v (v ? "." : "") $$3} END {print v}' src/node_version.h)
+      test -n "$$NODE_VERSION"
+      CACHE=/var/lib/buildkite-agent/cache/runtime-node-build
+      # Never the make build's repo-* checkout: configure --ninja rewrites config.gypi.
+      NODE_REPO="$$CACHE/rbe-repo-$$NODE_VERSION"
+      mkdir -p "$$CACHE"
+      docker build -t node-rbe-build replay_build_scripts/rbe
+      if [ ! -d "$$NODE_REPO/.git" ]; then
+        git clone git@github.com:replayio/node.git "$$NODE_REPO"
+      fi
+      git -C "$$NODE_REPO" fetch origin "$$BUILDKITE_COMMIT"
+      git -C "$$NODE_REPO" checkout -f --detach "$$BUILDKITE_COMMIT"
+      mkdir -p "$$NODE_REPO/out"
+      ENGFLOW="$$PWD"
+      trap 'rm -f "$$ENGFLOW/engflow.crt" "$$ENGFLOW/engflow.key"; docker run --rm -v "$$NODE_REPO:/repo" --entrypoint chown node-rbe-build -R "$$(id -u):$$(id -g)" /repo; mkdir -p rbe-logs; cp -r "$$NODE_REPO/out/Release/.reproxy_tmp/logs" rbe-logs/ 2>/dev/null || true; cp "$$NODE_REPO/out/Release/.ninja_log" rbe-logs/ 2>/dev/null || true' EXIT
+      # The checkout is mounted at the same path inside the container so the
+      # reproxy socket hash and absolute wrapper paths stay stable across jobs.
+      docker run --rm \
+        -e BUILDKITE_BRANCH -e BUILDKITE_PIPELINE_DEFAULT_BRANCH \
+        -e REPLAY_RBE=1 \
+        -e RBE_service=simpsonite.cluster.engflow.com:443 \
+        -e RBE_service_no_auth=true \
+        -e RBE_use_application_default_credentials=true \
+        -e RBE_tls_client_auth_cert=/engflow/engflow.crt \
+        -e RBE_tls_client_auth_key=/engflow/engflow.key \
+        -v "$$ENGFLOW/engflow.crt:/engflow/engflow.crt:ro" \
+        -v "$$ENGFLOW/engflow.key:/engflow/engflow.key:ro" \
+        -v "$$NODE_REPO:$$NODE_REPO" \
+        -w "$$NODE_REPO" \
+        node-rbe-build \
+        node build.js
+      RECORD_REPLAY_DONT_RECORD=1 "$$NODE_REPO/out/Release/node" --version
+
   - label: "test-node-recording"
     key: "node-test-node-recording"
     depends_on:

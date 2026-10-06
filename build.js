@@ -71,6 +71,22 @@ function getSanitizedEnv() {
 
 const buildEnv = getSanitizedEnv();
 
+// RBE builds (prototype) configure with ninja and a different toolchain, so a
+// checkout holds either an RBE or a make build, never both.
+const rbeMarker = path.join(OutDir, ".replay-rbe");
+if (process.env.REPLAY_RBE) {
+  console.log("[build] Building with RBE...");
+  spawnChecked("python3", [`${node}/replay_build_scripts/rbe/build-rbe.py`], {
+    cwd: node,
+    stdio: "inherit",
+    env: buildEnv,
+  });
+  process.exit(0);
+}
+if (fs.existsSync(rbeMarker)) {
+  throw new Error("out/ holds an RBE build; set REPLAY_RBE=1 or use a separate checkout");
+}
+
 if (process.env.CONFIGURE_NODE) {
   console.log("[build] Running configure...");
   spawnChecked(`${node}/configure`, [], { cwd: node, stdio: "inherit", env: buildEnv });
