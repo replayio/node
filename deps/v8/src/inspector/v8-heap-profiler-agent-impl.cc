@@ -240,10 +240,12 @@ Response V8HeapProfilerAgentImpl::stopTrackingHeapObjects(
     Maybe<bool> reportProgress, Maybe<bool> treatGlobalObjectsAsRoots,
     Maybe<bool> captureNumericValue) {
   requestHeapStatsUpdate();
-  takeHeapSnapshot(std::move(reportProgress),
-                   std::move(treatGlobalObjectsAsRoots),
-                   std::move(captureNumericValue));
+  Response response = takeHeapSnapshot(std::move(reportProgress),
+                                       std::move(treatGlobalObjectsAsRoots),
+                                       std::move(captureNumericValue));
   stopTrackingHeapObjectsInternal();
+  // Report heap snapshots being unsupported in Replay recordings.
+  if (v8::recordreplay::IsRecordingOrReplaying()) return response;
   return Response::Success();
 }
 
@@ -267,6 +269,13 @@ Response V8HeapProfilerAgentImpl::disable() {
 Response V8HeapProfilerAgentImpl::takeHeapSnapshot(
     Maybe<bool> reportProgress, Maybe<bool> treatGlobalObjectsAsRoots,
     Maybe<bool> captureNumericValue) {
+  // Heap contents differ between recording and replaying, so snapshots can't
+  // be made available, and generating one only to discard it can take long
+  // enough on a big heap for the replaying process to be considered hung.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return Response::ServerError(
+        "Taking a heap snapshot is not supported in Replay recordings");
+  }
   v8::HeapProfiler* profiler = m_isolate->GetHeapProfiler();
   if (!profiler) return Response::ServerError("Cannot access v8 heap profiler");
   std::unique_ptr<HeapSnapshotProgress> progress;
