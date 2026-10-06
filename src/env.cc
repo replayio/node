@@ -6,6 +6,7 @@
 #include "diagnosticfilename-inl.h"
 #include "memory_tracker-inl.h"
 #include "node_buffer.h"
+#include "node_deferred_finalization.h"
 #include "node_context_data.h"
 #include "node_errors.h"
 #include "node_internals.h"
@@ -400,6 +401,8 @@ Environment::Environment(IsolateData* isolate_data,
   }
 
   destroy_async_id_list_.reserve(512);
+  deferred_finalization_ =
+      std::make_unique<recordreplay::DeferredFinalization>(this);
 
   performance_state_ = std::make_unique<performance::PerformanceState>(
       isolate, MAYBE_FIELD_PTR(env_info, performance_state));
