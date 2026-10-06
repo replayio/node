@@ -490,7 +490,8 @@ Environment::~Environment() {
       USE(script->Run(context()));
 
     // When recording or replaying, V8 runs the interrupts when the progress
-    // counter next advances rather than here, which it may never do again.
+    // counter next advances rather than here, which it may never do again;
+    // the entry and its Environment** are left behind in that case.
     DCHECK(consistency_check || v8::recordreplay::IsRecordingOrReplaying());
   }
 
@@ -846,7 +847,11 @@ void Environment::RequestInterruptFromV8() {
       // handled during cleanup.
       return;
     }
-    env->interrupt_data_.store(nullptr);
+    {
+      // See RequestInterrupt().
+      Mutex::ScopedLock lock(env->native_immediates_threadsafe_mutex_);
+      env->interrupt_data_.store(nullptr);
+    }
     env->RunAndClearInterrupts();
   }, interrupt_data);
 }
