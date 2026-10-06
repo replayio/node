@@ -236,6 +236,71 @@ class WorkerThreadData {
   friend class Worker;
 };
 
+// When recording or replaying, a worker that another thread stops (Exit())
+// stops itself from its event loop, which a worker blocked in Atomics.wait()
+// or in a loop that never yields never gets to. After a while, the watchdog
+// invalidates the recording, as such a stop did before it was deferred, and
+// terminates the worker's execution.
+class Worker::StopWatchdog {
+ public:
+  // Best effort: without a thread, e.g. once a replay diverged from the
+  // recording, there is no watchdog.
+  explicit StopWatchdog(Worker* worker) : worker_(worker) {
+    started_ = uv_thread_create(&thread_, Run, this) == 0;
+  }
+
+  // Joins the thread, which may be stopping the worker under its mutex.
+  ~StopWatchdog() {
+    Finish();
+    if (started_) CHECK_EQ(uv_thread_join(&thread_), 0);
+  }
+
+  // Ends the wait: the worker stopped, or the watchdog is being destroyed.
+  void Finish() {
+    Mutex::ScopedLock lock(mutex_);
+    finished_ = true;
+    cond_.Signal(lock);
+  }
+
+ private:
+  friend class Worker;
+  static constexpr uint64_t kTimeoutMs = 5000;
+
+  static void Run(void* arg) {
+    StopWatchdog* self = static_cast<StopWatchdog*>(arg);
+    bool timed_out;
+    {
+      Mutex::ScopedLock lock(self->mutex_);
+      const uint64_t deadline = uv_hrtime() + kTimeoutMs * 1000000;
+      while (!self->finished_) {
+        const uint64_t now = uv_hrtime();
+        if (now >= deadline) break;
+        self->cond_.TimedWait(lock, deadline - now);
+      }
+      timed_out = !self->finished_;
+    }
+    if (timed_out) self->worker_->ForceStop();
+  }
+
+  Worker* const worker_;
+  uv_thread_t thread_;
+  bool started_ = false;
+  // Ordered: the replay doesn't wait on an ordered mutex's condition variable
+  // but wakes the thread at the recorded point, so it never times out there.
+  Mutex mutex_{/* ordered */ true};
+  ConditionVariable cond_;
+  bool finished_ = false;
+};
+
+void Worker::ForceStop() {
+  Mutex::ScopedLock lock(mutex_);
+  if (env_ == nullptr) return;
+  v8::recordreplay::InvalidateRecording(
+      SPrintF("Worker did not stop within %ds of being terminated",
+              StopWatchdog::kTimeoutMs / 1000).c_str());
+  Stop(env_);
+}
+
 size_t Worker::NearHeapLimit(void* data, size_t current_heap_limit,
                              size_t initial_heap_limit) {
   // We can't force workers to exit at non-deterministic points when
@@ -284,6 +349,7 @@ void Worker::Run() {
         Mutex::ScopedLock lock(mutex_);
         stopped_ = true;
         this->env_ = nullptr;
+        if (stop_watchdog_) stop_watchdog_->Finish();
       }
 
       env_.reset();
@@ -423,11 +489,17 @@ void Worker::JoinThread() {
 }
 
 Worker::~Worker() {
-  Mutex::ScopedLock lock(mutex_);
+  std::unique_ptr<StopWatchdog> stop_watchdog;
+  {
+    Mutex::ScopedLock lock(mutex_);
 
-  CHECK(stopped_);
-  CHECK_NULL(env_);
-  CHECK(thread_joined_);
+    CHECK(stopped_);
+    CHECK_NULL(env_);
+    CHECK(thread_joined_);
+    stop_watchdog = std::move(stop_watchdog_);
+  }
+  // Joined outside the mutex, which its thread may be waiting for.
+  stop_watchdog.reset();
 
   Debug(this, "Worker %llu destroyed", thread_id_.id);
 }
@@ -707,7 +779,19 @@ void Worker::Exit(int code, const char* error_code, const char* error_message) {
 
   if (env_ != nullptr) {
     exit_code_ = code;
-    Stop(env_);
+    if (v8::recordreplay::IsRecordingOrReplaying() &&
+        Isolate::TryGetCurrent() != isolate_) {
+      // Stopping the worker from here, as worker.terminate() and the parent
+      // exiting do, would terminate its execution at a point the replay can't
+      // reproduce: the worker stops itself from its event loop instead, after
+      // its current turn, or the watchdog stops it if it never gets there.
+      env_->SetImmediateThreadsafe([](Environment* env) { env->ExitEnv(); });
+      if (!stop_watchdog_) {
+        stop_watchdog_ = std::make_unique<StopWatchdog>(this);
+      }
+    } else {
+      Stop(env_);
+    }
   } else {
     stopped_ = true;
   }

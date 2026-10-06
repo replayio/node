@@ -19,6 +19,7 @@
 #endif
 
 #include <iostream>
+#include <memory>
 #include <cstring>
 #include <ctime>
 #include <cwctype>
@@ -66,7 +67,11 @@ static void WriteNodeReport(Isolate* isolate,
                             const std::string& filename,
                             std::ostream& out,
                             Local<Value> error,
-                            bool compact);
+                            bool compact,
+                            const std::vector<std::string>* worker_reports =
+                                nullptr);
+static std::vector<std::string> CollectWorkerReports(Environment* env,
+                                                     const char* trigger);
 static std::string RecordedNodeReport(Isolate* isolate,
                                       Environment* env,
                                       const char* message,
@@ -224,6 +229,11 @@ void GetNodeReport(Isolate* isolate,
 // the program's code (getters, toString(), Error.prepareStackTrace), which is
 // recorded and runs the same way when replaying. When replaying, only the
 // error is read, and the recorded text is used instead of a report.
+//
+// The worker threads' subreports are the exception: each worker makes its
+// subreport on its own thread, as a recorded report of its own, so the
+// workers are asked for them with events recorded, when recording and when
+// replaying, for their threads to run the same way (see CollectWorkerReports).
 static thread_local bool generating_unrecorded_report = false;
 
 // Records the program's code that reading the error runs within a report
@@ -255,6 +265,14 @@ static std::string RecordedNodeReport(Isolate* isolate,
                                       const std::string& filename,
                                       Local<Value> error,
                                       bool compact) {
+  // Asked for before the report is generated, so that the replay asks the
+  // workers at the same point as the recording; the recording's report stands
+  // in for them when replaying.
+  std::vector<std::string> worker_reports;
+  if (env != nullptr) {
+    worker_reports = CollectWorkerReports(env, trigger);
+  }
+
   std::string text;
   if (v8::recordreplay::IsRecording()) {
     std::ostringstream report;
@@ -262,8 +280,8 @@ static std::string RecordedNodeReport(Isolate* isolate,
     generating_unrecorded_report = true;
     {
       v8::replayio::AutoPassThroughEvents pass_through;
-      WriteNodeReport(
-          isolate, env, message, trigger, filename, report, error, compact);
+      WriteNodeReport(isolate, env, message, trigger, filename, report, error,
+                      compact, &worker_reports);
     }
     generating_unrecorded_report = was_generating;
     text = report.str();
@@ -359,6 +377,64 @@ static std::string WriteRecordedReportFile(Isolate* isolate,
   return filename;
 }
 
+static constexpr uint64_t kWorkerReportTimeoutMs = 5000;
+
+// The worker subreports being collected, shared with the workers' interrupt
+// callbacks, which may run after the collection gave up waiting for them.
+struct WorkerReports {
+  // Ordered: the replay doesn't wait on an ordered mutex's condition variable
+  // but wakes the thread at the recorded point, so it never times out there.
+  Mutex mutex{/* ordered */ true};
+  ConditionVariable notify;
+  std::string trigger;
+  std::vector<std::string> infos;
+};
+
+// Asks each of env's worker threads for a report of its own, through an
+// interrupt on the worker thread, and waits for them.
+static std::vector<std::string> CollectWorkerReports(Environment* env,
+                                                     const char* trigger) {
+  auto reports = std::make_shared<WorkerReports>();
+  reports->trigger = trigger;
+  size_t expected_results = 0;
+
+  env->ForEachWorker([&](Worker* w) {
+    expected_results += w->RequestInterrupt([reports](Environment* env) {
+      std::ostringstream os;
+
+      GetNodeReport(env->isolate(),
+                    env,
+                    "Worker thread subreport",
+                    reports->trigger.c_str(),
+                    Local<Object>(),
+                    os);
+
+      Mutex::ScopedLock lock(reports->mutex);
+      reports->infos.emplace_back(os.str());
+      reports->notify.Signal(lock);
+    });
+  });
+
+  Mutex::ScopedLock lock(reports->mutex);
+  reports->infos.reserve(expected_results);
+  while (reports->infos.size() < expected_results) {
+    if (reports->notify.TimedWait(lock, kWorkerReportTimeoutMs * 1000000) ||
+        !v8::recordreplay::IsRecording()) {
+      continue;
+    }
+    // When recording, a worker only answers from its event loop
+    // (Environment::RequestInterruptFromV8), which one blocked in
+    // Atomics.wait() or in a loop that never yields never gets to. Give up on
+    // the recording, and on the subreports still missing.
+    v8::recordreplay::InvalidateRecording(
+        node::SPrintF("A worker did not answer a report request within %ds",
+                      kWorkerReportTimeoutMs / 1000)
+            .c_str());
+    break;
+  }
+  return reports->infos;
+}
+
 // Internal function to coordinate and write the various
 // sections of the report to the supplied stream
 static void WriteNodeReport(Isolate* isolate,
@@ -368,7 +444,8 @@ static void WriteNodeReport(Isolate* isolate,
                             const std::string& filename,
                             std::ostream& out,
                             Local<Value> error,
-                            bool compact) {
+                            bool compact,
+                            const std::vector<std::string>* worker_reports) {
   // Obtain the current time and the pid.
   TIME_TYPE tm_struct;
   DiagnosticFilename::LocalTime(&tm_struct);
@@ -492,37 +569,13 @@ static void WriteNodeReport(Isolate* isolate,
 
   writer.json_arraystart("workers");
   if (env != nullptr) {
-    Mutex workers_mutex;
-    ConditionVariable notify;
-    std::vector<std::string> worker_infos;
-    size_t expected_results = 0;
-
-    // When recording, each worker records its subreport on its own thread,
-    // which the replay never requests, since it doesn't generate this report.
-    // That's only fine because requesting the interrupt already invalidates
-    // the recording (Environment::RequestInterruptFromV8).
-    env->ForEachWorker([&](Worker* w) {
-      expected_results += w->RequestInterrupt([&](Environment* env) {
-        std::ostringstream os;
-
-        GetNodeReport(env->isolate(),
-                      env,
-                      "Worker thread subreport",
-                      trigger,
-                      Local<Object>(),
-                      os);
-
-        Mutex::ScopedLock lock(workers_mutex);
-        worker_infos.emplace_back(os.str());
-        notify.Signal(lock);
-      });
-    });
-
-    Mutex::ScopedLock lock(workers_mutex);
-    worker_infos.reserve(expected_results);
-    while (worker_infos.size() < expected_results)
-      notify.Wait(lock);
-    for (const std::string& worker_info : worker_infos)
+    // The subreports were collected already when the report is recorded.
+    std::vector<std::string> collected;
+    if (worker_reports == nullptr) {
+      collected = CollectWorkerReports(env, trigger);
+      worker_reports = &collected;
+    }
+    for (const std::string& worker_info : *worker_reports)
       writer.json_element(JSONWriter::ForeignJSON { worker_info });
   }
   writer.json_arrayend();

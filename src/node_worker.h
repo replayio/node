@@ -85,7 +85,9 @@ class Worker : public AsyncWrap {
   std::unique_ptr<InspectorParentHandle> inspector_parent_handle_;
 
   // This mutex protects access to all variables listed below it.
-  mutable Mutex mutex_;
+  // Ordered when recording/replaying: whether the parent finds the worker
+  // still running, in Exit() and RequestInterrupt(), has to replay the same.
+  mutable Mutex mutex_{/* ordered */ true};
 
   bool thread_joined_ = true;
   const char* custom_error_ = nullptr;
@@ -115,6 +117,12 @@ class Worker : public AsyncWrap {
   // warmup phase.  Once the worker is fully warmed up, use the
   // async handle of the worker's Environment for the same purpose.
   bool stopped_ = true;
+
+  // Set when another thread stops the worker while recording or replaying;
+  // see Worker::Exit().
+  class StopWatchdog;
+  std::unique_ptr<StopWatchdog> stop_watchdog_;
+  void ForceStop();
 
   bool has_ref_ = true;
   uint64_t environment_flags_ = EnvironmentFlags::kNoFlags;

@@ -816,8 +816,10 @@ void Environment::RequestInterrupt(Fn&& cb) {
     native_immediates_interrupts_.Push(std::move(callback));
     if (task_queues_async_initialized_)
       uv_async_send(&task_queues_async_);
+    // Under the same lock as the callback's reset of interrupt_data_, so that
+    // whether V8 is asked, which the replay orders, replays the same.
+    RequestInterruptFromV8();
   }
-  RequestInterruptFromV8();
 }
 
 inline bool Environment::can_call_into_js() const {
