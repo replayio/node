@@ -129,6 +129,23 @@ steps:
       echo "$$BUILD_ID" > "$${BUILDKITE_BUILD_CHECKOUT_PATH}/build_id"
       echo "BuildId=$$BUILD_ID"
 
+  # Toolchain image for the RBE build: local runner and EngFlow worker image.
+  # Built + pushed only when replay_build_scripts/rbe/Dockerfile changes (the
+  # tag is its hash); otherwise this only checks the tag exists. Public on ghcr
+  # so EngFlow can pull it like Chromium's gcr worker image.
+  - label: ":docker: RBE toolchain image"
+    key: "build-rbe-toolchain-image"
+    soft_fail: true
+    agents:
+      - "build-runtime=true"
+    plugins:
+      - seek-oss/aws-sm#v2.3.1:
+          region: us-east-2
+          env:
+            GHCR_USER: ghcr-push-username
+            GHCR_TOKEN: ghcr-push-token
+    command: "replay_build_scripts/rbe/toolchain-image.sh ensure"
+
   # RBE build: same commit built with reclient/EngFlow (replay_build_scripts/rbe).
   # Independent of build-node-linux until RBE replaces it: own cached checkout
   # (rbe-repo-*), own toolchain, nothing depends on it. It uploads under its own
@@ -140,6 +157,7 @@ steps:
     timeout_in_minutes: 60
     depends_on:
       - "build-driver-linker"
+      - "build-rbe-toolchain-image"
     agents:
       - "build-runtime=true"
     plugins:
@@ -161,7 +179,10 @@ steps:
       # Never the make build's repo-* checkout: configure --ninja rewrites config.gypi.
       NODE_REPO="$$CACHE/rbe-repo-$$NODE_VERSION"
       mkdir -p "$$CACHE"
-      docker build -t node-rbe-build replay_build_scripts/rbe
+      # Same image (by digest) as the remote workers: local compiles and links
+      # use exactly their gcc.
+      IMAGE=$$(replay_build_scripts/rbe/toolchain-image.sh pull)
+      echo "Toolchain image: $$IMAGE"
       if [ ! -d "$$NODE_REPO/.git" ]; then
         git clone git@github.com:replayio/node.git "$$NODE_REPO"
       fi
@@ -169,12 +190,13 @@ steps:
       git -C "$$NODE_REPO" checkout -f --detach "$$BUILDKITE_COMMIT"
       mkdir -p "$$NODE_REPO/out"
       ENGFLOW="$$PWD"
-      trap 'rm -f "$$ENGFLOW/engflow.crt" "$$ENGFLOW/engflow.key"; docker run --rm -v "$$NODE_REPO:/repo" --entrypoint chown node-rbe-build -R "$$(id -u):$$(id -g)" /repo; mkdir -p rbe-logs; cp -r "$$NODE_REPO/out/Release/.reproxy_tmp/logs" rbe-logs/ 2>/dev/null || true; cp "$$NODE_REPO/out/Release/.ninja_log" rbe-logs/ 2>/dev/null || true' EXIT
+      trap 'rm -f "$$ENGFLOW/engflow.crt" "$$ENGFLOW/engflow.key"; docker run --rm -v "$$NODE_REPO:/repo" --entrypoint chown "$$IMAGE" -R "$$(id -u):$$(id -g)" /repo; mkdir -p rbe-logs; cp -r "$$NODE_REPO/out/Release/.reproxy_tmp/logs" rbe-logs/ 2>/dev/null || true; cp "$$NODE_REPO/out/Release/.ninja_log" rbe-logs/ 2>/dev/null || true' EXIT
       # The checkout is mounted at the same path inside the container so the
       # reproxy socket hash and absolute wrapper paths stay stable across jobs.
       docker run --rm \
         -e BUILDKITE_BRANCH -e BUILDKITE_PIPELINE_DEFAULT_BRANCH \
         -e REPLAY_RBE=1 \
+        -e REPLAY_RBE_CONTAINER_IMAGE="$$IMAGE" \
         -e RBE_service=simpsonite.cluster.engflow.com:443 \
         -e RBE_service_no_auth=true \
         -e RBE_use_application_default_credentials=true \
@@ -184,9 +206,8 @@ steps:
         -v "$$ENGFLOW/engflow.key:/engflow/engflow.key:ro" \
         -v "$$NODE_REPO:$$NODE_REPO" \
         -w "$$NODE_REPO" \
-        node-rbe-build \
-        sh -c 'node build.js && replay_build_scripts/rbe/upload-rbe-build.sh'
-      RECORD_REPLAY_DONT_RECORD=1 "$$NODE_REPO/out/Release/node" --version
+        "$$IMAGE" \
+        sh -c 'node build.js && RECORD_REPLAY_DONT_RECORD=1 out/Release/node --version && replay_build_scripts/rbe/upload-rbe-build.sh'
       BUILD_ID=$$(sed -n 's/.*gBuildId\[\] = "\([^"]*\)".*/\1/p' "$$NODE_REPO/src/node_record_replay_driver.cc" | head -n1)
       test -n "$$BUILD_ID"
       echo "$$BUILD_ID" > build_id_rbe

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Sync the RBE toolchain pins and reclient configs from a Chromium fork checkout.
+"""Sync the RBE build tool pins and reclient configs from a Chromium fork checkout.
 
 Node's RBE build runs on the same EngFlow cluster as Chromium, so it uses the
-exact same clang, sysroot, reclient, ninja and remote worker image. Nothing
-here is hand-edited: rerun this after the Chromium fork rolls any of them.
+same reclient, ninja and reclient configs. (Not its compiler: node keeps the
+make build's gcc, see Dockerfile.) Nothing here is hand-edited: rerun this
+after the Chromium fork rolls any of them.
 
   python3 replay_build_scripts/rbe/update-toolchain.py <chromium>/src
 
 Writes toolchain.json and copies Chromium's reclient configs unmodified into
-chromium_cfgs/ (build-rbe.py only fills in machine-specific paths).
+chromium_cfgs/ (build-rbe.py only fills in local paths and our worker image).
 """
 
 import json
@@ -44,18 +45,9 @@ def main():
     sys.exit(__doc__)
   src = os.path.abspath(sys.argv[1])
 
-  update_py = read(src, "tools/clang/scripts/update.py")
-  clang = "%s-%s" % (
-      match(r"^CLANG_REVISION = '([^']+)'", update_py, "CLANG_REVISION"),
-      match(r"^CLANG_SUB_REVISION = (\d+)", update_py, "CLANG_SUB_REVISION"))
-
-  sysroot = json.loads(read(src, "build/linux/sysroot_scripts/sysroots.json"))["bullseye_amd64"]
-
   deps = read(src, "DEPS")
   pins = {
       "chromium_revision": subprocess.check_output(["git", "-C", src, "rev-parse", "HEAD"], text=True).strip(),
-      "clang": clang,
-      "sysroot": {"tarball": sysroot["Tarball"], "sha1": sysroot["Sha1Sum"]},
       "reclient": match(r"'reclient_version': '([^']+)'", deps, "reclient_version in DEPS"),
       "ninja": match(r"'ninja_version': '([^']+)'", deps, "ninja_version in DEPS"),
   }
