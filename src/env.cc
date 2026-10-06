@@ -489,7 +489,9 @@ Environment::~Environment() {
     if (Script::Compile(context(), String::Empty(isolate())).ToLocal(&script))
       USE(script->Run(context()));
 
-    DCHECK(consistency_check);
+    // When recording or replaying, V8 runs the interrupts when the progress
+    // counter next advances rather than here, which it may never do again.
+    DCHECK(consistency_check || v8::recordreplay::IsRecordingOrReplaying());
   }
 
   // FreeEnvironment() should have set this.
