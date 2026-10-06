@@ -131,9 +131,9 @@ steps:
 
   # Toolchain image for the RBE build: local runner and EngFlow worker image.
   # Built + pushed only when replay_build_scripts/rbe/Dockerfile changes (the
-  # tag is its hash); otherwise this only checks the tag exists. Lives in our
-  # ECR (linux_node_build), where EngFlow's workers pull it from. Pushes with
-  # the agent's AWS identity.
+  # tag is its hash); otherwise this only checks the tag exists. Public on ECR
+  # Public (public.ecr.aws/z3x5l6b1/node-rbe-toolchain) so EngFlow can pull it
+  # like Chromium's gcr worker image. Pushes with the agent's AWS identity.
   - label: ":docker: RBE toolchain image"
     key: "build-rbe-toolchain-image"
     soft_fail: true
