@@ -131,19 +131,14 @@ steps:
 
   # Toolchain image for the RBE build: local runner and EngFlow worker image.
   # Built + pushed only when replay_build_scripts/rbe/Dockerfile changes (the
-  # tag is its hash); otherwise this only checks the tag exists. Public on ghcr
-  # so EngFlow can pull it like Chromium's gcr worker image.
+  # tag is its hash); otherwise this only checks the tag exists. Public on ECR
+  # Public so EngFlow can pull it like Chromium's gcr worker image. Pushes with
+  # the agent's AWS identity.
   - label: ":docker: RBE toolchain image"
     key: "build-rbe-toolchain-image"
     soft_fail: true
     agents:
       - "build-runtime=true"
-    plugins:
-      - seek-oss/aws-sm#v2.3.1:
-          region: us-east-2
-          env:
-            GHCR_USER: ghcr-push-username
-            GHCR_TOKEN: ghcr-push-token
     command: "replay_build_scripts/rbe/toolchain-image.sh ensure"
 
   # RBE build: same commit built with reclient/EngFlow (replay_build_scripts/rbe).
