@@ -118,6 +118,12 @@ class Worker : public AsyncWrap {
   // async handle of the worker's Environment for the same purpose.
   bool stopped_ = true;
 
+  // Set when another thread stops the worker while recording or replaying;
+  // see Worker::Exit().
+  class StopWatchdog;
+  std::unique_ptr<StopWatchdog> stop_watchdog_;
+  void ForceStop();
+
   bool has_ref_ = true;
   uint64_t environment_flags_ = EnvironmentFlags::kNoFlags;
 
