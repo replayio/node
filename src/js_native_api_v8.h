@@ -7,6 +7,7 @@
 #include <vector>
 #include "js_native_api_types.h"
 #include "js_native_api_v8_internals.h"
+#include "node_deferred_finalization.h"
 
 static napi_status napi_clear_last_error(napi_env env);
 
@@ -420,7 +421,7 @@ class RefBase : protected Finalizer, RefTracker {
   bool _delete_self;
 };
 
-class Reference : public RefBase {
+class Reference : public RefBase, public node::recordreplay::Finalizable {
   using SecondPassCallParameterRef = Reference*;
 
  protected:
@@ -445,6 +446,7 @@ class Reference : public RefBase {
   int RecordReplayId() const { return _record_replay_id; }
   static void RecordReplayFlushClearedRefs(napi_env env);
   static void RecordReplayPoll(v8::Isolate* isolate, void* data);
+  void RecordReplayFinalize() override;
 
  protected:
   void Finalize(bool is_env_teardown = false) override;
@@ -463,6 +465,12 @@ class Reference : public RefBase {
   SecondPassCallParameterRef* _secondPassParameter;
   bool _secondPassScheduled;
   int _record_replay_id = 0;
+  // The finalization of a tracked reference is deferred to a point which
+  // replays, see RecordReplayTrack.
+  node::recordreplay::DeferredFinalization* _record_replay_finalization =
+      nullptr;
+  int _record_replay_finalize_id = 0;
+  bool _record_replay_has_finalizer = false;
 
   FRIEND_TEST(JsNativeApiV8Test, Reference);
 };

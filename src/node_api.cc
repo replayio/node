@@ -33,6 +33,30 @@ v8::Maybe<bool> node_napi_env__::mark_arraybuffer_as_untransferable(
                         v8::True(isolate));
 }
 
+// Calls a module's finalizer. Finalizers are module code, which doesn't run
+// when replaying: like a callback's (see napi_module_register_by_symbol), the
+// N-API calls a finalizer makes are recorded in a callback region and replayed
+// at the same point, which the finalizer reaches on both sides as it runs from
+// an immediate scheduled at a point which replays (see
+// node::recordreplay::DeferredFinalization). The calls made at environment
+// teardown, after the recording finished, are not replayed.
+static void CallModuleFinalizer(napi_env env,
+                                napi_finalize cb,
+                                void* data,
+                                void* hint) {
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    cb(env, data, hint);
+    return;
+  }
+  if (!node::recordreplay::AreEventsRecorded() ||
+      node::recordreplay::IsRecordingFinished()) {
+    if (!v8::recordreplay::IsReplaying()) cb(env, data, hint);
+    return;
+  }
+  node::recordreplay::AutoCallbackRegion region;
+  if (!v8::recordreplay::IsReplaying()) cb(env, data, hint);
+}
+
 void node_napi_env__::CallFinalizer(napi_finalize cb, void* data, void* hint) {
   // we need to keep the env live until the finalizer has been run
   // EnvRefHolder provides an exception safe wrapper to Ref and then
@@ -43,7 +67,9 @@ void node_napi_env__::CallFinalizer(napi_finalize cb, void* data, void* hint) {
         napi_env env = liveEnv.env();
         v8::HandleScope handle_scope(env->isolate);
         v8::Context::Scope context_scope(env->context());
-        env->CallIntoModule([&](napi_env env) { cb(env, data, hint); });
+        env->CallIntoModule([&](napi_env env) {
+          CallModuleFinalizer(env, cb, data, hint);
+        });
       });
 }
 
@@ -69,10 +95,10 @@ class BufferFinalizer : private Finalizer {
       v8::Context::Scope context_scope(finalizer->_env->context());
 
       finalizer->_env->CallIntoModule([&](napi_env env) {
-        finalizer->_finalize_callback(
-            env,
-            finalizer->_finalize_data,
-            finalizer->_finalize_hint);
+        CallModuleFinalizer(env,
+                            finalizer->_finalize_callback,
+                            finalizer->_finalize_data,
+                            finalizer->_finalize_hint);
       });
     });
   }
@@ -989,6 +1015,17 @@ napi_status napi_create_external_buffer(napi_env env,
   CHECK_ARG(env, result);
 
   v8::Isolate* isolate = env->isolate;
+
+  // The replayed call has no finalizer (the driver passes it as null), but
+  // the buffer has to be finalized along the same path as when recording, see
+  // CallModuleFinalizer.
+  if (v8impl::RecordReplayInModuleCallback() &&
+      v8::recordreplay::RecordReplayValue(
+          "napi_create_external_buffer has finalizer",
+          finalize_cb != nullptr) &&
+      finalize_cb == nullptr) {
+    finalize_cb = [](napi_env env, void* data, void* hint) {};
+  }
 
   // The finalizer object will delete itself after invoking the callback.
   v8impl::Finalizer* finalizer = v8impl::Finalizer::New(

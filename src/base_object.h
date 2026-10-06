@@ -26,6 +26,7 @@
 
 #include <type_traits>  // std::remove_reference
 #include "memory_tracker.h"
+#include "node_deferred_finalization.h"
 #include "v8.h"
 
 namespace node {
@@ -38,11 +39,7 @@ namespace worker {
 class TransferData;
 }
 
-namespace recordreplay {
-class DeferredFinalization;
-}
-
-class BaseObject : public MemoryRetainer {
+class BaseObject : public MemoryRetainer, public recordreplay::Finalizable {
  public:
   enum InternalFields { kSlot, kInternalFieldCount };
 
@@ -193,7 +190,7 @@ class BaseObject : public MemoryRetainer {
 
   // Called by DeferredFinalization::Poll for a tracked object the recording's
   // GC collected: runs OnGCCollect() as the weak callback would have.
-  inline void RecordReplayFinalize();
+  inline void RecordReplayFinalize() override;
 
   v8::Global<v8::Object> persistent_handle_;
 

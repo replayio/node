@@ -1,7 +1,6 @@
 #include "node_deferred_finalization.h"
 
 #include "async_wrap.h"
-#include "base_object-inl.h"
 #include "env-inl.h"
 #include "node.h"
 
@@ -48,7 +47,7 @@ bool DeferredFinalization::AddDestroyedAsyncId(double async_id) {
   return true;
 }
 
-int DeferredFinalization::Track(BaseObject* object, const char* label) {
+int DeferredFinalization::Track(Finalizable* object, const char* label) {
   if (!Enabled(label) || !AreEventsRecorded()) return 0;
   int id = ++last_object_id_;
   v8::recordreplay::Assert("DeferredFinalization::Track %s %d", label, id);
@@ -62,8 +61,10 @@ void DeferredFinalization::Untrack(int id) {
 }
 
 void DeferredFinalization::OnCollected(int id) {
-  // Runs inside the GC, so this only notes the id for the next poll.
+  // Runs inside the GC, or on a sweeper thread, so this only notes the id for
+  // the next poll.
   CHECK(v8::recordreplay::IsRecording());
+  Mutex::ScopedLock lock(collected_objects_mutex_);
   collected_objects_.push_back(id);
 }
 
@@ -80,9 +81,14 @@ void DeferredFinalization::Poll() {
   if (!ShouldPoll() || !AreEventsRecorded()) return;
 
   uintptr_t flags = 0;
+  std::vector<int> collected_objects;
   if (v8::recordreplay::IsRecording()) {
     if (!destroyed_async_ids_.empty()) flags |= kDestroyedAsyncIds;
-    if (!collected_objects_.empty()) flags |= kCollectedObjects;
+    {
+      Mutex::ScopedLock lock(collected_objects_mutex_);
+      collected_objects.swap(collected_objects_);
+    }
+    if (!collected_objects.empty()) flags |= kCollectedObjects;
   }
   flags = v8::recordreplay::RecordReplayValue("DeferredFinalization.poll",
                                               flags);
@@ -99,11 +105,10 @@ void DeferredFinalization::Poll() {
   }
 
   if (flags & kCollectedObjects) {
-    std::vector<int> ids;
-    ids.swap(collected_objects_);
-    RecordReplayList("DeferredFinalization.poll collected objects", &ids);
+    RecordReplayList("DeferredFinalization.poll collected objects",
+                     &collected_objects);
     v8::HandleScope handle_scope(env_->isolate());
-    for (int id : ids) {
+    for (int id : collected_objects) {
       auto it = tracked_objects_.find(id);
       // Deleted since the GC collected it, on a path which replays and so on
       // both sides, e.g. by its owner.

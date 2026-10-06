@@ -6,14 +6,27 @@
 #include <unordered_map>
 #include <vector>
 
+#include "node_mutex.h"
 #include "v8.h"
 
 namespace node {
 
-class BaseObject;
 class Environment;
 
 namespace recordreplay {
+
+// Something DeferredFinalization runs the cleanup of, see below.
+class Finalizable {
+ public:
+  // Called by DeferredFinalization::Poll, on both sides, where the recording's
+  // GC was found to have collected this: does what the GC's callback would have
+  // done when recording, and additionally releases whatever was kept alive when
+  // replaying.
+  virtual void RecordReplayFinalize() = 0;
+
+ protected:
+  virtual ~Finalizable() = default;
+};
 
 // Runs the cleanup for what the GC collects at a point which replays.
 //
@@ -31,14 +44,17 @@ namespace recordreplay {
 // - The async ids of resources the GC destroyed, see AsyncWrap::EmitDestroy.
 //   A destroy is an event with an integer id, so nothing has to be kept alive
 //   for the replay to deliver it.
-// - BaseObjects with a record/replay id, see BaseObject::RecordReplayTrack.
-//   When recording, the weak callback leaves the C++ object alive until the
-//   poll runs its OnGCCollect(). When replaying, the JS object is kept alive
-//   too (MakeWeak() has no effect) until the poll names the id, so that the
-//   object is in the same state on both sides when its cleanup runs.
+// - Finalizables with a record/replay id, given by Track(): BaseObjects (see
+//   BaseObject::RecordReplayTrack), N-API references (v8impl::Reference) and
+//   the free callbacks of external Buffers (Buffer::CallbackInfo). When
+//   recording, the GC's callback leaves the C++ object alive until the poll
+//   calls RecordReplayFinalize(). When replaying, what the GC would collect is
+//   kept alive too (e.g. MakeWeak() has no effect) until the poll names the id,
+//   so that the object is in the same state on both sides when its cleanup
+//   runs.
 //
 // Only objects created at a point which replays (AreEventsRecorded()) get an
-// id. For the others, the weak callback runs as usual and subclasses fall back
+// id. For the others, the GC's callback runs as usual and the users fall back
 // to leaking (see EnterLeakMemory). Switched off by the "deferred-finalization"
 // feature, which leaves the cleanup dropped or leaked as before.
 class DeferredFinalization {
@@ -58,13 +74,14 @@ class DeferredFinalization {
   // the replay's own GC destroys are dropped.
   bool AddDestroyedAsyncId(double async_id);
 
-  // Called by BaseObject::RecordReplayTrack. Gives object an id when it is
-  // created at a point which replays, or returns 0.
-  int Track(BaseObject* object, const char* label);
-  // Called by ~BaseObject for a tracked object.
+  // Gives object an id when it is created at a point which replays, or
+  // returns 0. The label is the subfeature which can switch this off.
+  int Track(Finalizable* object, const char* label);
+  // Called when a tracked object is deleted, from a point which replays.
   void Untrack(int id);
-  // Called by the weak callback of a tracked object, which only runs when
-  // recording: notes the id for the next poll.
+  // Called by the GC's callback for a tracked object, which only runs when
+  // recording: notes the id for the next poll. Can be called from any thread,
+  // e.g. a backing store's deleter runs on the thread which sweeps it.
   void OnCollected(int id);
 
   // Records/replays what the GC collected since the last poll and runs the
@@ -90,9 +107,10 @@ class DeferredFinalization {
   bool has_tracked_objects_ = false;
   // The tracked objects which are alive, by id. The same on both sides at
   // every poll: a tracked object is only deleted at points which replay.
-  std::unordered_map<int, BaseObject*> tracked_objects_;
+  std::unordered_map<int, Finalizable*> tracked_objects_;
   // While recording, the ids of tracked objects the GC collected which the
   // recording does not describe yet.
+  Mutex collected_objects_mutex_;
   std::vector<int> collected_objects_;
 };
 
