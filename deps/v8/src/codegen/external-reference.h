@@ -99,6 +99,8 @@ class StatsCounter;
   V(abort_with_reason, "abort_with_reason")                                    \
   V(record_replay_progress_counter, "record_replay_progress_counter")          \
   V(record_replay_target_progress, "record_replay_target_progress")            \
+  V(record_replay_is_recording_or_replaying,                                   \
+    "record_replay_is_recording_or_replaying")                                 \
   V(address_of_builtin_subclassing_flag, "FLAG_builtin_subclassing")           \
   V(address_of_double_abs_constant, "double_absolute_constant")                \
   V(address_of_double_neg_constant, "double_negate_constant")                  \

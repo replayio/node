@@ -10372,7 +10372,11 @@ CFunctionInfo::CFunctionInfo(const CTypeInfo& return_info,
   }
 }
 
-static bool gRecordingOrReplaying;
+namespace internal {
+// Builtins read this through
+// ExternalReference::record_replay_is_recording_or_replaying.
+bool gRecordReplayIsRecordingOrReplaying;
+}  // namespace internal
 static bool gHasDisabledFeatures;
 static bool gAssertsDisabled;
 static void (*gRecordReplayOnNewSource)(const char* id, const char* kind,
@@ -10432,12 +10436,12 @@ namespace internal {
 
 void RecordReplayOnNewSource(Isolate* isolate, const char* id,
                              const char* kind, const char* url) {
-  DCHECK(gRecordingOrReplaying);
+  DCHECK(gRecordReplayIsRecordingOrReplaying);
   gRecordReplayOnNewSource(id, kind, url);
 }
 
 void RecordReplayOnConsoleMessage(size_t bookmark) {
-  DCHECK(gRecordingOrReplaying);
+  DCHECK(gRecordReplayIsRecordingOrReplaying);
   gRecordReplayOnConsoleMessage(bookmark);
 }
 
@@ -10451,7 +10455,7 @@ extern "C" void V8RecordReplayGetCurrentException(MaybeLocal<Value>* exception) 
 }
 
 void RecordReplayOnExceptionUnwind(Isolate* isolate) {
-  CHECK(gRecordingOrReplaying);
+  CHECK(gRecordReplayIsRecordingOrReplaying);
   CHECK(IsMainThread());
 
   if (recordreplay::AreEventsDisallowed() || recordreplay::HasDivergedFromRecording()) {
@@ -10609,7 +10613,7 @@ bool gRecordReplayHasCheckpoint;
 } // namespace internal
 
 bool recordreplay::IsRecordingOrReplaying(const char* feature, const char* subfeature) {
-  return gRecordingOrReplaying && (!feature || FeatureEnabled(feature, subfeature));
+  return internal::gRecordReplayIsRecordingOrReplaying && (!feature || FeatureEnabled(feature, subfeature));
 }
 
 bool recordreplay::FeatureEnabled(const char* feature, const char* subfeature) {
@@ -11072,7 +11076,7 @@ static pthread_t gMainThread;
 
 void recordreplay::SetRecordingOrReplaying(void* handle) {
   if (!getenv("RECORD_REPLAY_PRETEND_NOT_RECORDING")) {
-    gRecordingOrReplaying = true;
+    internal::gRecordReplayIsRecordingOrReplaying = true;
   }
   gMainThread = pthread_self();
 
