@@ -707,7 +707,16 @@ void Worker::Exit(int code, const char* error_code, const char* error_message) {
 
   if (env_ != nullptr) {
     exit_code_ = code;
-    Stop(env_);
+    if (v8::recordreplay::IsRecordingOrReplaying() &&
+        Isolate::TryGetCurrent() != isolate_) {
+      // Stopping the worker from here, as worker.terminate() and the parent
+      // exiting do, would terminate its execution at a point the replay can't
+      // reproduce: the worker stops itself from its event loop instead, after
+      // its current turn.
+      env_->SetImmediateThreadsafe([](Environment* env) { env->ExitEnv(); });
+    } else {
+      Stop(env_);
+    }
   } else {
     stopped_ = true;
   }
