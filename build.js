@@ -1,5 +1,4 @@
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const node = __dirname;
@@ -57,8 +56,6 @@ namespace node {
 `
 );
 
-const numCPUs = os.cpus().length;
-
 function getSanitizedEnv() {
   const env = { ...process.env };
   if (env.PATH) {
@@ -71,34 +68,13 @@ function getSanitizedEnv() {
 
 const buildEnv = getSanitizedEnv();
 
-// RBE builds (prototype) configure with ninja and a different toolchain, so a
-// checkout holds either an RBE or a make build, never both.
-const rbeMarker = path.join(OutDir, ".replay-rbe");
-if (process.env.REPLAY_RBE) {
-  console.log("[build] Building with RBE...");
-  spawnChecked("python3", [`${node}/replay_build_scripts/rbe/build-rbe.py`], {
-    cwd: node,
-    stdio: "inherit",
-    env: buildEnv,
-  });
-  process.exit(0);
-}
-if (fs.existsSync(rbeMarker)) {
-  throw new Error("out/ holds an RBE build; set REPLAY_RBE=1 or use a separate checkout");
-}
-
-if (process.env.CONFIGURE_NODE) {
-  console.log("[build] Running configure...");
-  spawnChecked(`${node}/configure`, [], { cwd: node, stdio: "inherit", env: buildEnv });
-}
-console.log("[build] Running make...");
-spawnChecked("make", [`-j${numCPUs}`, "-C", OutDir, "BUILDTYPE=Release"], {
+// Compiles run remotely on EngFlow (RBE); see replay_build_scripts/rbe/build-rbe.py.
+// It configures (ninja) on every run, so CONFIGURE_NODE is not needed.
+console.log("[build] Building with RBE...");
+spawnChecked("python3", [`${node}/replay_build_scripts/rbe/build-rbe.py`], {
   cwd: node,
   stdio: "inherit",
-  env: {
-    ...buildEnv,
-    RECORD_REPLAY_DONT_RECORD: "1",
-  },
+  env: buildEnv,
 });
 
 function downloadDriverArchive(downloadUrl, driverArchivePath) {
@@ -198,12 +174,8 @@ function computeBuildId() {
   const date = +runtimeDate >= +driverDate ? runtimeDate : driverDate;
 
   // Chromium twin: upload_build_artifacts.mjs buildIdExtension / backend utils.ts.
-  // RBE builds (temporary, until they replace make builds) get their own id so
-  // their upload never overwrites the make build of the same commit. It must end
-  // in -dev: the backend treats any other last segment as a local build.
-  const buildIdExtension = process.env.REPLAY_RBE
-    ? "-rbe-dev"
-    : process.env.BUILDKITE_BRANCH !== process.env.BUILDKITE_PIPELINE_DEFAULT_BRANCH
+  const buildIdExtension =
+    process.env.BUILDKITE_BRANCH !== process.env.BUILDKITE_PIPELINE_DEFAULT_BRANCH
       ? "-dev"
       : process.env.LOCAL_DEVELOPER_BUILD_EXTENSION || "";
 
