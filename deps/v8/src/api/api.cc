@@ -10398,6 +10398,7 @@ static bool (*gRecordReplayFeatureEnabled)(const char* feature, const char* subf
 static bool (*gRecordReplayHasDisabledFeatures)();
 static bool (*gRecordReplayAreAssertsDisabled)();
 static void (*gRecordReplayProgressReached)();
+static void (*gRecordReplayTriggerProgressInterrupt)();
 static void (*gRecordReplayBeginPassThroughEvents)();
 static void (*gRecordReplayEndPassThroughEvents)();
 static void (*gRecordReplayBeginDisallowEvents)();
@@ -10506,6 +10507,20 @@ void RecordReplayOnTargetProgressReached() {
     return;
   }
   gRecordReplayProgressReached();
+}
+
+// Have the driver invoke the API interrupt callbacks when the progress counter
+// next advances, when recording; when replaying, the driver invokes them at the
+// same progress value (see Isolate::InvokeApiInterruptCallbacks).
+void RecordReplayTriggerProgressInterrupt() {
+  CHECK(recordreplay::IsRecording() && IsMainThread());
+  gRecordReplayTriggerProgressInterrupt();
+}
+
+static void RecordReplayProgressInterruptCallback() {
+  CHECK(IsMainThread());
+  Isolate* isolate = Isolate::Current();
+  isolate->RecordReplayInvokeApiInterruptCallbacksAtProgress();
 }
 
 void RecordReplayInstrument(const char* kind, const char* function, int function_index) {
@@ -11054,6 +11069,7 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   gHasDisabledFeatures = gRecordReplayHasDisabledFeatures();
   RecordReplayLoadSymbol(handle, "RecordReplayAreAssertsDisabled", gRecordReplayAreAssertsDisabled);
   RecordReplayLoadSymbol(handle, "RecordReplayProgressReached", gRecordReplayProgressReached);
+  RecordReplayLoadSymbol(handle, "RecordReplayTriggerProgressInterrupt", gRecordReplayTriggerProgressInterrupt);
   RecordReplayLoadSymbol(handle, "RecordReplayBeginPassThroughEvents", gRecordReplayBeginPassThroughEvents);
   RecordReplayLoadSymbol(handle, "RecordReplayEndPassThroughEvents", gRecordReplayEndPassThroughEvents);
   RecordReplayLoadSymbol(handle, "RecordReplayBeginDisallowEvents", gRecordReplayBeginDisallowEvents);
@@ -11110,6 +11126,10 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   void (*setProgressCallback)(void (*aCallback)(uint64_t));
   RecordReplayLoadSymbol(handle, "RecordReplaySetProgressCallback", setProgressCallback);
   setProgressCallback(internal::RecordReplaySetTargetProgress);
+
+  void (*setProgressInterruptCallback)(void (*aCallback)());
+  RecordReplayLoadSymbol(handle, "RecordReplaySetProgressInterruptCallback", setProgressInterruptCallback);
+  setProgressInterruptCallback(internal::RecordReplayProgressInterruptCallback);
 
   void (*enableProgressCheckpoints)();
   RecordReplayLoadSymbol(handle, "RecordReplayEnableProgressCheckpoints", enableProgressCheckpoints);

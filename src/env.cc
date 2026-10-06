@@ -808,8 +808,14 @@ void Environment::RunAndClearNativeImmediates(bool only_refed) {
 }
 
 void Environment::RequestInterruptFromV8() {
-  // V8 interrupts will not be replayed at precise positions.
-  v8::recordreplay::InvalidateRecording("RequestInterruptFromV8 called");
+  // When recording or replaying, V8 runs the main thread's interrupt callbacks
+  // when the progress counter next advances, where the replay runs them too
+  // (Isolate::InvokeApiInterruptCallbacks). Worker threads have no progress
+  // counter, so V8 never runs theirs: their interrupts only run from the event
+  // loop (RunAndClearNativeImmediates), which RequestInterrupt() wakes.
+  if (!is_main_thread() && v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
 
   // The Isolate may outlive the Environment, so some logic to handle the
   // situation in which the Environment is destroyed before the handler runs
