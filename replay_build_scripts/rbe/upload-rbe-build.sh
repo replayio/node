@@ -1,6 +1,6 @@
 #!/bin/bash
 # Publish an RBE build like backend `buildNode.ts deploy` publishes make builds
-# (binary only, no symbols archive), so it can be tested by build id:
+# (binary + symbols archive), so it can be tested by build id:
 #   https://static.replay.io/downloads/<id>, test-node-recording --build-id <id>
 # Temporary: goes away once RBE builds replace make builds and use plain -dev ids.
 set -euo pipefail
@@ -13,5 +13,8 @@ case $build_id in
 esac
 bucket=${RECORDREPLAY_BUCKET:-recordreplay-us-east-2}
 aws s3 cp --acl bucket-owner-full-control "$root/out/Release/node" "s3://$bucket/builds/$build_id"
+symbols=$(node "$root/replay_build_scripts/rbe/symbols-archive.js" "$build_id" "$root/out/Release/node" "$root/out")
+aws s3 cp --acl bucket-owner-full-control "$symbols" "s3://$bucket/symbols/$(basename "$symbols")"
+rm -f "$symbols"
 aws s3 cp "s3://$bucket/builds/$build_id" "s3://recordreplay-website/downloads/$build_id"
 echo "BuildUploaded https://static.replay.io/downloads/$build_id"
