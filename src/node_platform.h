@@ -102,6 +102,11 @@ class PerIsolatePlatformData :
 
   v8::Isolate* const isolate_;
   uv_loop_t* const loop_;
+  // Guards flush_tasks_ against a task posted from another thread while the
+  // isolate shuts down, e.g. by FutexEmulation::Wake resolving one of its
+  // async waiters. Ordered for record/replay, since it nests the task queue's
+  // and the async handle's ordered locks.
+  Mutex flush_tasks_mutex_;
   uv_async_t* flush_tasks_ = nullptr;
   TaskQueue<v8::Task> foreground_tasks_;
   TaskQueue<DelayedTask> foreground_delayed_tasks_;
