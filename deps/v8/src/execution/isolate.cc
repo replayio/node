@@ -1542,19 +1542,23 @@ void Isolate::RecordReplayInvokeApiInterruptCallbacksAtProgress() {
   // Requests added after the queue is drained below are triggered anew.
   record_replay_api_interrupt_triggered_ = false;
 
-  while (true) {
-    InterruptEntry entry;
-    recordreplay::OrderedLock(record_replay_api_interrupts_ordered_lock_id_);
-    {
-      ExecutionAccess access(this);
-      if (api_interrupts_queue_.empty()) {
-        recordreplay::OrderedUnlock(record_replay_api_interrupts_ordered_lock_id_);
-        return;
-      }
-      entry = api_interrupts_queue_.front();
-      api_interrupts_queue_.pop();
-    }
-    recordreplay::OrderedUnlock(record_replay_api_interrupts_ordered_lock_id_);
+  // One ordered lock round per drain, whatever the queue holds. An entry
+  // queued by code which only runs when recording (a binary module calling
+  // RequestInterrupt) exists only there, so the drain must not record anything
+  // which depends on the entries: taking the lock once per entry made the
+  // recorded lock order differ from the replay's. Callbacks still run outside
+  // the lock; an entry one of them queues waits for the next trigger.
+  std::queue<InterruptEntry> entries;
+  recordreplay::OrderedLock(record_replay_api_interrupts_ordered_lock_id_);
+  {
+    ExecutionAccess access(this);
+    entries.swap(api_interrupts_queue_);
+  }
+  recordreplay::OrderedUnlock(record_replay_api_interrupts_ordered_lock_id_);
+
+  while (!entries.empty()) {
+    InterruptEntry entry = entries.front();
+    entries.pop();
     VMState<EXTERNAL> state(this);
     HandleScope handle_scope(this);
     entry.first(reinterpret_cast<v8::Isolate*>(this), entry.second);
