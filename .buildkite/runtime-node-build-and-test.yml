@@ -129,11 +129,12 @@ steps:
       echo "$$BUILD_ID" > "$${BUILDKITE_BUILD_CHECKOUT_PATH}/build_id"
       echo "BuildId=$$BUILD_ID"
 
-  # RBE prototype: same commit built with reclient/EngFlow (replay_build_scripts/rbe).
-  # Fully independent of build-node-linux: own cached checkout (rbe-repo-*), own
-  # toolchain, nothing depends on it and it publishes nothing. Compare its
-  # duration with build-node-linux before switching over.
-  - label: ":satellite: Build node (RBE prototype)"
+  # RBE build: same commit built with reclient/EngFlow (replay_build_scripts/rbe).
+  # Independent of build-node-linux until RBE replaces it: own cached checkout
+  # (rbe-repo-*), own toolchain, nothing depends on it. It uploads under its own
+  # build id (...-rbe-dev, see build.js) so it never overwrites the make build,
+  # and publishes that id as the build_id_rbe artifact + an annotation.
+  - label: ":satellite: Build node (RBE)"
     key: "build-node-linux-rbe"
     soft_fail: true
     timeout_in_minutes: 60
@@ -151,6 +152,7 @@ steps:
               secret-id: engflow-key
     artifact_paths:
       - "rbe-logs/**/*"
+      - "build_id_rbe"
     command: |
       set -euo pipefail
       NODE_VERSION=$$(awk '/^#define NODE_(MAJOR|MINOR|PATCH)_VERSION /{v = v (v ? "." : "") $$3} END {print v}' src/node_version.h)
@@ -183,8 +185,14 @@ steps:
         -v "$$NODE_REPO:$$NODE_REPO" \
         -w "$$NODE_REPO" \
         node-rbe-build \
-        node build.js
+        sh -c 'node build.js && replay_build_scripts/rbe/upload-rbe-build.sh'
       RECORD_REPLAY_DONT_RECORD=1 "$$NODE_REPO/out/Release/node" --version
+      BUILD_ID=$$(sed -n 's/.*gBuildId\[\] = "\([^"]*\)".*/\1/p' "$$NODE_REPO/src/node_record_replay_driver.cc" | head -n1)
+      test -n "$$BUILD_ID"
+      echo "$$BUILD_ID" > build_id_rbe
+      echo "BuildId=$$BUILD_ID"
+      printf '# Node RBE build\n\n* [Build](https://static.replay.io/downloads/%s)\n* Build ID: `%s`\n' "$$BUILD_ID" "$$BUILD_ID" \
+        | buildkite-agent annotate --context node-rbe-build --style info
 
   - label: "test-node-recording"
     key: "node-test-node-recording"

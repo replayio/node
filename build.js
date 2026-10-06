@@ -198,8 +198,12 @@ function computeBuildId() {
   const date = +runtimeDate >= +driverDate ? runtimeDate : driverDate;
 
   // Chromium twin: upload_build_artifacts.mjs buildIdExtension / backend utils.ts.
-  const buildIdExtension =
-    process.env.BUILDKITE_BRANCH !== process.env.BUILDKITE_PIPELINE_DEFAULT_BRANCH
+  // RBE builds (temporary, until they replace make builds) get their own id so
+  // their upload never overwrites the make build of the same commit. It must end
+  // in -dev: the backend treats any other last segment as a local build.
+  const buildIdExtension = process.env.REPLAY_RBE
+    ? "-rbe-dev"
+    : process.env.BUILDKITE_BRANCH !== process.env.BUILDKITE_PIPELINE_DEFAULT_BRANCH
       ? "-dev"
       : process.env.LOCAL_DEVELOPER_BUILD_EXTENSION || "";
 
