@@ -1,6 +1,7 @@
 #include "node_deferred_finalization.h"
 
 #include "async_wrap.h"
+#include "base_object-inl.h"
 #include "env-inl.h"
 #include "node.h"
 
@@ -10,6 +11,7 @@ namespace recordreplay {
 namespace {
 
 constexpr uintptr_t kDestroyedAsyncIds = 1 << 0;
+constexpr uintptr_t kCollectedObjects = 1 << 1;
 
 template <typename T>
 void RecordReplayList(const char* why, std::vector<T>* list) {
@@ -46,11 +48,32 @@ bool DeferredFinalization::AddDestroyedAsyncId(double async_id) {
   return true;
 }
 
+int DeferredFinalization::Track(BaseObject* object, const char* label) {
+  if (!Enabled(label) || !AreEventsRecorded()) return 0;
+  int id = ++last_object_id_;
+  v8::recordreplay::Assert("DeferredFinalization::Track %s %d", label, id);
+  has_tracked_objects_ = true;
+  tracked_objects_.emplace(id, object);
+  return id;
+}
+
+void DeferredFinalization::Untrack(int id) {
+  tracked_objects_.erase(id);
+}
+
+void DeferredFinalization::OnCollected(int id) {
+  // Runs inside the GC, so this only notes the id for the next poll.
+  CHECK(v8::recordreplay::IsRecording());
+  collected_objects_.push_back(id);
+}
+
 bool DeferredFinalization::ShouldPoll() const {
   // Destroys are only noted while destroy hooks are enabled, which is JS state
-  // and so the same on both sides. The poll records nothing otherwise.
-  return env_->async_hooks()->fields()[AsyncHooks::kDestroy] != 0 &&
-         Enabled("AsyncWrap::EmitDestroy");
+  // and so the same on both sides. The poll records nothing otherwise, unless
+  // an object was tracked.
+  return has_tracked_objects_ ||
+         (env_->async_hooks()->fields()[AsyncHooks::kDestroy] != 0 &&
+          Enabled("AsyncWrap::EmitDestroy"));
 }
 
 void DeferredFinalization::Poll() {
@@ -59,6 +82,7 @@ void DeferredFinalization::Poll() {
   uintptr_t flags = 0;
   if (v8::recordreplay::IsRecording()) {
     if (!destroyed_async_ids_.empty()) flags |= kDestroyedAsyncIds;
+    if (!collected_objects_.empty()) flags |= kCollectedObjects;
   }
   flags = v8::recordreplay::RecordReplayValue("DeferredFinalization.poll",
                                               flags);
@@ -71,6 +95,20 @@ void DeferredFinalization::Poll() {
     // destroy list, delivered from an immediate.
     for (double async_id : ids) {
       AsyncWrap::EmitDestroy(env_, async_id);
+    }
+  }
+
+  if (flags & kCollectedObjects) {
+    std::vector<int> ids;
+    ids.swap(collected_objects_);
+    RecordReplayList("DeferredFinalization.poll collected objects", &ids);
+    v8::HandleScope handle_scope(env_->isolate());
+    for (int id : ids) {
+      auto it = tracked_objects_.find(id);
+      // Deleted since the GC collected it, on a path which replays and so on
+      // both sides, e.g. by its owner.
+      if (it == tracked_objects_.end()) continue;
+      it->second->RecordReplayFinalize();
     }
   }
 }

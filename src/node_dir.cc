@@ -58,6 +58,7 @@ using v8::Value;
 DirHandle::DirHandle(Environment* env, Local<Object> obj, uv_dir_t* dir)
     : AsyncWrap(env, obj, AsyncWrap::PROVIDER_DIRHANDLE),
       dir_(dir) {
+  RecordReplayTrack("DirHandle");
   MakeWeak();
 
   dir_->nentries = 0;
@@ -87,11 +88,15 @@ DirHandle::~DirHandle() {
 
 void DirHandle::OnGCCollect() {
   // When recording/replaying, the GC collects this at points which differ
-  // between the two, and closing it here schedules JS (a process warning).
-  // Leak it while it is open instead. An explicit close() is unaffected, and
-  // the cleanup hook still closes the directory when the environment is torn
-  // down. Once closed, destroying it has no effect beyond freeing memory.
-  if (!closed_ && recordreplay::EnterLeakMemory("DirHandle")) {
+  // between the two, and closing it here schedules JS (a process warning). A
+  // tracked handle (see RecordReplayTrack) gets here from
+  // DeferredFinalization::Poll instead, at a point which replays, and is
+  // closed. One created where it could not be tracked is leaked while it is
+  // open. An explicit close() is unaffected, and the cleanup hook still closes
+  // the directory when the environment is torn down. Once closed, destroying
+  // it has no effect beyond freeing memory.
+  if (!closed_ && !IsRecordReplayTracked() &&
+      recordreplay::EnterLeakMemory("DirHandle")) {
     return;
   }
   BaseObject::OnGCCollect();

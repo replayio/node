@@ -38,6 +38,10 @@ namespace worker {
 class TransferData;
 }
 
+namespace recordreplay {
+class DeferredFinalization;
+}
+
 class BaseObject : public MemoryRetainer {
  public:
   enum InternalFields { kSlot, kInternalFieldCount };
@@ -79,6 +83,15 @@ class BaseObject : public MemoryRetainer {
   // Undo `MakeWeak()`, i.e. turn this into a strong reference that is a GC
   // root and will not be touched by the garbage collector.
   inline void ClearWeak();
+
+  // When recording/replaying, runs the cleanup which collecting this object
+  // causes (OnGCCollect()) at a point which replays instead of from the weak
+  // callback, see recordreplay::DeferredFinalization. Call before MakeWeak().
+  // Only an object created at a point which replays can be tracked; for the
+  // others OnGCCollect() runs from the weak callback as usual, and subclasses
+  // fall back to leaking (recordreplay::EnterLeakMemory).
+  inline void RecordReplayTrack(const char* label);
+  inline bool IsRecordReplayTracked() const;
 
   // Reports whether this BaseObject is using a weak reference or detached,
   // i.e. whether is can be deleted by GC once no strong BaseObjectPtrs refer
@@ -174,8 +187,13 @@ class BaseObject : public MemoryRetainer {
   // refer to `doc/contributing/node-postmortem-support.md`
   friend int GenDebugSymbols();
   friend class CleanupHookCallback;
+  friend class recordreplay::DeferredFinalization;
   template <typename T, bool kIsWeak>
   friend class BaseObjectPtrImpl;
+
+  // Called by DeferredFinalization::Poll for a tracked object the recording's
+  // GC collected: runs OnGCCollect() as the weak callback would have.
+  inline void RecordReplayFinalize();
 
   v8::Global<v8::Object> persistent_handle_;
 
@@ -210,6 +228,8 @@ class BaseObject : public MemoryRetainer {
 
   Environment* env_;
   PointerData* pointer_data_ = nullptr;
+  // The id DeferredFinalization tracks this object by, or 0.
+  int record_replay_id_ = 0;
 };
 
 // Global alias for FromJSObject() to avoid churn.
