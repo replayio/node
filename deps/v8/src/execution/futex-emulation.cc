@@ -6,9 +6,11 @@
 
 #include <limits>
 
+#include "include/replayio.h"
 #include "src/api/api-inl.h"
 #include "src/base/logging.h"
 #include "src/base/macros.h"
+#include "src/base/optional.h"
 #include "src/execution/isolate.h"
 #include "src/execution/vm-state-inl.h"
 #include "src/handles/handles-inl.h"
@@ -125,6 +127,9 @@ bool FutexWaitListNode::CancelTimeoutTask() {
 
 void FutexWaitListNode::NotifyWake() {
   DCHECK(!IsAsync());
+
+  replayio::AutoDisallowEvents disallow("FutexWaitListNode::NotifyWake");
+
   // Lock the FutexEmulation mutex before notifying. We know that the mutex
   // will have been unlocked if we are currently waiting on the condition
   // variable. The mutex will not be locked if FutexEmulation::Wait hasn't
@@ -165,7 +170,8 @@ class AsyncWaiterTimeoutTask : public CancelableTask {
   FutexWaitListNode* node_;
 };
 
-void FutexEmulation::NotifyAsyncWaiter(FutexWaitListNode* node) {
+void FutexEmulation::NotifyAsyncWaiter(
+    FutexWaitListNode* node, std::vector<AsyncWaiterTask>* tasks_to_post) {
   // This function can run in any thread.
 
   g_mutex.Pointer()->AssertHeld();
@@ -187,7 +193,7 @@ void FutexEmulation::NotifyAsyncWaiter(FutexWaitListNode* node) {
                                       FutexWaitList::HeadAndTail{node, node}));
     auto task = std::make_unique<ResolveAsyncWaiterPromisesTask>(
         node->cancelable_task_manager_, node->isolate_for_async_waiters_);
-    node->task_runner_->PostNonNestableTask(std::move(task));
+    tasks_to_post->push_back({node->task_runner_, std::move(task)});
   } else {
     // Add this Node into the existing list.
     node->prev_ = it->second.tail;
@@ -247,6 +253,7 @@ void AtomicsWaitWakeHandle::Wake() {
   // The split lock by itself isn’t an issue, as long as the caller properly
   // synchronizes this with the closing `AtomicsWaitCallback`.
   {
+    replayio::AutoDisallowEvents disallow("AtomicsWaitWakeHandle::Wake");
     NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
     stopped_ = true;
   }
@@ -330,6 +337,9 @@ Object FutexEmulation::Wait(Isolate* isolate, WaitMode mode,
       rel_timeout_ns = static_cast<int64_t>(timeout_ns);
     }
   }
+
+  recordreplay::AutoAssertMaybeEventsDisallowed assrt("[RUN-2378] FutexEmulation::Wait");
+
   return Wait(isolate, mode, array_buffer, addr, value, use_timeout,
               rel_timeout_ns);
 }
@@ -380,6 +390,7 @@ Object FutexEmulation::WaitSync(Isolate* isolate,
   AtomicsWaitEvent callback_result = AtomicsWaitEvent::kWokenUp;
 
   do {  // Not really a loop, just makes it easier to break out early.
+    replayio::AutoDisallowEvents disallow("FutexEmulation::WaitSync");
     NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
 
     std::shared_ptr<BackingStore> backing_store =
@@ -532,7 +543,9 @@ Object FutexEmulation::WaitAsync(Isolate* isolate,
   Handle<JSObject> promise_capability = factory->NewJSPromise();
 
   enum { kNotEqual, kTimedOut, kAsync } result_kind;
+  AsyncWaiterTask timeout_task;
   {
+    replayio::AutoDisallowEvents disallow("FutexEmulation::WaitAsync");
     // 16. Perform EnterCriticalSection(WL).
     NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
 
@@ -557,8 +570,7 @@ Object FutexEmulation::WaitAsync(Isolate* isolate,
         auto task = std::make_unique<AsyncWaiterTimeoutTask>(
             node->cancelable_task_manager_, node);
         node->timeout_task_id_ = task->id();
-        node->task_runner_->PostNonNestableDelayedTask(
-            std::move(task), rel_timeout.InSecondsF());
+        timeout_task = {node->task_runner_, std::move(task)};
       }
 
       g_wait_list.Pointer()->AddNode(node);
@@ -568,6 +580,11 @@ Object FutexEmulation::WaitAsync(Isolate* isolate,
     // 18.a. Perform LeaveCriticalSection(WL).
     // 19.b. Perform LeaveCriticalSection(WL).
     // 24. Perform LeaveCriticalSection(WL).
+  }
+
+  if (timeout_task.task) {
+    timeout_task.runner->PostNonNestableDelayedTask(
+        std::move(timeout_task.task), rel_timeout.InSecondsF());
   }
 
   switch (result_kind) {
@@ -641,7 +658,15 @@ Object FutexEmulation::Wake(Handle<JSArrayBuffer> array_buffer, size_t addr,
   std::shared_ptr<BackingStore> backing_store = array_buffer->GetBackingStore();
   auto wait_location = FutexWaitList::ToWaitLocation(backing_store.get(), addr);
 
-  NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
+  // Posting a task to another isolate's runner is a recorded event the
+  // waiter's thread is ordered after, so the tasks resolving async waiters'
+  // promises are posted at the end, once the lock is released and events are
+  // allowed again.
+  std::vector<AsyncWaiterTask> tasks_to_post;
+  base::Optional<replayio::AutoDisallowEvents> disallow(
+      base::in_place, "FutexEmulation::Wake");
+  base::Optional<NoGarbageCollectionMutexGuard> lock_guard(
+      base::in_place, g_mutex.Pointer());
 
   auto& location_lists = g_wait_list.Pointer()->location_lists_;
   auto it = location_lists.find(wait_location);
@@ -670,7 +695,7 @@ Object FutexEmulation::Wake(Handle<JSArrayBuffer> array_buffer, size_t addr,
       auto old_node = node;
       node = node->next_;
       if (old_node->IsAsync()) {
-        NotifyAsyncWaiter(old_node);
+        NotifyAsyncWaiter(old_node, &tasks_to_post);
       } else {
         // WaitSync will remove the node from the list.
         old_node->cond_.NotifyOne();
@@ -719,6 +744,12 @@ Object FutexEmulation::Wake(Handle<JSArrayBuffer> array_buffer, size_t addr,
     } else {
       node = node->next_;
     }
+  }
+
+  lock_guard.reset();
+  disallow.reset();
+  for (AsyncWaiterTask& task : tasks_to_post) {
+    task.runner->PostNonNestableTask(std::move(task.task));
   }
 
   return Smi::FromInt(waiters_woken);
@@ -802,6 +833,7 @@ void FutexEmulation::ResolveAsyncWaiterPromises(Isolate* isolate) {
 
   FutexWaitListNode* node;
   {
+    replayio::AutoDisallowEvents disallow("FutexEmulation::ResolveAsyncWaiterPromises");
     NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
 
     auto& isolate_map = g_wait_list.Pointer()->isolate_promises_to_resolve_;
@@ -835,6 +867,7 @@ void FutexEmulation::HandleAsyncWaiterTimeout(FutexWaitListNode* node) {
   DCHECK(node->IsAsync());
 
   {
+    replayio::AutoDisallowEvents disallow("FutexEmulation::HandleAsyncWaiterTimeout");
     NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
 
     node->timeout_task_id_ = CancelableTaskManager::kInvalidTaskId;
@@ -856,6 +889,7 @@ void FutexEmulation::HandleAsyncWaiterTimeout(FutexWaitListNode* node) {
 }
 
 void FutexEmulation::IsolateDeinit(Isolate* isolate) {
+  replayio::AutoDisallowEvents disallow("FutexEmulation::IsolateDeinit");
   NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
 
   // Iterate all locations to find nodes belonging to "isolate" and delete them.
@@ -901,6 +935,7 @@ Object FutexEmulation::NumWaitersForTesting(Handle<JSArrayBuffer> array_buffer,
   DCHECK_LT(addr, array_buffer->byte_length());
   std::shared_ptr<BackingStore> backing_store = array_buffer->GetBackingStore();
 
+  replayio::AutoDisallowEvents disallow("FutexEmulation::NumWaitersForTesting");
   NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
 
   auto wait_location = FutexWaitList::ToWaitLocation(backing_store.get(), addr);
@@ -925,6 +960,7 @@ Object FutexEmulation::NumWaitersForTesting(Handle<JSArrayBuffer> array_buffer,
 }
 
 Object FutexEmulation::NumAsyncWaitersForTesting(Isolate* isolate) {
+  replayio::AutoDisallowEvents disallow("FutexEmulation::NumAsyncWaitersForTesting");
   NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
 
   int waiters = 0;
@@ -946,6 +982,7 @@ Object FutexEmulation::NumUnresolvedAsyncPromisesForTesting(
   DCHECK_LT(addr, array_buffer->byte_length());
   std::shared_ptr<BackingStore> backing_store = array_buffer->GetBackingStore();
 
+  replayio::AutoDisallowEvents disallow("FutexEmulation::NumUnresolvedAsyncPromisesForTesting");
   NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
 
   int waiters = 0;

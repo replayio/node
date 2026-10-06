@@ -8,6 +8,8 @@
 #include <stdint.h>
 
 #include <map>
+#include <memory>
+#include <vector>
 
 #include "include/v8.h"
 #include "src/base/atomicops.h"
@@ -231,7 +233,18 @@ class FutexEmulation : public AllStatic {
 
   static void HandleAsyncWaiterTimeout(FutexWaitListNode* node);
 
-  static void NotifyAsyncWaiter(FutexWaitListNode* node);
+  // A task resolving an isolate's async waiter promises or timing out one of
+  // its waiters, with the runner to post it to. Posting is a recorded event,
+  // so it happens once g_mutex is released and events are allowed again.
+  struct AsyncWaiterTask {
+    std::shared_ptr<TaskRunner> runner;
+    std::unique_ptr<CancelableTask> task;
+  };
+
+  // Appends the task to post for the node's isolate, if any, to tasks_to_post
+  // instead of posting it; Wake posts it after releasing g_mutex.
+  static void NotifyAsyncWaiter(FutexWaitListNode* node,
+                                std::vector<AsyncWaiterTask>* tasks_to_post);
 
   // Remove the node's Promise from the NativeContext's Promise set.
   static void CleanupAsyncWaiterPromise(FutexWaitListNode* node);

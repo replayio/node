@@ -222,7 +222,7 @@ int WorkerThreadsTaskRunner::NumberOfWorkerThreads() const {
 
 PerIsolatePlatformData::PerIsolatePlatformData(
     Isolate* isolate, uv_loop_t* loop)
-  : isolate_(isolate), loop_(loop) {
+  : isolate_(isolate), loop_(loop), flush_tasks_mutex_(/* ordered */ true) {
   flush_tasks_ = new uv_async_t();
   CHECK_EQ(0, uv_async_init(loop, flush_tasks_, FlushTasks));
   flush_tasks_->data = static_cast<void*>(this);
@@ -250,6 +250,7 @@ void PerIsolatePlatformData::PostTask(std::unique_ptr<Task> task) {
   }
   v8::recordreplay::Assert("PerIsolatePlatformData::PostTask");
 
+  Mutex::ScopedLock lock(flush_tasks_mutex_);
   if (flush_tasks_ == nullptr) {
     // V8 may post tasks during Isolate disposal. In that case, the only
     // sensible path forward is to discard the task.
@@ -266,6 +267,8 @@ void PerIsolatePlatformData::PostDelayedTask(
     return;
   }
   v8::recordreplay::Assert("PerIsolatePlatformData::PostDelayedTask");
+
+  Mutex::ScopedLock lock(flush_tasks_mutex_);
   if (flush_tasks_ == nullptr) {
     // V8 may post tasks during Isolate disposal. In that case, the only
     // sensible path forward is to discard the task.
@@ -299,7 +302,15 @@ void PerIsolatePlatformData::AddShutdownCallback(void (*callback)(void*),
 }
 
 void PerIsolatePlatformData::Shutdown() {
-  if (flush_tasks_ == nullptr)
+  uv_async_t* async_handle;
+  {
+    // A post from another thread that took the lock first has sent its task;
+    // any later one finds flush_tasks_ null and discards it.
+    Mutex::ScopedLock lock(flush_tasks_mutex_);
+    async_handle = flush_tasks_;
+    flush_tasks_ = nullptr;
+  }
+  if (async_handle == nullptr)
     return;
 
   // While there should be no V8 tasks in the queues at this point, it is
@@ -315,7 +326,7 @@ void PerIsolatePlatformData::Shutdown() {
   // non-closed handles, and when that reaches zero, we inform any shutdown
   // callbacks that the platform is done as far as this Isolate is concerned.
   self_reference_ = shared_from_this();
-  uv_close(reinterpret_cast<uv_handle_t*>(flush_tasks_),
+  uv_close(reinterpret_cast<uv_handle_t*>(async_handle),
            [](uv_handle_t* handle) {
     std::unique_ptr<uv_async_t> flush_tasks {
         reinterpret_cast<uv_async_t*>(handle) };
@@ -324,7 +335,6 @@ void PerIsolatePlatformData::Shutdown() {
     platform_data->DecreaseHandleCount();
     platform_data->self_reference_.reset();
   });
-  flush_tasks_ = nullptr;
 }
 
 void PerIsolatePlatformData::DecreaseHandleCount() {

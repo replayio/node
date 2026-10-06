@@ -10693,6 +10693,21 @@ void recordreplay::AssertMaybeEventsDisallowed(const char* format, ...) {
   }
 }
 
+recordreplay::AutoAssertMaybeEventsDisallowed::AutoAssertMaybeEventsDisallowed(
+    const char* format, ...) {
+  char buf[1024];
+  va_list arguments;
+  va_start(arguments, format);
+  vsnprintf(buf, sizeof(buf), format, arguments);
+  va_end(arguments);
+  msg_ = buf;
+  AssertMaybeEventsDisallowed("%s", msg_.c_str());
+}
+
+recordreplay::AutoAssertMaybeEventsDisallowed::~AutoAssertMaybeEventsDisallowed() {
+  AssertMaybeEventsDisallowed("%s", msg_.c_str());
+}
+
 extern "C" void V8RecordReplayAssertMaybeEventsDisallowed(const char* format, ...) {
   if (recordreplay::HasAsserts() &&
       !recordreplay::AreEventsDisallowed("AssertMaybeEventsDisallowed")) {

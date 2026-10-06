@@ -12669,6 +12669,13 @@ static void Warning(const char* format, ...);
 static bool HasAsserts();
 static void Assert(const char* format, ...);
 static void AssertMaybeEventsDisallowed(const char* format, ...);
+// Asserts the message both when constructed and when destroyed, unless events
+// are disallowed, so the recording orders entering and leaving the scope.
+struct AutoAssertMaybeEventsDisallowed {
+  AutoAssertMaybeEventsDisallowed(const char* format, ...);
+  ~AutoAssertMaybeEventsDisallowed();
+  std::string msg_;
+};
 static void AssertBytes(const char* why, const void* buf, size_t size);
 static void AssertScriptedCaller(Isolate* isolate, const char* why);
 static bool AreAssertsDisabled();
