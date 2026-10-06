@@ -2,6 +2,7 @@
 #include "src/execution/arguments-inl.h"
 #include "src/objects/js-weak-refs-inl.h"
 #include "src/replay/finalization-registry.h"
+#include "src/replay/replayio.h"
 #include "src/replay/weak-refs.h"
 #include "src/runtime/runtime-utils.h"
 
@@ -25,6 +26,10 @@ RUNTIME_FUNCTION(Runtime_RecordReplayWeakRefDeref) {
   Handle<JSWeakRef> weak_ref = args.at<JSWeakRef>(0);
 
   Handle<Object> target(weak_ref->target(), isolate);
+  // The driver passes the value through where events are unavailable, e.g.
+  // while evaluating in a replay pause, warning on every call.
+  if (!replayio::AreEventsAvailable()) return *target;
+
   const bool had_target = !target->IsUndefined(isolate);
   uintptr_t alive = had_target ? 1 : 0;
   uintptr_t recorded_alive =
