@@ -2,8 +2,8 @@
 """Sync the RBE build tool pins and reclient configs from a Chromium fork checkout.
 
 Node's RBE build runs on the same EngFlow cluster as Chromium, so it uses the
-same reclient, ninja and reclient configs. (Not its compiler: node keeps the
-make build's gcc, see Dockerfile.) Nothing here is hand-edited: rerun this
+same reclient, ninja and reclient configs. (Not its compiler: node builds with
+Ubuntu's gcc from its own toolchain image, see Dockerfile.) Nothing here is hand-edited: rerun this
 after the Chromium fork rolls any of them.
 
   python3 replay_build_scripts/rbe/update-toolchain.py <chromium>/src

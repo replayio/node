@@ -85,7 +85,8 @@ steps:
       fi
       PIN="__REPLAY_BACKEND_REV__"
       WORKDIR=$$(mktemp -d "/tmp/build-node-$${BUILDKITE_JOB_ID}.XXXXXX")
-      trap 'rm -rf "$$WORKDIR"' EXIT
+      # The EngFlow cert/key (aws-sm plugin) must not outlive the job, whatever fails.
+      trap 'rm -f "$$ENGFLOW/engflow.crt" "$$ENGFLOW/engflow.key"; rm -rf "$$WORKDIR"' EXIT
       BACKEND_DIR="$$WORKDIR/backend"
       mkdir -p "$$BACKEND_DIR"
       git -C "$$BACKEND_DIR" init
