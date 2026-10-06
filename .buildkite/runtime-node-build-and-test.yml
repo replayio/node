@@ -131,8 +131,8 @@ steps:
 
   # Toolchain image for the RBE build: local runner and EngFlow worker image.
   # Built + pushed only when replay_build_scripts/rbe/Dockerfile changes (the
-  # tag is its hash); otherwise this only checks the tag exists. Public on ECR
-  # Public so EngFlow can pull it like Chromium's gcr worker image. Pushes with
+  # tag is its hash); otherwise this only checks the tag exists. Lives in our
+  # ECR (linux_node_build), where EngFlow's workers pull it from. Pushes with
   # the agent's AWS identity.
   - label: ":docker: RBE toolchain image"
     key: "build-rbe-toolchain-image"
@@ -192,6 +192,7 @@ steps:
         -e BUILDKITE_BRANCH -e BUILDKITE_PIPELINE_DEFAULT_BRANCH \
         -e REPLAY_RBE=1 \
         -e REPLAY_RBE_CONTAINER_IMAGE="$$IMAGE" \
+        -e REPLAY_RBE_REQUIRE_REMOTE=1 \
         -e RBE_service=simpsonite.cluster.engflow.com:443 \
         -e RBE_service_no_auth=true \
         -e RBE_use_application_default_credentials=true \

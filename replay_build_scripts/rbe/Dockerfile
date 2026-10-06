@@ -4,9 +4,9 @@
 # backend src/build/docker/linux_node_build.Dockerfile (ubuntu:22.04 +
 # build-essential/gcc/g++), pinned by digest once pushed.
 #
-# Published by toolchain-image.sh as public.ecr.aws/f8g4u4l4/node-rbe-toolchain:
-# <hash of this file>; any change here produces a new image (and remote cache
-# keys). It is public: never COPY repo contents or credentials into it.
+# Published by toolchain-image.sh as <ecr>/linux_node_build:<hash of this
+# file>; any change here produces a new image (and remote cache keys). EngFlow
+# pulls it: never COPY repo contents or credentials into it.
 FROM ubuntu:22.04@sha256:5ec03bb3441e8b0bf3b4f9cd4629a1ae763010dc3035bb8da3ae6cf026486401
 
 RUN apt-get update && \

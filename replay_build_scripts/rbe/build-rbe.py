@@ -33,6 +33,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -207,13 +208,24 @@ def main():
   subprocess.check_call([os.path.join(reclient, "bootstrap"),
                          f"--re_proxy={os.path.join(reclient, 'reproxy')}", f"--cfg={cfg}"], env=env)
   start = time.time()
+  stats = ""
   try:
     rv = subprocess.call([os.path.join(TC, "ninja", "ninja"), "-C", BUILD_DIR, f"-j{args.j}"],
                          cwd=ROOT, env={**env, "RECORD_REPLAY_DONT_RECORD": "1"})
   finally:
     # Prints the remote/cache-hit/fallback summary.
-    subprocess.call([os.path.join(reclient, "bootstrap"), "--shutdown", f"--cfg={cfg}"], env=env)
+    shutdown = subprocess.run([os.path.join(reclient, "bootstrap"), "--shutdown", f"--cfg={cfg}"],
+                              env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    stats = shutdown.stdout
+    print(stats, end="", flush=True)
   log(f"ninja finished in {time.time() - start:.0f}s with exit code {rv}")
+  # A worker image EngFlow can't pull (or any other remote failure) silently
+  # degrades into local compiles; CI sets this so that fails loudly instead.
+  fallbacks = re.search(r"(\d+) local fallbacks?", stats)
+  if rv == 0 and fallbacks and os.environ.get("REPLAY_RBE_REQUIRE_REMOTE"):
+    log(f"{fallbacks.group(1)} compiles fell back to local execution; "
+        f"see out/Release/.reproxy_tmp/logs (reproxy.INFO, *.rrpl) for why")
+    rv = 1
   sys.exit(rv)
 
 
