@@ -36,8 +36,8 @@ published() {
 }
 
 login() {
-  # ECR Public's API only lives in us-east-1. Agents have no AWS CLI on the
-  # host, so use it from a container there (instance role via IMDS).
+  # ECR Public's API only lives in us-east-1. Without an AWS CLI on the host,
+  # use it from a container (instance role via IMDS).
   if command -v aws >/dev/null; then
     aws ecr-public get-login-password --region us-east-1
   else

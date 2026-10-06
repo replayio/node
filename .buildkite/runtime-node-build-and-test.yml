@@ -134,6 +134,9 @@ steps:
       # EC2s (beefiermaster / runner-*) docker uses the agent identity (same as the
       # manual build-node pipeline).
       # safe.directory is set inside the image (run_node_build.sh / buildNodeDirectly).
+      # Logs from an earlier job in the persistent out/Release must not be
+      # collected as this job's if the build fails before build-rbe.py clears them.
+      rm -rf "$$NODE_REPO/out/Release/.reproxy_tmp/logs"
       # REPLAY_RBE_REQUIRE_REMOTE: fail instead of silently compiling locally when
       # remote execution doesn't work (e.g. EngFlow can't pull the worker image).
       docker run --rm \
