@@ -166,6 +166,12 @@ def rbe_env():
       "RBE_exec_strategy": "remote_local_fallback",
       "REPLAY_RBE_REPROXY": "1",
   })
+  if os.environ.get("REPLAY_RBE_REQUIRE_REMOTE") == "1":
+    # Chromium's fail-early threshold (4000 actions) exceeds node's ~3300
+    # compiles: with remote execution broken (bad cert, unpullable worker
+    # image) give up after a few hundred fallbacks instead of compiling
+    # everything locally first.
+    env["RBE_fail_early_min_action_count"] = "200"
   return env
 
 
