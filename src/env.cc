@@ -473,26 +473,30 @@ Environment::~Environment() {
     // so as not to leak memory.
     *interrupt_data = nullptr;
 
-    Isolate::AllowJavascriptExecutionScope allow_js_here(isolate());
-    HandleScope handle_scope(isolate());
-    TryCatch try_catch(isolate());
-    Context::Scope context_scope(context());
+    // When recording or replaying, V8 runs the interrupts when the progress
+    // counter next advances rather than at the script's stack check, which it
+    // may never do again: the entry and its Environment** are left behind.
+    if (!v8::recordreplay::IsRecordingOrReplaying()) {
+      Isolate::AllowJavascriptExecutionScope allow_js_here(isolate());
+      HandleScope handle_scope(isolate());
+      TryCatch try_catch(isolate());
+      Context::Scope context_scope(context());
 
 #ifdef DEBUG
-    bool consistency_check = false;
-    isolate()->RequestInterrupt([](Isolate*, void* data) {
-      *static_cast<bool*>(data) = true;
-    }, &consistency_check);
+      bool consistency_check = false;
+      isolate()->RequestInterrupt([](Isolate*, void* data) {
+        *static_cast<bool*>(data) = true;
+      }, &consistency_check);
 #endif
 
-    Local<Script> script;
-    if (Script::Compile(context(), String::Empty(isolate())).ToLocal(&script))
-      USE(script->Run(context()));
+      Local<Script> script;
+      if (Script::Compile(context(), String::Empty(isolate()))
+              .ToLocal(&script)) {
+        USE(script->Run(context()));
+      }
 
-    // When recording or replaying, V8 runs the interrupts when the progress
-    // counter next advances rather than here, which it may never do again;
-    // the entry and its Environment** are left behind in that case.
-    DCHECK(consistency_check || v8::recordreplay::IsRecordingOrReplaying());
+      DCHECK(consistency_check);
+    }
   }
 
   // FreeEnvironment() should have set this.
