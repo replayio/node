@@ -4,6 +4,7 @@
 #   toolchain-image.sh ensure   build + push it unless that tag already exists
 #                               (AWS identity with ECR Public push rights)
 #   toolchain-image.sh pull     pull it and print its digest ref (repo@sha256:...)
+#   toolchain-image.sh digest   print its digest ref without docker (host builds)
 # The tag is a hash of the Dockerfile, and an existing tag is never pushed
 # again: apt packages float, but every build of a given Dockerfile uses the same
 # image. ECR Public, so EngFlow's workers pull it anonymously (like Chromium's
@@ -62,10 +63,23 @@ case ${1:-} in
     fi
     registry push "$ref"
     ;;
+  digest)
+    # Anonymous registry API, so hosts without docker can resolve it too.
+    name=${repo#public.ecr.aws/}
+    token=$(curl -sf "https://public.ecr.aws/token/?scope=repository:$name:pull" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+    digest=$(curl -sfI -H "Authorization: Bearer $token" \
+      -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+      "https://public.ecr.aws/v2/$name/manifests/$tag" | tr -d '\r' | sed -n 's/^docker-content-digest: *//Ip')
+    if [ -z "$digest" ]; then
+      echo "toolchain-image: $ref is not published" >&2
+      exit 1
+    fi
+    echo "$repo@$digest"
+    ;;
   pull)
     registry pull -q "$ref" >/dev/null
     # The same image can carry digests from other repositories on this host.
     docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$ref" | grep -m1 "^$repo@"
     ;;
-  *) echo "usage: $0 ref|ensure|pull" >&2; exit 2 ;;
+  *) echo "usage: $0 ref|ensure|pull|digest" >&2; exit 2 ;;
 esac
