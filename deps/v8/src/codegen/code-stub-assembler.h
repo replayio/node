@@ -2570,6 +2570,11 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
         ExternalReference::address_of_builtin_subclassing_flag());
   }
 
+  TNode<BoolT> IsRecordingOrReplaying() {
+    return LoadRuntimeFlag(
+        ExternalReference::record_replay_is_recording_or_replaying());
+  }
+
   // True iff |object| is a Smi or a HeapNumber or a BigInt.
   TNode<BoolT> IsNumeric(TNode<Object> object);
 

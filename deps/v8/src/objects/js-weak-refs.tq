@@ -13,6 +13,12 @@ extern class JSFinalizationRegistry extends JSObject {
   active_cells: Undefined|WeakCell;
   cleared_cells: Undefined|WeakCell;
   key_map: Object;
+  // Record/replay: nonzero when cleanup of this registry is driven by the
+  // recording. See src/replay/finalization-registry.h.
+  record_replay_id: Smi;
+  // Record/replay: while replaying, a SimpleNumberDictionary from
+  // WeakCell::record_replay_id to the registered WeakCell.
+  record_replay_cells: Object;
   // For the linked list of FinalizationRegistries that need cleanup. This
   // link is weak.
   next_dirty: Undefined|JSFinalizationRegistry;
@@ -38,6 +44,16 @@ extern class WeakCell extends HeapObject {
   // unregister token is stored above, after target, as both are weak.
   key_list_prev: Undefined|WeakCell;
   key_list_next: Undefined|WeakCell;
+
+  // Record/replay: identifies this cell in the recording. Zero when the
+  // registry is not tracked, negative when the cell can never be
+  // delivered.
+  record_replay_id: Smi;
 }
 
-extern class JSWeakRef extends JSObject { target: Undefined|JSReceiver; }
+extern class JSWeakRef extends JSObject {
+  target: Undefined|JSReceiver;
+  // Record/replay: nonzero when the recording describes the GC clearing the
+  // target. See src/replay/weak-refs.h.
+  record_replay_id: Smi;
+}

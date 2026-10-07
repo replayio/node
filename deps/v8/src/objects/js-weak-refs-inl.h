@@ -10,6 +10,7 @@
 #include "src/api/api-inl.h"
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/objects/smi-inl.h"
+#include "src/replay/finalization-registry.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -30,6 +31,9 @@ ACCESSORS(JSFinalizationRegistry, active_cells, HeapObject, kActiveCellsOffset)
 ACCESSORS(JSFinalizationRegistry, cleared_cells, HeapObject,
           kClearedCellsOffset)
 ACCESSORS(JSFinalizationRegistry, key_map, Object, kKeyMapOffset)
+SMI_ACCESSORS(JSFinalizationRegistry, record_replay_id, kRecordReplayIdOffset)
+ACCESSORS(JSFinalizationRegistry, record_replay_cells, Object,
+          kRecordReplayCellsOffset)
 SMI_ACCESSORS(JSFinalizationRegistry, flags, kFlagsOffset)
 ACCESSORS(JSFinalizationRegistry, next_dirty, Object, kNextDirtyOffset)
 CAST_ACCESSOR(JSFinalizationRegistry)
@@ -72,8 +76,10 @@ bool JSFinalizationRegistry::Unregister(
   // its FinalizationRegistry; remove it from there.
   return finalization_registry->RemoveUnregisterToken(
       *unregister_token, isolate,
-      [isolate](WeakCell matched_cell) {
+      [isolate, finalization_registry](WeakCell matched_cell) {
         matched_cell.RemoveFromFinalizationRegistryCells(isolate);
+        replayio::ReplayFinalizationRegistries::OnUnregisterCell(
+            isolate, *finalization_registry, matched_cell);
       },
       [](HeapObject, ObjectSlot, Object) {});
 }

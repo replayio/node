@@ -66,6 +66,10 @@ class ConsoleDelegate;
 class AsyncEventDelegate;
 }  // namespace debug
 
+namespace replayio {
+class ReplayIsolateData;
+}  // namespace replayio
+
 namespace internal {
 
 namespace heap {
@@ -1192,6 +1196,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   EternalHandles* eternal_handles() const { return eternal_handles_; }
 
+  replayio::ReplayIsolateData* replay_data() const { return replay_data_.get(); }
+  replayio::ReplayIsolateData* EnsureReplayData();
+
   ThreadManager* thread_manager() const { return thread_manager_; }
 
   bigint::Processor* bigint_processor() { return bigint_processor_; }
@@ -2122,6 +2129,8 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // Whether a progress interrupt has been triggered to run the queued API
   // interrupts and hasn't run yet. Main thread only.
   bool record_replay_api_interrupt_triggered_ = false;
+
+  std::unique_ptr<replayio::ReplayIsolateData> replay_data_;
 
 #define GLOBAL_BACKING_STORE(type, name, initialvalue) type name##_;
   ISOLATE_INIT_LIST(GLOBAL_BACKING_STORE)
