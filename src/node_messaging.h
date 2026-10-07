@@ -151,7 +151,12 @@ class SiblingGroup final : public std::enable_shared_from_this<SiblingGroup> {
 
  private:
   const std::string name_;
-  RwLock group_mutex_;  // Protects ports_.
+  // Protects ports_. Ordered when recording/replaying: Dispatch() and
+  // Disentangle() lock ports' ordered mutexes while holding it, so the replay
+  // has to take it in the recorded order, or two threads disentangling the
+  // ends of a channel can each wait for the lock the other holds. Ordered rw
+  // locks aren't supported, so readers are serialized too.
+  Mutex group_mutex_{/* ordered */ true};
   std::set<MessagePortData*> ports_;
 
   static void CheckSiblingGroup(const std::string& name);
