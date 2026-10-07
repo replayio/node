@@ -1282,6 +1282,10 @@ static void MeasureMemory(const FunctionCallbackInfo<Value>& args) {
   int32_t execution = args[1].As<v8::Int32>()->Value();
   Isolate* isolate = args.GetIsolate();
 
+  // The measurement is reported after a GC, at a point and with sizes which
+  // differ between recording and replaying.
+  v8::recordreplay::InvalidateRecording("vm.measureMemory called");
+
   Local<Context> current_context = isolate->GetCurrentContext();
   Local<Promise::Resolver> resolver;
   if (!Promise::Resolver::New(current_context).ToLocal(&resolver)) return;

@@ -11,6 +11,7 @@
 #include <cstring>
 #include <sstream>
 
+#include "include/v8.h"
 #include "src/base/functional.h"
 #include "src/base/logging.h"
 #include "src/base/platform/platform.h"
@@ -781,6 +782,7 @@ void FlagList::PrintHelp() {
 namespace {
 
 static uint32_t flag_hash = 0;
+static bool flag_hash_recorded = false;
 
 void ComputeFlagListHash() {
   std::ostringstream modified_args_as_string;
@@ -805,6 +807,7 @@ void ComputeFlagListHash() {
   std::string args(modified_args_as_string.str());
   flag_hash = static_cast<uint32_t>(
       base::hash_range(args.c_str(), args.c_str() + args.length()));
+  flag_hash_recorded = false;
 }
 
 template <class A, class B>
@@ -835,7 +838,25 @@ void FlagList::EnforceFlagImplications() {
   ComputeFlagListHash();
 }
 
-uint32_t FlagList::Hash() { return flag_hash; }
+uint32_t FlagList::Hash() {
+  // Some flags are set differently when recording and when replaying, e.g. by
+  // recordreplay::SetRecordingOrReplaying and the heap limit the driver gives
+  // each side, and the hash covers every non-default flag. Use the hash from
+  // the recording when replaying, so that everything derived from it (code
+  // cache checks, v8.cachedDataVersionTag()) behaves the same.
+  //
+  // The hash is recorded when it is read, not when it is computed: the driver
+  // applies its heap limit on one side only, which recomputes it on that side
+  // only, while reads come from the program and happen the same on both.
+  if (!flag_hash_recorded && recordreplay::IsRecordingOrReplaying() &&
+      IsMainThread() && !recordreplay::AreEventsDisallowed("FlagList::Hash") &&
+      !recordreplay::AreEventsPassedThrough("FlagList::Hash")) {
+    flag_hash = static_cast<uint32_t>(
+        recordreplay::RecordReplayValue("FlagList::Hash", flag_hash));
+    flag_hash_recorded = true;
+  }
+  return flag_hash;
+}
 
 #undef FLAG_MODE_DEFINE
 #undef FLAG_MODE_DEFINE_DEFAULTS

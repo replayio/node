@@ -11,6 +11,13 @@ namespace {
 // Called by the GC in its second pass when a Managed<CppType> is
 // garbage collected.
 void ManagedObjectFinalizerSecondPass(const v8::WeakCallbackInfo<void>& data) {
+  // Defer teardown to the deterministic Isolate::ReleaseSharedPtrs path
+  // instead of running it here at GC time.
+  if (recordreplay::AreEventsDisallowed() &&
+      recordreplay::IsRecordingOrReplaying(
+          "leak-references", "ManagedObjectFinalizerSecondPass")) {
+    return;
+  }
   auto destructor =
       reinterpret_cast<ManagedPtrDestructor*>(data.GetParameter());
   Isolate* isolate = reinterpret_cast<Isolate*>(data.GetIsolate());
@@ -32,6 +39,10 @@ void ManagedObjectFinalizer(const v8::WeakCallbackInfo<void>& data) {
   // it can trigger garbage collection. The first pass callbacks
   // are not allowed to invoke V8 API.
   data.SetSecondPassCallback(&ManagedObjectFinalizerSecondPass);
+}
+
+void AssertManagedDestructorRefcount(long use_count) {
+  recordreplay::Assert("Managed::Destructor %ld", use_count);
 }
 
 }  // namespace internal
