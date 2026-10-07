@@ -9,7 +9,7 @@
 #include <deque>
 #include <string>
 #include <unordered_map>
-#include <set>
+#include <vector>
 
 namespace node {
 namespace worker {
@@ -123,10 +123,13 @@ class SiblingGroup final : public std::enable_shared_from_this<SiblingGroup> {
   // Named SiblingGroup, Used for one-to-many BroadcastChannels.
   static std::shared_ptr<SiblingGroup> Get(const std::string& name);
 
+  // Orders groups_mutex_ when recording/replaying. Called on the main thread
+  // once record/replay is initialized, before any other thread exists.
+  static void InitializeOncePerProcess();
+
   // Anonymous SiblingGroup, Used for one-to-one MessagePort pairs.
   SiblingGroup() = default;
   explicit SiblingGroup(const std::string& name);
-  ~SiblingGroup();
 
   // Dispatches the Message to the collection of associated
   // ports. If there is more than one destination port and
@@ -157,13 +160,24 @@ class SiblingGroup final : public std::enable_shared_from_this<SiblingGroup> {
   // ends of a channel can each wait for the lock the other holds. Ordered rw
   // locks aren't supported, so readers are serialized too.
   Mutex group_mutex_{/* ordered */ true};
-  std::set<MessagePortData*> ports_;
+  // In the order the ports were entangled, rather than a set ordered by
+  // address: Dispatch() queues the message to the ports in this order, taking
+  // each port's ordered mutex, so it has to be the same when replaying.
+  std::vector<MessagePortData*> ports_;
 
-  static void CheckSiblingGroup(const std::string& name);
+  void RemovePort(MessagePortData* data);
+
+  // Requires groups_mutex_.
+  static void EraseIfExpired(const std::string& name);
 
   using Map =
       std::unordered_map<std::string, std::weak_ptr<SiblingGroup>>;
 
+  // Ordered when recording/replaying (see InitializeOncePerProcess()):
+  // whichever thread finds a named group missing creates it, and with it the
+  // group's ordered mutex, so the replay has to find it missing on the same
+  // thread as the recording. Disentangle() drops what can be a named group's
+  // last references under it for the same reason.
   static Mutex groups_mutex_;
   static Map groups_;
 };

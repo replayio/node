@@ -74,6 +74,9 @@ class MutexBase {
   inline void Unlock();
   inline void RdLock();
   inline void RdUnlock();
+  // Orders a mutex constructed before record/replay was initialized, e.g. a
+  // static one. Call it before any other thread can use the mutex.
+  inline void MarkOrdered();
 
   MutexBase(const MutexBase&) = delete;
   MutexBase& operator=(const MutexBase&) = delete;
@@ -306,6 +309,11 @@ void MutexBase<Traits>::RdLock() {
 template <typename Traits>
 void MutexBase<Traits>::RdUnlock() {
   Traits::mutex_rdunlock(&mutex_);
+}
+
+template <typename Traits>
+void MutexBase<Traits>::MarkOrdered() {
+  Traits::mutex_mark_ordered(&mutex_);
 }
 
 template <typename Traits>

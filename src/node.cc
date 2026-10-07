@@ -31,6 +31,7 @@
 #include "node_errors.h"
 #include "node_internals.h"
 #include "node_main_instance.h"
+#include "node_messaging.h"
 #include "node_metadata.h"
 #include "node_native_module_env.h"
 #include "node_options-inl.h"
@@ -1255,6 +1256,7 @@ InitializationResult InitializeOncePerProcess(
   }
 
   InitializeRecordReplay(&argc, &argv);
+  worker::SiblingGroup::InitializeOncePerProcess();
 
   // Initialized the enabled list for Debug() calls with system
   // environment variables.
