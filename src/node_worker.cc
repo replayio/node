@@ -780,11 +780,15 @@ void Worker::Exit(int code, const char* error_code, const char* error_message) {
   if (env_ != nullptr) {
     exit_code_ = code;
     if (v8::recordreplay::IsRecordingOrReplaying() &&
+        !recordreplay::IsRecordingFinished() &&
         Isolate::TryGetCurrent() != isolate_) {
       // Stopping the worker from here, as worker.terminate() and the parent
       // exiting do, would terminate its execution at a point the replay can't
       // reproduce: the worker stops itself from its event loop instead, after
       // its current turn, or the watchdog stops it if it never gets there.
+      // Once the recording is finished, as it is when the parent exits, there
+      // is nothing left to reproduce and the worker is stopped right away,
+      // instead of making a stuck worker hold up the exit for the watchdog.
       env_->SetImmediateThreadsafe([](Environment* env) { env->ExitEnv(); });
       if (!stop_watchdog_) {
         stop_watchdog_ = std::make_unique<StopWatchdog>(this);
