@@ -37,7 +37,7 @@ v8::Maybe<bool> node_napi_env__::mark_arraybuffer_as_untransferable(
 // when replaying: like a callback's (see napi_module_register_by_symbol), the
 // N-API calls a finalizer makes are recorded in a callback region and replayed
 // at the same point, which the finalizer reaches on both sides as it runs from
-// an immediate scheduled at a point which replays (see
+// an immediate scheduled at a deterministic point (see
 // node::recordreplay::DeferredFinalization). The calls made at environment
 // teardown, after the recording finished, are not replayed.
 static void CallModuleFinalizer(napi_env env,

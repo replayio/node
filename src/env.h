@@ -1162,7 +1162,7 @@ class Environment : public MemoryRetainer {
   // List of id's that have been destroyed and need the destroy() cb called.
   inline std::vector<double>* destroy_async_id_list();
 
-  // Cleanup for what the GC collected, run at points which replay when
+  // Cleanup for what the GC collected, run at deterministic points when
   // recording/replaying.
   inline recordreplay::DeferredFinalization* deferred_finalization();
 

@@ -138,7 +138,7 @@ void BaseObject::MakeWeak() {
         CHECK_IMPLIES(obj->has_pointer_data(),
                       obj->pointer_data()->strong_ptr_count == 0);
         if (obj->record_replay_id_ != 0) {
-          // The GC runs at a point which does not replay, so the cleanup runs
+          // The GC runs at a non-deterministic point, so the cleanup runs
           // from the next DeferredFinalization::Poll instead.
           obj->env()->deferred_finalization()->OnCollected(
               obj->record_replay_id_);

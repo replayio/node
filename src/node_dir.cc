@@ -90,7 +90,7 @@ void DirHandle::OnGCCollect() {
   // When recording/replaying, the GC collects this at points which differ
   // between the two, and closing it here schedules JS (a process warning). A
   // tracked handle (see RecordReplayTrack) gets here from
-  // DeferredFinalization::Poll instead, at a point which replays, and is
+  // DeferredFinalization::Poll instead, at a deterministic point, and is
   // closed. One created where it could not be tracked is leaked while it is
   // open. An explicit close() is unaffected, and the cleanup hook still closes
   // the directory when the environment is torn down. Once closed, destroying

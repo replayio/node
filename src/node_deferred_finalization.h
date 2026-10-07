@@ -28,7 +28,7 @@ class Finalizable {
   virtual ~Finalizable() = default;
 };
 
-// Runs the cleanup for what the GC collects at a point which replays.
+// Runs the cleanup for what the GC collects at a deterministic point.
 //
 // When recording/replaying, old space GCs run at points the replay does not
 // reproduce, and which embedder objects die in one differs between the two.
@@ -53,7 +53,7 @@ class Finalizable {
 //   so that the object is in the same state on both sides when its cleanup
 //   runs.
 //
-// Only objects created at a point which replays (AreEventsRecorded()) get an
+// Only objects created at a deterministic point (AreEventsRecorded()) get an
 // id. For the others, the GC's callback runs as usual and the users fall back
 // to leaking (see EnterLeakMemory). Switched off by the "deferred-finalization"
 // feature, which leaves the cleanup dropped or leaked as before.
@@ -74,10 +74,10 @@ class DeferredFinalization {
   // the replay's own GC destroys are dropped.
   bool AddDestroyedAsyncId(double async_id);
 
-  // Gives object an id when it is created at a point which replays, or
+  // Gives object an id when it is created at a deterministic point, or
   // returns 0. The label is the subfeature which can switch this off.
   int Track(Finalizable* object, const char* label);
-  // Called when a tracked object is deleted, from a point which replays.
+  // Called when a tracked object is deleted, from a deterministic point.
   void Untrack(int id);
   // Called by the GC's callback for a tracked object, which only runs when
   // recording: notes the id for the next poll. Can be called from any thread,
@@ -106,7 +106,7 @@ class DeferredFinalization {
   // records a value at every microtask checkpoint.
   bool has_tracked_objects_ = false;
   // The tracked objects which are alive, by id. The same on both sides at
-  // every poll: a tracked object is only deleted at points which replay.
+  // every poll: a tracked object is only deleted at deterministic points.
   std::unordered_map<int, Finalizable*> tracked_objects_;
   // While recording, the ids of tracked objects the GC collected which the
   // recording does not describe yet.

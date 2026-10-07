@@ -103,7 +103,7 @@ void HandleWrap::OnGCCollect() {
   // When recording/replaying, the GC runs at points which differ between the
   // two, and closing the handle here would be observed, e.g. in the event
   // loop's liveness. A tracked wrap (see BaseObject::RecordReplayTrack) gets
-  // here from DeferredFinalization::Poll instead, at a point which replays;
+  // here from DeferredFinalization::Poll instead, at a deterministic point;
   // one created where it could not be tracked is leaked.
   if (!IsRecordReplayTracked() && recordreplay::EnterLeakMemory("HandleWrap")) {
     return;

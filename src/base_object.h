@@ -82,9 +82,9 @@ class BaseObject : public MemoryRetainer, public recordreplay::Finalizable {
   inline void ClearWeak();
 
   // When recording/replaying, runs the cleanup which collecting this object
-  // causes (OnGCCollect()) at a point which replays instead of from the weak
+  // causes (OnGCCollect()) at a deterministic point instead of from the weak
   // callback, see recordreplay::DeferredFinalization. Call before MakeWeak().
-  // Only an object created at a point which replays can be tracked; for the
+  // Only an object created at a deterministic point can be tracked; for the
   // others OnGCCollect() runs from the weak callback as usual, and subclasses
   // fall back to leaking (recordreplay::EnterLeakMemory).
   inline void RecordReplayTrack(const char* label);
