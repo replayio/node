@@ -76,7 +76,7 @@ using v8::Value;
 
 namespace {
 
-class CallbackInfo {
+class CallbackInfo : public recordreplay::Finalizable {
  public:
   static inline Local<ArrayBuffer> CreateTrackedArrayBuffer(
       Environment* env,
@@ -92,16 +92,25 @@ class CallbackInfo {
   static void CleanupHook(void* data);
   inline void OnBackingStoreFree();
   inline void CallAndResetCallback();
+  inline void RecordReplayFinalize() override;
   inline CallbackInfo(Environment* env,
                       FreeCallback callback,
                       char* data,
                       void* hint);
   Global<ArrayBuffer> persistent_;
-  Mutex mutex_;  // Protects callback_.
+  Mutex mutex_;  // Protects callback_ and backing_store_freed_.
   FreeCallback callback_;
   char* const data_;
   void* const hint_;
   Environment* const env_;
+  // When recording/replaying, the backing store is freed at a point which
+  // differs between the two, so running the callback is deferred to a point
+  // which replays, see recordreplay::DeferredFinalization. The id it tracks
+  // this by, or 0.
+  int record_replay_id_ = 0;
+  // While replaying, whether the backing store was freed before the recording
+  // showed the callback to run, in which case the deleter did not free this.
+  bool backing_store_freed_ = false;
 };
 
 
@@ -129,7 +138,13 @@ Local<ArrayBuffer> CallbackInfo::CreateTrackedArrayBuffer(
   } else {
     // Store the ArrayBuffer so that we can detach it later.
     self->persistent_.Reset(env->isolate(), ab);
-    self->persistent_.SetWeak();
+    self->record_replay_id_ =
+        env->deferred_finalization()->Track(self, "Buffer::CallbackInfo");
+    // A tracked ArrayBuffer stays alive when replaying until the recording
+    // shows that its backing store was freed, see RecordReplayFinalize.
+    if (self->record_replay_id_ == 0 || !v8::recordreplay::IsReplaying()) {
+      self->persistent_.SetWeak();
+    }
   }
 
   return ab;
@@ -175,10 +190,39 @@ void CallbackInfo::CallAndResetCallback() {
   if (callback != nullptr) {
     // Clean up all Environment-related state and run the callback.
     env_->RemoveCleanupHook(CleanupHook, this);
+    if (record_replay_id_ != 0) {
+      env_->deferred_finalization()->Untrack(record_replay_id_);
+    }
     int64_t change_in_bytes = -static_cast<int64_t>(sizeof(*this));
     env_->isolate()->AdjustAmountOfExternalAllocatedMemory(change_in_bytes);
 
     callback(data_, hint_);
+  }
+}
+
+void CallbackInfo::RecordReplayFinalize() {
+  // When recording, the backing store is gone and the deleter left this
+  // alive: run the callback and free this as the deleter would have. When
+  // replaying, the ArrayBuffer was kept alive instead: run the callback, then
+  // detach it and let the deleter free this when the replay's GC gets to it,
+  // or now if it already did.
+  bool backing_store_freed;
+  {
+    Mutex::ScopedLock lock(mutex_);
+    backing_store_freed =
+        backing_store_freed_ || !v8::recordreplay::IsReplaying();
+  }
+  CallAndResetCallback();
+  if (backing_store_freed) {
+    delete this;
+    return;
+  }
+  HandleScope handle_scope(env_->isolate());
+  Local<ArrayBuffer> ab = persistent_.Get(env_->isolate());
+  persistent_.Reset();
+  // The deleter may run from here, and free this.
+  if (!ab.IsEmpty() && ab->IsDetachable()) {
+    ab->Detach();
   }
 }
 
@@ -192,10 +236,21 @@ void CallbackInfo::OnBackingStoreFree() {
   // be gone at this point, so don’t attempt to call SetImmediateThreadsafe().
   if (callback_ == nullptr) return;
 
-  // When recording/replaying the data is freed at a non-deterministic point,
-  // and we don't yet support posting immediates in such a case.
-  if (recordreplay::EnterLeakMemory("Buffer::CallbackInfo")) {
+  // When recording/replaying the data is freed at a point which differs
+  // between the two. A tracked buffer's callback runs from the next
+  // DeferredFinalization::Poll instead, which then frees this (see
+  // RecordReplayFinalize); when replaying, where the buffer is kept alive until
+  // then, this only runs if the backing store was freed some other way. A
+  // buffer created where it could not be tracked is leaked.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
     self.release();
+    if (record_replay_id_ == 0) {
+      recordreplay::EnterLeakMemory("Buffer::CallbackInfo");
+    } else if (v8::recordreplay::IsReplaying()) {
+      backing_store_freed_ = true;
+    } else {
+      env_->deferred_finalization()->OnCollected(record_replay_id_);
+    }
     return;
   }
 

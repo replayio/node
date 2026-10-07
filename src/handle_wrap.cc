@@ -86,23 +86,29 @@ void HandleWrap::Close(Local<Value> close_callback) {
 
 
 void HandleWrap::OnGCCollect() {
-  // When recording/replaying, the GC collects this at points which differ
-  // between the two, and closing the handle here would be observed, e.g. in
-  // the event loop's liveness. Leak it instead.
-  if (recordreplay::EnterLeakMemory("HandleWrap")) {
-    return;
-  }
-
   // When all references to a HandleWrap are lost and the object is supposed to
   // be destroyed, we first call Close() to clean up the underlying libuv
   // handle. The OnClose callback then acquires and destroys another reference
   // to that object, and when that reference is lost, we perform the default
   // action (i.e. destroying `this`).
-  if (state_ != kClosed) {
-    Close();
-  } else {
+  if (state_ == kClosed) {
+    // Reached from OnClose(), a path which replays, or by the GC collecting a
+    // wrap which was never initialized, where destroying it has no effect
+    // beyond freeing memory.
     BaseObject::OnGCCollect();
+    return;
   }
+
+  // The GC collected an open wrap (only weak ones, e.g. IntervalHistogram).
+  // When recording/replaying, the GC runs at points which differ between the
+  // two, and closing the handle here would be observed, e.g. in the event
+  // loop's liveness. A tracked wrap (see BaseObject::RecordReplayTrack) gets
+  // here from DeferredFinalization::Poll instead, at a deterministic point;
+  // one created where it could not be tracked is leaked.
+  if (!IsRecordReplayTracked() && recordreplay::EnterLeakMemory("HandleWrap")) {
+    return;
+  }
+  Close();
 }
 
 

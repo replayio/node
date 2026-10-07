@@ -26,6 +26,7 @@
 
 #include "base_object.h"
 #include "env-inl.h"
+#include "node_deferred_finalization.h"
 #include "util.h"
 
 #include "v8.h"
@@ -46,6 +47,9 @@ BaseObject::BaseObject(Environment* env, v8::Local<v8::Object> object)
 BaseObject::~BaseObject() {
   env()->modify_base_object_count(-1);
   env()->RemoveCleanupHook(DeleteMe, static_cast<void*>(this));
+  if (record_replay_id_ != 0) {
+    env()->deferred_finalization()->Untrack(record_replay_id_);
+  }
 
   if (UNLIKELY(has_pointer_data())) {
     PointerData* metadata = pointer_data();
@@ -114,6 +118,14 @@ void BaseObject::MakeWeak() {
     if (pointer_data()->strong_ptr_count > 0) return;
   }
 
+  // A tracked object stays alive when replaying until the recording shows
+  // that the GC collected it, see RecordReplayTrack. It still counts as weak,
+  // e.g. for IsWeakOrDetached().
+  if (record_replay_id_ != 0 && v8::recordreplay::IsReplaying()) {
+    pointer_data()->wants_weak_jsobj = true;
+    return;
+  }
+
   persistent_handle_.SetWeak(
       this,
       [](const v8::WeakCallbackInfo<BaseObject>& data) {
@@ -125,8 +137,39 @@ void BaseObject::MakeWeak() {
         obj->persistent_handle_.Reset();
         CHECK_IMPLIES(obj->has_pointer_data(),
                       obj->pointer_data()->strong_ptr_count == 0);
+        if (obj->record_replay_id_ != 0) {
+          // The GC runs at a non-deterministic point, so the cleanup runs
+          // from the next DeferredFinalization::Poll instead.
+          obj->env()->deferred_finalization()->OnCollected(
+              obj->record_replay_id_);
+          return;
+        }
         obj->OnGCCollect();
       }, v8::WeakCallbackType::kParameter);
+}
+
+void BaseObject::RecordReplayTrack(const char* label) {
+  CHECK_EQ(record_replay_id_, 0);
+  CHECK(!persistent_handle_.IsWeak());
+  record_replay_id_ = env()->deferred_finalization()->Track(this, label);
+}
+
+bool BaseObject::IsRecordReplayTracked() const {
+  return record_replay_id_ != 0;
+}
+
+void BaseObject::RecordReplayFinalize() {
+  // When recording, the weak callback reset the handle. When replaying, the
+  // object was kept alive instead: detach it from the JS object, which nothing
+  // reaches anymore, as ~BaseObject() would, and reset the handle like the
+  // weak callback did when recording.
+  if (!persistent_handle_.IsEmpty()) {
+    v8::HandleScope handle_scope(env()->isolate());
+    object()->SetAlignedPointerInInternalField(BaseObject::kSlot, nullptr);
+    persistent_handle_.Reset();
+  }
+  CHECK_IMPLIES(has_pointer_data(), pointer_data()->strong_ptr_count == 0);
+  OnGCCollect();
 }
 
 void BaseObject::OnGCCollect() {
