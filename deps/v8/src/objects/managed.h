@@ -41,7 +41,7 @@ V8_EXPORT_PRIVATE void ManagedObjectFinalizer(
 
 // Out of line so callers of Managed<CppType>::Destructor don't need to
 // include the recordreplay headers from this template header.
-void AssertManagedDestructorRefcount(long use_count);
+void AssertManagedDestructor();
 
 // {Managed<T>} is essentially a {std::shared_ptr<T>} allocated on the heap
 // that can be used to manage the lifetime of C++ objects that are shared
@@ -127,7 +127,7 @@ class Managed : public Foreign {
   // to actually delete the shared pointer and decrement the shared refcount.
   static void Destructor(void* ptr) {
     auto shared_ptr_ptr = reinterpret_cast<std::shared_ptr<CppType>*>(ptr);
-    AssertManagedDestructorRefcount(shared_ptr_ptr->use_count());
+    AssertManagedDestructor();
     delete shared_ptr_ptr;
   }
 };

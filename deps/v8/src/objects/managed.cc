@@ -41,9 +41,11 @@ void ManagedObjectFinalizer(const v8::WeakCallbackInfo<void>& data) {
   data.SetSecondPassCallback(&ManagedObjectFinalizerSecondPass);
 }
 
-void AssertManagedDestructorRefcount(long use_count) {
-  recordreplay::Assert("Managed::Destructor %ld", use_count);
-}
+// Not the shared pointer's use count: other isolates share the object (e.g. a
+// wasm NativeModule shared with workers) and release their references on
+// their own threads, which nothing orders with this one, so the count differs
+// when replaying.
+void AssertManagedDestructor() { recordreplay::Assert("Managed::Destructor"); }
 
 }  // namespace internal
 }  // namespace v8
