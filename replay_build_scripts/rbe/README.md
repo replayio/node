@@ -35,8 +35,9 @@ published yet), `REPLAY_LOCAL_DRIVER_DIR=<dir>` for a locally built one.
 `REPLAY_RBE_REQUIRE_REMOTE=1` (set in CI) fails the build if any compile fell
 back to local execution.
 
-Output: `out/Release/node`. Rebuilds are incremental (ninja); configure only
-reruns when its inputs change.
+Output: `out/Release/node`. Rebuilds are incremental (ninja); configure runs
+every time but leaves unchanged outputs untouched, so it doesn't trigger
+rebuilds by itself.
 
 ## Pieces
 

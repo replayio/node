@@ -49,5 +49,6 @@ if [ -n "${REPLAY_LOCAL_DRIVER_DIR:-}" ]; then
 fi
 
 # The container runs as root; hand the files it writes back to the caller.
-trap 'docker run --rm -v "$root:$root" --entrypoint chown "$image" -R "$(id -u):$(id -g)" "$root"' EXIT
+# Only root's files: chown bumps ctime, which makes git rescan the whole tree.
+trap 'docker run --rm -v "$root:$root" --entrypoint chown "$image" -R --from=0:0 "$(id -u):$(id -g)" "$root"' EXIT
 docker run --rm "${args[@]}" "$image" node build.js

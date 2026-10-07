@@ -66,12 +66,12 @@ case ${1:-} in
   digest)
     # Anonymous registry API, so hosts without docker can resolve it too.
     name=${repo#public.ecr.aws/}
-    token=$(curl -sf "https://public.ecr.aws/token/?scope=repository:$name:pull" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+    token=$(curl -sf "https://public.ecr.aws/token/?scope=repository:$name:pull" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p' || true)
     digest=$(curl -sfI -H "Authorization: Bearer $token" \
       -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
-      "https://public.ecr.aws/v2/$name/manifests/$tag" | tr -d '\r' | sed -n 's/^docker-content-digest: *//Ip')
+      "https://public.ecr.aws/v2/$name/manifests/$tag" | tr -d '\r' | sed -n 's/^docker-content-digest: *//Ip' || true)
     if [ -z "$digest" ]; then
-      echo "toolchain-image: $ref is not published" >&2
+      echo "toolchain-image: can't find $ref (not published yet, or no network); CI publishes it" >&2
       exit 1
     fi
     echo "$repo@$digest"

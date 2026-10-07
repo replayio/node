@@ -107,15 +107,20 @@ def worker_image():
   """The toolchain image's digest ref, which the remote workers run."""
   image = os.environ.get("REPLAY_RBE_CONTAINER_IMAGE", "")
   if not image:
-    image = subprocess.check_output([os.path.join(SCRIPT_DIR, "toolchain-image.sh"), "digest"],
-                                    text=True).strip()
+    lookup = subprocess.run([os.path.join(SCRIPT_DIR, "toolchain-image.sh"), "digest"],
+                            stdout=subprocess.PIPE, text=True)
+    if lookup.returncode != 0:
+      sys.exit(1)  # toolchain-image.sh explained why
+    image = lookup.stdout.strip()
   if "@sha256:" not in image:
     sys.exit(f"[build-rbe] expected a digest ref for the toolchain image, got {image!r}")
   return image
 
 
 # What the local steps (configure probes, links, host tools) depend on.
-TOOLCHAIN_PROBE = "export LC_ALL=C; gcc --version | head -1; g++ --version | head -1; ld --version | head -1; ldd --version | head -1"
+# The compilers cc-wrapper.sh runs, and what links and host tools use.
+TOOLCHAIN_PROBE = ("export LC_ALL=C; /usr/bin/gcc --version | head -1; /usr/bin/g++ --version | head -1; "
+                   "ld --version | head -1; ldd --version | head -1")
 
 
 def check_host_toolchain(env):
@@ -240,44 +245,42 @@ def prepare_out_dir(toolchain):
     f.write(toolchain)
 
 
-CONFIGURE_STAMP = os.path.join(BUILD_DIR, ".configure")
-
-
-def configure_inputs(env):
-  """Hash of what configure reads: rerunning it rewrites config.gypi, which
-  makes ninja regenerate ICU data and the JS bundle and relink, so skip it when
-  nothing changed."""
-  files = subprocess.check_output(
-      ["git", "ls-files", "-z", "--", "configure", "configure.py", "*.gyp", "*.gypi",
-       "tools/gyp", "tools/v8_gypfiles", "tools/icu"], cwd=ROOT).split(b"\0")
-  h = hashlib.sha256()
-  h.update(f"{env['CC']}\0{env['CXX']}\0{sys.version}\0".encode())
-  for name in sorted(f for f in files if f):
-    h.update(name + b"\0")
-    try:
-      with open(os.path.join(ROOT, name.decode()), "rb") as f:
-        h.update(hashlib.sha256(f.read()).digest())
-    except FileNotFoundError:
-      h.update(b"missing")
-  return h.hexdigest()
+def configure_outputs():
+  """Files configure (re)writes: its config files, ICU data and the .ninja files."""
+  paths = [os.path.join(ROOT, f) for f in ("config.gypi", "icu_config.gypi", "config.mk", "config.status")]
+  for top in (os.path.join(ROOT, "deps", "icu-tmp"), OUT):
+    for dirpath, _, names in os.walk(top):
+      paths += [os.path.join(dirpath, n) for n in names
+                if top != OUT or n.endswith(".ninja")]
+  return [p for p in paths if os.path.isfile(p)]
 
 
 def configure():
+  """Run configure every time (gyp's ninja output has no regeneration rule, so
+  nothing else would pick up new .gyp sources, lib/*.js files, V8's BUILD.gn
+  lists, ...), but keep the timestamps of files it rewrites unchanged: a newer
+  config.gypi or ICU data file would make ninja regenerate the JS bundle and
+  ICU data and relink on every build."""
   env = dict(os.environ)
   env["CC"] = os.path.join(TC, "bin", "gcc")
   env["CXX"] = os.path.join(TC, "bin", "g++")
   env.pop("REPLAY_RBE_REPROXY", None)
-  inputs = configure_inputs(env)
-  try:
-    done = open(CONFIGURE_STAMP).read() == inputs
-  except FileNotFoundError:
-    done = False
-  if done and os.path.exists(os.path.join(BUILD_DIR, "build.ninja")):
-    log("configure inputs unchanged; not reconfiguring")
-    return
+  before = {}
+  for path in configure_outputs():
+    with open(path, "rb") as f:
+      before[path] = (hashlib.sha256(f.read()).digest(), os.stat(path).st_mtime_ns)
   subprocess.check_call([sys.executable, "configure.py", "--ninja"], cwd=ROOT, env=env)
-  with open(CONFIGURE_STAMP, "w") as f:
-    f.write(inputs)
+  kept = 0
+  for path, (digest, mtime) in before.items():
+    try:
+      with open(path, "rb") as f:
+        same = hashlib.sha256(f.read()).digest() == digest
+    except FileNotFoundError:
+      continue
+    if same:
+      os.utime(path, ns=(mtime, mtime))
+      kept += 1
+  log(f"configured; {kept} unchanged outputs keep their timestamps")
 
 
 def main():

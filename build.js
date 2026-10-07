@@ -71,8 +71,8 @@ function getSanitizedEnv() {
 
 const buildEnv = getSanitizedEnv();
 
-// Compiles run remotely on EngFlow (RBE); see replay_build_scripts/rbe/build-rbe.py.
-// It configures (ninja) on every run, so CONFIGURE_NODE is not needed.
+// Compiles run remotely on EngFlow (RBE); see replay_build_scripts/rbe/build-rbe.py,
+// which also configures (ninja), so CONFIGURE_NODE is not needed.
 console.log("[build] Building with RBE...");
 spawnChecked("python3", [`${node}/replay_build_scripts/rbe/build-rbe.py`], {
   cwd: node,
