@@ -87,7 +87,7 @@ void ReplayFinalizationRegistries::OnRegister(
   CHECK_WITH_MSG(
       AreEventsAvailable(),
       "FinalizationRegistry.prototype.register on a tracked registry at a "
-      "point which does not replay");
+      "non-deterministic point");
 
   ReplayIsolateData* data = isolate->EnsureReplayData();
   int id = data->NewWeakCellId();
@@ -140,7 +140,7 @@ void ReplayFinalizationRegistries::OnUnregisterCell(
   CHECK_WITH_MSG(
       AreEventsAvailable(),
       "FinalizationRegistry.prototype.unregister on a tracked registry at a "
-      "point which does not replay");
+      "non-deterministic point");
 
   if (registry.record_replay_cells().IsUndefined(isolate)) return;
   i::SimpleNumberDictionary cells =

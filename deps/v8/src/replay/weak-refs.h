@@ -22,7 +22,7 @@ namespace replayio {
 // it. To avoid that, the recording describes which WeakRefs its GC cleared,
 // and the replay clears the same ones.
 //
-// Only WeakRefs constructed at a point which replays are described this way
+// Only WeakRefs constructed at a deterministic point are described this way
 // ("tracked", JSWeakRef::record_replay_id != 0), and none is unless the
 // "weak-ref-collection" feature is active.
 class ReplayWeakRefs {

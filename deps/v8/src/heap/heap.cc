@@ -6837,7 +6837,7 @@ void Heap::ClearKeptObjects() {
   set_weak_refs_keep_during_job(ReadOnlyRoots(isolate()).undefined_value());
 
   // Cleanup of record/replay tracked registries is scheduled from here and not
-  // from the GC, so that the decision is made at a point that replays. The poll
+  // from the GC, so the decision is made at a deterministic point. The poll
   // runs at every microtask checkpoint with events allowed.
   //
   // Tradeoff: a GC that dirties a registry inside an unordered task is not

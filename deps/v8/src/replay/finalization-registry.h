@@ -21,7 +21,7 @@ namespace replayio {
 // replaying, so the recording is the source of truth:
 //
 // - When recording, the GC clears cells as usual but does not schedule the
-//   cleanup task. ReplayGCPoll::Poll schedules it from a point that replays,
+//   cleanup task. ReplayGCPoll::Poll schedules it at a deterministic point,
 //   and the cleanup loop records the id of each cell right before its callback
 //   runs.
 // - When replaying, the GC treats the targets of tracked cells as strong, so it
@@ -30,7 +30,7 @@ namespace replayio {
 //   running their callbacks. Tracked registries with registered cells are
 //   retained until the recording shows that its GC collected them.
 //
-// Only registries constructed at a point which replays are handled this way
+// Only registries constructed at a deterministic point are handled this way
 // ("tracked", JSFinalizationRegistry::record_replay_id != 0), and none is
 // unless the "finalization-registry" feature is active. Other registries get
 // the default handling when both recording and replaying.
