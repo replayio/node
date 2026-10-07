@@ -1,9 +1,11 @@
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const node = __dirname;
 const OutDir = path.join(node, "out");
+// Fresh checkouts have no out/ yet (configure used to create it); the driver
+// is downloaded into it before build-rbe.py runs.
+fs.mkdirSync(OutDir, { recursive: true });
 
 // Use local driver directory if provided, otherwise download from S3.
 const localDriverDir = process.env.REPLAY_LOCAL_DRIVER_DIR;
@@ -45,7 +47,7 @@ for (let i = 0; i < driverContents.length; i++) {
   driverString += `\\${driverContents[i].toString(8)}`;
 }
 // Chromium twin: writeFileSyncIfChanged — skip mtime bump when driver+BuildId
-// unchanged so make does not rebuild the ~40MB driver TU.
+// unchanged so ninja does not rebuild the ~40MB driver TU.
 writeFileSyncIfChanged(
   `${node}/src/node_record_replay_driver.cc`,
   `
@@ -56,8 +58,6 @@ namespace node {
 }
 `
 );
-
-const numCPUs = os.cpus().length;
 
 function getSanitizedEnv() {
   const env = { ...process.env };
@@ -71,18 +71,13 @@ function getSanitizedEnv() {
 
 const buildEnv = getSanitizedEnv();
 
-if (process.env.CONFIGURE_NODE) {
-  console.log("[build] Running configure...");
-  spawnChecked(`${node}/configure`, [], { cwd: node, stdio: "inherit", env: buildEnv });
-}
-console.log("[build] Running make...");
-spawnChecked("make", [`-j${numCPUs}`, "-C", OutDir, "BUILDTYPE=Release"], {
+// Compiles run remotely on EngFlow (RBE); see replay_build_scripts/rbe/build-rbe.py,
+// which also configures (ninja), so CONFIGURE_NODE is not needed.
+console.log("[build] Building with RBE...");
+spawnChecked("python3", [`${node}/replay_build_scripts/rbe/build-rbe.py`], {
   cwd: node,
   stdio: "inherit",
-  env: {
-    ...buildEnv,
-    RECORD_REPLAY_DONT_RECORD: "1",
-  },
+  env: buildEnv,
 });
 
 function downloadDriverArchive(downloadUrl, driverArchivePath) {

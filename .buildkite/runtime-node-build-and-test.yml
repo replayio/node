@@ -7,11 +7,11 @@
 # Do not parallel-clone node into a BK artifact — different agents cannot share
 # disk; tar upload/download of the tree is pure waste. build_node_builder clones.
 #
-# NodeRepo: host checkout+out mounted over the image node path so make can
+# NodeRepo: host checkout+out mounted over the image node path so ninja can
 # incremental-rebuild across jobs on the same agent. Mounting only out/ is not
 # enough — a fresh image COPY of sources resets mtimes and forces a full rebuild.
 # Do not `git fetch --depth 1` the cached NodeRepo — shallow fetch rewrites the
-# tree and bumps gyp input mtimes → make "Regenerating Makefile" → near-full rebuild.
+# tree and bumps every source mtime → near-full rebuild.
 # reclaim_node_repo chown -R bumps ctime on every file; with default git stat
 # checks that dirties the whole tree and `checkout -f` rewrites all sources.
 # core.trustctime=false + update-index --refresh after chown keeps mtimes.
@@ -22,12 +22,26 @@ steps:
       commit: "__REPLAY_BACKEND_REV__"
       message: "Triggered from node: ${BUILDKITE_MESSAGE}"
 
+  # Toolchain image for the node build: EngFlow's worker image, and the base of
+  # backend's linux-node-build image that runs the rest of the build.
+  # Built + pushed only when replay_build_scripts/rbe/Dockerfile changes (the
+  # tag is its hash); otherwise this only checks the tag exists. Public on ECR
+  # Public (public.ecr.aws/z3x5l6b1/node-rbe-toolchain) so EngFlow can pull it
+  # like Chromium's gcr worker image. Pushes with the agent's AWS identity.
+  - label: ":docker: RBE toolchain image"
+    key: "build-rbe-toolchain-image"
+    agents:
+      - "build-runtime=true"
+    command: "replay_build_scripts/rbe/toolchain-image.sh ensure"
+
   # Plain command — do not use replay-deploy-buildkite-plugin (that emits
   # "Deploy to <branch> environment" / preprod steps; wrong for PR CI).
+  # Compiles run remotely on EngFlow (replay_build_scripts/rbe); configure, host
+  # tools and the link run here, in backend's linux-node-build image, which
+  # build_node_builder builds FROM node's toolchain image (same gcc as EngFlow).
   - label: ":bust_in_silhouette: Build node"
     key: "build-node-linux"
-    # BK default is 60m; cold node make -j4 exceeds that (see build #12).
-    timeout_in_minutes: 120
+    timeout_in_minutes: 60
     # AgentLost exit_status:-1 (BK #102 mid-make) is intermittent infra — auto-retry.
     retry:
       automatic:
@@ -35,31 +49,44 @@ steps:
           limit: 2
     depends_on:
       - "build-driver-linker"
-    # Heavy Node compile — not a deploy job.
+      - "build-rbe-toolchain-image"
     agents:
       - "build-runtime=true"
+    plugins:
+      - seek-oss/aws-sm#v2.3.1:
+          region: us-east-2
+          # EngFlow client cert, same secrets as Chromium's build.
+          file:
+            - path: "engflow.crt"
+              secret-id: engflow-certificate
+            - path: "engflow.key"
+              secret-id: engflow-key
     # Chromium twin: artifact_paths collects build_id for downstream test steps.
     artifact_paths:
       - "build_id"
+      - "rbe-logs/**/*"
     command: |
       set -euo pipefail
       export DOCKER_BUILDKIT=1
       echo "=== Disk space (build start) ==="
       df -h
-      # One cached checkout + out/ per Node version: out/Makefile is generated from
-      # the tree's .gyp files, so a checkout shared between Node lines (e.g. 16.14.3
-      # master and 16.20.3 rewrites) breaks make whenever CI switches between them.
-      # The step runs in the Buildkite checkout of $$BUILDKITE_COMMIT, so read the
-      # version from there.
+      # One cached checkout + out/ per Node version: out/Release/build.ninja is
+      # generated from the tree's .gyp files, so a checkout shared between Node
+      # lines (e.g. 16.14.3 master and 16.20.3 rewrites) would rebuild everything
+      # whenever CI switches between them. The step runs in the Buildkite checkout
+      # of $$BUILDKITE_COMMIT, so read the version from there. (rbe-repo-*: the old
+      # make builds' repo-* checkouts are no longer used.)
       NODE_VERSION=$$(awk '/^#define NODE_(MAJOR|MINOR|PATCH)_VERSION /{v = v (v ? "." : "") $$3} END {print v}' src/node_version.h)
       test -n "$$NODE_VERSION"
-      NODE_REPO="/var/lib/buildkite-agent/cache/runtime-node-build/repo-$$NODE_VERSION"
+      NODE_REPO="/var/lib/buildkite-agent/cache/runtime-node-build/rbe-repo-$$NODE_VERSION"
+      ENGFLOW="$$PWD"
       if [ -d "$$NODE_REPO" ]; then
         du -sh "$$NODE_REPO" "$$NODE_REPO/out" 2>/dev/null || du -sh "$$NODE_REPO" 2>/dev/null || true
       fi
       PIN="__REPLAY_BACKEND_REV__"
       WORKDIR=$$(mktemp -d "/tmp/build-node-$${BUILDKITE_JOB_ID}.XXXXXX")
-      trap 'rm -rf "$$WORKDIR"' EXIT
+      # The EngFlow cert/key (aws-sm plugin) must not outlive the job, whatever fails.
+      trap 'rm -f "$$ENGFLOW/engflow.crt" "$$ENGFLOW/engflow.key"; rm -rf "$$WORKDIR"' EXIT
       BACKEND_DIR="$$WORKDIR/backend"
       mkdir -p "$$BACKEND_DIR"
       git -C "$$BACKEND_DIR" init
@@ -79,7 +106,12 @@ steps:
           -R "$$(id -u):$$(id -g)" /repo
       }
       reclaim_node_repo
-      trap 'reclaim_node_repo; rm -rf "$$WORKDIR"' EXIT
+      collect_logs() {
+        mkdir -p "$$ENGFLOW/rbe-logs"
+        cp -r "$$NODE_REPO/out/Release/.reproxy_tmp/logs" "$$ENGFLOW/rbe-logs/" 2>/dev/null || true
+        cp "$$NODE_REPO/out/Release/.ninja_log" "$$ENGFLOW/rbe-logs/" 2>/dev/null || true
+      }
+      trap 'rm -f "$$ENGFLOW/engflow.crt" "$$ENGFLOW/engflow.key"; reclaim_node_repo; collect_logs; rm -rf "$$WORKDIR"' EXIT
       if [ ! -d "$$NODE_REPO/.git" ]; then
         git clone git@github.com:replayio/node.git "$$NODE_REPO"
       elif [ -f "$$NODE_REPO/.git/shallow" ]; then
@@ -95,32 +127,29 @@ steps:
       echo "dirty=$$(git -C "$$NODE_REPO" status --porcelain 2>/dev/null | wc -l)"
       echo "diff_files=$$(git -C "$$NODE_REPO" diff --name-only HEAD "$$BUILDKITE_COMMIT" 2>/dev/null | wc -l)"
       git -C "$$NODE_REPO" checkout -f --detach "$$BUILDKITE_COMMIT"
-      # Cached out/ objects are only linkable by the toolchain that built them:
-      # the image comes from the pinned backend rev's Dockerfile (ubuntu 20.04
-      # g++ 9 vs 22.04 g++ 11), and mixing them fails at link with undefined
-      # GLIBCXX symbols. Wipe out/ only when that FROM changes (not on pin bump);
-      # no stamp means unknown objects, so wipe those too.
-      BUILDER_IMAGE_STAMP="$$NODE_REPO/.replay-builder-image"
-      BUILDER_IMAGE_KEY="$$(awk '/^FROM /{print; exit}' "$$BACKEND_DIR/src/build/docker/linux_node_build.Dockerfile")"
-      test -n "$$BUILDER_IMAGE_KEY"
-      # Drop the stamp an earlier revision of this guard keyed on the pin.
-      rm -f "$$NODE_REPO/.replay-builder-pin"
-      if [ ! -f "$$BUILDER_IMAGE_STAMP" ] || [ "$$(cat "$$BUILDER_IMAGE_STAMP")" != "$$BUILDER_IMAGE_KEY" ]; then
-        if [ -d "$$NODE_REPO/out" ]; then
-          echo "=== builder image FROM changed; wiping out/ ==="
-          echo "stamp=$$([ -f "$$BUILDER_IMAGE_STAMP" ] && cat "$$BUILDER_IMAGE_STAMP" || echo none) key=$$BUILDER_IMAGE_KEY"
-          rm -rf "$$NODE_REPO/out"
-        fi
-        echo "$$BUILDER_IMAGE_KEY" > "$$BUILDER_IMAGE_STAMP"
-      fi
+      # build-rbe.py rebuilds out/Release from scratch when the toolchain image
+      # changes (and removes a leftover make build).
       # Match build-node.yml: do not inject prod/deploy-access-keys (github-backend)
       # into the container — that IAM user cannot s3:PutObject builds/. build-runtime
       # EC2s (beefiermaster / runner-*) docker uses the agent identity (same as the
       # manual build-node pipeline).
       # safe.directory is set inside the image (run_node_build.sh / buildNodeDirectly).
+      # Logs from an earlier job in the persistent out/Release must not be
+      # collected as this job's if the build fails before build-rbe.py clears them.
+      rm -rf "$$NODE_REPO/out/Release/.reproxy_tmp/logs"
+      # REPLAY_RBE_REQUIRE_REMOTE: fail instead of silently compiling locally when
+      # remote execution doesn't work (e.g. EngFlow can't pull the worker image).
       docker run --rm \
         $$BUILDKITE_DOCKER_ENVS \
         -v "$$BUILDKITE_AGENT_BIN:/usr/local/bin/buildkite-agent:ro" \
+        -e RBE_service=simpsonite.cluster.engflow.com:443 \
+        -e RBE_service_no_auth=true \
+        -e RBE_use_application_default_credentials=true \
+        -e RBE_tls_client_auth_cert=/engflow/engflow.crt \
+        -e RBE_tls_client_auth_key=/engflow/engflow.key \
+        -e REPLAY_RBE_REQUIRE_REMOTE=1 \
+        -v "$$ENGFLOW/engflow.crt:/engflow/engflow.crt:ro" \
+        -v "$$ENGFLOW/engflow.key:/engflow/engflow.key:ro" \
         -v "$$NODE_REPO:/usr/build/tmp/replayio-node-repo" \
         linux-node-build
       # Publish BuildId for test-node-recording / test-node-core / test-jest-repos (same role as chromium build_id/**).
