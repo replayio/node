@@ -425,6 +425,17 @@ bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name);
 bool ThrowIfEventsUnavailable(const v8::FunctionCallbackInfo<v8::Value>& args,
                               const char* operation_name);
 
+// Gates leaking an object whose cleanup would run at a point which differs
+// between recording and replaying, and notes it in the crash report
+// diagnostics. Matches recordreplay::EnterLeakMemory in the Chromium fork.
+inline bool EnterLeakMemory(const char* label) {
+  if (!v8::recordreplay::IsRecordingOrReplaying("leak-references", label)) {
+    return false;
+  }
+  v8::recordreplay::Diagnostic("LeakMemory %s", label);
+  return true;
+}
+
 }  // namespace recordreplay
 
 }  // namespace node

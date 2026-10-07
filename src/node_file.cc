@@ -187,6 +187,18 @@ FileHandle::~FileHandle() {
   CHECK(closed_);    // We have to be closed at the point
 }
 
+void FileHandle::OnGCCollect() {
+  // When recording/replaying, the GC collects this at points which differ
+  // between the two, and closing it here schedules JS (a process warning).
+  // Leak it while it is open instead. An explicit close() is unaffected, and
+  // the cleanup hook still closes the fd when the environment is torn
+  // down. Once closed, destroying it has no effect beyond freeing memory.
+  if (!closed_ && recordreplay::EnterLeakMemory("FileHandle")) {
+    return;
+  }
+  BaseObject::OnGCCollect();
+}
+
 int FileHandle::DoWrite(WriteWrap* w,
                         uv_buf_t* bufs,
                         size_t count,

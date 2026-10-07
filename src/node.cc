@@ -1032,6 +1032,10 @@ bool AreEventsAvailable() {
          !v8::recordreplay::HasDivergedFromRecording();
 }
 
+bool AreEventsRecorded() {
+  return AreEventsAvailable() && !v8::recordreplay::AreEventsPassedThrough();
+}
+
 bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name) {
   if (!v8::recordreplay::IsRecordingOrReplaying() || AreEventsAvailable()) {
     return false;

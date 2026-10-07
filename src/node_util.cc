@@ -1,6 +1,7 @@
 #include "base_object-inl.h"
 #include "node_errors.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "util-inl.h"
 
 namespace node {
@@ -207,13 +208,18 @@ void ArrayBufferViewHasBuffer(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(args[0].As<ArrayBufferView>()->HasBuffer());
 }
 
+// Record/replay: whether the target is still alive depends on the GC, which
+// runs at different points when replaying. When recording, the target is held
+// weakly as usual and Get() records whether it is alive. When replaying, the
+// target is held strongly, and Get() lets it go where the recording saw it
+// collected.
 class WeakReference : public BaseObject {
  public:
   WeakReference(Environment* env, Local<Object> object, Local<Object> target)
     : BaseObject(env, object) {
     MakeWeak();
     target_.Reset(env->isolate(), target);
-    target_.SetWeak();
+    SetTargetWeak();
   }
 
   static void New(const FunctionCallbackInfo<Value>& args) {
@@ -226,12 +232,14 @@ class WeakReference : public BaseObject {
   static void Get(const FunctionCallbackInfo<Value>& args) {
     WeakReference* weak_ref = Unwrap<WeakReference>(args.Holder());
     Isolate* isolate = args.GetIsolate();
+    weak_ref->RecordReplayTargetLiveness();
     if (!weak_ref->target_.IsEmpty())
       args.GetReturnValue().Set(weak_ref->target_.Get(isolate));
   }
 
   static void IncRef(const FunctionCallbackInfo<Value>& args) {
     WeakReference* weak_ref = Unwrap<WeakReference>(args.Holder());
+    weak_ref->RecordReplayTargetLiveness();
     weak_ref->reference_count_++;
     if (weak_ref->target_.IsEmpty()) return;
     if (weak_ref->reference_count_ == 1) weak_ref->target_.ClearWeak();
@@ -239,10 +247,11 @@ class WeakReference : public BaseObject {
 
   static void DecRef(const FunctionCallbackInfo<Value>& args) {
     WeakReference* weak_ref = Unwrap<WeakReference>(args.Holder());
+    weak_ref->RecordReplayTargetLiveness();
     CHECK_GE(weak_ref->reference_count_, 1);
     weak_ref->reference_count_--;
     if (weak_ref->target_.IsEmpty()) return;
-    if (weak_ref->reference_count_ == 0) weak_ref->target_.SetWeak();
+    if (weak_ref->reference_count_ == 0) weak_ref->SetTargetWeak();
   }
 
   SET_MEMORY_INFO_NAME(WeakReference)
@@ -250,6 +259,25 @@ class WeakReference : public BaseObject {
   SET_NO_MEMORY_INFO()
 
  private:
+  void SetTargetWeak() {
+    // When replaying, the target is let go by RecordReplayTargetLiveness().
+    if (!v8::recordreplay::IsReplaying()) target_.SetWeak();
+  }
+
+  // Makes the target's liveness match the recording at a deterministic point.
+  void RecordReplayTargetLiveness() {
+    if (!recordreplay::AreEventsRecorded()) return;
+    bool alive = v8::recordreplay::RecordReplayValue("WeakReference alive",
+                                                     !target_.IsEmpty());
+    if (!alive) {
+      target_.Reset();
+      return;
+    }
+    // The replay holds the target strongly until the recording saw it
+    // collected, so it can't be gone earlier.
+    CHECK(!target_.IsEmpty());
+  }
+
   Global<Object> target_;
   uint64_t reference_count_ = 0;
 };

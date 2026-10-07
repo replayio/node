@@ -576,7 +576,7 @@ namespace {
 // driver intercepted are replayed instead, at the same points. Its other calls,
 // e.g. from finalizers, don't happen when replaying.
 bool RecordReplayInModuleCallback() {
-  return node::recordreplay::AreEventsAvailable() &&
+  return node::recordreplay::AreEventsRecorded() &&
          node::recordreplay::IsInsideInterceptedCallback();
 }
 
@@ -653,12 +653,11 @@ void Reference::RecordReplayFlushClearedRefs(napi_env env) {
       auto iter = env->record_replay_refs.find(id);
       if (iter != env->record_replay_refs.end()) {
         Reference* reference = iter->second;
+        // Do what the GC's weak callback did when recording: it reset the
+        // persistent in its first pass, and its second pass left the reference
+        // unfinalized (see SecondPassCallback), so that ~napi_env__ finalizes
+        // it at environment teardown on both sides.
         reference->_persistent.Reset();
-        // Do what the GC's second pass did when recording: the finalizer only
-        // runs module code, and the replayed calls gave none or one which does
-        // nothing, then the reference is deleted if the module already asked
-        // for that, or is marked finalized so that deleting it later does.
-        reference->Finalize();
       }
     }
   }
@@ -666,7 +665,7 @@ void Reference::RecordReplayFlushClearedRefs(napi_env env) {
 }
 
 void Reference::RecordReplayPoll(v8::Isolate* isolate, void* data) {
-  if (node::recordreplay::AreEventsAvailable()) {
+  if (node::recordreplay::AreEventsRecorded()) {
     RecordReplayFlushClearedRefs(static_cast<napi_env>(data));
   }
 }
@@ -809,6 +808,14 @@ void Reference::SecondPassCallback(
     return;
   }
   reference->_secondPassParameter = nullptr;
+  // When recording/replaying, the GC collects the value at points which differ
+  // between the two, and the finalizer would be scheduled from here. Leave the
+  // reference unfinalized instead: it stays on the env's list, so ~napi_env__
+  // finalizes it at environment teardown like any other live reference.
+  if (v8::recordreplay::IsRecordingOrReplaying() &&
+      v8::recordreplay::AreEventsDisallowed("Reference::SecondPassCallback")) {
+    return;
+  }
   reference->Finalize();
 }
 

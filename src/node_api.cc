@@ -447,6 +447,13 @@ class ThreadSafeFunction : public node::AsyncResource {
   bool handles_closing;
 };
 
+// Whether the module's current N-API call is also made when replaying, which
+// is the case for calls in callbacks the driver intercepts.
+static bool RecordReplayInModuleCallback() {
+  return node::recordreplay::AreEventsRecorded() &&
+         node::recordreplay::IsInsideInterceptedCallback();
+}
+
 /**
  * Compared to node::AsyncResource, the resource object in AsyncContext is
  * gc-able. AsyncContext holds a weak reference to the resource object.
@@ -465,8 +472,16 @@ class AsyncContext {
     resource_.Reset(node_env()->isolate(), resource_object);
     lost_reference_ = false;
     if (externally_managed_resource) {
-      resource_.SetWeak(
-          this, AsyncContext::WeakCallback, v8::WeakCallbackType::kParameter);
+      // The GC collects the module's resource at other points when replaying
+      // than when recording. For a context the replay creates too, hold the
+      // resource strongly when replaying, and drop it where the recording
+      // found it collected (see EnsureReference).
+      record_replay_lost_reference_ = RecordReplayInModuleCallback();
+      if (!record_replay_lost_reference_ ||
+          !v8::recordreplay::IsReplaying()) {
+        resource_.SetWeak(
+            this, AsyncContext::WeakCallback, v8::WeakCallbackType::kParameter);
+      }
     }
 
     node::AsyncWrap::EmitAsyncInit(node_env(),
@@ -506,6 +521,15 @@ class AsyncContext {
   }
 
   inline void EnsureReference() {
+    if (record_replay_lost_reference_ && RecordReplayInModuleCallback()) {
+      bool lost = v8::recordreplay::RecordReplayValue(
+          "AsyncContext::EnsureReference lost", lost_reference_);
+      if (lost && !lost_reference_) {
+        resource_.Reset();
+        lost_reference_ = true;
+      }
+      CHECK_EQ(lost, lost_reference_);
+    }
     if (lost_reference_) {
       const v8::HandleScope handle_scope(node_env()->isolate());
       resource_.Reset(node_env()->isolate(),
@@ -550,6 +574,8 @@ class AsyncContext {
   double trigger_async_id_;
   v8::Global<v8::Object> resource_;
   bool lost_reference_;
+  // Whether lost_reference_ is recorded/replayed, see the constructor.
+  bool record_replay_lost_reference_ = false;
 };
 
 }  // end of anonymous namespace
