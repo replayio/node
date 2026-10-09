@@ -2228,35 +2228,57 @@ void BaselineCompiler::VisitIncBlockCounter() {
 
 void BaselineCompiler::VisitRecordReplayIncExecutionProgressCounter() {
   SaveAccumulatorScope accumulator_scope(&basm_);
-  // The optimized path is currently disabled.
-  // See https://linear.app/replay/issue/RUN-744
-  if ((true)/*gRecordReplayAssertProgress*/) {
-    CallRuntime(Runtime::kRecordReplayAssertExecutionProgress,
-                __ FunctionOperand());
-  } else {
-    /*
-    BaselineAssembler::ScratchRegisterScope scratch_scope(&basm_);
-    Register reg1 = scratch_scope.AcquireScratch();
-    Register reg2 = scratch_scope.AcquireScratch();
-    __ Move(reg1, ExternalReference::record_replay_progress_counter());
-    __ Move(reg2, MemOperand(reg1, 0));
-    __ AddPointer(reg2, Immediate(1));
-    __ Move(MemOperand(reg1, 0), reg2);
-    __ Move(reg1, ExternalReference::record_replay_target_progress());
-    __ ComparePointer(reg2, MemOperand(reg1, 0));
-    Label done;
-    __ JumpIfCondition(Condition::kNotEqual, &done, Label::kNear);
-    CallRuntime(Runtime::kRecordReplayTargetProgressReached);
-    __ Bind(&done);
-    */
-  }
+#if V8_TARGET_ARCH_X64
+  // Only call the runtime when progress is asserted or checked, or when the
+  // target progress has been reached.
+  MacroAssembler* masm = basm_.masm();
+  BaselineAssembler::ScratchRegisterScope scratch_scope(&basm_);
+  Register reg1 = scratch_scope.AcquireScratch();
+  Register reg2 = scratch_scope.AcquireScratch();
+  Label slow_path, done;
+  __ Move(reg1, ExternalReference::record_replay_progress_slow_path());
+  masm->cmpq(Operand(reg1, 0), Immediate(0));
+  masm->j(not_equal, &slow_path);
+  __ Move(reg1, ExternalReference::record_replay_progress_counter());
+  masm->movq(reg2, Operand(reg1, 0));
+  masm->addq(reg2, Immediate(1));
+  masm->movq(Operand(reg1, 0), reg2);
+  __ Move(reg1, ExternalReference::record_replay_target_progress());
+  masm->cmpq(reg2, Operand(reg1, 0));
+  masm->j(not_equal, &done);
+  CallRuntime(Runtime::kRecordReplayTargetProgressReached);
+  masm->jmp(&done);
+  masm->bind(&slow_path);
+  CallRuntime(Runtime::kRecordReplayAssertExecutionProgress,
+              __ FunctionOperand());
+  masm->bind(&done);
+#else
+  CallRuntime(Runtime::kRecordReplayAssertExecutionProgress,
+              __ FunctionOperand());
+#endif
 }
 
 void BaselineCompiler::VisitRecordReplayInstrumentation() {
   uint32_t index = Index(0);
   SaveAccumulatorScope accumulator_scope(&basm_);
+#if V8_TARGET_ARCH_X64
+  // Instrumentation is usually disabled, so check that before calling the runtime.
+  MacroAssembler* masm = basm_.masm();
+  Label done;
+  {
+    BaselineAssembler::ScratchRegisterScope scratch_scope(&basm_);
+    Register reg = scratch_scope.AcquireScratch();
+    __ Move(reg, ExternalReference::record_replay_instrumentation_enabled());
+    masm->cmpb(Operand(reg, 0), Immediate(0));
+    masm->j(equal, &done);
+  }
   CallRuntime(Runtime::kRecordReplayInstrumentation,
               __ FunctionOperand(), Smi::FromInt(index));
+  masm->bind(&done);
+#else
+  CallRuntime(Runtime::kRecordReplayInstrumentation,
+              __ FunctionOperand(), Smi::FromInt(index));
+#endif
 }
 
 void BaselineCompiler::VisitRecordReplayInstrumentationGenerator() {

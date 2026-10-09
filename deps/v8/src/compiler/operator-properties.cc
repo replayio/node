@@ -137,6 +137,8 @@ bool OperatorProperties::HasFrameStateInput(const Operator* op) {
   switch (op->opcode()) {
     case IrOpcode::kCheckpoint:
     case IrOpcode::kFrameState:
+    // Reaching the target progress may need to deoptimize the calling code.
+    case IrOpcode::kIncrementAndCheckProgressCounter:
       return true;
     case IrOpcode::kJSCallRuntime: {
       const CallRuntimeParameters& p = CallRuntimeParametersOf(op);

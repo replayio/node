@@ -2785,13 +2785,42 @@ IGNITION_HANDLER(IncBlockCounter, InterpreterAssembler) {
 }
 
 IGNITION_HANDLER(RecordReplayIncExecutionProgressCounter, InterpreterAssembler) {
-  TNode<Context> context = GetContext();
+  Label slow_path(this, Label::kDeferred), reached_target(this, Label::kDeferred);
+
+  // Only call the runtime when progress is asserted or checked, or when the
+  // target progress has been reached.
+  TNode<UintPtrT> slow = Load<UintPtrT>(
+      ExternalConstant(ExternalReference::record_replay_progress_slow_path()));
+  GotoIf(WordNotEqual(slow, UintPtrConstant(0)), &slow_path);
+
+  TNode<RawPtrT> counter = Load<RawPtrT>(
+      ExternalConstant(ExternalReference::record_replay_progress_counter_address()));
+  TNode<UintPtrT> progress = UintPtrAdd(Load<UintPtrT>(counter), UintPtrConstant(1));
+  StoreNoWriteBarrier(MachineType::PointerRepresentation(), counter, progress);
+  TNode<UintPtrT> target = Load<UintPtrT>(
+      ExternalConstant(ExternalReference::record_replay_target_progress()));
+  GotoIf(WordEqual(progress, target), &reached_target);
+  Dispatch();
+
+  BIND(&reached_target);
+  CallRuntime(Runtime::kRecordReplayTargetProgressReached, GetContext());
+  Dispatch();
+
+  BIND(&slow_path);
   TNode<Object> closure = LoadRegister(Register::function_closure());
-  CallRuntime(Runtime::kRecordReplayAssertExecutionProgress, context, closure);
+  CallRuntime(Runtime::kRecordReplayAssertExecutionProgress, GetContext(), closure);
   Dispatch();
 }
 
 IGNITION_HANDLER(RecordReplayInstrumentation, InterpreterAssembler) {
+  // Instrumentation is usually disabled, so check that before calling the runtime.
+  Label enabled(this, Label::kDeferred);
+  TNode<Uint8T> instrumentation = Load<Uint8T>(ExternalConstant(
+      ExternalReference::record_replay_instrumentation_enabled()));
+  GotoIf(Word32NotEqual(instrumentation, Int32Constant(0)), &enabled);
+  Dispatch();
+
+  BIND(&enabled);
   TNode<Context> context = GetContext();
   TNode<Object> closure = LoadRegister(Register::function_closure());
   TNode<Smi> index = BytecodeOperandIdxSmi(0);

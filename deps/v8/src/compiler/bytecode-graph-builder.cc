@@ -3582,9 +3582,10 @@ void BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
   PrepareEagerCheckpoint();
 
   // Use a VM call instead of an optimized path when we need to add assertions
-  // to the recording, or when replaying so that the calling code can be deoptimized
-  // when the target progress value has been reached.
-  if (gRecordReplayAssertProgress || recordreplay::IsReplaying()) {
+  // to the recording. The optimized path calls the runtime with this frame
+  // state when the target progress is reached, so the calling code can be
+  // deoptimized there.
+  if (gRecordReplayAssertProgress) {
     Node* closure = GetFunctionClosure();
     const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayAssertExecutionProgress);
 

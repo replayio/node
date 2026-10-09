@@ -10559,6 +10559,15 @@ bool gRecordReplayAssertProgress;
 // on the main thread.
 int gRecordReplayCheckProgress;
 
+// Nonzero when progress sites have to call the runtime because progress is
+// asserted or checked. Generated code otherwise increments the counter itself.
+intptr_t gRecordReplayProgressSlowPath;
+
+static void UpdateRecordReplayProgressSlowPath() {
+  gRecordReplayProgressSlowPath =
+      gRecordReplayAssertProgress || gRecordReplayCheckProgress;
+}
+
 // Any source filters where JS asserts should be added.
 static std::vector<std::string> gRecordReplayJSAssertFilters;
 
@@ -10579,6 +10588,7 @@ static void InitializeRecordReplayAsserts() {
       gRecordReplayAssertValues || !!getenv("RECORD_REPLAY_JS_PROGRESS_ASSERTS");
   gRecordReplayCheckProgress =
       gRecordReplayAssertValues || !!getenv("RECORD_REPLAY_JS_PROGRESS_CHECKS");
+  UpdateRecordReplayProgressSlowPath();
 
   if (!gRecordReplayAssertValues) {
     return;
@@ -10839,6 +10849,7 @@ void recordreplay::BeginDisallowEvents() {
     gRecordReplayBeginDisallowEvents();
     if (IsMainThread())
       ++internal::gRecordReplayCheckProgress;
+    internal::UpdateRecordReplayProgressSlowPath();
   }
 }
 
@@ -10847,6 +10858,7 @@ void recordreplay::BeginDisallowEventsWithLabel(const char* label) {
     gRecordReplayBeginDisallowEventsWithLabel(label);
     if (IsMainThread())
       ++internal::gRecordReplayCheckProgress;
+    internal::UpdateRecordReplayProgressSlowPath();
   }
 }
 
@@ -10862,6 +10874,7 @@ void recordreplay::EndDisallowEvents() {
   if (IsRecordingOrReplaying()) {
     if (IsMainThread())
       --internal::gRecordReplayCheckProgress;
+    internal::UpdateRecordReplayProgressSlowPath();
     gRecordReplayEndDisallowEvents();
   }
 }

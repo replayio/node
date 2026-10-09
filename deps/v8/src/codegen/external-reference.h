@@ -99,6 +99,11 @@ class StatsCounter;
   V(abort_with_reason, "abort_with_reason")                                    \
   V(record_replay_progress_counter, "record_replay_progress_counter")          \
   V(record_replay_target_progress, "record_replay_target_progress")            \
+  V(record_replay_progress_slow_path, "record_replay_progress_slow_path")      \
+  V(record_replay_progress_counter_address,                                    \
+    "record_replay_progress_counter_address")                                  \
+  V(record_replay_instrumentation_enabled,                                     \
+    "record_replay_instrumentation_enabled")                                   \
   V(record_replay_is_recording_or_replaying,                                   \
     "record_replay_is_recording_or_replaying")                                 \
   V(address_of_builtin_subclassing_flag, "FLAG_builtin_subclassing")           \

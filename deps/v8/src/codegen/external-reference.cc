@@ -507,6 +507,8 @@ FUNCTION_REFERENCE(abort_with_reason, i::abort_with_reason)
 extern uint64_t* gProgressCounter;
 extern uint64_t gTargetProgress;
 extern bool gRecordReplayIsRecordingOrReplaying;
+extern intptr_t gRecordReplayProgressSlowPath;
+extern bool gRecordReplayInstrumentationEnabled;
 
 ExternalReference ExternalReference::record_replay_progress_counter() {
   return ExternalReference(gProgressCounter);
@@ -514,6 +516,20 @@ ExternalReference ExternalReference::record_replay_progress_counter() {
 
 ExternalReference ExternalReference::record_replay_target_progress() {
   return ExternalReference(&gTargetProgress);
+}
+
+// The progress counter's own address isn't known when builtins are generated,
+// so they load it from gProgressCounter.
+ExternalReference ExternalReference::record_replay_progress_counter_address() {
+  return ExternalReference(&gProgressCounter);
+}
+
+ExternalReference ExternalReference::record_replay_progress_slow_path() {
+  return ExternalReference(&gRecordReplayProgressSlowPath);
+}
+
+ExternalReference ExternalReference::record_replay_instrumentation_enabled() {
+  return ExternalReference(&gRecordReplayInstrumentationEnabled);
 }
 
 ExternalReference
