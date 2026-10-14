@@ -675,7 +675,12 @@ inline void PlatformInit() {
     CHECK_EQ(sigaction(SIGSEGV, &sa, nullptr), 0);
   }
 #endif  // defined(_WIN32)
-  V8::EnableWebAssemblyTrapHandler(false);
+  // The recorder doesn't install handlers for fatal signals and treats every
+  // SIGSEGV as a crash, so when recording/replaying V8 keeps emitting the
+  // bounds checks.
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    V8::EnableWebAssemblyTrapHandler(false);
+  }
 #endif  // NODE_USE_V8_WASM_TRAP_HANDLER
 
   // Raise the open file descriptor limit.
