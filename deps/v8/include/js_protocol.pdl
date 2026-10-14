@@ -499,6 +499,11 @@ domain Debugger
     returns
       Runtime.RemoteObject exception
 
+  # Return value of the topmost frame, when paused at a record/replay return site.
+  command getReturnValue
+    returns
+      optional Runtime.RemoteObject returnValue
+
   # Fired when the virtual machine stopped on breakpoint or exception or any other stop criteria.
   event paused
     parameters

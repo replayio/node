@@ -6,6 +6,7 @@
 #include <sstream>
 #include <vector>
 
+#include "src/api/api-inl.h"
 #include "src/codegen/compiler.h"
 #include "src/common/globals.h"
 #include "src/debug/debug-coverage.h"
@@ -1479,6 +1480,36 @@ RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentationGenerator) {
   gCurrentGeneratorId = 0;
 
   return ReadOnlyRoots(isolate).undefined_value();
+}
+
+static Handle<Object>* gCurrentReturnValue;
+
+RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentationReturn) {
+  if (!gRecordReplayInstrumentationEnabled) {
+    return ReadOnlyRoots(isolate).undefined_value();
+  }
+
+  HandleScope scope(isolate);
+  DCHECK_EQ(3, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+  CONVERT_NUMBER_CHECKED(int32_t, index, Int32, args[1]);
+  CONVERT_ARG_HANDLE_CHECKED(Object, return_value, 2);
+
+  gCurrentReturnValue = &return_value;
+
+  OnInstrumentation(isolate, function, index);
+
+  gCurrentReturnValue = nullptr;
+
+  return ReadOnlyRoots(isolate).undefined_value();
+}
+
+extern "C" bool V8RecordReplayCurrentReturnValue(v8::Local<v8::Value>* object) {
+  if (gCurrentReturnValue) {
+    *object = v8::Utils::ToLocal(*gCurrentReturnValue);
+    return true;
+  }
+  return false;
 }
 
 }  // namespace internal

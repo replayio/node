@@ -138,6 +138,8 @@ class V8DebuggerAgentImpl : public protocol::Debugger::Backend {
       std::unique_ptr<protocol::Array<protocol::Debugger::Location>>* out_frameLocations) override;
   Response getPendingException(
       std::unique_ptr<protocol::Runtime::RemoteObject>* out_exception) override;
+  Response getReturnValue(
+      Maybe<protocol::Runtime::RemoteObject>* out_returnValue) override;
 
   bool enabled() const { return m_enabled; }
   bool replayOwned() const { return m_replay_owned; }

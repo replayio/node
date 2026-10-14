@@ -439,6 +439,8 @@ namespace interpreter {
     OperandType::kIdx)                                                         \
   V(RecordReplayInstrumentationGenerator, ImplicitRegisterUse::kNone,          \
     OperandType::kIdx, OperandType::kReg)                                      \
+  V(RecordReplayInstrumentationReturn, ImplicitRegisterUse::kNone,             \
+    OperandType::kIdx, OperandType::kReg)                                      \
   V(RecordReplayAssertValue, ImplicitRegisterUse::kReadWriteAccumulator,       \
     OperandType::kIdx)                                                         \
                                                                                \
