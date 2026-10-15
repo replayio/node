@@ -23,10 +23,10 @@ ElementsAccessor::CollectElementIndices(Handle<JSObject> object,
 
 inline MaybeHandle<FixedArray> ElementsAccessor::PrependElementIndices(
     Handle<JSObject> object, Handle<FixedArray> keys, GetKeysConversion convert,
-    PropertyFilter filter) {
+    PropertyFilter filter, const KeyIterationParams* params) {
   return PrependElementIndices(object,
                                handle(object->elements(), object->GetIsolate()),
-                               keys, convert, filter);
+                               keys, convert, filter, params);
 }
 
 inline bool ElementsAccessor::HasElement(JSObject holder, uint32_t index,

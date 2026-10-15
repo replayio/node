@@ -14,6 +14,8 @@
 #include "v8.h"
 #include "v8-inspector.h"
 #include "replayio.h"
+#include "inspector-generated-output-root/include/inspector/Runtime.h"
+#include "../deps/v8/third_party/inspector_protocol/crdtp/json.h"
 
 #include <vector>
 
@@ -575,11 +577,8 @@ class RecordReplaySessionDelegate : public inspector::InspectorSessionDelegate {
   }
 };
 
-static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) {
-  CHECK(args.Length() == 1 && args[0]->IsString() &&
-        "must be called with a single string");
-  Utf8Value message(args.GetIsolate(), args[0]);
-
+static void EnsureRecordReplayInspectorSession(
+    const FunctionCallbackInfo<Value>& args) {
   if (!gRecordReplayInspectorSession) {
     Environment* env = Environment::GetCurrent(args);
     inspector::Agent* agent = env->inspector_agent();
@@ -601,6 +600,14 @@ static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) 
       gRecordReplayInspectorSession.reset();
     }, nullptr);
   }
+}
+
+static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) {
+  CHECK(args.Length() == 1 && args[0]->IsString() &&
+        "must be called with a single string");
+  Utf8Value message(args.GetIsolate(), args[0]);
+
+  EnsureRecordReplayInspectorSession(args);
 
   std::string nmessage(message.ToString());
   v8_inspector::StringView messageView((const uint8_t*)nmessage.c_str(), nmessage.length());
@@ -609,6 +616,114 @@ static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) 
     v8::replayio::AutoDisallowEvents disallow("RecordReplaySendCDPMessage");
     gRecordReplayInspectorSession->Dispatch(messageView);
   }
+}
+
+// Object group of the objects Replay's command handlers wrap, released when
+// the pause data is cleared.
+static const char REPLAY_CDT_PAUSE_OBJECT_GROUP[] =
+    "REPLAY_CDT_PAUSE_OBJECT_GROUP";
+
+static v8_inspector::V8InspectorSession* RecordReplayV8InspectorSession(
+    const FunctionCallbackInfo<Value>& args) {
+  EnsureRecordReplayInspectorSession(args);
+  v8_inspector::V8InspectorSession* session =
+      gRecordReplayInspectorSession->RecordReplayV8Session();
+  CHECK(session);
+  return session;
+}
+
+// Called from javascript.
+// Returns a new CDP RemoteObject for the given value, like Chromium's
+// fromJsMakeDebuggeeValue (gecko's makeDebuggeeValue).
+static void RecordReplayMakeDebuggeeValue(
+    const FunctionCallbackInfo<Value>& args) {
+  CHECK(args.Length() == 1 && "must be called with a single value");
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+  v8_inspector::V8InspectorSession* session =
+      RecordReplayV8InspectorSession(args);
+
+  std::unique_ptr<v8_inspector::protocol::Runtime::API::RemoteObject>
+      remote_object;
+  {
+    v8::replayio::AutoMarkReplayCode mark;
+    v8::replayio::AutoDisallowEvents disallow("RecordReplayMakeDebuggeeValue");
+    // NOTE: `wrapObject` always creates a new `RemoteObject` and binds it
+    // to a new id.
+    remote_object = session->wrapObject(
+        context, args[0],
+        v8_inspector::StringView(
+            reinterpret_cast<const uint8_t*>(REPLAY_CDT_PAUSE_OBJECT_GROUP),
+            strlen(REPLAY_CDT_PAUSE_OBJECT_GROUP)),
+        /* generatePreview */ false);
+  }
+  if (!remote_object) {
+    args.GetReturnValue().SetNull();
+    return;
+  }
+
+  std::vector<uint8_t> cbor;
+  remote_object->AppendSerialized(&cbor);
+  std::string json;
+  v8_crdtp::Status status =
+      v8_crdtp::json::ConvertCBORToJSON(v8_crdtp::SpanFrom(cbor), &json);
+  if (!status.ok()) {
+    v8::recordreplay::Print(
+        "[RuntimeError] RecordReplayMakeDebuggeeValue failed to deserialize: %s",
+        status.ToASCIIString().c_str());
+    args.GetReturnValue().SetNull();
+    return;
+  }
+  Local<Value> result;
+  if (!v8::JSON::Parse(context,
+                       v8::String::NewFromUtf8(isolate, json.data(),
+                                               NewStringType::kNormal,
+                                               json.size()).ToLocalChecked())
+           .ToLocal(&result)) {
+    args.GetReturnValue().SetNull();
+    return;
+  }
+  args.GetReturnValue().Set(result);
+}
+
+// Called from javascript.
+// Returns the object a CDP object id refers to, or null, like Chromium's
+// fromJsGetObjectByCdpId.
+static void RecordReplayGetObjectByCdpId(
+    const FunctionCallbackInfo<Value>& args) {
+  CHECK(args.Length() == 1 && args[0]->IsString() &&
+        "must be called with a single string");
+  Utf8Value cdp_id(args.GetIsolate(), args[0]);
+  v8_inspector::V8InspectorSession* session =
+      RecordReplayV8InspectorSession(args);
+
+  std::unique_ptr<v8_inspector::StringBuffer> error;
+  Local<Value> object;
+  Local<Context> context;
+  bool found;
+  {
+    v8::replayio::AutoMarkReplayCode mark;
+    v8::replayio::AutoDisallowEvents disallow("RecordReplayGetObjectByCdpId");
+    found = session->unwrapObject(
+        &error,
+        v8_inspector::StringView(reinterpret_cast<const uint8_t*>(*cdp_id),
+                                 cdp_id.length()),
+        &object, &context, nullptr);
+  }
+  if (!found) {
+    v8_inspector::StringView error_view = error->string();
+    std::string error_message;
+    for (size_t i = 0; i < error_view.length(); i++) {
+      error_message += static_cast<char>(error_view.is8Bit()
+                                             ? error_view.characters8()[i]
+                                             : error_view.characters16()[i]);
+    }
+    v8::recordreplay::Print("getObjectByCdpId - Failed to look up cdpId: %s",
+                            error_message.c_str());
+    args.GetReturnValue().SetNull();
+    return;
+  }
+  args.GetReturnValue().Set(object);
 }
 
 // Called from javascript.
@@ -786,6 +901,10 @@ static void Initialize(Local<Object> target,
                  RecordReplaySetCDPMessageCallback);
   env->SetMethod(target, "recordReplaySendCDPMessage",
                  RecordReplaySendCDPMessage);
+  env->SetMethod(target, "recordReplayMakeDebuggeeValue",
+                 RecordReplayMakeDebuggeeValue);
+  env->SetMethod(target, "recordReplayGetObjectByCdpId",
+                 RecordReplayGetObjectByCdpId);
   env->SetMethod(target, "recordReplayRecordingId",
                  v8::FunctionCallbackRecordReplayGetRecordingId);
   env->SetMethod(target, "recordReplayCurrentExecutionPoint",
@@ -834,6 +953,8 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(v8::FunctionCallbackRecordReplayGetCurrentError);
   registry->Register(RecordReplaySetCDPMessageCallback);
   registry->Register(RecordReplaySendCDPMessage);
+  registry->Register(RecordReplayMakeDebuggeeValue);
+  registry->Register(RecordReplayGetObjectByCdpId);
   registry->Register(v8::FunctionCallbackRecordReplayGetRecordingId);
   registry->Register(v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
   registry->Register(v8::FunctionCallbackRecordReplayElapsedTimeMs);

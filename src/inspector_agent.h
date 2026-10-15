@@ -14,6 +14,7 @@
 
 namespace v8_inspector {
 class StringView;
+class V8InspectorSession;
 }  // namespace v8_inspector
 
 namespace node {
@@ -31,6 +32,11 @@ class InspectorSession {
  public:
   virtual ~InspectorSession() = default;
   virtual void Dispatch(const v8_inspector::StringView& message) = 0;
+  // [RecordReplay] The V8 session behind this one, which Replay's command
+  // handlers use to wrap and unwrap objects.
+  virtual v8_inspector::V8InspectorSession* RecordReplayV8Session() {
+    return nullptr;
+  }
 };
 
 class InspectorSessionDelegate {

@@ -88,6 +88,8 @@ class V8RuntimeAgentImpl : public protocol::Runtime::Backend {
   Response getProperties(
       const String16& objectId, Maybe<bool> ownProperties,
       Maybe<bool> accessorPropertiesOnly, Maybe<bool> generatePreview,
+      Maybe<protocol::Runtime::KeyIterationIndex> pageSize,
+      Maybe<protocol::Runtime::KeyIterationIndex> pageIndex,
       std::unique_ptr<protocol::Array<protocol::Runtime::PropertyDescriptor>>*
           result,
       Maybe<protocol::Array<protocol::Runtime::InternalPropertyDescriptor>>*
