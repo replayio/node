@@ -711,8 +711,15 @@ static void RecordReplayGetObjectByCdpId(
         &object, &context, nullptr);
   }
   if (!found) {
+    v8_inspector::StringView error_view = error->string();
+    std::string error_message;
+    for (size_t i = 0; i < error_view.length(); i++) {
+      error_message += static_cast<char>(error_view.is8Bit()
+                                             ? error_view.characters8()[i]
+                                             : error_view.characters16()[i]);
+    }
     v8::recordreplay::Print("getObjectByCdpId - Failed to look up cdpId: %s",
-                            *cdp_id);
+                            error_message.c_str());
     args.GetReturnValue().SetNull();
     return;
   }
