@@ -355,21 +355,26 @@ InjectedScript::~InjectedScript() { discardEvaluateCallbacks(); }
 namespace {
 class PropertyAccumulator : public ValueMirror::PropertyAccumulator {
  public:
-  explicit PropertyAccumulator(std::vector<PropertyMirror>* mirrors)
-      : m_mirrors(mirrors) {}
+  explicit PropertyAccumulator(std::vector<PropertyMirror>* mirrors, const v8::KeyIterationParams* params)
+      : m_mirrors(mirrors), m_params(params) {}
   bool Add(PropertyMirror mirror) override {
     m_mirrors->push_back(std::move(mirror));
+    if (m_mirrors->size() > (size_t)m_params->PageSize((int)m_mirrors->size())) {
+      return false;
+    }
     return true;
   }
 
  private:
   std::vector<PropertyMirror>* m_mirrors;
+  const v8::KeyIterationParams* m_params;
 };
 }  // anonymous namespace
 
 Response InjectedScript::getProperties(
     v8::Local<v8::Object> object, const String16& groupName, bool ownProperties,
     bool accessorPropertiesOnly, WrapMode wrapMode,
+    const v8::KeyIterationParams* params,
     std::unique_ptr<Array<PropertyDescriptor>>* properties,
     Maybe<protocol::Runtime::ExceptionDetails>* exceptionDetails) {
   v8::HandleScope handles(m_context->isolate());
@@ -380,9 +385,12 @@ Response InjectedScript::getProperties(
 
   *properties = std::make_unique<Array<PropertyDescriptor>>();
   std::vector<PropertyMirror> mirrors;
-  PropertyAccumulator accumulator(&mirrors);
+  // [RUN-3149] pass params to the accumulator, which will stop us
+  // by returning false from .Add() after it's added enough properties.
+  PropertyAccumulator accumulator(&mirrors, params);
   if (!ValueMirror::getProperties(context, object, ownProperties,
-                                  accessorPropertiesOnly, &accumulator)) {
+                                  accessorPropertiesOnly, &accumulator,
+                                  params)) {
     return createExceptionDetails(tryCatch, groupName, exceptionDetails);
   }
   for (const PropertyMirror& mirror : mirrors) {
@@ -450,6 +458,7 @@ Response InjectedScript::getProperties(
 
 Response InjectedScript::getInternalAndPrivateProperties(
     v8::Local<v8::Value> value, const String16& groupName,
+    const v8::KeyIterationParams* params,
     std::unique_ptr<protocol::Array<InternalPropertyDescriptor>>*
         internalProperties,
     std::unique_ptr<protocol::Array<PrivatePropertyDescriptor>>*
@@ -465,7 +474,7 @@ Response InjectedScript::getInternalAndPrivateProperties(
   int sessionId = m_sessionId;
   std::vector<InternalPropertyMirror> internalPropertiesWrappers;
   ValueMirror::getInternalProperties(m_context->context(), value_obj,
-                                     &internalPropertiesWrappers);
+                                     &internalPropertiesWrappers, params);
   for (const auto& internalProperty : internalPropertiesWrappers) {
     std::unique_ptr<RemoteObject> remoteObject;
     Response response = internalProperty.value->buildRemoteObject(

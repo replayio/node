@@ -45,7 +45,8 @@ class KeyAccumulator final {
   static MaybeHandle<FixedArray> GetKeys(
       Handle<JSReceiver> object, KeyCollectionMode mode, PropertyFilter filter,
       GetKeysConversion keys_conversion = GetKeysConversion::kKeepNumbers,
-      bool is_for_in = false, bool skip_indices = false);
+      bool is_for_in = false, bool skip_indices = false,
+      const KeyIterationParams* params = KeyIterationParams::Default());
 
   Handle<FixedArray> GetKeys(
       GetKeysConversion convert = GetKeysConversion::kKeepNumbers);
@@ -57,7 +58,8 @@ class KeyAccumulator final {
   // Does not throw for uninitialized exports in module namespace objects, so
   // this has to be checked separately.
   static Handle<FixedArray> GetOwnEnumPropertyKeys(Isolate* isolate,
-                                                   Handle<JSObject> object);
+                                                   Handle<JSObject> object,
+                                                   const KeyIterationParams* key_iteration_params_ = KeyIterationParams::Default());
 
   V8_WARN_UNUSED_RESULT ExceptionStatus
   AddKey(Object key, AddKeyConversion convert = DO_NOT_CONVERT);
@@ -72,6 +74,11 @@ class KeyAccumulator final {
   // The collection mode defines whether we collect the keys from the prototype
   // chain or only look at the receiver.
   KeyCollectionMode mode() { return mode_; }
+
+  const KeyIterationParams* key_iteration_params() const {
+    return key_iteration_params_;
+  }
+
   void set_skip_indices(bool value) { skip_indices_ = value; }
   // Shadowing keys are used to filter keys. This happens when non-enumerable
   // keys appear again on the prototype chain.
@@ -139,6 +146,9 @@ class KeyAccumulator final {
     last_non_empty_prototype_ = object;
   }
   void set_may_have_elements(bool value) { may_have_elements_ = value; }
+  void set_key_iteration_params(const KeyIterationParams* params) {
+    key_iteration_params_ = params;
+  }
 
   Isolate* isolate_;
   Handle<OrderedHashSet> keys_;
@@ -155,6 +165,7 @@ class KeyAccumulator final {
   bool skip_shadow_check_ = true;
   bool may_have_elements_ = true;
   bool try_prototype_info_cache_ = false;
+  const KeyIterationParams* key_iteration_params_ = KeyIterationParams::Default();
 
   friend FastKeyAccumulator;
 };
@@ -165,17 +176,18 @@ class KeyAccumulator final {
 // case where we do not have to walk the prototype chain.
 class FastKeyAccumulator {
  public:
-  FastKeyAccumulator(Isolate* isolate, Handle<JSReceiver> receiver,
-                     KeyCollectionMode mode, PropertyFilter filter,
-                     bool is_for_in = false, bool skip_indices = false)
+  FastKeyAccumulator(
+      Isolate* isolate, Handle<JSReceiver> receiver, KeyCollectionMode mode,
+      PropertyFilter filter, bool is_for_in = false, bool skip_indices = false,
+      const KeyIterationParams* params = KeyIterationParams::Default())
       : isolate_(isolate),
         receiver_(receiver),
         mode_(mode),
         filter_(filter),
         is_for_in_(is_for_in),
-        skip_indices_(skip_indices) {
-    Prepare();
-  }
+        skip_indices_(skip_indices),
+        key_iteration_params_(params)
+  { Prepare(); }
   FastKeyAccumulator(const FastKeyAccumulator&) = delete;
   FastKeyAccumulator& operator=(const FastKeyAccumulator&) = delete;
 
@@ -186,10 +198,11 @@ class FastKeyAccumulator {
   MaybeHandle<FixedArray> GetKeys(
       GetKeysConversion convert = GetKeysConversion::kKeepNumbers);
 
+  MaybeHandle<FixedArray> GetKeysSlow(GetKeysConversion convert);
+
  private:
   void Prepare();
   MaybeHandle<FixedArray> GetKeysFast(GetKeysConversion convert);
-  MaybeHandle<FixedArray> GetKeysSlow(GetKeysConversion convert);
   MaybeHandle<FixedArray> GetKeysWithPrototypeInfoCache(
       GetKeysConversion convert);
 
@@ -213,6 +226,8 @@ class FastKeyAccumulator {
   bool has_prototype_info_cache_ = false;
   bool try_prototype_info_cache_ = false;
   bool only_own_has_simple_elements_ = false;
+  const KeyIterationParams* key_iteration_params_ =
+      KeyIterationParams::Default();
 };
 
 }  // namespace internal

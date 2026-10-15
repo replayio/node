@@ -7259,7 +7259,8 @@ enum class SetAsArrayKind {
 };
 
 i::Handle<i::JSArray> MapAsArray(i::Isolate* isolate, i::Object table_obj,
-                                 int offset, MapAsArrayKind kind) {
+                                 int offset, MapAsArrayKind kind,
+                                 const KeyIterationParams* params = KeyIterationParams::Default()) {
   i::Factory* factory = isolate->factory();
   i::Handle<i::OrderedHashMap> table(i::OrderedHashMap::cast(table_obj),
                                      isolate);
@@ -7268,8 +7269,10 @@ i::Handle<i::JSArray> MapAsArray(i::Isolate* isolate, i::Object table_obj,
   const bool collect_values =
       kind == MapAsArrayKind::kEntries || kind == MapAsArrayKind::kValues;
   int capacity = table->UsedCapacity();
-  int max_length =
-      (capacity - offset) * ((collect_keys && collect_values) ? 2 : 1);
+
+  auto page_size = params->PageSize(capacity - offset);
+  int max_length = page_size * ((collect_keys && collect_values) ? 2 : 1);
+
   i::Handle<i::FixedArray> result = factory->NewFixedArray(max_length);
   int result_index = 0;
   {
@@ -7281,9 +7284,11 @@ i::Handle<i::JSArray> MapAsArray(i::Isolate* isolate, i::Object table_obj,
       if (key == the_hole) continue;
       if (collect_keys) result->set(result_index++, key);
       if (collect_values) result->set(result_index++, table->ValueAt(entry));
+
+      if (*params && result_index == max_length) break;
     }
   }
-  DCHECK_GE(max_length, result_index);
+  CHECK_GE(max_length, result_index);
   if (result_index == 0) return factory->NewJSArray(0);
   result->Shrink(isolate, result_index);
   return factory->NewJSArrayWithElements(result, i::PACKED_ELEMENTS,
@@ -7293,12 +7298,16 @@ i::Handle<i::JSArray> MapAsArray(i::Isolate* isolate, i::Object table_obj,
 }  // namespace
 
 Local<Array> Map::AsArray() const {
+  return AsArray(KeyIterationParams::Default());
+}
+
+Local<Array> Map::AsArray(const v8::KeyIterationParams* params) const {
   i::Handle<i::JSMap> obj = Utils::OpenHandle(this);
   i::Isolate* isolate = obj->GetIsolate();
   LOG_API(isolate, Map, AsArray);
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(isolate);
   return Utils::ToLocal(
-      MapAsArray(isolate, obj->table(), 0, MapAsArrayKind::kEntries));
+      MapAsArray(isolate, obj->table(), 0, MapAsArrayKind::kEntries, params));
 }
 
 Local<v8::Set> v8::Set::New(Isolate* isolate) {
@@ -7365,14 +7374,18 @@ Maybe<bool> Set::Delete(Local<Context> context, Local<Value> key) {
 
 namespace {
 i::Handle<i::JSArray> SetAsArray(i::Isolate* isolate, i::Object table_obj,
-                                 int offset, SetAsArrayKind kind) {
+                                 int offset, SetAsArrayKind kind,
+                                 const KeyIterationParams* params = KeyIterationParams::Default()) {
   i::Factory* factory = isolate->factory();
   i::Handle<i::OrderedHashSet> table(i::OrderedHashSet::cast(table_obj),
                                      isolate);
   // Elements skipped by |offset| may already be deleted.
   int capacity = table->UsedCapacity();
   const bool collect_key_values = kind == SetAsArrayKind::kEntries;
-  int max_length = (capacity - offset) * (collect_key_values ? 2 : 1);
+
+  auto page_size = params->PageSize(capacity - offset);
+  int max_length = page_size * (collect_key_values ? 2 : 1);
+
   if (max_length == 0) return factory->NewJSArray(0);
   i::Handle<i::FixedArray> result = factory->NewFixedArray(max_length);
   int result_index = 0;
@@ -7385,6 +7398,8 @@ i::Handle<i::JSArray> SetAsArray(i::Isolate* isolate, i::Object table_obj,
       if (key == the_hole) continue;
       result->set(result_index++, key);
       if (collect_key_values) result->set(result_index++, key);
+
+      if (result_index == max_length) break;
     }
   }
   DCHECK_GE(max_length, result_index);
@@ -7396,12 +7411,16 @@ i::Handle<i::JSArray> SetAsArray(i::Isolate* isolate, i::Object table_obj,
 }  // namespace
 
 Local<Array> Set::AsArray() const {
+  return AsArray(KeyIterationParams::Default());
+}
+
+Local<Array> Set::AsArray(const v8::KeyIterationParams* params) const {
   i::Handle<i::JSSet> obj = Utils::OpenHandle(this);
   i::Isolate* isolate = obj->GetIsolate();
   LOG_API(isolate, Set, AsArray);
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(isolate);
   return Utils::ToLocal(
-      SetAsArray(isolate, obj->table(), 0, SetAsArrayKind::kValues));
+      SetAsArray(isolate, obj->table(), 0, SetAsArrayKind::kValues, params));
 }
 
 MaybeLocal<Promise::Resolver> Promise::Resolver::New(Local<Context> context) {
@@ -9726,13 +9745,18 @@ Local<StackTrace> Exception::GetStackTrace(Local<Value> exception) {
 }
 
 v8::MaybeLocal<v8::Array> v8::Object::PreviewEntries(bool* is_key_value) {
+  return PreviewEntries(is_key_value, KeyIterationParams::Default());
+}
+
+v8::MaybeLocal<v8::Array> v8::Object::PreviewEntries(
+    bool* is_key_value, const v8::KeyIterationParams* params) {
   if (IsMap()) {
     *is_key_value = true;
-    return Map::Cast(this)->AsArray();
+    return Map::Cast(this)->AsArray(params);
   }
   if (IsSet()) {
     *is_key_value = false;
-    return Set::Cast(this)->AsArray();
+    return Set::Cast(this)->AsArray(params);
   }
 
   i::Handle<i::JSReceiver> object = Utils::OpenHandle(this);
@@ -9751,7 +9775,7 @@ v8::MaybeLocal<v8::Array> v8::Object::PreviewEntries(bool* is_key_value) {
     *is_key_value = kind == MapAsArrayKind::kEntries;
     if (!it->HasMore()) return v8::Array::New(v8_isolate);
     return Utils::ToLocal(
-        MapAsArray(isolate, it->table(), i::Smi::ToInt(it->index()), kind));
+        MapAsArray(isolate, it->table(), i::Smi::ToInt(it->index()), kind, params));
   }
   if (object->IsJSSetIterator()) {
     i::Handle<i::JSSetIterator> it = i::Handle<i::JSSetIterator>::cast(object);
