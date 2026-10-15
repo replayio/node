@@ -81,6 +81,9 @@ Mutex umask_mutex;
 #define NANOS_PER_SEC 1000000000
 
 static void Abort(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "process.abort")) {
+    return;
+  }
   Abort();
 }
 
@@ -93,6 +96,9 @@ static void CauseSegfault(const FunctionCallbackInfo<Value>& args) {
 
 static void Chdir(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.chdir")) {
+    return;
+  }
   CHECK(env->owns_process_state());
 
   CHECK_EQ(args.Length(), 1);
@@ -163,6 +169,9 @@ static void Cwd(const FunctionCallbackInfo<Value>& args) {
 
 static void Kill(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.kill")) {
+    return;
+  }
   Local<Context> context = env->context();
 
   if (args.Length() < 2) {
@@ -247,6 +256,9 @@ void RawDebug(const FunctionCallbackInfo<Value>& args) {
 
 static void Umask(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.umask")) {
+    return;
+  }
   CHECK(env->has_run_bootstrapping_code());
   CHECK_EQ(args.Length(), 1);
   CHECK(args[0]->IsUndefined() || args[0]->IsUint32());
@@ -490,6 +502,9 @@ static void DebugEnd(const FunctionCallbackInfo<Value>& args) {
 
 static void ReallyExit(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.exit")) {
+    return;
+  }
   RunAtExit(env);
   int code = args[0]->Int32Value(env->context()).FromMaybe(0);
   env->Exit(code);
