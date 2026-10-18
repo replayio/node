@@ -1915,6 +1915,9 @@ static void CopyFile(const FunctionCallbackInfo<Value>& args) {
 static bool ThrowIfWriteUnavailable(Environment* env,
                                     const FunctionCallbackInfo<Value>& args,
                                     const char* operation_name) {
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    return false;
+  }
   if (args[0]->IsInt32()) {
     const int fd = args[0].As<Int32>()->Value();
     if (fd == 1 || fd == 2) {
