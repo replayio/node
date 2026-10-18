@@ -24,6 +24,7 @@
 #include "handle_wrap.h"
 #include "node.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "string_bytes.h"
 
 namespace node {
@@ -134,6 +135,9 @@ void FSEventWrap::New(const FunctionCallbackInfo<Value>& args) {
 // wrap.start(filename, persistent, recursive, encoding)
 void FSEventWrap::Start(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.watch")) {
+    return;
+  }
 
   FSEventWrap* wrap = Unwrap<FSEventWrap>(args.This());
   CHECK_NOT_NULL(wrap);
