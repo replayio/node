@@ -451,17 +451,21 @@ FileHandleReadWrap::FileHandleReadWrap(FileHandle* handle, Local<Object> obj)
   : ReqWrap(handle->env(), obj, AsyncWrap::PROVIDER_FSREQCALLBACK),
     file_handle_(handle) {}
 
-// Reading from or closing a FileHandle through its stream interface (http2's
-// respondWithFD()) can't be replayed in a pause either. Stream methods report
-// errors with a return code instead of throwing, as DoWrite() does.
+// Reading from a FileHandle through its stream interface (http2's
+// respondWithFD()) or shutting the stream down can't be replayed in a pause
+// either. Stream methods report errors instead of throwing, as DoWrite() does.
 static bool AreFileHandleStreamCallsUnavailable() {
   return v8::recordreplay::IsRecordingOrReplaying() &&
          !recordreplay::AreEventsAvailable();
 }
 
 int FileHandle::ReadStart() {
-  if (AreFileHandleStreamCallsUnavailable())
-    return UV_EPERM;
+  // StreamPipe ignores ReadStart()'s result, so report the error as a read,
+  // like the end of the file below.
+  if (AreFileHandleStreamCallsUnavailable()) {
+    EmitRead(UV_EPERM);
+    return 0;
+  }
 
   if (!IsAlive() || IsClosing())
     return UV_EOF;
