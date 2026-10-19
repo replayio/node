@@ -1908,17 +1908,20 @@ static void CopyFile(const FunctionCallbackInfo<Value>& args) {
   }
 }
 
-// The replay passes writes to stdout and stderr through to its own output after
-// diverging from the recording, so console output from an evaluation in a
-// pause keeps working when stdout is a file (SyncWriteStream). Other writes
-// can't be replayed there, like the rest of the fs operations.
+// The replay passes write() calls to stdout and stderr through to its own
+// output after diverging from the recording, so console output from an
+// evaluation in a pause keeps working when stdout is a file (SyncWriteStream).
+// libuv makes a single buffer write without a position with write(); a
+// positioned one uses pwrite(), which the replay can't pass through, like
+// writev() and the rest of the fs operations.
 static bool ThrowIfWriteUnavailable(Environment* env,
                                     const FunctionCallbackInfo<Value>& args,
+                                    int position_index,
                                     const char* operation_name) {
   if (!v8::recordreplay::IsRecordingOrReplaying()) {
     return false;
   }
-  if (args[0]->IsInt32()) {
+  if (args[0]->IsInt32() && GetOffset(args[position_index]) < 0) {
     const int fd = args[0].As<Int32>()->Value();
     if (fd == 1 || fd == 2) {
       return false;
@@ -1938,7 +1941,7 @@ static bool ThrowIfWriteUnavailable(Environment* env,
 //             if null, write from the current position
 static void WriteBuffer(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
-  if (ThrowIfWriteUnavailable(env, args, "fs.write")) {
+  if (ThrowIfWriteUnavailable(env, args, 4, "fs.write")) {
     return;
   }
 
@@ -2049,7 +2052,7 @@ static void WriteBuffers(const FunctionCallbackInfo<Value>& args) {
 // 3 enc       encoding of string
 static void WriteString(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
-  if (ThrowIfWriteUnavailable(env, args, "fs.write")) {
+  if (ThrowIfWriteUnavailable(env, args, 2, "fs.write")) {
     return;
   }
   Isolate* isolate = env->isolate();
