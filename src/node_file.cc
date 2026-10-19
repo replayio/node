@@ -1925,31 +1925,6 @@ static void CopyFile(const FunctionCallbackInfo<Value>& args) {
   }
 }
 
-// The replay passes write() calls to stdout and stderr through to its own
-// output after diverging from the recording, so console output from an
-// evaluation in a pause keeps working when stdout is a file (SyncWriteStream).
-// Only fs.writeSync() without a position is let through: libuv makes it with
-// write(), while a positioned one uses pwrite(), which the replay can't pass
-// through. The callback and promise forms report back through the event loop,
-// which doesn't run in a pause. fs.writev() isn't needed for console output
-// and throws like the rest of the fs operations.
-static bool ThrowIfWriteUnavailable(Environment* env,
-                                    const FunctionCallbackInfo<Value>& args,
-                                    int position_index,
-                                    int req_index,
-                                    const char* operation_name) {
-  if (!v8::recordreplay::IsRecordingOrReplaying()) {
-    return false;
-  }
-  if (args[0]->IsInt32() && GetOffset(args[position_index]) < 0 &&
-      args[req_index]->IsUndefined()) {
-    const int fd = args[0].As<Int32>()->Value();
-    if (fd == 1 || fd == 2) {
-      return false;
-    }
-  }
-  return recordreplay::ThrowIfEventsUnavailable(env, operation_name);
-}
 
 // Wrapper for write(2).
 //
@@ -1962,7 +1937,7 @@ static bool ThrowIfWriteUnavailable(Environment* env,
 //             if null, write from the current position
 static void WriteBuffer(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
-  if (ThrowIfWriteUnavailable(env, args, 4, 5, "fs.write")) {
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.write")) {
     return;
   }
 
@@ -2073,7 +2048,7 @@ static void WriteBuffers(const FunctionCallbackInfo<Value>& args) {
 // 3 enc       encoding of string
 static void WriteString(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
-  if (ThrowIfWriteUnavailable(env, args, 2, 4, "fs.write")) {
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.write")) {
     return;
   }
   Isolate* isolate = env->isolate();
