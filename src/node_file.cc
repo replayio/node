@@ -1928,9 +1928,10 @@ static void CopyFile(const FunctionCallbackInfo<Value>& args) {
 // The replay passes write() calls to stdout and stderr through to its own
 // output after diverging from the recording, so console output from an
 // evaluation in a pause keeps working when stdout is a file (SyncWriteStream).
-// libuv makes a single buffer write without a position with write(); a
-// positioned one uses pwrite(), which the replay can't pass through, like
-// writev() and the rest of the fs operations.
+// Only fs.write() without a position is let through: libuv makes it with
+// write(), while a positioned one uses pwrite(), which the replay can't pass
+// through. fs.writev() isn't needed for console output and throws like the rest
+// of the fs operations.
 static bool ThrowIfWriteUnavailable(Environment* env,
                                     const FunctionCallbackInfo<Value>& args,
                                     int position_index,
