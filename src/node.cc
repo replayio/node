@@ -1041,8 +1041,12 @@ bool AreEventsRecorded() {
   return AreEventsAvailable() && !v8::recordreplay::AreEventsPassedThrough();
 }
 
+bool AreEventsUnavailable() {
+  return v8::recordreplay::IsRecordingOrReplaying() && !AreEventsAvailable();
+}
+
 bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name) {
-  if (!v8::recordreplay::IsRecordingOrReplaying() || AreEventsAvailable()) {
+  if (!AreEventsUnavailable()) {
     return false;
   }
   std::string message = std::string("Cannot replay operation ") +

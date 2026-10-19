@@ -425,6 +425,11 @@ bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name);
 bool ThrowIfEventsUnavailable(const v8::FunctionCallbackInfo<v8::Value>& args,
                               const char* operation_name);
 
+// Whether we're recording or replaying and the recording can't be used here,
+// the condition ThrowIfEventsUnavailable() throws on. Matches
+// AreEventsUnavailable() in the Chromium fork.
+bool AreEventsUnavailable();
+
 // Gates leaking an object whose cleanup would run at a point which differs
 // between recording and replaying, and notes it in the crash report
 // diagnostics. Matches recordreplay::EnterLeakMemory in the Chromium fork.
