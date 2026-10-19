@@ -452,8 +452,8 @@ FileHandleReadWrap::FileHandleReadWrap(FileHandle* handle, Local<Object> obj)
     file_handle_(handle) {}
 
 // Reading from a FileHandle through its stream interface (http2's
-// respondWithFD()) or shutting the stream down can't be replayed in a pause
-// either. Stream methods report errors instead of throwing, as DoWrite() does.
+// respondWithFD()) or shutting the stream down can't be replayed in a pause.
+// Stream methods report errors instead of throwing, as DoWrite() does.
 static bool AreFileHandleStreamCallsUnavailable() {
   return v8::recordreplay::IsRecordingOrReplaying() &&
          !recordreplay::AreEventsAvailable();

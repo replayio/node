@@ -136,7 +136,7 @@ void FSEventWrap::New(const FunctionCallbackInfo<Value>& args) {
 }
 
 // Closing a started watcher removes its inotify watch, which can't be replayed
-// in a pause either.
+// in a pause.
 void FSEventWrap::Close(const FunctionCallbackInfo<Value>& args) {
   FSEventWrap* wrap;
   ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
