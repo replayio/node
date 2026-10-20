@@ -558,7 +558,18 @@ Handle<JSObject> ScopeIterator::ScopeObject(Mode mode) {
     return WithContextExtension();
   }
 
-  Handle<JSObject> scope = isolate_->factory()->NewJSObjectWithNullProto();
+  // Replay materializes the scopes of every frame on the stack at each console
+  // message. Adding each binding to a fast-mode object makes a map transition,
+  // and every transition walks the back pointers to the root map, so an object
+  // with many bindings is quadratic until it reaches the descriptor limit.
+  // Like newer V8, build a dictionary-mode object instead, and tolerate names
+  // that collide in one scope.
+  const bool record_replay_dictionary = recordreplay::IsRecordingOrReplaying();
+  Handle<JSObject> scope =
+      record_replay_dictionary
+          ? isolate_->factory()->NewSlowJSObjectFromMap(
+                isolate_->slow_object_with_null_prototype_map())
+          : isolate_->factory()->NewJSObjectWithNullProto();
   auto visitor = [=](Handle<String> name, Handle<Object> value,
                      ScopeType scope_type) {
     if (value->IsTheHole(isolate_)) {
@@ -571,7 +582,13 @@ Handle<JSObject> ScopeIterator::ScopeObject(Mode mode) {
       }
       value = isolate_->factory()->undefined_value();
     }
-    JSObject::AddProperty(isolate_, scope, name, value, NONE);
+    if (record_replay_dictionary) {
+      JSObject::SetPropertyOrElement(isolate_, scope, name, value,
+                                     Just(ShouldThrow::kDontThrow))
+          .Check();
+    } else {
+      JSObject::AddProperty(isolate_, scope, name, value, NONE);
+    }
     return false;
   };
 
