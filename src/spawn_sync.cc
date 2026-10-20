@@ -370,6 +370,9 @@ void SyncProcessRunner::Initialize(Local<Object> target,
 
 void SyncProcessRunner::Spawn(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "child_process.spawnSync")) {
+    return;
+  }
   env->PrintSyncTrace();
   SyncProcessRunner p(env);
   Local<Value> result;
