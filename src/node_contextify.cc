@@ -960,6 +960,12 @@ bool ContextifyScript::EvalMachine(Environment* env,
         "Script methods can only be called on script instances.");
     return false;
   }
+  // A timeout starts a watchdog thread with its own event loop, which can't be
+  // replayed in a pause.
+  if (timeout != -1 &&
+      recordreplay::ThrowIfEventsUnavailable(env, "vm timeout")) {
+    return false;
+  }
   TryCatchScope try_catch(env);
   Isolate::SafeForTerminationScope safe_for_termination(env->isolate());
   ContextifyScript* wrapped_script;

@@ -80,6 +80,11 @@ void NodeCategorySet::Enable(const FunctionCallbackInfo<Value>& args) {
   CHECK_NOT_NULL(category_set);
   const auto& categories = category_set->GetCategories();
   if (!category_set->enabled_ && !categories.empty()) {
+    // Starting the agent starts its thread and opens the trace file, which
+    // can't be replayed in a pause.
+    if (recordreplay::ThrowIfEventsUnavailable(args, "tracing.enable")) {
+      return;
+    }
     // Starts the Tracing Agent if it wasn't started already (e.g. through
     // a command line flag.)
     StartTracingAgent();
