@@ -858,12 +858,21 @@ void ContextifyScript::CreateCachedData(
   }
 }
 
+// A timeout starts a watchdog thread with its own event loop, which can't be
+// replayed in a pause.
+static bool ThrowIfTimeoutCantBeReplayed(Environment* env,
+                                         Local<Value> timeout) {
+  return timeout->IsNumber() && timeout.As<Number>()->Value() != -1 &&
+         recordreplay::ThrowIfEventsUnavailable(env, "vm timeout");
+}
+
 void ContextifyScript::RunInThisContext(
     const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
 
   ContextifyScript* wrapped_script;
   ASSIGN_OR_RETURN_UNWRAP(&wrapped_script, args.Holder());
+  if (ThrowIfTimeoutCantBeReplayed(env, args[0])) return;
 
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(
       TRACING_CATEGORY_NODE2(vm, script), "RunInThisContext", wrapped_script);
@@ -902,6 +911,7 @@ void ContextifyScript::RunInContext(const FunctionCallbackInfo<Value>& args) {
 
   ContextifyScript* wrapped_script;
   ASSIGN_OR_RETURN_UNWRAP(&wrapped_script, args.Holder());
+  if (ThrowIfTimeoutCantBeReplayed(env, args[1])) return;
 
   CHECK_EQ(args.Length(), 5);
 
@@ -958,12 +968,6 @@ bool ContextifyScript::EvalMachine(Environment* env,
     THROW_ERR_INVALID_THIS(
         env,
         "Script methods can only be called on script instances.");
-    return false;
-  }
-  // A timeout starts a watchdog thread with its own event loop, which can't be
-  // replayed in a pause.
-  if (timeout != -1 &&
-      recordreplay::ThrowIfEventsUnavailable(env, "vm timeout")) {
     return false;
   }
   TryCatchScope try_catch(env);
