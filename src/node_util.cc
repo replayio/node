@@ -282,8 +282,14 @@ class WeakReference : public BaseObject {
   uint64_t reference_count_ = 0;
 };
 
+// Guessing the type makes system calls on the file descriptor (what lazily
+// creating process.stdin, process.stdout or process.stderr does first), which
+// can't be replayed in a pause.
 static void GuessHandleType(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "guessHandleType")) {
+    return;
+  }
   int fd;
   if (!args[0]->Int32Value(env->context()).To(&fd)) return;
   CHECK_GE(fd, 0);

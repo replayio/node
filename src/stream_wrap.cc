@@ -25,6 +25,7 @@
 #include "env-inl.h"
 #include "handle_wrap.h"
 #include "node_buffer.h"
+#include "node_internals.h"
 #include "node_external_reference.h"
 #include "pipe_wrap.h"
 #include "req_wrap-inl.h"
@@ -349,6 +350,13 @@ void LibuvStreamWrap::AfterUvShutdown(uv_shutdown_t* req, int status) {
 // required in order to skip the data that was successfully written via
 // uv_try_write().
 int LibuvStreamWrap::DoTryWrite(uv_buf_t** bufs, size_t* count) {
+  // Writes from JS throw in a pause (see StreamBase::Writev() and friends),
+  // but HTTP/2 sessions and TLS also write here on their own, e.g. when an
+  // HTTP/2 session is closed. The write() can't be replayed in a pause, so it
+  // fails, as stream methods report errors instead of throwing.
+  if (recordreplay::AreEventsUnavailable())
+    return UV_EPERM;
+
   int err;
   size_t written;
   uv_buf_t* vbufs = *bufs;
@@ -388,6 +396,8 @@ int LibuvStreamWrap::DoWrite(WriteWrap* req_wrap,
                              uv_buf_t* bufs,
                              size_t count,
                              uv_stream_t* send_handle) {
+  if (recordreplay::AreEventsUnavailable())
+    return UV_EPERM;
   LibuvWriteWrap* w = static_cast<LibuvWriteWrap*>(req_wrap);
   return w->Dispatch(uv_write2,
                      stream(),

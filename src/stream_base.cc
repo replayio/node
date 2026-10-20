@@ -9,6 +9,7 @@
 #include "node_buffer.h"
 #include "node_errors.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "string_bytes.h"
 #include "util-inl.h"
 #include "v8.h"
@@ -51,6 +52,23 @@ template int StreamBase::WriteString<LATIN1>(
     const FunctionCallbackInfo<Value>& args);
 
 
+// Writes to sockets, pipes and terminals, directly or through TLS, call write()
+// right away when they can (uv_try_write()), which can't be replayed in a
+// pause.
+static bool ThrowIfWriteCantBeReplayed(Environment* env, StreamBase* stream) {
+  if (!recordreplay::AreEventsUnavailable()) return false;
+  switch (stream->GetAsyncWrap()->provider_type()) {
+    case AsyncWrap::PROVIDER_PIPEWRAP:
+    case AsyncWrap::PROVIDER_TCPWRAP:
+    case AsyncWrap::PROVIDER_TLSWRAP:
+    case AsyncWrap::PROVIDER_TTYWRAP:
+      return recordreplay::ThrowIfEventsUnavailable(env, "socket.write");
+    default:
+      return false;
+  }
+}
+
+
 int StreamBase::ReadStartJS(const FunctionCallbackInfo<Value>& args) {
   return ReadStart();
 }
@@ -82,6 +100,7 @@ void StreamBase::SetWriteResult(const StreamWriteResult& res) {
 
 int StreamBase::Writev(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (ThrowIfWriteCantBeReplayed(env, this)) return 0;
   Isolate* isolate = env->isolate();
   Local<Context> context = env->context();
 
@@ -201,6 +220,7 @@ int StreamBase::WriteBuffer(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsObject());
 
   Environment* env = Environment::GetCurrent(args);
+  if (ThrowIfWriteCantBeReplayed(env, this)) return 0;
 
   if (!args[1]->IsUint8Array()) {
     node::THROW_ERR_INVALID_ARG_TYPE(env, "Second argument must be a buffer");
@@ -239,6 +259,7 @@ int StreamBase::WriteBuffer(const FunctionCallbackInfo<Value>& args) {
 template <enum encoding enc>
 int StreamBase::WriteString(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (ThrowIfWriteCantBeReplayed(env, this)) return 0;
   Isolate* isolate = env->isolate();
   CHECK(args[0]->IsObject());
   CHECK(args[1]->IsString());

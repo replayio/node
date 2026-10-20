@@ -29,6 +29,7 @@
 #include "node.h"
 #include "node_buffer.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "stream_base-inl.h"
 #include "stream_wrap.h"
 #include "util-inl.h"
@@ -165,6 +166,9 @@ PipeWrap::PipeWrap(Environment* env,
 void PipeWrap::Bind(const FunctionCallbackInfo<Value>& args) {
   PipeWrap* wrap;
   ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+  if (recordreplay::ThrowIfEventsUnavailable(args, "Pipe.bind")) {
+    return;
+  }
   node::Utf8Value name(args.GetIsolate(), args[0]);
   int err = uv_pipe_bind(&wrap->handle_, *name);
   args.GetReturnValue().Set(err);
@@ -185,6 +189,9 @@ void PipeWrap::SetPendingInstances(const FunctionCallbackInfo<Value>& args) {
 void PipeWrap::Fchmod(const v8::FunctionCallbackInfo<v8::Value>& args) {
   PipeWrap* wrap;
   ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+  if (recordreplay::ThrowIfEventsUnavailable(args, "Pipe.fchmod")) {
+    return;
+  }
   CHECK(args[0]->IsInt32());
   int mode = args[0].As<Int32>()->Value();
   int err = uv_pipe_chmod(&wrap->handle_, mode);
@@ -195,6 +202,9 @@ void PipeWrap::Fchmod(const v8::FunctionCallbackInfo<v8::Value>& args) {
 void PipeWrap::Listen(const FunctionCallbackInfo<Value>& args) {
   PipeWrap* wrap;
   ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+  if (recordreplay::ThrowIfEventsUnavailable(args, "Pipe.listen")) {
+    return;
+  }
   Environment* env = wrap->env();
   int backlog;
   if (!args[0]->Int32Value(env->context()).To(&backlog)) return;
@@ -210,6 +220,9 @@ void PipeWrap::Open(const FunctionCallbackInfo<Value>& args) {
 
   PipeWrap* wrap;
   ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+  if (recordreplay::ThrowIfEventsUnavailable(args, "Pipe.open")) {
+    return;
+  }
 
   int fd;
   if (!args[0]->Int32Value(env->context()).To(&fd)) return;
@@ -227,6 +240,9 @@ void PipeWrap::Connect(const FunctionCallbackInfo<Value>& args) {
 
   PipeWrap* wrap;
   ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+  if (recordreplay::ThrowIfEventsUnavailable(args, "Pipe.connect")) {
+    return;
+  }
 
   CHECK(args[0]->IsObject());
   CHECK(args[1]->IsString());
