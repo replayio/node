@@ -287,8 +287,8 @@ Response buildScopes(v8::Isolate* isolate, v8::debug::ScopeIterator* iterator,
   for (; !iterator->Done(); iterator->Advance()) {
     // Replay builds the scopes of every frame on the stack for console messages
     // and pauses, and building a scope object makes handles for each of its
-    // bindings. A deep stack in a module with many bindings would
-    // otherwise keep millions of handles alive, which every scavenge visits.
+    // bindings. A deep stack in a module with many bindings would otherwise
+    // keep millions of handles alive, which every scavenge visits.
     v8::base::Optional<v8::HandleScope> recordReplayHandles;
     if (v8::recordreplay::IsRecordingOrReplaying()) {
       recordReplayHandles.emplace(isolate);

@@ -559,9 +559,10 @@ Handle<JSObject> ScopeIterator::ScopeObject(Mode mode) {
   }
 
   // Replay materializes the scopes of every frame on the stack whenever it
-  // collects the stack. Adding each binding to a fast-mode object makes a map transition,
-  // and every transition walks the back pointers to the root map, so an object
-  // with many bindings is quadratic until it reaches the descriptor limit.
+  // collects the stack. Adding each binding to a fast-mode object makes a map
+  // transition, and every transition walks the back pointers to the root map,
+  // so an object with many bindings is quadratic until it reaches the
+  // descriptor limit.
   // Like newer V8, build a dictionary-mode object instead, and tolerate names
   // that collide in one scope.
   const bool record_replay_dictionary = recordreplay::IsRecordingOrReplaying();
