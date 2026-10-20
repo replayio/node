@@ -544,6 +544,14 @@ static void RecordReplayAreEventsUnavailable(
   args.GetReturnValue().Set(recordreplay::AreEventsUnavailable());
 }
 
+// For lib code to throw the same error as ThrowIfEventsUnavailable().
+static void RecordReplayThrowIfEventsUnavailable(
+    const FunctionCallbackInfo<Value>& args) {
+  CHECK(args[0]->IsString());
+  Utf8Value operation_name(args.GetIsolate(), args[0]);
+  recordreplay::ThrowIfEventsUnavailable(args, *operation_name);
+}
+
 // Function to invoke on CDP responses and events.
 static v8::Eternal<v8::Function>* gCDPMessageCallback;
 
@@ -784,6 +792,9 @@ static void Initialize(Local<Object> target,
   env->SetMethod(target,
                  "recordReplayAreEventsUnavailable",
                  RecordReplayAreEventsUnavailable);
+  env->SetMethod(target,
+                 "recordReplayThrowIfEventsUnavailable",
+                 RecordReplayThrowIfEventsUnavailable);
   env->SetMethod(target, "recordReplayOnConsoleAPI",
                  v8::FunctionCallbackRecordReplayOnConsoleAPI);
   env->SetMethod(target, "recordReplaySetCommandCallback",
@@ -841,6 +852,7 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(v8::FunctionCallbackIsRecordingOrReplaying);
   registry->Register(RecordReplayLog);
   registry->Register(RecordReplayAreEventsUnavailable);
+  registry->Register(RecordReplayThrowIfEventsUnavailable);
   registry->Register(v8::FunctionCallbackRecordReplayOnConsoleAPI);
   registry->Register(v8::FunctionCallbackRecordReplaySetCommandCallback);
   registry->Register(v8::FunctionCallbackRecordReplaySetClearPauseDataCallback);

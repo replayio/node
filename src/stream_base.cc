@@ -54,7 +54,8 @@ template int StreamBase::WriteString<LATIN1>(
 
 // Writes to sockets, pipes and terminals, directly or through TLS, call write()
 // right away when they can (uv_try_write()), which can't be replayed in a
-// pause.
+// pause. Writes to an HTTP/2 stream become DATA frames, which can't be sent
+// there either.
 static bool ThrowIfWriteCantBeReplayed(Environment* env, StreamBase* stream) {
   if (!recordreplay::AreEventsUnavailable()) return false;
   switch (stream->GetAsyncWrap()->provider_type()) {
@@ -63,6 +64,8 @@ static bool ThrowIfWriteCantBeReplayed(Environment* env, StreamBase* stream) {
     case AsyncWrap::PROVIDER_TLSWRAP:
     case AsyncWrap::PROVIDER_TTYWRAP:
       return recordreplay::ThrowIfEventsUnavailable(env, "socket.write");
+    case AsyncWrap::PROVIDER_HTTP2STREAM:
+      return recordreplay::ThrowIfEventsUnavailable(env, "http2stream.write");
     default:
       return false;
   }
