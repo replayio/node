@@ -1961,10 +1961,9 @@ const Operator* SimplifiedOperatorBuilder::TransitionAndStoreNumberElement(
 }
 
 // Every time read is recorded, so when recording or replaying, optimized code
-// has to read the time exactly where the bytecode does. Reading it counts as a
-// write here, so it is neither removed when its value is unused nor read again
-// by an eager deoptimization that resumes at a checkpoint before it, which
-// happens once the checkpoint after it is dropped as redundant.
+// has to read the time exactly as often as the bytecode does. Reading it counts
+// as a write here, so the checkpoint after it isn't dropped as redundant and an
+// eager deoptimization after it doesn't resume before it and read it again.
 const Operator* SimplifiedOperatorBuilder::DateNow() {
   if (!recordreplay::IsRecordingOrReplaying()) return &cache_.kDateNow;
   return zone()->New<Operator>(IrOpcode::kDateNow,
