@@ -1503,16 +1503,9 @@ void Isolate::InvokeApiInterruptCallbacks() {
     // at the same point when replaying. Instead, after detecting that interrupts
     // have been added to the queue we trigger an interrupt the next time the progress
     // counter advances, and will invoke the callbacks then.
-    //
-    // Trigger it once: the driver stops at the triggered progress value once, and a
-    // second trigger before the progress counter advances (another request, with
-    // stack checks in uninstrumented code in between) would leave it a stale value
-    // that no later interrupt gets past.
     if (recordreplay::IsRecording() && IsMainThread()) {
       ExecutionAccess access(this);
-      if (!api_interrupts_queue_.empty() &&
-          !record_replay_api_interrupt_triggered_) {
-        record_replay_api_interrupt_triggered_ = true;
+      if (!api_interrupts_queue_.empty()) {
         RecordReplayTriggerProgressInterrupt();
       }
     }
@@ -1538,9 +1531,6 @@ void Isolate::InvokeApiInterruptCallbacks() {
 void Isolate::RecordReplayInvokeApiInterruptCallbacksAtProgress() {
   CHECK(recordreplay::IsRecordingOrReplaying("interrupts"));
   CHECK(IsMainThread());
-
-  // Requests added after the queue is drained below are triggered anew.
-  record_replay_api_interrupt_triggered_ = false;
 
   // One ordered lock round per drain, whatever the queue holds. An entry
   // queued by code which only runs when recording (a binary module calling
