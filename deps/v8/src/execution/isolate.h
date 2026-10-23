@@ -2126,10 +2126,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // vs. the isolate's thread removing and running them.
   int record_replay_api_interrupts_ordered_lock_id_ = 0;
 
-  // Whether a progress interrupt has been triggered to run the queued API
-  // interrupts and hasn't run yet. Main thread only.
-  bool record_replay_api_interrupt_triggered_ = false;
-
   std::unique_ptr<replayio::ReplayIsolateData> replay_data_;
 
 #define GLOBAL_BACKING_STORE(type, name, initialvalue) type name##_;
