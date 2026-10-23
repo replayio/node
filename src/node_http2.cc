@@ -7,6 +7,7 @@
 #include "node.h"
 #include "node_buffer.h"
 #include "node_http2.h"
+#include "node_internals.h"
 #include "node_http_common-inl.h"
 #include "node_mem-inl.h"
 #include "node_perf.h"
@@ -2557,6 +2558,10 @@ void Http2Session::SetNextStreamID(const FunctionCallbackInfo<Value>& args) {
 // This function returns 0 if it succeeds, or one of a negative codes
 void Http2Session::SetLocalWindowSize(
     const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(
+          args, "http2session.setLocalWindowSize")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   Http2Session* session;
   ASSIGN_OR_RETURN_UNWRAP(&session, args.Holder());
@@ -2651,7 +2656,12 @@ void Http2Session::Destroy(const FunctionCallbackInfo<Value>& args) {
 
 // Submits a new request on the Http2Session and returns either an error code
 // or the Http2Stream object.
+// The JS methods that submit frames throw in a pause, where the frames can't
+// be sent: writing them to the socket can't be replayed there.
 void Http2Session::Request(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "http2session.request")) {
+    return;
+  }
   Http2Session* session;
   ASSIGN_OR_RETURN_UNWRAP(&session, args.Holder());
   Environment* env = session->env();
@@ -2701,6 +2711,9 @@ void Http2Session::Goaway(uint32_t code,
 // of shutting down. The opaque data argument is an optional TypedArray that
 // can be used to send debugging data to the connected peer.
 void Http2Session::Goaway(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "http2session.goaway")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   Local<Context> context = env->context();
   Http2Session* session;
@@ -2739,6 +2752,9 @@ void Http2Session::UpdateChunksSent(const FunctionCallbackInfo<Value>& args) {
 // this *WILL* alter the state of the stream, causing the OnStreamClose
 // callback to the triggered.
 void Http2Stream::RstStream(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "http2stream.close")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   Local<Context> context = env->context();
   Http2Stream* stream;
@@ -2751,6 +2767,9 @@ void Http2Stream::RstStream(const FunctionCallbackInfo<Value>& args) {
 // Initiates a response on the Http2Stream using the StreamBase API to provide
 // outbound DATA frames.
 void Http2Stream::Respond(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "http2stream.respond")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   Http2Stream* stream;
   ASSIGN_OR_RETURN_UNWRAP(&stream, args.Holder());
@@ -2768,6 +2787,10 @@ void Http2Stream::Respond(const FunctionCallbackInfo<Value>& args) {
 
 // Submits informational headers on the Http2Stream
 void Http2Stream::Info(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "http2stream.additionalHeaders")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   Http2Stream* stream;
   ASSIGN_OR_RETURN_UNWRAP(&stream, args.Holder());
@@ -2779,6 +2802,10 @@ void Http2Stream::Info(const FunctionCallbackInfo<Value>& args) {
 
 // Submits trailing headers on the Http2Stream
 void Http2Stream::Trailers(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "http2stream.sendTrailers")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   Http2Stream* stream;
   ASSIGN_OR_RETURN_UNWRAP(&stream, args.Holder());
@@ -2806,6 +2833,9 @@ void Http2Stream::Destroy(const FunctionCallbackInfo<Value>& args) {
 
 // Initiate a Push Promise and create the associated Http2Stream
 void Http2Stream::PushPromise(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "http2stream.pushStream")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   Http2Stream* parent;
   ASSIGN_OR_RETURN_UNWRAP(&parent, args.Holder());
@@ -2832,6 +2862,9 @@ void Http2Stream::PushPromise(const FunctionCallbackInfo<Value>& args) {
 
 // Send a PRIORITY frame
 void Http2Stream::Priority(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "http2stream.priority")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   Http2Stream* stream;
   ASSIGN_OR_RETURN_UNWRAP(&stream, args.Holder());
@@ -2902,6 +2935,9 @@ void Http2Session::Origin(const Origins& origins) {
 
 // Submits an AltSvc frame to be sent to the connected peer.
 void Http2Session::AltSvc(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "http2session.altsvc")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   Http2Session* session;
   ASSIGN_OR_RETURN_UNWRAP(&session, args.Holder());
@@ -2932,6 +2968,9 @@ void Http2Session::AltSvc(const FunctionCallbackInfo<Value>& args) {
 }
 
 void Http2Session::Origin(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "http2session.origin")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   Local<Context> context = env->context();
   Http2Session* session;
@@ -2945,6 +2984,9 @@ void Http2Session::Origin(const FunctionCallbackInfo<Value>& args) {
 
 // Submits a PING frame to be sent to the connected peer.
 void Http2Session::Ping(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "http2session.ping")) {
+    return;
+  }
   Http2Session* session;
   ASSIGN_OR_RETURN_UNWRAP(&session, args.Holder());
 
@@ -2963,6 +3005,9 @@ void Http2Session::Ping(const FunctionCallbackInfo<Value>& args) {
 
 // Submits a SETTINGS frame for the Http2Session
 void Http2Session::Settings(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "http2session.settings")) {
+    return;
+  }
   Http2Session* session;
   ASSIGN_OR_RETURN_UNWRAP(&session, args.Holder());
   CHECK(args[0]->IsFunction());

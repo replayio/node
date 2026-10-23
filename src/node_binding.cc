@@ -3,6 +3,7 @@
 #include "env-inl.h"
 #include "node_errors.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "node_native_module_env.h"
 #include "util.h"
 
@@ -430,6 +431,10 @@ inline napi_addon_register_func GetNapiInitializerCallback(DLib* dlib) {
 // cache that's a plain C list or hash table that's shared across contexts?
 void DLOpen(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  // Loading a library maps its file, which can't be replayed in a pause.
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.dlopen")) {
+    return;
+  }
 
   if (env->no_native_addons()) {
     return THROW_ERR_DLOPEN_DISABLED(

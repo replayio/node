@@ -23,6 +23,7 @@
 #include "async_wrap-inl.h"
 #include "env-inl.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "util-inl.h"
 
 namespace node {
@@ -60,9 +61,37 @@ void HandleWrap::HasRef(const FunctionCallbackInfo<Value>& args) {
 }
 
 
+// Closing a socket, pipe or terminal closes its file descriptor, and closing a
+// signal handle restores the signal's disposition. Neither can be replayed in
+// a pause.
+static const char* CloseOperationName(uv_handle_type type) {
+  switch (type) {
+    case UV_NAMED_PIPE:
+      return "Pipe.close";
+    case UV_SIGNAL:
+      return "Signal.close";
+    case UV_TCP:
+      return "TCP.close";
+    case UV_TTY:
+      return "TTY.close";
+    case UV_UDP:
+      return "UDP.close";
+    default:
+      return nullptr;
+  }
+}
+
 void HandleWrap::Close(const FunctionCallbackInfo<Value>& args) {
   HandleWrap* wrap;
   ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+
+  if (wrap->state_ == kInitialized) {
+    const char* operation_name = CloseOperationName(wrap->handle_->type);
+    if (operation_name != nullptr &&
+        recordreplay::ThrowIfEventsUnavailable(args, operation_name)) {
+      return;
+    }
+  }
 
   wrap->Close(args[0]);
 }

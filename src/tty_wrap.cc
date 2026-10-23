@@ -25,6 +25,7 @@
 #include "handle_wrap.h"
 #include "node_buffer.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "stream_base-inl.h"
 #include "stream_wrap.h"
 #include "util-inl.h"
@@ -74,8 +75,13 @@ void TTYWrap::Initialize(Local<Object> target,
 }
 
 
+// Checking and setting up a terminal makes system calls on its file descriptor,
+// which can't be replayed in a pause.
 void TTYWrap::IsTTY(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "tty.isatty")) {
+    return;
+  }
   int fd;
   if (!args[0]->Int32Value(env->context()).To(&fd)) return;
   CHECK_GE(fd, 0);
@@ -91,6 +97,9 @@ void TTYWrap::GetWindowSize(const FunctionCallbackInfo<Value>& args) {
   ASSIGN_OR_RETURN_UNWRAP(&wrap,
                           args.Holder(),
                           args.GetReturnValue().Set(UV_EBADF));
+  if (recordreplay::ThrowIfEventsUnavailable(env, "TTY.getWindowSize")) {
+    return;
+  }
   CHECK(args[0]->IsArray());
 
   int width, height;
@@ -111,6 +120,9 @@ void TTYWrap::SetRawMode(const FunctionCallbackInfo<Value>& args) {
   ASSIGN_OR_RETURN_UNWRAP(&wrap,
                           args.Holder(),
                           args.GetReturnValue().Set(UV_EBADF));
+  if (recordreplay::ThrowIfEventsUnavailable(args, "TTY.setRawMode")) {
+    return;
+  }
   int err = uv_tty_set_mode(&wrap->handle_, args[0]->IsTrue());
   args.GetReturnValue().Set(err);
 }
@@ -123,6 +135,9 @@ void TTYWrap::New(const FunctionCallbackInfo<Value>& args) {
   // Therefore we assert that we are not trying to call this as a
   // normal function.
   CHECK(args.IsConstructCall());
+  if (recordreplay::ThrowIfEventsUnavailable(env, "TTY")) {
+    return;
+  }
 
   int fd;
   if (!args[0]->Int32Value(env->context()).To(&fd)) return;

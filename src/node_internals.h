@@ -63,8 +63,29 @@ v8::Local<v8::Object> AddressToJS(
     const sockaddr* addr,
     v8::Local<v8::Object> info = v8::Local<v8::Object>());
 
+namespace recordreplay {
+bool ThrowIfEventsUnavailable(const v8::FunctionCallbackInfo<v8::Value>& args,
+                              const char* operation_name);
+}  // namespace recordreplay
+
+inline const char* SockOrPeerNameOperation(
+    int (*f)(const uv_tcp_t*, sockaddr*, int*)) {
+  return f == uv_tcp_getsockname ? "TCP.getsockname" : "TCP.getpeername";
+}
+
+inline const char* SockOrPeerNameOperation(
+    int (*f)(const uv_udp_t*, sockaddr*, int*)) {
+  return f == uv_udp_getsockname ? "UDP.getsockname" : "UDP.getpeername";
+}
+
 template <typename T, int (*F)(const typename T::HandleType*, sockaddr*, int*)>
 void GetSockOrPeerName(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  // A socket's addresses come from system calls, which can't be replayed in a
+  // pause.
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             SockOrPeerNameOperation(F))) {
+    return;
+  }
   T* wrap;
   ASSIGN_OR_RETURN_UNWRAP(&wrap,
                           args.Holder(),

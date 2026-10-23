@@ -249,6 +249,9 @@ static void MemoryUsage(const FunctionCallbackInfo<Value>& args) {
 void RawDebug(const FunctionCallbackInfo<Value>& args) {
   CHECK(args.Length() == 1 && args[0]->IsString() &&
         "must be called with a single string");
+  // Output is dropped in a pause, like console output, rather than written to
+  // the replaying process's stderr.
+  if (recordreplay::AreEventsUnavailable()) return;
   Utf8Value message(args.GetIsolate(), args[0]);
   FPrintF(stderr, "%s\n", message);
   fflush(stderr);
@@ -395,6 +398,9 @@ static void ResourceUsage(const FunctionCallbackInfo<Value>& args) {
 #ifdef __POSIX__
 static void DebugProcess(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process._debugProcess")) {
+    return;
+  }
 
   if (args.Length() < 1) {
     return THROW_ERR_MISSING_ARGS(env, "Invalid number of arguments.");
@@ -536,6 +542,14 @@ static void RecordReplayLog(const FunctionCallbackInfo<Value>& args) {
 static void RecordReplayAreEventsUnavailable(
     const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(recordreplay::AreEventsUnavailable());
+}
+
+// For lib code to throw the same error as ThrowIfEventsUnavailable().
+static void RecordReplayThrowIfEventsUnavailable(
+    const FunctionCallbackInfo<Value>& args) {
+  CHECK(args[0]->IsString());
+  Utf8Value operation_name(args.GetIsolate(), args[0]);
+  recordreplay::ThrowIfEventsUnavailable(args, *operation_name);
 }
 
 // Function to invoke on CDP responses and events.
@@ -778,6 +792,9 @@ static void Initialize(Local<Object> target,
   env->SetMethod(target,
                  "recordReplayAreEventsUnavailable",
                  RecordReplayAreEventsUnavailable);
+  env->SetMethod(target,
+                 "recordReplayThrowIfEventsUnavailable",
+                 RecordReplayThrowIfEventsUnavailable);
   env->SetMethod(target, "recordReplayOnConsoleAPI",
                  v8::FunctionCallbackRecordReplayOnConsoleAPI);
   env->SetMethod(target, "recordReplaySetCommandCallback",
@@ -835,6 +852,7 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(v8::FunctionCallbackIsRecordingOrReplaying);
   registry->Register(RecordReplayLog);
   registry->Register(RecordReplayAreEventsUnavailable);
+  registry->Register(RecordReplayThrowIfEventsUnavailable);
   registry->Register(v8::FunctionCallbackRecordReplayOnConsoleAPI);
   registry->Register(v8::FunctionCallbackRecordReplaySetCommandCallback);
   registry->Register(v8::FunctionCallbackRecordReplaySetClearPauseDataCallback);

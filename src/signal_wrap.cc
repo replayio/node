@@ -23,6 +23,7 @@
 #include "env-inl.h"
 #include "handle_wrap.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "node_process-inl.h"
 #include "util-inl.h"
 #include "v8.h"
@@ -100,9 +101,14 @@ class SignalWrap : public HandleWrap {
     HandleWrap::Close(close_callback);
   }
 
+  // Starting and stopping a signal handle changes the signal's disposition,
+  // which can't be replayed in a pause.
   static void Start(const FunctionCallbackInfo<Value>& args) {
     SignalWrap* wrap;
     ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+    if (recordreplay::ThrowIfEventsUnavailable(args, "Signal.start")) {
+      return;
+    }
     Environment* env = wrap->env();
     int signum;
     if (!args[0]->Int32Value(env->context()).To(&signum)) return;
@@ -141,6 +147,9 @@ class SignalWrap : public HandleWrap {
   static void Stop(const FunctionCallbackInfo<Value>& args) {
     SignalWrap* wrap;
     ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+    if (recordreplay::ThrowIfEventsUnavailable(args, "Signal.stop")) {
+      return;
+    }
 
     if (wrap->active_)  {
       wrap->active_ = false;

@@ -2,6 +2,7 @@
 #include "env-inl.h"
 #include "memory_tracker-inl.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "stream_base-inl.h"
 #include "util-inl.h"
 
@@ -368,6 +369,10 @@ void CreateHeapSnapshotStream(const FunctionCallbackInfo<Value>& args) {
 
 void TriggerHeapSnapshot(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  // Writing the snapshot file can't be replayed in a pause.
+  if (recordreplay::ThrowIfEventsUnavailable(env, "v8.writeHeapSnapshot")) {
+    return;
+  }
   Isolate* isolate = args.GetIsolate();
 
   Local<Value> filename_v = args[0];

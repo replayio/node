@@ -22,6 +22,7 @@
 #include "udp_wrap.h"
 #include "env-inl.h"
 #include "node_buffer.h"
+#include "node_internals.h"
 #include "node_sockaddr-inl.h"
 #include "handle_wrap.h"
 #include "req_wrap-inl.h"
@@ -236,6 +237,9 @@ void UDPWrap::DoBind(const FunctionCallbackInfo<Value>& args, int family) {
   ASSIGN_OR_RETURN_UNWRAP(&wrap,
                           args.Holder(),
                           args.GetReturnValue().Set(UV_EBADF));
+  if (recordreplay::ThrowIfEventsUnavailable(args, "UDP.bind")) {
+    return;
+  }
 
   // bind(ip, port, flags)
   CHECK_EQ(args.Length(), 3);
@@ -266,6 +270,9 @@ void UDPWrap::DoConnect(const FunctionCallbackInfo<Value>& args, int family) {
   ASSIGN_OR_RETURN_UNWRAP(&wrap,
                           args.Holder(),
                           args.GetReturnValue().Set(UV_EBADF));
+  if (recordreplay::ThrowIfEventsUnavailable(args, "UDP.connect")) {
+    return;
+  }
 
   CHECK_EQ(args.Length(), 2);
 
@@ -290,6 +297,9 @@ void UDPWrap::Open(const FunctionCallbackInfo<Value>& args) {
   ASSIGN_OR_RETURN_UNWRAP(&wrap,
                           args.Holder(),
                           args.GetReturnValue().Set(UV_EBADF));
+  if (recordreplay::ThrowIfEventsUnavailable(args, "UDP.open")) {
+    return;
+  }
   CHECK(args[0]->IsNumber());
   int fd = static_cast<int>(args[0].As<Integer>()->Value());
   int err = uv_udp_open(&wrap->handle_, fd);
@@ -314,6 +324,9 @@ void UDPWrap::BufferSize(const FunctionCallbackInfo<Value>& args) {
   ASSIGN_OR_RETURN_UNWRAP(&wrap,
                           args.Holder(),
                           args.GetReturnValue().Set(UV_EBADF));
+  if (recordreplay::ThrowIfEventsUnavailable(args, "UDP.bufferSize")) {
+    return;
+  }
 
   CHECK(args[0]->IsUint32());
   CHECK(args[1]->IsBoolean());
@@ -359,6 +372,9 @@ void UDPWrap::Disconnect(const FunctionCallbackInfo<Value>& args) {
   ASSIGN_OR_RETURN_UNWRAP(&wrap,
                           args.Holder(),
                           args.GetReturnValue().Set(UV_EBADF));
+  if (recordreplay::ThrowIfEventsUnavailable(args, "UDP.disconnect")) {
+    return;
+  }
 
   CHECK_EQ(args.Length(), 0);
 
@@ -367,11 +383,14 @@ void UDPWrap::Disconnect(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(err);
 }
 
-#define X(name, fn)                                                            \
+#define X(name, fn, operation_name)                                            \
   void UDPWrap::name(const FunctionCallbackInfo<Value>& args) {                \
     UDPWrap* wrap = Unwrap<UDPWrap>(args.Holder());                            \
     if (wrap == nullptr) {                                                     \
       args.GetReturnValue().Set(UV_EBADF);                                     \
+      return;                                                                  \
+    }                                                                          \
+    if (recordreplay::ThrowIfEventsUnavailable(args, operation_name)) {        \
       return;                                                                  \
     }                                                                          \
     Environment* env = wrap->env();                                            \
@@ -384,10 +403,10 @@ void UDPWrap::Disconnect(const FunctionCallbackInfo<Value>& args) {
     args.GetReturnValue().Set(err);                                            \
   }
 
-X(SetTTL, uv_udp_set_ttl)
-X(SetBroadcast, uv_udp_set_broadcast)
-X(SetMulticastTTL, uv_udp_set_multicast_ttl)
-X(SetMulticastLoopback, uv_udp_set_multicast_loop)
+X(SetTTL, uv_udp_set_ttl, "UDP.setTTL")
+X(SetBroadcast, uv_udp_set_broadcast, "UDP.setBroadcast")
+X(SetMulticastTTL, uv_udp_set_multicast_ttl, "UDP.setMulticastTTL")
+X(SetMulticastLoopback, uv_udp_set_multicast_loop, "UDP.setMulticastLoopback")
 
 #undef X
 
@@ -396,6 +415,10 @@ void UDPWrap::SetMulticastInterface(const FunctionCallbackInfo<Value>& args) {
   ASSIGN_OR_RETURN_UNWRAP(&wrap,
                           args.Holder(),
                           args.GetReturnValue().Set(UV_EBADF));
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "UDP.setMulticastInterface")) {
+    return;
+  }
 
   CHECK_EQ(args.Length(), 1);
   CHECK(args[0]->IsString());
@@ -414,6 +437,12 @@ void UDPWrap::SetMembership(const FunctionCallbackInfo<Value>& args,
   ASSIGN_OR_RETURN_UNWRAP(&wrap,
                           args.Holder(),
                           args.GetReturnValue().Set(UV_EBADF));
+  if (recordreplay::ThrowIfEventsUnavailable(
+          args,
+          membership == UV_JOIN_GROUP ? "UDP.addMembership"
+                                      : "UDP.dropMembership")) {
+    return;
+  }
 
   CHECK_EQ(args.Length(), 2);
 
@@ -448,6 +477,12 @@ void UDPWrap::SetSourceMembership(const FunctionCallbackInfo<Value>& args,
   ASSIGN_OR_RETURN_UNWRAP(&wrap,
                           args.Holder(),
                           args.GetReturnValue().Set(UV_EBADF));
+  if (recordreplay::ThrowIfEventsUnavailable(
+          args,
+          membership == UV_JOIN_GROUP ? "UDP.addSourceSpecificMembership"
+                                      : "UDP.dropSourceSpecificMembership")) {
+    return;
+  }
 
   CHECK_EQ(args.Length(), 3);
 
@@ -488,6 +523,9 @@ void UDPWrap::DoSend(const FunctionCallbackInfo<Value>& args, int family) {
   ASSIGN_OR_RETURN_UNWRAP(&wrap,
                           args.Holder(),
                           args.GetReturnValue().Set(UV_EBADF));
+  if (recordreplay::ThrowIfEventsUnavailable(args, "UDP.send")) {
+    return;
+  }
 
   CHECK(args.Length() == 4 || args.Length() == 6);
   CHECK(args[0]->IsObject());

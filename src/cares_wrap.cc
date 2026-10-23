@@ -27,6 +27,7 @@
 #include "memory_tracker-inl.h"
 #include "node.h"
 #include "node_errors.h"
+#include "node_internals.h"
 #include "req_wrap-inl.h"
 #include "util-inl.h"
 #include "v8.h"
@@ -662,6 +663,11 @@ void ChannelWrap::New(const FunctionCallbackInfo<Value>& args) {
   const int timeout = args[0].As<Int32>()->Value();
   const int tries = args[1].As<Int32>()->Value();
   Environment* env = Environment::GetCurrent(args);
+  // Setting up a resolver reads /etc/resolv.conf, which can't be replayed in a
+  // pause.
+  if (recordreplay::ThrowIfEventsUnavailable(env, "dns.Resolver")) {
+    return;
+  }
   new ChannelWrap(env, args.This(), timeout, tries);
 }
 
@@ -1404,6 +1410,11 @@ namespace {
 template <class Wrap>
 static void Query(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  // Queries go to the name servers over sockets, which can't be replayed in a
+  // pause.
+  if (recordreplay::ThrowIfEventsUnavailable(env, "dns.resolve")) {
+    return;
+  }
   ChannelWrap* channel;
   ASSIGN_OR_RETURN_UNWRAP(&channel, args.Holder());
 
@@ -1568,6 +1579,11 @@ void CanonicalizeIP(const FunctionCallbackInfo<Value>& args) {
 
 void GetAddrInfo(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  // Lookups read files and use sockets on the thread pool, which can't be
+  // replayed in a pause, and their callbacks can't run there.
+  if (recordreplay::ThrowIfEventsUnavailable(env, "dns.lookup")) {
+    return;
+  }
 
   CHECK(args[0]->IsObject());
   CHECK(args[1]->IsString());
@@ -1628,6 +1644,11 @@ void GetAddrInfo(const FunctionCallbackInfo<Value>& args) {
 
 void GetNameInfo(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  // Lookups read files and use sockets on the thread pool, which can't be
+  // replayed in a pause, and their callbacks can't run there.
+  if (recordreplay::ThrowIfEventsUnavailable(env, "dns.lookupService")) {
+    return;
+  }
 
   CHECK(args[0]->IsObject());
   CHECK(args[1]->IsString());

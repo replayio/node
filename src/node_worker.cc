@@ -4,6 +4,7 @@
 #include "memory_tracker-inl.h"
 #include "node_errors.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "node_buffer.h"
 #include "node_options-inl.h"
 #include "node_perf.h"
@@ -506,6 +507,10 @@ Worker::~Worker() {
 
 void Worker::New(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  // Starting a thread can't be replayed in a pause.
+  if (recordreplay::ThrowIfEventsUnavailable(env, "worker_threads.Worker")) {
+    return;
+  }
   Isolate* isolate = args.GetIsolate();
 
   CHECK(args.IsConstructCall());
@@ -726,7 +731,12 @@ void Worker::StartThread(const FunctionCallbackInfo<Value>& args) {
   }
 }
 
+// Stopping the worker posts to its event loop and starts a watchdog thread,
+// which can't be replayed in a pause.
 void Worker::StopThread(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "worker.terminate")) {
+    return;
+  }
   Worker* w;
   ASSIGN_OR_RETURN_UNWRAP(&w, args.This());
 

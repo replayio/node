@@ -6,6 +6,7 @@
 #include "util-inl.h"
 #include "node.h"
 #include "node_errors.h"
+#include "node_internals.h"
 #include "uv.h"
 #include "uvwasi.h"
 #include "node_wasi.h"
@@ -161,6 +162,11 @@ void WASI::DecreaseAllocatedSize(size_t size) {
 
 void WASI::New(const FunctionCallbackInfo<Value>& args) {
   CHECK(args.IsConstructCall());
+  // Setting up the preopened directories opens them, which can't be replayed
+  // in a pause.
+  if (recordreplay::ThrowIfEventsUnavailable(args, "WASI")) {
+    return;
+  }
   CHECK_EQ(args.Length(), 4);
   CHECK(args[0]->IsArray());
   CHECK(args[1]->IsArray());
@@ -459,7 +465,14 @@ void WASI::EnvironSizesGet(const FunctionCallbackInfo<Value>& args) {
 }
 
 
+// The WASI functions that reach the file system, sockets, timers or signals
+// throw in a pause, where those system calls can't be replayed. The ones that
+// only read the arguments, the environment, the preopened directories' names,
+// clocks or random bytes, or yield the CPU, still run.
 void WASI::FdAdvise(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_advise")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint64_t offset;
@@ -478,6 +491,9 @@ void WASI::FdAdvise(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdAllocate(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_allocate")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint64_t offset;
@@ -494,6 +510,9 @@ void WASI::FdAllocate(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdClose(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_close")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   RETURN_IF_BAD_ARG_COUNT(args, 1);
@@ -506,6 +525,9 @@ void WASI::FdClose(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdDatasync(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_datasync")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   RETURN_IF_BAD_ARG_COUNT(args, 1);
@@ -518,6 +540,9 @@ void WASI::FdDatasync(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdFdstatGet(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_fdstat_get")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t buf;
@@ -541,6 +566,10 @@ void WASI::FdFdstatGet(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdFdstatSetFlags(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "wasi.fd_fdstat_set_flags")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint16_t flags;
@@ -555,6 +584,10 @@ void WASI::FdFdstatSetFlags(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdFdstatSetRights(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "wasi.fd_fdstat_set_rights")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint64_t fs_rights_base;
@@ -578,6 +611,9 @@ void WASI::FdFdstatSetRights(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdFilestatGet(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_filestat_get")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t buf;
@@ -601,6 +637,10 @@ void WASI::FdFilestatGet(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdFilestatSetSize(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "wasi.fd_filestat_set_size")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint64_t st_size;
@@ -615,6 +655,10 @@ void WASI::FdFilestatSetSize(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdFilestatSetTimes(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "wasi.fd_filestat_set_times")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint64_t st_atim;
@@ -642,6 +686,9 @@ void WASI::FdFilestatSetTimes(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdPread(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_pread")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t iovs_ptr;
@@ -739,6 +786,9 @@ void WASI::FdPrestatDirName(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdPwrite(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_pwrite")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t iovs_ptr;
@@ -798,6 +848,9 @@ void WASI::FdPwrite(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdRead(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_read")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t iovs_ptr;
@@ -841,6 +894,9 @@ void WASI::FdRead(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdReaddir(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_readdir")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t buf_ptr;
@@ -884,6 +940,9 @@ void WASI::FdReaddir(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdRenumber(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_renumber")) {
+    return;
+  }
   WASI* wasi;
   uint32_t from;
   uint32_t to;
@@ -898,6 +957,9 @@ void WASI::FdRenumber(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdSeek(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_seek")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   int64_t offset;
@@ -931,6 +993,9 @@ void WASI::FdSeek(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdSync(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_sync")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   RETURN_IF_BAD_ARG_COUNT(args, 1);
@@ -943,6 +1008,9 @@ void WASI::FdSync(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdTell(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_tell")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t offset_ptr;
@@ -969,6 +1037,9 @@ void WASI::FdTell(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::FdWrite(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.fd_write")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t iovs_ptr;
@@ -1020,6 +1091,10 @@ void WASI::FdWrite(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::PathCreateDirectory(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "wasi.path_create_directory")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t path_ptr;
@@ -1043,6 +1118,9 @@ void WASI::PathCreateDirectory(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::PathFilestatGet(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.path_filestat_get")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t flags;
@@ -1084,6 +1162,10 @@ void WASI::PathFilestatGet(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::PathFilestatSetTimes(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "wasi.path_filestat_set_times")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t flags;
@@ -1127,6 +1209,9 @@ void WASI::PathFilestatSetTimes(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::PathLink(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.path_link")) {
+    return;
+  }
   WASI* wasi;
   uint32_t old_fd;
   uint32_t old_flags;
@@ -1171,6 +1256,9 @@ void WASI::PathLink(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::PathOpen(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.path_open")) {
+    return;
+  }
   WASI* wasi;
   uint32_t dirfd;
   uint32_t dirflags;
@@ -1227,6 +1315,9 @@ void WASI::PathOpen(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::PathReadlink(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.path_readlink")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t path_ptr;
@@ -1275,6 +1366,10 @@ void WASI::PathReadlink(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::PathRemoveDirectory(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "wasi.path_remove_directory")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t path_ptr;
@@ -1298,6 +1393,9 @@ void WASI::PathRemoveDirectory(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::PathRename(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.path_rename")) {
+    return;
+  }
   WASI* wasi;
   uint32_t old_fd;
   uint32_t old_path_ptr;
@@ -1338,6 +1436,9 @@ void WASI::PathRename(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::PathSymlink(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.path_symlink")) {
+    return;
+  }
   WASI* wasi;
   uint32_t old_path_ptr;
   uint32_t old_path_len;
@@ -1374,6 +1475,9 @@ void WASI::PathSymlink(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::PathUnlinkFile(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.path_unlink_file")) {
+    return;
+  }
   WASI* wasi;
   uint32_t fd;
   uint32_t path_ptr;
@@ -1397,6 +1501,9 @@ void WASI::PathUnlinkFile(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::PollOneoff(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.poll_oneoff")) {
+    return;
+  }
   WASI* wasi;
   uint32_t in_ptr;
   uint32_t out_ptr;
@@ -1457,6 +1564,9 @@ void WASI::PollOneoff(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::ProcExit(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.proc_exit")) {
+    return;
+  }
   WASI* wasi;
   uint32_t code;
   RETURN_IF_BAD_ARG_COUNT(args, 1);
@@ -1468,6 +1578,9 @@ void WASI::ProcExit(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::ProcRaise(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.proc_raise")) {
+    return;
+  }
   WASI* wasi;
   uint32_t sig;
   RETURN_IF_BAD_ARG_COUNT(args, 1);
@@ -1510,6 +1623,9 @@ void WASI::SchedYield(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::SockRecv(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.sock_recv")) {
+    return;
+  }
   WASI* wasi;
   uint32_t sock;
   uint32_t ri_data_ptr;
@@ -1572,6 +1688,9 @@ void WASI::SockRecv(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::SockSend(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.sock_send")) {
+    return;
+  }
   WASI* wasi;
   uint32_t sock;
   uint32_t si_data_ptr;
@@ -1629,6 +1748,9 @@ void WASI::SockSend(const FunctionCallbackInfo<Value>& args) {
 
 
 void WASI::SockShutdown(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "wasi.sock_shutdown")) {
+    return;
+  }
   WASI* wasi;
   uint32_t sock;
   uint8_t how;
