@@ -148,7 +148,23 @@ namespace {
 // condition variable of such nodes.
 base::LazyMutex g_mutex = LAZY_MUTEX_INITIALIZER;
 base::LazyInstance<FutexWaitList>::type g_wait_list = LAZY_INSTANCE_INITIALIZER;
+
+// While recording or replaying, orders Wake against an async waiter's timeout:
+// both decide under g_mutex, with events disallowed, whether the waiter was
+// notified or timed out, so the replay would otherwise pick its own winner.
+int gRecordReplayOrderedLockId = 0;
+
+struct AutoOrderedLock {
+  AutoOrderedLock(int id) : id_(id) { recordreplay::OrderedLock(id_); }
+  ~AutoOrderedLock() { recordreplay::OrderedUnlock(id_); }
+  int id_;
+};
 }  // namespace
+
+void FutexEmulation::RecordReplayInitialize() {
+  gRecordReplayOrderedLockId =
+      (int)recordreplay::CreateOrderedLock("FutexEmulation");
+}
 
 FutexWaitListNode::~FutexWaitListNode() {
   // Assert that the timeout task was cancelled.
@@ -783,6 +799,7 @@ Object FutexEmulation::Wake(Handle<JSArrayBuffer> array_buffer, size_t addr,
   auto wait_location = FutexWaitList::ToWaitLocation(backing_store.get(), addr);
 
   RecordReplayTasksToPost record_replay_tasks;
+  AutoOrderedLock ordered_lock(gRecordReplayOrderedLockId);
   replayio::AutoDisallowEvents disallow("FutexEmulation::Wake");
   NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
 
@@ -988,6 +1005,7 @@ void FutexEmulation::HandleAsyncWaiterTimeout(FutexWaitListNode* node) {
   DCHECK(node->IsAsync());
 
   {
+    AutoOrderedLock ordered_lock(gRecordReplayOrderedLockId);
     replayio::AutoDisallowEvents disallow("FutexEmulation::HandleAsyncWaiterTimeout");
     NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
 

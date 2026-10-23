@@ -187,6 +187,10 @@ class FutexEmulation : public AllStatic {
   // Called before |isolate| dies. Removes async waiters owned by |isolate|.
   static void IsolateDeinit(Isolate* isolate);
 
+  // Creates the ordered lock that orders notifies against async waiters'
+  // timeouts while recording or replaying.
+  static void RecordReplayInitialize();
+
   // Return the number of threads or async waiters waiting on |addr|. Should
   // only be used for testing.
   static Object NumWaitersForTesting(Handle<JSArrayBuffer> array_buffer,
