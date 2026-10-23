@@ -1745,7 +1745,7 @@ void BytecodeGenerator::ReplayExpressionShiftedSetStatementPosition(
   builder()->SetStatementPosition(stmt, /* record_replay_breakpoint */ false);
   if (expr->position() < 0) {
     // expression is empty, so the breakpoint gets added at the statement itself
-    builder()->RecordReplayInstrumentation("breakpoint", stmt->position());
+    builder()->RecordReplayDeferBreakpoint(stmt->position());
   } else if (expr->IsBinaryOperation()) {
     // given the breakpoint gets shifted to the expression (if that's available)
     // by default we first check if it's not a binary operation, in which case
@@ -1759,10 +1759,10 @@ void BytecodeGenerator::ReplayExpressionShiftedSetStatementPosition(
     // skipped):
     //
     // return /*2*/foo(), /*1*//*3*/bar();
-    builder()->RecordReplayInstrumentation(
-        "breakpoint", expr->AsBinaryOperation()->left()->position());
+    builder()->RecordReplayDeferBreakpoint(
+        expr->AsBinaryOperation()->left()->position());
   } else {
-    builder()->RecordReplayInstrumentation("breakpoint", expr->position());
+    builder()->RecordReplayDeferBreakpoint(expr->position());
   }
 }
 
@@ -2818,8 +2818,35 @@ void BytecodeGenerator::VisitClassLiteral(ClassLiteral* expr, Register name) {
   CurrentScope current_scope(this, expr->scope());
   DCHECK_NOT_NULL(expr->scope());
   if (expr->scope()->NeedsContext()) {
+    // Backported from upstream (v8/v8@f74ea020d5d and v8/v8@6a8b90c303b, both
+    // in V8 10.6), gated on recording or replaying so that the bytecode is
+    // unchanged otherwise. A replay pausing at the class token of
+    // `var x = class {};` without it sees the class scope at that position
+    // but the enclosing context in the frame, and reads the enclosing scope's
+    // variables from the wrong context. When rebasing onto V8 10.6 or later,
+    // take upstream's code here as is (it runs unconditionally, as in
+    // replayio/chromium-v8) and drop the gate and this paragraph. Upstream's
+    // comment:
+    //
+    // Make sure to associate the source position for the class
+    // after the block context is created. Otherwise we have a mismatch
+    // between the scope and the context, where we already are in a
+    // block context for the class, but not yet in the class scope. Only do
+    // this if the current source position is inside the class scope though.
+    // For example:
+    //  * `var x = class {};` will break on `class` which is inside
+    //    the class scope, so we expect the BlockContext to be pushed.
+    //
+    //  * `new class x {};` will break on `new` which is outside the
+    //    class scope, so we expect the BlockContext to not be pushed yet.
+    base::Optional<BytecodeSourceInfo> source_info;
+    if (recordreplay::IsRecordingOrReplaying()) {
+      source_info =
+          builder()->MaybePopSourcePosition(expr->scope()->start_position());
+    }
     BuildNewLocalBlockContext(expr->scope());
     ContextScope scope(this, expr->scope());
+    if (source_info) builder()->PushSourcePosition(*source_info);
     BuildClassLiteral(expr, name);
   } else {
     BuildClassLiteral(expr, name);
