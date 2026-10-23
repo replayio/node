@@ -1606,8 +1606,14 @@ V8DebuggerAgentImpl::currentExternalStackTrace() {
 }
 
 bool V8DebuggerAgentImpl::isPaused() const {
-  return true;
-  //return m_debugger->isPausedInContextGroup(m_session->contextGroupId());
+  // Replay's pause scripts inspect the stack (Debugger.getCallFrames,
+  // Debugger.evaluateOnCallFrame) at replay points where V8 isn't stopped in
+  // the debugger. The recording has to behave the same, or a session's
+  // Debugger events would differ between the recording and the replay.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return true;
+  }
+  return m_debugger->isPausedInContextGroup(m_session->contextGroupId());
 }
 
 static String16 getScriptLanguage(const V8DebuggerScript& script) {
