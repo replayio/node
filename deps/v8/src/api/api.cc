@@ -10723,6 +10723,9 @@ void recordreplay::AssertMaybeEventsDisallowed(const char* format, ...) {
 
 recordreplay::AutoAssertMaybeEventsDisallowed::AutoAssertMaybeEventsDisallowed(
     const char* format, ...) {
+  if (!HasAsserts()) {
+    return;
+  }
   char buf[1024];
   va_list arguments;
   va_start(arguments, format);
