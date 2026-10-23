@@ -12687,6 +12687,12 @@ static size_t CreateOrderedLock(const char* name);
 static void OrderedLock(int lock);
 static void OrderedUnlock(int lock);
 
+struct AutoOrderedLock {
+  AutoOrderedLock(int id) : id_(id) { OrderedLock(id_); }
+  ~AutoOrderedLock() { OrderedUnlock(id_); }
+  int id_;
+};
+
 static void InvalidateRecording(const char* why);
 static void NewCheckpoint();
 

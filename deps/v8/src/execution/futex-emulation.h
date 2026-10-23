@@ -187,9 +187,9 @@ class FutexEmulation : public AllStatic {
   // Called before |isolate| dies. Removes async waiters owned by |isolate|.
   static void IsolateDeinit(Isolate* isolate);
 
-  // Creates the ordered lock that orders notifies against waiters entering
-  // the wait list and leaving it woken or timed out, while recording or
-  // replaying.
+  // Creates the ordered lock that orders notifies against waiters entering and
+  // leaving the wait list and going away with their isolate, while recording
+  // or replaying.
   static void RecordReplayInitialize();
 
   // Return the number of threads or async waiters waiting on |addr|. Should

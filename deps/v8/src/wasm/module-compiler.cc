@@ -56,12 +56,6 @@ namespace v8 {
 namespace internal {
 namespace wasm {
 
-struct AutoOrderedLock {
-  AutoOrderedLock(int id) : id_(id) { recordreplay::OrderedLock(id_); }
-  ~AutoOrderedLock() { recordreplay::OrderedUnlock(id_); }
-  int id_;
-};
-
 template <typename T>
 class OrderedAtomic {
  public:
@@ -74,28 +68,28 @@ class OrderedAtomic {
   }
 
   T load(std::memory_order memory_order = std::memory_order_seq_cst) const {
-    AutoOrderedLock ordered(ordered_lock_id_);
+    recordreplay::AutoOrderedLock ordered(ordered_lock_id_);
     return value_.load(memory_order);
   }
 
   void store(T v, std::memory_order memory_order = std::memory_order_seq_cst) {
-    AutoOrderedLock ordered(ordered_lock_id_);
+    recordreplay::AutoOrderedLock ordered(ordered_lock_id_);
     value_.store(v, memory_order);
   }
 
   T fetch_add(T v, std::memory_order memory_order = std::memory_order_seq_cst) {
-    AutoOrderedLock ordered(ordered_lock_id_);
+    recordreplay::AutoOrderedLock ordered(ordered_lock_id_);
     return value_.fetch_add(v, memory_order);
   }
 
   T fetch_sub(T v, std::memory_order memory_order = std::memory_order_seq_cst) {
-    AutoOrderedLock ordered(ordered_lock_id_);
+    recordreplay::AutoOrderedLock ordered(ordered_lock_id_);
     return value_.fetch_sub(v, memory_order);
   }
 
   bool compare_exchange_weak(T& a, T b,
                              std::memory_order memory_order = std::memory_order_seq_cst) {
-    AutoOrderedLock ordered(ordered_lock_id_);
+    recordreplay::AutoOrderedLock ordered(ordered_lock_id_);
     return value_.compare_exchange_weak(a, b, memory_order);
   }
 
