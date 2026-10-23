@@ -530,11 +530,18 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
     SetStatementPosition(stmt->position(), record_replay_breakpoint);
   }
 
-  // Takes the pending source position if it is inside a scope starting at
-  // |scope_start|, along with the breakpoints queued inside it. The caller
-  // gives a returned position (even an invalid one) back to
-  // PushSourcePosition(). Backported from v8/v8@f74ea020d5d and
-  // v8/v8@6a8b90c303b, used only when recording or replaying.
+  // Backported from upstream: MaybePopSourcePosition/PushSourcePosition come
+  // from v8/v8@f74ea020d5d (V8 9.8) and v8/v8@6a8b90c303b (V8 10.6), which
+  // this V8 (9.4) predates. Only VisitClassLiteral calls them, and only when
+  // recording or replaying. The fork's additions are the RecordReplay* calls
+  // and the invalid BytecodeSourceInfo returned when only breakpoints were
+  // popped: they move the breakpoints queued inside the class scope along
+  // with the position, as replayio/chromium-v8#353 does on top of upstream.
+  //
+  // When rebasing onto V8 10.6 or later, take upstream's versions of both
+  // functions and re-apply only those additions (replayio/chromium-v8 has the
+  // result). On 9.8 to 10.5, upstream has an unconditional PopSourcePosition
+  // instead; keep the scope_start check from v8/v8@6a8b90c303b.
   base::Optional<BytecodeSourceInfo> MaybePopSourcePosition(int scope_start) {
     bool popped_breakpoints =
         RecordReplayMaybePopPendingBreakpoints(scope_start);
