@@ -151,9 +151,11 @@ base::LazyMutex g_mutex = LAZY_MUTEX_INITIALIZER;
 base::LazyInstance<FutexWaitList>::type g_wait_list = LAZY_INSTANCE_INITIALIZER;
 
 // While recording or replaying, orders Wake against waiters entering the wait
-// list, timing out and going away with their isolate: all of them change the
-// list under g_mutex with events disallowed, so the replay would otherwise
-// pick its own order, and a notify would wake other waiters, or none.
+// list, leaving it woken or timed out, and going away with their isolate: all
+// of them change the list under g_mutex with events disallowed, so the replay
+// would otherwise pick its own order, and a notify would wake other waiters,
+// or none. Waits that end terminated or stopped through the embedder's wake
+// handle leave unordered.
 int gRecordReplayOrderedLockId = 0;
 
 struct AutoOrderedLock {
