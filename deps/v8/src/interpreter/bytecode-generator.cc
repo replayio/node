@@ -1745,7 +1745,7 @@ void BytecodeGenerator::ReplayExpressionShiftedSetStatementPosition(
   builder()->SetStatementPosition(stmt, /* record_replay_breakpoint */ false);
   if (expr->position() < 0) {
     // expression is empty, so the breakpoint gets added at the statement itself
-    builder()->RecordReplayInstrumentation("breakpoint", stmt->position());
+    builder()->RecordReplayDeferBreakpoint(stmt->position());
   } else if (expr->IsBinaryOperation()) {
     // given the breakpoint gets shifted to the expression (if that's available)
     // by default we first check if it's not a binary operation, in which case
@@ -1759,10 +1759,10 @@ void BytecodeGenerator::ReplayExpressionShiftedSetStatementPosition(
     // skipped):
     //
     // return /*2*/foo(), /*1*//*3*/bar();
-    builder()->RecordReplayInstrumentation(
-        "breakpoint", expr->AsBinaryOperation()->left()->position());
+    builder()->RecordReplayDeferBreakpoint(
+        expr->AsBinaryOperation()->left()->position());
   } else {
-    builder()->RecordReplayInstrumentation("breakpoint", expr->position());
+    builder()->RecordReplayDeferBreakpoint(expr->position());
   }
 }
 
@@ -2818,8 +2818,21 @@ void BytecodeGenerator::VisitClassLiteral(ClassLiteral* expr, Register name) {
   CurrentScope current_scope(this, expr->scope());
   DCHECK_NOT_NULL(expr->scope());
   if (expr->scope()->NeedsContext()) {
+    // When recording or replaying, associate a source position inside the
+    // class scope (e.g. the class token of `var x = class {};`) and its
+    // breakpoints with the bytecode after the class's block context push, as
+    // upstream does since v8/v8@f74ea020d5d and v8/v8@6a8b90c303b. A pause there
+    // otherwise finds the class scope at its position but the enclosing
+    // context in the frame, and the debugger reads the enclosing scope's
+    // variables from the wrong context.
+    base::Optional<BytecodeSourceInfo> source_info;
+    if (recordreplay::IsRecordingOrReplaying()) {
+      source_info =
+          builder()->MaybePopSourcePosition(expr->scope()->start_position());
+    }
     BuildNewLocalBlockContext(expr->scope());
     ContextScope scope(this, expr->scope());
+    if (source_info) builder()->PushSourcePosition(*source_info);
     BuildClassLiteral(expr, name);
   } else {
     BuildClassLiteral(expr, name);
