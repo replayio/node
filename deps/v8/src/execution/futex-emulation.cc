@@ -156,19 +156,21 @@ base::LazyInstance<FutexWaitList>::type g_wait_list = LAZY_INSTANCE_INITIALIZER;
 // pick its own order, and a notify would wake other waiters, or none.
 int gRecordReplayOrderedLockId = 0;
 
-// While recording or replaying, whether a wait finds another value than the
-// one it waits for is decided here, under the ordered lock every notify takes
-// first, and recorded: the program's stores to the memory aren't, so the
-// replay could otherwise find another value than the recording did, and wait
-// where it didn't or the other way around.
-template <typename T>
-bool RecordReplayFindsOtherValue(Handle<JSArrayBuffer> array_buffer,
-                                 size_t addr, T value) {
-  std::shared_ptr<BackingStore> backing_store = array_buffer->GetBackingStore();
-  std::atomic<T>* p = reinterpret_cast<std::atomic<T>*>(
-      static_cast<int8_t*>(backing_store->buffer_start()) + addr);
-  return recordreplay::RecordReplayValue("FutexEmulation found another value",
-                                         p->load() != value);
+// While recording or replaying, whether a wait found another value than the
+// one it waits for is recorded: the program's stores to the memory aren't, so
+// the replay could otherwise find another value than the recording did, and
+// wait where it didn't or the other way around. Called with g_mutex held and
+// events disallowed under the given label; they are allowed again while the
+// answer is recorded.
+bool RecordReplayFoundOtherValue(bool found_other_value, const char* label) {
+  if (!recordreplay::IsRecordingOrReplaying()) {
+    return found_other_value;
+  }
+  recordreplay::EndDisallowEvents();
+  found_other_value = recordreplay::RecordReplayValue(
+      "FutexEmulation found another value", found_other_value);
+  recordreplay::BeginDisallowEventsWithLabel(label);
+  return found_other_value;
 }
 }  // namespace
 
@@ -527,11 +529,8 @@ Object FutexEmulation::WaitSync(Isolate* isolate,
   Handle<Object> result;
   AtomicsWaitEvent callback_result = AtomicsWaitEvent::kWokenUp;
   base::Optional<recordreplay::AutoOrderedLock> ordered_lock;
-  bool record_replay_finds_other_value = false;
   if (recordreplay::IsRecordingOrReplaying()) {
     ordered_lock.emplace(gRecordReplayOrderedLockId);
-    record_replay_finds_other_value =
-        RecordReplayFindsOtherValue(array_buffer, addr, value);
   }
 
   do {  // Not really a loop, just makes it easier to break out early.
@@ -554,7 +553,8 @@ Object FutexEmulation::WaitSync(Isolate* isolate,
     FutexWaitListNode::ResetWaitingOnScopeExit reset_waiting(node);
 
     std::atomic<T>* p = reinterpret_cast<std::atomic<T>*>(wait_location);
-    if (ordered_lock ? record_replay_finds_other_value : p->load() != value) {
+    if (RecordReplayFoundOtherValue(p->load() != value,
+                                    "FutexEmulation::WaitSync")) {
       result = handle(Smi::FromInt(WaitReturnValue::kNotEqual), isolate);
       callback_result = AtomicsWaitEvent::kNotEqual;
       break;
@@ -729,9 +729,6 @@ Object FutexEmulation::WaitAsync(Isolate* isolate,
   RecordReplayTasksToPost record_replay_tasks;
   {
     recordreplay::AutoOrderedLock ordered_lock(gRecordReplayOrderedLockId);
-    bool record_replay_finds_other_value =
-        recordreplay::IsRecordingOrReplaying() &&
-        RecordReplayFindsOtherValue(array_buffer, addr, value);
     replayio::AutoDisallowEvents disallow("FutexEmulation::WaitAsync");
     // 16. Perform EnterCriticalSection(WL).
     NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
@@ -742,8 +739,8 @@ Object FutexEmulation::WaitAsync(Isolate* isolate,
     // 17. Let w be ! AtomicLoad(typedArray, i).
     std::atomic<T>* p = reinterpret_cast<std::atomic<T>*>(
         static_cast<int8_t*>(backing_store->buffer_start()) + addr);
-    if (recordreplay::IsRecordingOrReplaying() ? record_replay_finds_other_value
-                                               : p->load() != value) {
+    if (RecordReplayFoundOtherValue(p->load() != value,
+                                    "FutexEmulation::WaitAsync")) {
       result_kind = kNotEqual;
     } else if (use_timeout && rel_timeout_ns == 0) {
       result_kind = kTimedOut;
