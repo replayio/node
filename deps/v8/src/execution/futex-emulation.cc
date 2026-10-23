@@ -150,9 +150,10 @@ namespace {
 base::LazyMutex g_mutex = LAZY_MUTEX_INITIALIZER;
 base::LazyInstance<FutexWaitList>::type g_wait_list = LAZY_INSTANCE_INITIALIZER;
 
-// While recording or replaying, orders Wake against waiters' timeouts: both
-// decide under g_mutex, with events disallowed, whether a waiter was notified
-// or timed out, so the replay would otherwise pick its own winner.
+// While recording or replaying, orders Wake against waiters entering the wait
+// list, timing out and going away with their isolate: all of them change the
+// list under g_mutex with events disallowed, so the replay would otherwise
+// pick its own order, and a notify would wake other waiters, or none.
 int gRecordReplayOrderedLockId = 0;
 
 struct AutoOrderedLock {
@@ -517,6 +518,9 @@ Object FutexEmulation::WaitSync(Isolate* isolate,
   Handle<Object> result;
   AtomicsWaitEvent callback_result = AtomicsWaitEvent::kWokenUp;
   base::Optional<AutoOrderedLock> ordered_lock;
+  if (recordreplay::IsRecordingOrReplaying()) {
+    ordered_lock.emplace(gRecordReplayOrderedLockId);
+  }
 
   do {  // Not really a loop, just makes it easier to break out early.
     replayio::AutoDisallowEvents disallow("FutexEmulation::WaitSync");
@@ -553,6 +557,14 @@ Object FutexEmulation::WaitSync(Isolate* isolate,
     }
 
     g_wait_list.Pointer()->AddNode(node);
+
+    // The ordered lock taken for entering the list is released with events
+    // allowed, as OrderedUnlock does nothing otherwise.
+    if (ordered_lock) {
+      recordreplay::EndDisallowEvents();
+      ordered_lock.reset();
+      recordreplay::BeginDisallowEventsWithLabel("FutexEmulation::WaitSync");
+    }
 
     while (true) {
       bool interrupted = node->interrupted_;
@@ -706,6 +718,7 @@ Object FutexEmulation::WaitAsync(Isolate* isolate,
   enum { kNotEqual, kTimedOut, kAsync } result_kind;
   RecordReplayTasksToPost record_replay_tasks;
   {
+    AutoOrderedLock ordered_lock(gRecordReplayOrderedLockId);
     replayio::AutoDisallowEvents disallow("FutexEmulation::WaitAsync");
     // 16. Perform EnterCriticalSection(WL).
     NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
@@ -1050,6 +1063,7 @@ void FutexEmulation::HandleAsyncWaiterTimeout(FutexWaitListNode* node) {
 }
 
 void FutexEmulation::IsolateDeinit(Isolate* isolate) {
+  AutoOrderedLock ordered_lock(gRecordReplayOrderedLockId);
   replayio::AutoDisallowEvents disallow("FutexEmulation::IsolateDeinit");
   NoGarbageCollectionMutexGuard lock_guard(g_mutex.Pointer());
 
