@@ -908,7 +908,17 @@ Object FutexEmulation::Wake(Handle<JSArrayBuffer> array_buffer, size_t addr,
       // Using the CancelableTaskManager here is OK since the Isolate is
       // guaranteed to be alive - FutexEmulation::IsolateDeinit removes all
       // FutexWaitListNodes owned by an Isolate which is going to die.
-      if (node->CancelTimeoutTask()) {
+      //
+      // While recording or replaying, a waiter with a timeout task is left for
+      // the task to clean up: whether a notify gets here depends on the
+      // collector having freed the waiter's buffer and context and on the
+      // allocator putting the notified buffer in its place, so cancelling the
+      // task would make whether it runs, and takes the ordered lock, differ
+      // between the recording and the replay.
+      bool record_replay_leave_to_timeout_task =
+          recordreplay::IsRecordingOrReplaying() &&
+          node->timeout_task_id_ != CancelableTaskManager::kInvalidTaskId;
+      if (!record_replay_leave_to_timeout_task && node->CancelTimeoutTask()) {
         delete_this_node = true;
       }
       // If cancelling the timeout task failed, the timeout task is already
