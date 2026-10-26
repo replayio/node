@@ -211,10 +211,10 @@ void MainThreadInterface::Post(std::unique_ptr<Request> request) {
   CHECK_NOT_NULL(agent_);
 
   // When recording/replaying, a request made on the main thread is dispatched
-  // right away, in its own queue: Replay's own session makes them only when
+  // right away, in its own queue: Replay's own session makes some only when
   // replaying, with events disallowed, so they must not touch requests_, its
-  // lock or the dispatch state requests from other threads use. Those come
-  // from the IO thread of a client connected with --inspect and are only
+  // lock or the dispatch state requests from other threads use. Those, e.g.
+  // from the IO thread of a client connected with --inspect, are only
   // dispatched by the interrupt below, which V8 runs where the progress
   // counter next advances when recording, and at the same point when
   // replaying.
