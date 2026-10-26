@@ -3602,6 +3602,7 @@ void BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
                          frame_state, environment()->Context());
     environment()->RecordAfterState(node, Environment::kAttachFrameState);
   }
+  CHECK(needs_eager_checkpoint());
 }
 
 void BytecodeGraphBuilder::VisitRecordReplayInstrumentation() {
