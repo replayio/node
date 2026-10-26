@@ -382,6 +382,13 @@ class NodeInspectorClient : public V8InspectorClient {
     ContextInfo info(name);
     info.is_default = true;
     contextCreated(env->context(), info);
+    // The interface's locks are ordered, so it must be created at the same
+    // point when recording and replaying. Lazily, it's created by whichever
+    // session or IO thread asks first, and Replay's own session only connects
+    // when replaying.
+    if (v8::recordreplay::IsRecordingOrReplaying()) {
+      getThreadHandle();
+    }
   }
 
   void runMessageLoopOnPause(int context_group_id) override {
