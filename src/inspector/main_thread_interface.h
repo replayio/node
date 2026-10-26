@@ -76,7 +76,7 @@ class MainThreadInterface :
   ~MainThreadInterface();
 
   void DispatchMessages();
-  void DispatchMainThreadMessages();
+  void DispatchMainThreadRequests();
   void Post(std::unique_ptr<Request> request);
   bool WaitForFrontendEvent();
   std::shared_ptr<MainThreadHandle> GetHandle();
@@ -95,6 +95,9 @@ class MainThreadInterface :
   // when we reenter the DispatchMessages function.
   MessageQueue dispatching_message_queue_;
   bool dispatching_messages_ = false;
+  // Requests made on the main thread when recording/replaying, see Post().
+  MessageQueue main_thread_requests_;
+  bool dispatching_main_thread_requests_ = false;
   ConditionVariable incoming_message_cond_;
   // Used from any thread
   Agent* const agent_;

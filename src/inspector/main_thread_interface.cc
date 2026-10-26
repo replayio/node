@@ -211,15 +211,16 @@ void MainThreadInterface::Post(std::unique_ptr<Request> request) {
   CHECK_NOT_NULL(agent_);
 
   // When recording/replaying, a request made on the main thread is dispatched
-  // right away, without requests_ or its lock: Replay's own session makes them
-  // with events disallowed, where the lock isn't taken in the recorded order,
-  // and a request the IO thread queued must only be dispatched by the
-  // interrupt below. That thread is the IO thread of a client connected with
-  // --inspect: V8 runs the interrupt where the progress counter next advances
-  // when recording, and at the same point when replaying.
+  // right away, in its own queue: Replay's own session makes them only when
+  // replaying, with events disallowed, so they must not touch requests_, its
+  // lock or the dispatch state requests from other threads use. Those come
+  // from the IO thread of a client connected with --inspect and are only
+  // dispatched by the interrupt below, which V8 runs where the progress
+  // counter next advances when recording, and at the same point when
+  // replaying.
   if (v8::recordreplay::IsRecordingOrReplaying() && v8::IsMainThread()) {
-    dispatching_message_queue_.push_back(std::move(request));
-    DispatchMainThreadMessages();
+    main_thread_requests_.push_back(std::move(request));
+    DispatchMainThreadRequests();
     return;
   }
 
@@ -270,19 +271,19 @@ void MainThreadInterface::DispatchMessages() {
   dispatching_messages_ = false;
 }
 
-void MainThreadInterface::DispatchMainThreadMessages() {
-  if (dispatching_messages_)
+void MainThreadInterface::DispatchMainThreadRequests() {
+  if (dispatching_main_thread_requests_)
     return;
-  dispatching_messages_ = true;
-  while (!dispatching_message_queue_.empty()) {
+  dispatching_main_thread_requests_ = true;
+  while (!main_thread_requests_.empty()) {
     MessageQueue::value_type task;
-    std::swap(dispatching_message_queue_.front(), task);
-    dispatching_message_queue_.pop_front();
+    std::swap(main_thread_requests_.front(), task);
+    main_thread_requests_.pop_front();
 
     v8::SealHandleScope seal_handle_scope(agent_->env()->isolate());
     task->Call(this);
   }
-  dispatching_messages_ = false;
+  dispatching_main_thread_requests_ = false;
 }
 
 std::shared_ptr<MainThreadHandle> MainThreadInterface::GetHandle() {
