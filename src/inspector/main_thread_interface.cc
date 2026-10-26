@@ -210,12 +210,17 @@ MainThreadInterface::~MainThreadInterface() {
 void MainThreadInterface::Post(std::unique_ptr<Request> request) {
   CHECK_NOT_NULL(agent_);
 
-  // When recording/replaying this is single threaded, and we don't want to
-  // interrupt V8 because that will invalidate the recording.
-  if (v8::recordreplay::IsRecordingOrReplaying()) {
-    CHECK(v8::IsMainThread());
-    requests_.push_back(std::move(request));
-    DispatchMessages();
+  // When recording/replaying, a request made on the main thread is dispatched
+  // right away, in its own queue: Replay's own session makes some only when
+  // replaying, with events disallowed, so they must not touch requests_, its
+  // lock or the dispatch state requests from other threads use. Those, e.g.
+  // from the IO thread of a client connected with --inspect, are only
+  // dispatched by the interrupt below, which V8 runs where the progress
+  // counter next advances when recording, and at the same point when
+  // replaying.
+  if (v8::recordreplay::IsRecordingOrReplaying() && v8::IsMainThread()) {
+    main_thread_requests_.push_back(std::move(request));
+    DispatchMainThreadRequests();
     return;
   }
 
@@ -264,6 +269,21 @@ void MainThreadInterface::DispatchMessages() {
     }
   } while (had_messages);
   dispatching_messages_ = false;
+}
+
+void MainThreadInterface::DispatchMainThreadRequests() {
+  if (dispatching_main_thread_requests_)
+    return;
+  dispatching_main_thread_requests_ = true;
+  while (!main_thread_requests_.empty()) {
+    MessageQueue::value_type task;
+    std::swap(main_thread_requests_.front(), task);
+    main_thread_requests_.pop_front();
+
+    v8::SealHandleScope seal_handle_scope(agent_->env()->isolate());
+    task->Call(this);
+  }
+  dispatching_main_thread_requests_ = false;
 }
 
 std::shared_ptr<MainThreadHandle> MainThreadInterface::GetHandle() {
@@ -317,6 +337,14 @@ std::unique_ptr<InspectorSession> MainThreadHandle::Connect(
 }
 
 bool MainThreadHandle::Post(std::unique_ptr<Request> request) {
+  // When recording/replaying, the main thread doesn't take block_lock_ (see
+  // MainThreadInterface::Post); only the main thread resets main_thread_.
+  if (v8::recordreplay::IsRecordingOrReplaying() && v8::IsMainThread()) {
+    if (!main_thread_)
+      return false;
+    main_thread_->Post(std::move(request));
+    return true;
+  }
   Mutex::ScopedLock scoped_lock(block_lock_);
   if (!main_thread_)
     return false;

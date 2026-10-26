@@ -62,7 +62,7 @@ class MainThreadHandle : public std::enable_shared_from_this<MainThreadHandle> {
   void Reset();
 
   MainThreadInterface* main_thread_;
-  Mutex block_lock_;
+  Mutex block_lock_ { /* ordered */ true };
   int next_session_id_ = 0;
   std::atomic_int next_object_id_ = {1};
 
@@ -76,6 +76,7 @@ class MainThreadInterface :
   ~MainThreadInterface();
 
   void DispatchMessages();
+  void DispatchMainThreadRequests();
   void Post(std::unique_ptr<Request> request);
   bool WaitForFrontendEvent();
   std::shared_ptr<MainThreadHandle> GetHandle();
@@ -89,11 +90,14 @@ class MainThreadInterface :
 
  private:
   MessageQueue requests_;
-  Mutex requests_lock_;   // requests_ live across threads
+  Mutex requests_lock_ { /* ordered */ true };  // requests_ live across threads
   // This queue is to maintain the order of the messages for the cases
   // when we reenter the DispatchMessages function.
   MessageQueue dispatching_message_queue_;
   bool dispatching_messages_ = false;
+  // Requests made on the main thread when recording/replaying, see Post().
+  MessageQueue main_thread_requests_;
+  bool dispatching_main_thread_requests_ = false;
   ConditionVariable incoming_message_cond_;
   // Used from any thread
   Agent* const agent_;
