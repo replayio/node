@@ -1622,7 +1622,8 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
       CheckTypeIs(node, Type::Number());
       break;
     case IrOpcode::kIncrementAndCheckProgressCounter:
-      CHECK_EQ(0, value_count);
+      CHECK_EQ(2, value_count);
+      CHECK_EQ(IrOpcode::kFrameState, node->InputAt(0)->opcode());
       CheckTypeIs(node, Type::Any());
       break;
     case IrOpcode::kCheckBigInt:

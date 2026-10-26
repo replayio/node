@@ -3591,7 +3591,15 @@ void BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
     Node* node = NewNode(op, closure);
     environment()->RecordAfterState(node, Environment::kAttachFrameState);
   } else {
-    Node* node = NewNode(simplified()->IncrementAndCheckProgressCounter());
+    // What runs at the target progress (API interrupt callbacks, e.g. the
+    // inspector's break near the heap limit) can walk the stack or deoptimize
+    // this code while the call is on the stack.
+    const int offset = bytecode_iterator().current_offset();
+    Node* frame_state = environment()->Checkpoint(
+        BytecodeOffset(offset), OutputFrameStateCombine::Ignore(),
+        bytecode_analysis().GetOutLivenessFor(offset));
+    Node* node = NewNode(simplified()->IncrementAndCheckProgressCounter(),
+                         frame_state, environment()->Context());
     environment()->RecordAfterState(node, Environment::kAttachFrameState);
   }
 }

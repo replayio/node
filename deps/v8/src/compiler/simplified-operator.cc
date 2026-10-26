@@ -849,8 +849,7 @@ bool operator==(CheckMinusZeroParameters const& lhs,
   V(StringCharCodeAt, Operator::kNoProperties, 2, 1)      \
   V(StringCodePointAt, Operator::kNoProperties, 2, 1)     \
   V(StringFromCodePointAt, Operator::kNoProperties, 2, 1) \
-  V(StringSubstring, Operator::kNoProperties, 3, 1)       \
-  V(IncrementAndCheckProgressCounter, Operator::kNoProperties, 0, 0)
+  V(StringSubstring, Operator::kNoProperties, 3, 1)
 
 #define SPECULATIVE_NUMBER_BINOP_LIST(V)      \
   SIMPLIFIED_SPECULATIVE_NUMBER_BINOP_LIST(V) \
@@ -1969,6 +1968,16 @@ const Operator* SimplifiedOperatorBuilder::DateNow() {
   return zone()->New<Operator>(IrOpcode::kDateNow,
                                Operator::kNoDeopt | Operator::kNoThrow,
                                "DateNow", 0, 1, 1, 1, 1, 0);
+}
+
+const Operator* SimplifiedOperatorBuilder::IncrementAndCheckProgressCounter() {
+  // The value inputs are the frame state for after the progress bytecode,
+  // where the call at the target progress lazily deoptimizes to, and the
+  // context the call runs in.
+  return zone()->New<Operator>(IrOpcode::kIncrementAndCheckProgressCounter,
+                               Operator::kNoThrow,
+                               "IncrementAndCheckProgressCounter",
+                               2, 1, 0, 1, 1, 0);
 }
 
 const Operator* SimplifiedOperatorBuilder::TransitionAndStoreNonNumberElement(
