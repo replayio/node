@@ -102,8 +102,12 @@ inline void* StartIoThreadMain(void* unused) {
   for (;;) {
     if (start_io_thread_pipe[0] >= 0) {
       char bytes[64];
-      if (read(start_io_thread_pipe[0], bytes, sizeof(bytes)) <= 0)
+      ssize_t rv = read(start_io_thread_pipe[0], bytes, sizeof(bytes));
+      if (rv < 0 && errno == EINTR)
         continue;
+      // The pipe is gone, e.g. the application closed every descriptor.
+      if (rv <= 0)
+        return nullptr;
     } else {
       uv_sem_wait(&start_io_thread_semaphore);
     }
