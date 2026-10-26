@@ -425,8 +425,8 @@ IntervalHistogram::IntervalHistogram(
       interval_(interval),
       on_interval_(std::move(on_interval)) {
   // The GC closes a dropped histogram's timer (see HandleWrap::OnGCCollect).
-  // When recording/replaying, that happens at the microtask checkpoint after
-  // the recording's GC collected it, on both sides; until then it is listed
+  // When recording/replaying, that happens at the GC poll after the
+  // recording's GC collected it, on both sides; until then it is listed
   // as active (see IsHandleOwnerAlive in node_process_methods.cc). One created
   // where it could not be tracked is leaked when collected, and held strongly
   // when replaying so that its handle stays listed as the recording sees it.

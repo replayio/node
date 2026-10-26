@@ -23,13 +23,13 @@ void RecordReplayList(const char* why, std::vector<T>* list) {
 
 DeferredFinalization::DeferredFinalization(Environment* env) : env_(env) {
   if (!v8::recordreplay::IsRecordingOrReplaying()) return;
-  polling_ = true;
-  env_->isolate()->AddMicrotasksCompletedCallback(MicrotasksCompleted, this);
+  registered_ = true;
+  v8::replayio::AddReplayGCPollParticipant(env_->isolate(), this);
 }
 
 DeferredFinalization::~DeferredFinalization() {
-  if (!polling_) return;
-  env_->isolate()->RemoveMicrotasksCompletedCallback(MicrotasksCompleted, this);
+  if (!registered_) return;
+  v8::replayio::RemoveReplayGCPollParticipant(env_->isolate(), this);
 }
 
 bool DeferredFinalization::Enabled(const char* label) {
@@ -68,18 +68,22 @@ void DeferredFinalization::OnCollected(int id) {
   collected_objects_.push_back(id);
 }
 
-bool DeferredFinalization::ShouldPoll() const {
+bool DeferredFinalization::IsActive() const {
   // Destroys are only noted while destroy hooks are enabled, which is JS state
-  // and so the same on both sides. The poll records nothing otherwise, unless
-  // an object was tracked.
+  // and so the same on both sides. Otherwise only a tracked object makes this
+  // active.
   return has_tracked_objects_ ||
          (env_->async_hooks()->fields()[AsyncHooks::kDestroy] != 0 &&
           Enabled("AsyncWrap::EmitDestroy"));
 }
 
-void DeferredFinalization::Poll() {
-  if (!ShouldPoll() || !AreEventsRecorded()) return;
+bool DeferredFinalization::HasPending() const {
+  if (!destroyed_async_ids_.empty()) return true;
+  Mutex::ScopedLock lock(collected_objects_mutex_);
+  return !collected_objects_.empty();
+}
 
+void DeferredFinalization::Poll() {
   uintptr_t flags = 0;
   std::vector<int> collected_objects;
   if (v8::recordreplay::IsRecording()) {
@@ -116,11 +120,6 @@ void DeferredFinalization::Poll() {
       it->second->RecordReplayFinalize();
     }
   }
-}
-
-void DeferredFinalization::MicrotasksCompleted(v8::Isolate* isolate,
-                                               void* data) {
-  static_cast<DeferredFinalization*>(data)->Poll();
 }
 
 }  // namespace recordreplay

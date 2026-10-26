@@ -9,8 +9,9 @@ class Isolate;
 namespace replayio {
 
 // The GC runs at points which do not replay, so what it did to tracked
-// FinalizationRegistries and WeakRefs is recorded/replayed here instead, with
-// a single value when there is nothing to describe. See
+// FinalizationRegistries and WeakRefs, and to the embedder's objects (see
+// ReplayGCPollParticipant in include/replayio.h), is recorded/replayed here
+// instead, with a single value when there is nothing to describe. See
 // src/replay/finalization-registry.h and src/replay/weak-refs.h.
 class ReplayGCPoll {
  public:
