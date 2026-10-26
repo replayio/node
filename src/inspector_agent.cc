@@ -25,6 +25,9 @@
 #ifdef __POSIX__
 #include <pthread.h>
 #include <climits>  // PTHREAD_STACK_MIN
+#include <fcntl.h>
+#include <unistd.h>
+#include <cerrno>
 #endif  // __POSIX__
 
 #include <algorithm>
@@ -58,8 +61,12 @@ static uv_async_t start_io_thread_async;
 // This is just an additional check to make sure start_io_thread_async
 // is not accidentally re-used or used when uninitialized.
 static std::atomic_bool start_io_thread_async_initialized { false };
-// Protects the Agent* stored in start_io_thread_async.data.
-static Mutex start_io_thread_async_mutex;
+// Protects the Agent* stored in start_io_thread_async.data. Constructed on
+// first use, once recording or replaying has started, so that it is ordered.
+static Mutex& StartIoThreadAsyncMutex() {
+  static Mutex mutex { /* ordered */ true };
+  return mutex;
+}
 
 std::unique_ptr<StringBuffer> ToProtocolString(Isolate* isolate,
                                                Local<Value> value) {
@@ -74,14 +81,33 @@ void StartIoThreadAsyncCallback(uv_async_t* handle) {
 
 
 #ifdef __POSIX__
+// When recording or replaying, the signal handler wakes the thread through
+// this pipe instead of the semaphore. Signals aren't delivered when replaying,
+// but the thread's read is recorded, so it wakes at the same point.
+static int start_io_thread_pipe[2] = { -1, -1 };
+
 static void StartIoThreadWakeup(int signo, siginfo_t* info, void* ucontext) {
+  if (start_io_thread_pipe[1] >= 0) {
+    int saved_errno = errno;
+    char byte = 0;
+    // Non-blocking: a full pipe already wakes the thread.
+    while (write(start_io_thread_pipe[1], &byte, 1) < 0 && errno == EINTR) {}
+    errno = saved_errno;
+    return;
+  }
   uv_sem_post(&start_io_thread_semaphore);
 }
 
 inline void* StartIoThreadMain(void* unused) {
   for (;;) {
-    uv_sem_wait(&start_io_thread_semaphore);
-    Mutex::ScopedLock lock(start_io_thread_async_mutex);
+    if (start_io_thread_pipe[0] >= 0) {
+      char bytes[64];
+      if (read(start_io_thread_pipe[0], bytes, sizeof(bytes)) <= 0)
+        continue;
+    } else {
+      uv_sem_wait(&start_io_thread_semaphore);
+    }
+    Mutex::ScopedLock lock(StartIoThreadAsyncMutex());
 
     CHECK(start_io_thread_async_initialized);
     Agent* agent = static_cast<Agent*>(start_io_thread_async.data);
@@ -95,6 +121,12 @@ static int StartDebugSignalHandler() {
   // it's not safe to call directly from the signal handler, it can
   // deadlock with the thread it interrupts.
   CHECK_EQ(0, uv_sem_init(&start_io_thread_semaphore, 0));
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    CHECK_EQ(0, pipe(start_io_thread_pipe));
+    for (int fd : start_io_thread_pipe)
+      CHECK_EQ(0, fcntl(fd, F_SETFD, FD_CLOEXEC));
+    CHECK_EQ(0, fcntl(start_io_thread_pipe[1], F_SETFL, O_NONBLOCK));
+  }
   pthread_attr_t attr;
   CHECK_EQ(0, pthread_attr_init(&attr));
 #if defined(PTHREAD_STACK_MIN) && !defined(__FreeBSD__)
@@ -142,7 +174,7 @@ static int StartDebugSignalHandler() {
 
 #ifdef _WIN32
 DWORD WINAPI StartIoThreadProc(void* arg) {
-  Mutex::ScopedLock lock(start_io_thread_async_mutex);
+  Mutex::ScopedLock lock(StartIoThreadAsyncMutex());
   CHECK(start_io_thread_async_initialized);
   Agent* agent = static_cast<Agent*>(start_io_thread_async.data);
   if (agent != nullptr)
@@ -681,7 +713,7 @@ bool Agent::Start(const std::string& path,
 
   client_ = std::make_shared<NodeInspectorClient>(parent_env_, is_main);
   if (parent_env_->owns_inspector()) {
-    Mutex::ScopedLock lock(start_io_thread_async_mutex);
+    Mutex::ScopedLock lock(StartIoThreadAsyncMutex());
     CHECK_EQ(start_io_thread_async_initialized.exchange(true), false);
     CHECK_EQ(0, uv_async_init(parent_env_->event_loop(),
                               &start_io_thread_async,
@@ -695,7 +727,7 @@ bool Agent::Start(const std::string& path,
       Environment* env = static_cast<Environment*>(data);
 
       {
-        Mutex::ScopedLock lock(start_io_thread_async_mutex);
+        Mutex::ScopedLock lock(StartIoThreadAsyncMutex());
         start_io_thread_async.data = nullptr;
       }
 
