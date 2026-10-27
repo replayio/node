@@ -802,11 +802,6 @@ std::unique_ptr<InspectorSession> Agent::Connect(
 std::unique_ptr<InspectorSession> Agent::ConnectToMainThread(
     std::unique_ptr<InspectorSessionDelegate> delegate,
     bool prevent_shutdown) {
-  // Worker inspection is NYI when recording/replaying.
-  if (v8::recordreplay::IsRecordingOrReplaying()) {
-    return nullptr;
-  }
-
   CHECK_NOT_NULL(parent_handle_);
   CHECK_NOT_NULL(client_);
   auto thread_safe_delegate =
