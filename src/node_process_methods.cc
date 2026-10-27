@@ -318,10 +318,10 @@ static void GetActiveRequestsInfo(const FunctionCallbackInfo<Value>& args) {
 
 // Whether the JS object of an active handle is alive. The GC may have
 // collected the owner of a weak wrap (e.g. IntervalHistogram) without closing
-// the handle yet: when recording/replaying, the wrap is closed at the next
-// microtask checkpoint (see HandleWrap::OnGCCollect), and until then the
-// owner's liveness differs between the two, so it is recorded. When replaying,
-// such owners are held strongly until then (see BaseObject::RecordReplayTrack).
+// the handle yet: when recording/replaying, the wrap is closed at the next GC
+// poll (see HandleWrap::OnGCCollect), and until then the owner's liveness
+// differs between the two, so it is recorded. When replaying, such owners are
+// held strongly until then (see BaseObject::RecordReplayTrack).
 static bool IsHandleOwnerAlive(HandleWrap* w) {
   bool alive = !w->persistent().IsEmpty();
   if (recordreplay::AreEventsRecorded()) {

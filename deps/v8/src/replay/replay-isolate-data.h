@@ -11,6 +11,8 @@
 namespace v8 {
 namespace replayio {
 
+class ReplayGCPollParticipant;
+
 // General-purpose per-Isolate data for recording and replaying.
 class ReplayIsolateData {
  public:
@@ -27,6 +29,20 @@ class ReplayIsolateData {
     int id;
     v8::Global<v8::Value> registry;
   };
+
+  // GC poll state, see src/replay/gc-poll.h.
+
+  // The embedder's participants, in the order they were added.
+  std::vector<ReplayGCPollParticipant*>& gc_poll_participants() {
+    return gc_poll_participants_;
+  }
+  // The participants which are active at the current poll, kept here so that
+  // polls do not allocate.
+  std::vector<ReplayGCPollParticipant*>& active_gc_poll_participants() {
+    return active_gc_poll_participants_;
+  }
+  bool is_gc_polling() const { return is_gc_polling_; }
+  void set_is_gc_polling(bool polling) { is_gc_polling_ = polling; }
 
   // FinalizationRegistry state, see src/replay/finalization-registry.h.
 
@@ -85,16 +101,22 @@ class ReplayIsolateData {
   }
 
  private:
+  std::vector<ReplayGCPollParticipant*> gc_poll_participants_;
+  std::vector<ReplayGCPollParticipant*> active_gc_poll_participants_;
+  bool is_gc_polling_ = false;
+
   int next_finalization_registry_id_ = 1;
   int next_weak_cell_id_ = 1;
 
   // Set by the first FinalizationRegistry.prototype.register() call on a
   // tracked registry and never cleared. While unset, and without a tracked
-  // WeakRef, the ClearKeptObjects poll records nothing.
+  // WeakRef or an active participant, the ClearKeptObjects poll records
+  // nothing.
   //
   // A count of outstanding registrations could stop the poll from recording
-  // again once it drops to zero, as long as there is no tracked WeakRef
-  // either, and shrink recordings. To be correct it would have to:
+  // again once it drops to zero, as long as there is no tracked WeakRef or
+  // active participant either, and shrink recordings. To be correct it would
+  // have to:
   //   - decrement on callback delivery and on unregister() (per removed cell),
   //   - account for the cells of a collected registry only once the recording
   //     describes the collection, which is when replay learns about it,

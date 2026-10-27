@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "node_mutex.h"
+#include "replayio.h"
 #include "v8.h"
 
 namespace node {
@@ -33,12 +34,12 @@ class Finalizable {
 // When recording/replaying, old space GCs run at points the replay does not
 // reproduce, and which embedder objects die in one differs between the two.
 // Cleanup a weak callback runs is therefore either dropped or leaked until
-// teardown, since the replay could not run it at the same point. Instead, like
-// V8's WeakRef and FinalizationRegistry handling (deps/v8/src/replay/gc-poll.h),
-// the weak callback only notes what the GC collected, and Poll(), run at every
-// microtask checkpoint, writes the notes into the recording and runs the
-// cleanup from there. When replaying, the recorded notes say what to clean up
-// at the same checkpoint.
+// teardown, since the replay could not run it at the same point. Instead, the
+// weak callback only notes what the GC collected, and V8's GC poll, which
+// handles WeakRefs and FinalizationRegistries the same way
+// (deps/v8/src/replay/gc-poll.h), calls Poll() to write the notes into the
+// recording and run the cleanup from there. When replaying, the recorded notes
+// say what to clean up at the same poll.
 //
 // Two kinds of notes:
 // - The async ids of resources the GC destroyed, see AsyncWrap::EmitDestroy.
@@ -57,10 +58,10 @@ class Finalizable {
 // id. For the others, the GC's callback runs as usual and the users fall back
 // to leaking (see EnterLeakMemory). Switched off by the "deferred-finalization"
 // feature, which leaves the cleanup dropped or leaked as before.
-class DeferredFinalization {
+class DeferredFinalization : public v8::replayio::ReplayGCPollParticipant {
  public:
   explicit DeferredFinalization(Environment* env);
-  ~DeferredFinalization();
+  ~DeferredFinalization() override;
 
   DeferredFinalization(const DeferredFinalization&) = delete;
   DeferredFinalization& operator=(const DeferredFinalization&) = delete;
@@ -84,26 +85,24 @@ class DeferredFinalization {
   // e.g. a backing store's deleter runs on the thread which sweeps it.
   void OnCollected(int id);
 
-  // Records/replays what the GC collected since the last poll and runs the
-  // cleanup. Called at the end of every microtask checkpoint.
-  void Poll();
+  // v8::replayio::ReplayGCPollParticipant. Poll() records/replays what the GC
+  // collected since the last poll and runs the cleanup.
+  bool IsActive() const override;
+  bool HasPending() const override;
+  void Poll() override;
 
  private:
-  static void MicrotasksCompleted(v8::Isolate* isolate, void* data);
-
-  // Whether Poll() has anything to describe at this point, on both sides.
-  bool ShouldPoll() const;
-
   Environment* env_;
-  bool polling_ = false;
+  // Whether this was added to V8's GC poll.
+  bool registered_ = false;
 
   // While recording, the async ids of resources the GC destroyed which the
   // recording does not describe yet.
   std::vector<double> destroyed_async_ids_;
 
   int last_object_id_ = 0;
-  // Set by the first tracked object and never cleared. From then on the poll
-  // records a value at every microtask checkpoint.
+  // Set by the first tracked object and never cleared. From then on this is
+  // active.
   bool has_tracked_objects_ = false;
   // The tracked objects which are alive, by id. The same on both sides at
   // every poll: a tracked object is only deleted at deterministic points.

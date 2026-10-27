@@ -624,13 +624,13 @@ Reference* Reference::New(napi_env env,
 // in replayed calls (see RecordReplayInModuleCallback) are given an id, and
 // when replaying their values are held strongly until the points where the
 // recording saw the GC collect them: the ids of references whose values were
-// collected are recorded whenever the module reads a reference and at each
-// microtask checkpoint, and the replay clears those references then.
+// collected are recorded whenever the module reads a reference, and the replay
+// clears those references then.
 //
 // The finalizer of a collected reference, and its deletion when it deletes
 // itself, are deferred the same way: the second pass callback only notes the
 // reference, and node::recordreplay::DeferredFinalization finalizes it at the
-// next microtask checkpoint on both sides (see RecordReplayFinalize).
+// next GC poll on both sides (see RecordReplayFinalize).
 void Reference::RecordReplayTrack() {
   if (!RecordReplayInModuleCallback()) {
     return;
@@ -638,10 +638,6 @@ void Reference::RecordReplayTrack() {
   _record_replay_id = ++_env->record_replay_last_ref_id;
   v8::recordreplay::Assert("napi_ref created %d", _record_replay_id);
   _env->record_replay_refs[_record_replay_id] = this;
-  if (!_env->record_replay_polling) {
-    _env->record_replay_polling = true;
-    _env->isolate->AddMicrotasksCompletedCallback(RecordReplayPoll, _env);
-  }
   if (v8::recordreplay::IsReplaying() && RefCount() == 0) {
     ClearWeak();
   }
@@ -664,6 +660,8 @@ void Reference::RecordReplayFinalize() {
   // and no callback ran: do the same, so that SetWeak() behaves alike from now
   // on.
   _persistent.Reset();
+  // The value is gone on both sides now, so a later read needs no flush.
+  _env->record_replay_cleared_refs.erase(_record_replay_id);
   if (!_secondPassScheduled) {
     delete _secondPassParameter;
   }
@@ -675,7 +673,8 @@ void Reference::RecordReplayFinalize() {
 }
 
 void Reference::RecordReplayFlushClearedRefs(napi_env env) {
-  std::vector<int>& cleared = env->record_replay_cleared_refs;
+  std::vector<int> cleared(env->record_replay_cleared_refs.begin(),
+                           env->record_replay_cleared_refs.end());
   size_t count =
       v8::recordreplay::RecordReplayValue("napi_ref cleared", cleared.size());
   cleared.resize(count);
@@ -689,32 +688,21 @@ void Reference::RecordReplayFlushClearedRefs(napi_env env) {
       if (iter != env->record_replay_refs.end()) {
         Reference* reference = iter->second;
         // Do what the GC's weak callback did when recording: it reset the
-        // persistent in its first pass, and its second pass left the reference
-        // unfinalized (see SecondPassCallback), so that ~napi_env__ finalizes
-        // it at environment teardown on both sides.
+        // persistent in its first pass. Its second pass noted the reference
+        // for the next GC poll, or left it for ~napi_env__ to finalize at
+        // environment teardown when it could not be tracked, on both sides
+        // (see SecondPassCallback).
         reference->_persistent.Reset();
       }
     }
   }
-  cleared.clear();
-}
-
-void Reference::RecordReplayPoll(v8::Isolate* isolate, void* data) {
-  if (node::recordreplay::AreEventsRecorded()) {
-    RecordReplayFlushClearedRefs(static_cast<napi_env>(data));
-  }
-}
-
-void RecordReplayDestroyEnv(napi_env env) {
-  if (env->record_replay_polling) {
-    env->isolate->RemoveMicrotasksCompletedCallback(Reference::RecordReplayPoll,
-                                                    env);
-  }
+  env->record_replay_cleared_refs.clear();
 }
 
 Reference::~Reference() {
   if (_record_replay_id) {
     _env->record_replay_refs.erase(_record_replay_id);
+    _env->record_replay_cleared_refs.erase(_record_replay_id);
   }
   if (_record_replay_finalize_id) {
     _record_replay_finalization->Untrack(_record_replay_finalize_id);
@@ -817,7 +805,7 @@ void Reference::FinalizeCallback(
   // The reference must be reset during the first pass.
   reference->_persistent.Reset();
   if (reference->_record_replay_id) {
-    reference->_env->record_replay_cleared_refs.push_back(
+    reference->_env->record_replay_cleared_refs.insert(
         reference->_record_replay_id);
   }
   // Mark the parameter not delete-able until the second pass callback is
