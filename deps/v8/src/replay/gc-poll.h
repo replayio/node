@@ -15,8 +15,9 @@ namespace replayio {
 // src/replay/finalization-registry.h and src/replay/weak-refs.h.
 class ReplayGCPoll {
  public:
-  // Called at the end of every microtask checkpoint, and when the cleanup task
-  // for tracked registries is done.
+  // Called at the end of every microtask checkpoint, when the embedder calls
+  // Isolate::ClearKeptObjects(), and when the cleanup task for tracked
+  // registries is done.
   static void Poll(internal::Isolate* isolate);
 };
 

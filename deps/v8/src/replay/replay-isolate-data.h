@@ -110,11 +110,13 @@ class ReplayIsolateData {
 
   // Set by the first FinalizationRegistry.prototype.register() call on a
   // tracked registry and never cleared. While unset, and without a tracked
-  // WeakRef, the ClearKeptObjects poll records nothing.
+  // WeakRef or an active participant, the ClearKeptObjects poll records
+  // nothing.
   //
   // A count of outstanding registrations could stop the poll from recording
-  // again once it drops to zero, as long as there is no tracked WeakRef
-  // either, and shrink recordings. To be correct it would have to:
+  // again once it drops to zero, as long as there is no tracked WeakRef or
+  // active participant either, and shrink recordings. To be correct it would
+  // have to:
   //   - decrement on callback delivery and on unregister() (per removed cell),
   //   - account for the cells of a collected registry only once the recording
   //     describes the collection, which is when replay learns about it,
