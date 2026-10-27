@@ -10534,6 +10534,7 @@ void RecordReplayTriggerProgressInterrupt() {
 static void RecordReplayProgressInterruptCallback() {
   CHECK(IsMainThread());
   Isolate* isolate = Isolate::Current();
+  isolate->heap()->RecordReplayOnProgressInterrupt();
   isolate->RecordReplayInvokeApiInterruptCallbacksAtProgress();
 }
 
