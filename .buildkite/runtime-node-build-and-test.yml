@@ -162,6 +162,8 @@ steps:
     key: "node-test-node-recording"
     depends_on:
       - "build-node-linux"
+    # In-house suite expected to pass deterministically: take shared can_replay agents before other jobs.
+    priority: 1
     agents:
       - "can_replay=true"
     plugins:
