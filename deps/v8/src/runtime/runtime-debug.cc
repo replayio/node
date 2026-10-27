@@ -1239,12 +1239,13 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
         std::string stack = GetStackContents(isolate, 50);
 
         recordreplay::Warning(
-            "NonDeterministicUserJS:UNGATED:JSProgress PC=%zu "
-            "scriptId=%d @%s stack=%s",
-            *gProgressCounter, script->id(),
-            GetScriptLocationString(script->id(), shared->StartPosition())
-                .c_str(),
-            stack.c_str());
+            "NonDeterministicUserJSUngated",
+            {{"trigger", "JSProgress"},
+             {"progress", *gProgressCounter},
+             {"scriptId", script->id()},
+             {"location", GetScriptLocationString(script->id(),
+                                                  shared->StartPosition())},
+             {"jsStack", stack}});
       }
     }
   }

@@ -10398,7 +10398,9 @@ static void (*gRecordReplaySetCommandCallback)(const char* method, CommandCallba
 
 static void (*gRecordReplayPrint)(const char* format, va_list args);
 static void (*gRecordReplayDiagnostic)(const char* format, va_list args);
-static void (*gRecordReplayWarning)(const char* format, va_list args);
+static void (*gRecordReplayStructuredWarning)(const char* kind,
+                                              const RecordReplayWarningField* fields,
+                                              size_t count);
 static void (*gRecordReplayOnInstrument)(const char* kind, const char* function, int function_index);
 static void (*gRecordReplayAddPossibleBreakpoint)(int line, int column, const char* function, int function_index);
 static void (*gRecordReplayAssert)(const char*, va_list);
@@ -10516,7 +10518,8 @@ void RecordReplayOnTargetProgressReached() {
   if (recordreplay::AreEventsDisallowed()) {
     // We should not have progress updates when events disallowed.
     if (!recordreplay::HasDivergedFromRecording()) {
-      recordreplay::Warning("OnProgressReached PC=%zu", (size_t)*gProgressCounter);
+      recordreplay::Warning("TargetProgressReachedWithEventsDisallowed",
+                            {{"progress", *gProgressCounter}});
     }
     return;
   }
@@ -10668,21 +10671,17 @@ extern "C" void V8RecordReplayDiagnostic(const char* format, ...) {
   }
 }
 
-void recordreplay::Warning(const char* format, ...) {
+void recordreplay::Warning(
+    const char* kind, std::initializer_list<RecordReplayWarningField> fields) {
   if (IsRecordingOrReplaying()) {
-    va_list args;
-    va_start(args, format);
-    gRecordReplayWarning(format, args);
-    va_end(args);
+    gRecordReplayStructuredWarning(kind, fields.begin(), fields.size());
   }
 }
 
-extern "C" void V8RecordReplayWarning(const char* format, ...) {
+extern "C" void V8RecordReplayStructuredWarning(
+    const char* kind, const RecordReplayWarningField* fields, size_t count) {
   if (recordreplay::IsRecordingOrReplaying()) {
-    va_list args;
-    va_start(args, format);
-    gRecordReplayWarning(format, args);
-    va_end(args);
+    gRecordReplayStructuredWarning(kind, fields, count);
   }
 }
 
@@ -11138,7 +11137,8 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplaySetCommandCallback", gRecordReplaySetCommandCallback);
   RecordReplayLoadSymbol(handle, "RecordReplayPrint", gRecordReplayPrint);
   RecordReplayLoadSymbol(handle, "RecordReplayDiagnostic", gRecordReplayDiagnostic);
-  RecordReplayLoadSymbol(handle, "RecordReplayWarning", gRecordReplayWarning);
+  RecordReplayLoadSymbol(handle, "RecordReplayStructuredWarning",
+                         gRecordReplayStructuredWarning);
   RecordReplayLoadSymbol(handle, "RecordReplayAssert", gRecordReplayAssert);
   RecordReplayLoadSymbol(handle, "RecordReplayAssertBytes", gRecordReplayAssertBytes);
   RecordReplayLoadSymbol(handle, "RecordReplayDescribeAssertData",

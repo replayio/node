@@ -20,6 +20,7 @@
 #include <stdio.h>
 
 #include <atomic>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -12665,7 +12666,10 @@ static bool IsReplaying();
 
 static void Print(const char* format, ...);
 static void Diagnostic(const char* format, ...);
-static void Warning(const char* format, ...);
+// Adds a warning about unexpected behavior to the recording. kind names the
+// condition, fields hold the details that differ between occurrences.
+static void Warning(const char* kind,
+                    std::initializer_list<RecordReplayWarningField> fields = {});
 static bool HasAsserts();
 static void Assert(const char* format, ...);
 static void AssertMaybeEventsDisallowed(const char* format, ...);
