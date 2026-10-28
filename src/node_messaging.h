@@ -9,7 +9,7 @@
 #include <deque>
 #include <string>
 #include <unordered_map>
-#include <vector>
+#include <set>
 
 namespace node {
 namespace worker {
@@ -130,6 +130,7 @@ class SiblingGroup final : public std::enable_shared_from_this<SiblingGroup> {
   // Anonymous SiblingGroup, Used for one-to-one MessagePort pairs.
   SiblingGroup() = default;
   explicit SiblingGroup(const std::string& name);
+  ~SiblingGroup();
 
   // Dispatches the Message to the collection of associated
   // ports. If there is more than one destination port and
@@ -157,18 +158,33 @@ class SiblingGroup final : public std::enable_shared_from_this<SiblingGroup> {
   // Protects ports_. Ordered when recording/replaying: Dispatch() and
   // Disentangle() lock ports' ordered mutexes while holding it, so the replay
   // has to take it in the recorded order, or two threads disentangling the
-  // ends of a channel can each wait for the lock the other holds. Ordered rw
-  // locks aren't supported, so readers are serialized too.
-  Mutex group_mutex_{/* ordered */ true};
-  // In the order the ports were entangled, rather than a set ordered by
-  // address: Dispatch() queues the message to the ports in this order, taking
-  // each port's ordered mutex, so it has to be the same when replaying.
-  std::vector<MessagePortData*> ports_;
+  // ends of a channel can each wait for the lock the other holds.
+  RecordReplayOrderedRwLock group_mutex_;
+  // Ordered by address, except when recording/replaying, where addresses
+  // differ: in the order the ports were entangled then. Dispatch() queues the
+  // message to the ports in this order, taking each port's ordered mutex.
+  struct RecordReplayPortOrder {
+    bool operator()(const MessagePortData* a, const MessagePortData* b) const;
+  };
+  std::set<MessagePortData*, RecordReplayPortOrder> ports_;
+  uint64_t record_replay_entangled_count_ = 0;
 
-  void RemovePort(MessagePortData* data);
+  static void CheckSiblingGroup(const std::string& name);
 
-  // Requires groups_mutex_.
-  static void EraseIfExpired(const std::string& name);
+  // When recording/replaying, Disentangle() drops a named group's references
+  // while holding groups_mutex_, as they can be its last ones, after which
+  // Get() creates a new group for the name: whether Get() still finds this
+  // group has to be ordered. It also removes the group's entry then, instead
+  // of ~SiblingGroup() taking groups_mutex_ on whichever thread released the
+  // group last.
+  class RecordReplayDisentangleScope {
+   public:
+    explicit RecordReplayDisentangleScope(const SiblingGroup& group);
+    ~RecordReplayDisentangleScope();
+
+   private:
+    std::string name_;
+  };
 
   using Map =
       std::unordered_map<std::string, std::weak_ptr<SiblingGroup>>;
@@ -176,8 +192,7 @@ class SiblingGroup final : public std::enable_shared_from_this<SiblingGroup> {
   // Ordered when recording/replaying (see InitializeOncePerProcess()):
   // whichever thread finds a named group missing creates it, and with it the
   // group's ordered mutex, so the replay has to find it missing on the same
-  // thread as the recording. Disentangle() drops what can be a named group's
-  // last references under it for the same reason.
+  // thread as the recording.
   static Mutex groups_mutex_;
   static Map groups_;
 };
@@ -230,6 +245,8 @@ class MessagePortData : public TransferData {
   std::deque<std::shared_ptr<Message>> incoming_messages_;
   MessagePort* owner_ = nullptr;
   std::shared_ptr<SiblingGroup> group_;
+  // Position in group_'s ports when recording/replaying, 0 otherwise.
+  uint64_t record_replay_entangled_index_ = 0;
   friend class MessagePort;
   friend class SiblingGroup;
 };
