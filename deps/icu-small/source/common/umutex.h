@@ -270,6 +270,12 @@ U_CAPI void U_EXPORT2 umtx_lock(UMutex* mutex);
  */
 U_CAPI void U_EXPORT2 umtx_unlock (UMutex* mutex);
 
+/* Whether the process is being recorded or replayed by Replay. UMutexes aren't
+ * ordered then, so a thread can't rely on which thread updated state they
+ * guard before it.
+ */
+U_CAPI UBool U_EXPORT2 umtx_isRecordingOrReplaying();
+
 
 U_NAMESPACE_END
 

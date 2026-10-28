@@ -123,6 +123,10 @@ class SiblingGroup final : public std::enable_shared_from_this<SiblingGroup> {
   // Named SiblingGroup, Used for one-to-many BroadcastChannels.
   static std::shared_ptr<SiblingGroup> Get(const std::string& name);
 
+  // Orders groups_mutex_ when recording/replaying. Called on the main thread
+  // once record/replay is initialized, before any other thread exists.
+  static void InitializeOncePerProcess();
+
   // Anonymous SiblingGroup, Used for one-to-one MessagePort pairs.
   SiblingGroup() = default;
   explicit SiblingGroup(const std::string& name);
@@ -151,14 +155,45 @@ class SiblingGroup final : public std::enable_shared_from_this<SiblingGroup> {
 
  private:
   const std::string name_;
-  RwLock group_mutex_;  // Protects ports_.
-  std::set<MessagePortData*> ports_;
+  // Protects ports_. Ordered when recording/replaying: Dispatch() and
+  // Disentangle() lock ports' ordered mutexes while holding it, so the replay
+  // has to take it in the recorded order, or two threads disentangling the
+  // ends of a channel can each wait for the lock the other holds.
+  RecordReplayOrderedRwLock group_mutex_;
+  // Ordered by address, except when recording/replaying, where addresses
+  // differ: in the order the ports were entangled then. Dispatch() queues the
+  // message to the ports in this order, taking each port's ordered mutex.
+  struct RecordReplayPortOrder {
+    bool operator()(const MessagePortData* a, const MessagePortData* b) const;
+  };
+  std::set<MessagePortData*, RecordReplayPortOrder> ports_;
+  uint64_t record_replay_entangled_count_ = 0;
 
   static void CheckSiblingGroup(const std::string& name);
+
+  // When recording/replaying, Disentangle() drops a named group's references
+  // while holding groups_mutex_, as they can be its last ones, after which
+  // Get() creates a new group for the name: whether Get() still finds this
+  // group has to be ordered. It also removes the group's entry then, instead
+  // of ~SiblingGroup() taking groups_mutex_ on whichever thread released the
+  // group last. Not covered: a BroadcastChannel whose MessagePort::New()
+  // fails before entangling releases its group without groups_mutex_.
+  class RecordReplayDisentangleScope {
+   public:
+    explicit RecordReplayDisentangleScope(const SiblingGroup& group);
+    ~RecordReplayDisentangleScope();
+
+   private:
+    std::string name_;
+  };
 
   using Map =
       std::unordered_map<std::string, std::weak_ptr<SiblingGroup>>;
 
+  // Ordered when recording/replaying (see InitializeOncePerProcess()):
+  // whichever thread finds a named group missing creates it, and with it the
+  // group's ordered mutex, so the replay has to find it missing on the same
+  // thread as the recording.
   static Mutex groups_mutex_;
   static Map groups_;
 };
@@ -211,6 +246,8 @@ class MessagePortData : public TransferData {
   std::deque<std::shared_ptr<Message>> incoming_messages_;
   MessagePort* owner_ = nullptr;
   std::shared_ptr<SiblingGroup> group_;
+  // Position in group_'s ports when recording/replaying, 0 otherwise.
+  uint64_t record_replay_entangled_index_ = 0;
   friend class MessagePort;
   friend class SiblingGroup;
 };

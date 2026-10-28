@@ -74,6 +74,9 @@ class MutexBase {
   inline void Unlock();
   inline void RdLock();
   inline void RdUnlock();
+  // Orders a mutex constructed before record/replay was initialized, e.g. a
+  // static one. Call it before any other thread can use the mutex.
+  inline void MarkOrdered();
 
   MutexBase(const MutexBase&) = delete;
   MutexBase& operator=(const MutexBase&) = delete;
@@ -309,6 +312,11 @@ void MutexBase<Traits>::RdUnlock() {
 }
 
 template <typename Traits>
+void MutexBase<Traits>::MarkOrdered() {
+  Traits::mutex_mark_ordered(&mutex_);
+}
+
+template <typename Traits>
 MutexBase<Traits>::ScopedLock::ScopedLock(const MutexBase& mutex)
     : mutex_(mutex) {
   Traits::mutex_lock(&mutex_.mutex_);
@@ -344,6 +352,70 @@ template <typename Traits>
 MutexBase<Traits>::ScopedUnlock::~ScopedUnlock() {
   Traits::mutex_lock(&mutex_.mutex_);
 }
+
+// A RwLock, except when recording/replaying, where it is an ordered Mutex, as
+// ordered rw locks aren't supported: readers are serialized then.
+class RecordReplayOrderedRwLock {
+ public:
+  RecordReplayOrderedRwLock() {
+    if (v8::recordreplay::IsRecordingOrReplaying())
+      ordered_.reset(new Mutex(/* ordered */ true));
+  }
+
+  RecordReplayOrderedRwLock(const RecordReplayOrderedRwLock&) = delete;
+  RecordReplayOrderedRwLock& operator=(const RecordReplayOrderedRwLock&) =
+      delete;
+
+  class ScopedReadLock {
+   public:
+    explicit ScopedReadLock(const RecordReplayOrderedRwLock& lock)
+        : lock_(lock) {
+      if (lock_.ordered_)
+        lock_.ordered_->Lock();
+      else
+        lock_.rwlock_.RdLock();
+    }
+    ~ScopedReadLock() {
+      if (lock_.ordered_)
+        lock_.ordered_->Unlock();
+      else
+        lock_.rwlock_.RdUnlock();
+    }
+
+    ScopedReadLock(const ScopedReadLock&) = delete;
+    ScopedReadLock& operator=(const ScopedReadLock&) = delete;
+
+   private:
+    const RecordReplayOrderedRwLock& lock_;
+  };
+
+  class ScopedWriteLock {
+   public:
+    explicit ScopedWriteLock(const RecordReplayOrderedRwLock& lock)
+        : lock_(lock) {
+      if (lock_.ordered_)
+        lock_.ordered_->Lock();
+      else
+        lock_.rwlock_.Lock();
+    }
+    ~ScopedWriteLock() {
+      if (lock_.ordered_)
+        lock_.ordered_->Unlock();
+      else
+        lock_.rwlock_.Unlock();
+    }
+
+    ScopedWriteLock(const ScopedWriteLock&) = delete;
+    ScopedWriteLock& operator=(const ScopedWriteLock&) = delete;
+
+   private:
+    const RecordReplayOrderedRwLock& lock_;
+  };
+
+ private:
+  mutable RwLock rwlock_;
+  std::unique_ptr<Mutex> ordered_;
+};
 
 }  // namespace node
 

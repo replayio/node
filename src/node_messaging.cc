@@ -1317,13 +1317,42 @@ void SiblingGroup::CheckSiblingGroup(const std::string& name) {
     groups_.erase(name);
 }
 
+void SiblingGroup::InitializeOncePerProcess() {
+  groups_mutex_.MarkOrdered();
+}
+
 SiblingGroup::SiblingGroup(const std::string& name)
     : name_(name) { }
 
 SiblingGroup::~SiblingGroup() {
   // If this is a named group, check to see if we can remove the group
-  if (!name_.empty())
+  if (!name_.empty() && !v8::recordreplay::IsRecordingOrReplaying())
     CheckSiblingGroup(name_);
+}
+
+bool SiblingGroup::RecordReplayPortOrder::operator()(
+    const MessagePortData* a, const MessagePortData* b) const {
+  if (a->record_replay_entangled_index_ != b->record_replay_entangled_index_)
+    return a->record_replay_entangled_index_ <
+           b->record_replay_entangled_index_;
+  return std::less<const MessagePortData*>()(a, b);
+}
+
+SiblingGroup::RecordReplayDisentangleScope::RecordReplayDisentangleScope(
+    const SiblingGroup& group) {
+  if (!group.name_.empty() && v8::recordreplay::IsRecordingOrReplaying()) {
+    name_ = group.name_;
+    groups_mutex_.Lock();
+  }
+}
+
+SiblingGroup::RecordReplayDisentangleScope::~RecordReplayDisentangleScope() {
+  if (name_.empty())
+    return;
+  auto i = groups_.find(name_);
+  if (i != groups_.end() && i->second.expired())
+    groups_.erase(i);
+  groups_mutex_.Unlock();
 }
 
 Maybe<bool> SiblingGroup::Dispatch(
@@ -1331,7 +1360,7 @@ Maybe<bool> SiblingGroup::Dispatch(
     std::shared_ptr<Message> message,
     std::string* error) {
 
-  RwLock::ScopedReadLock lock(group_mutex_);
+  RecordReplayOrderedRwLock::ScopedReadLock lock(group_mutex_);
 
   // The source MessagePortData is not part of this group.
   if (ports_.find(source) == ports_.end()) {
@@ -1376,17 +1405,20 @@ void SiblingGroup::Entangle(MessagePortData* port) {
 }
 
 void SiblingGroup::Entangle(std::initializer_list<MessagePortData*> ports) {
-  RwLock::ScopedWriteLock lock(group_mutex_);
+  RecordReplayOrderedRwLock::ScopedWriteLock lock(group_mutex_);
   for (MessagePortData* data : ports) {
-    ports_.insert(data);
     CHECK(!data->group_);
+    if (v8::recordreplay::IsRecordingOrReplaying())
+      data->record_replay_entangled_index_ = ++record_replay_entangled_count_;
+    ports_.insert(data);
     data->group_ = shared_from_this();
   }
 }
 
 void SiblingGroup::Disentangle(MessagePortData* data) {
+  RecordReplayDisentangleScope record_replay_scope(*this);
   auto self = shared_from_this();  // Keep alive until end of function.
-  RwLock::ScopedWriteLock lock(group_mutex_);
+  RecordReplayOrderedRwLock::ScopedWriteLock lock(group_mutex_);
   ports_.erase(data);
   data->group_.reset();
 

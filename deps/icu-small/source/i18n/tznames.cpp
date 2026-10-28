@@ -200,8 +200,13 @@ TimeZoneNamesDelegate::TimeZoneNamesDelegate(const Locale& locale, UErrorCode& s
     }
     gAccessCount++;
     if (gAccessCount >= SWEEP_INTERVAL) {
-        // sweep
-        sweepCache();
+        // Not when recording/replaying: the sweep reads the clock on the
+        // thread which makes this access, and which one does depends on
+        // timing when several threads use the cache.
+        if (!umtx_isRecordingOrReplaying()) {
+            // sweep
+            sweepCache();
+        }
         gAccessCount = 0;
     }
     fTZnamesCacheEntry = cacheEntry;
