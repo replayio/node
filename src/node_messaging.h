@@ -176,7 +176,8 @@ class SiblingGroup final : public std::enable_shared_from_this<SiblingGroup> {
   // Get() creates a new group for the name: whether Get() still finds this
   // group has to be ordered. It also removes the group's entry then, instead
   // of ~SiblingGroup() taking groups_mutex_ on whichever thread released the
-  // group last.
+  // group last. Not covered: a BroadcastChannel whose MessagePort::New()
+  // fails before entangling releases its group without groups_mutex_.
   class RecordReplayDisentangleScope {
    public:
     explicit RecordReplayDisentangleScope(const SiblingGroup& group);
