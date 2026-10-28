@@ -2939,6 +2939,16 @@ MaybeHandle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForScript(
           script_id != v8::UnboundScript::kNoScriptId) {
         maybe_script = GetScript(isolate, script_id);
       }
+    } else if (recordreplay::IsRecording() && !IsMainThread()) {
+      // Off the main thread whether the lookup found a script isn't recorded,
+      // and the replay doesn't use the cache, so don't use what it found when
+      // recording either: the replay would create a script the recording
+      // didn't, as when a worker's inspector session compiles the same script
+      // twice.
+      // (Chromium feature gate: "values")
+      maybe_script = MaybeHandle<Script>();
+      maybe_result = MaybeHandle<SharedFunctionInfo>();
+      is_compiled_scope = IsCompiledScope();
     }
 
     if (!maybe_result.is_null()) {
