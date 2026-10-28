@@ -1113,7 +1113,8 @@ Variable* Scope::DeclareVariable(
   // (RUN-2604)
   if (recordreplay::IsReplaying() &&
       recordreplay::FeatureEnabled("force-variable-context-allocation") &&
-      kind == VariableKind::NORMAL_VARIABLE) {
+      (kind == VariableKind::NORMAL_VARIABLE ||
+       kind == VariableKind::SLOPPY_BLOCK_FUNCTION_VARIABLE)) {
     var->ForceContextAllocation();
   }
   return var;
