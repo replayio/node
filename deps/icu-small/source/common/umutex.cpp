@@ -122,6 +122,16 @@ umtx_unlock(UMutex* mutex)
     mutex->unlock();
 }
 
+// Defined by V8. Weak, as ICU's host tools are linked without it.
+extern "C" int V8RecordReplayIsRecording(void) __attribute__((weak));
+extern "C" int V8RecordReplayIsReplaying(void) __attribute__((weak));
+
+U_CAPI UBool U_EXPORT2
+umtx_isRecordingOrReplaying() {
+    return V8RecordReplayIsRecording != nullptr &&
+           (V8RecordReplayIsRecording() || V8RecordReplayIsReplaying());
+}
+
 
 /*************************************************************************************************
  *
