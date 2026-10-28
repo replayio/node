@@ -293,9 +293,11 @@ static MaybeHandle<Object> RecordReplayBlockNonDeterministicUserJs(
     Isolate* isolate, const char* kind, const std::string& detail) {
   // Node lacks PrintCurrentStackTrace(ostream); reuse GetStackContents.
   std::string stack = GetStackContents(isolate, 50);
-  recordreplay::Warning(
-      "%s:BLOCKED:NonDeterministicUserJS PC=%zu %s stack=%s", kind,
-      *gProgressCounter, detail.c_str(), stack.c_str());
+  recordreplay::Warning("NonDeterministicUserJSBlocked",
+                        {{"trigger", kind},
+                         {"progress", *gProgressCounter},
+                         {"detail", detail},
+                         {"jsStack", stack}});
   return isolate->factory()->undefined_value();
 }
 
