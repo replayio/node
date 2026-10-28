@@ -1335,6 +1335,11 @@ class DiscardBaselineCodeVisitor : public ThreadVisitor {
 void Debug::DiscardBaselineCode(SharedFunctionInfo shared) {
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kDebugger);
   DCHECK(shared.HasBaselineData());
+  // Whether a function has baseline code when this runs (e.g. when a
+  // breakpoint is set) can differ between recording and replaying, and the
+  // heap walk below enters a safepoint, which reads the clock. Like the GC,
+  // the walk runs with events disallowed.
+  replayio::AutoDisallowEvents disallow("Debug::DiscardBaselineCode");
   Isolate* isolate = shared.GetIsolate();
   DiscardBaselineCodeVisitor visitor(shared);
   visitor.VisitThread(isolate, isolate->thread_local_top());
