@@ -1205,14 +1205,12 @@ std::string GetStackContents(Isolate* isolate, size_t max_frames) {
 
 static bool gHasPrintedStack = false;
 
-RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
+static void OnExecutionProgress(Isolate* isolate, Handle<JSFunction> function) {
   if (++*gProgressCounter == gTargetProgress) {
     RecordReplayOnTargetProgressReached();
   }
 
   if (gRecordReplayAssertProgress) {
-    Handle<JSFunction> function = args.at<JSFunction>(0);
-
     if (!gProgressData) {
       gProgressData = new std::vector<uint64_t>();
     }
@@ -1220,8 +1218,6 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   }
 
   if (gRecordReplayCheckProgress) {
-    Handle<JSFunction> function = args.at<JSFunction>(0);
-
     Handle<SharedFunctionInfo> shared(function->shared(), isolate);
     Handle<Script> script(Script::cast(shared->script()), isolate);
 
@@ -1249,7 +1245,10 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
       }
     }
   }
+}
 
+RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
+  OnExecutionProgress(isolate, args.at<JSFunction>(0));
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
@@ -1257,6 +1256,16 @@ RUNTIME_FUNCTION(Runtime_RecordReplayTargetProgressReached) {
   CHECK(*gProgressCounter == gTargetProgress);
   RecordReplayOnTargetProgressReached();
   return ReadOnlyRoots(isolate).undefined_value();
+}
+
+// The baseline JIT's variant of Runtime_RecordReplayAssertExecutionProgress
+// takes the accumulator and returns it. The calling frame's baseline code can
+// be discarded while the call is on the stack (e.g. when a breakpoint is set),
+// and the frame then resumes in the interpreter with the call's result as its
+// accumulator.
+RUNTIME_FUNCTION(Runtime_RecordReplayBaselineExecutionProgress) {
+  OnExecutionProgress(isolate, args.at<JSFunction>(0));
+  return args[1];
 }
 
 // Assertion and instrumentation site indexes embedded in bytecodes are offset
@@ -1437,18 +1446,21 @@ static inline void OnInstrumentation(Isolate* isolate,
 
 extern bool gRecordReplayInstrumentationEnabled;
 
-RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
+static void OnInstrumentationSite(Isolate* isolate, RuntimeArguments& args) {
   if (!gRecordReplayInstrumentationEnabled) {
-    return ReadOnlyRoots(isolate).undefined_value();
+    return;
   }
 
   HandleScope scope(isolate);
-  DCHECK_EQ(2, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
   CONVERT_NUMBER_CHECKED(int32_t, index, Int32, args[1]);
 
   OnInstrumentation(isolate, function, index);
+}
 
+RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentation) {
+  DCHECK_EQ(2, args.length());
+  OnInstrumentationSite(isolate, args);
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
@@ -1460,9 +1472,9 @@ int RecordReplayCurrentGeneratorIdRaw() {
   return gCurrentGeneratorId;
 }
 
-RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentationGenerator) {
+static void OnGeneratorInstrumentationSite(Isolate* isolate,
+                                           RuntimeArguments& args) {
   HandleScope scope(isolate);
-  DCHECK_EQ(3, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
   CONVERT_NUMBER_CHECKED(int32_t, index, Int32, args[1]);
   CONVERT_ARG_HANDLE_CHECKED(JSGeneratorObject, generator_object, 2);
@@ -1478,8 +1490,30 @@ RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentationGenerator) {
   }
 
   gCurrentGeneratorId = 0;
+}
 
+RUNTIME_FUNCTION(Runtime_RecordReplayInstrumentationGenerator) {
+  DCHECK_EQ(3, args.length());
+  OnGeneratorInstrumentationSite(isolate, args);
   return ReadOnlyRoots(isolate).undefined_value();
+}
+
+// The baseline JIT's variants of the instrumentation calls take the
+// accumulator as their last argument and return it, like
+// Runtime_RecordReplayBaselineExecutionProgress: the accumulator is live
+// around these sites (after ResumeGenerator), and the frame resumes in the
+// interpreter with the call's result as its accumulator if its baseline code
+// is discarded meanwhile.
+RUNTIME_FUNCTION(Runtime_RecordReplayBaselineInstrumentation) {
+  DCHECK_EQ(3, args.length());
+  OnInstrumentationSite(isolate, args);
+  return args[2];
+}
+
+RUNTIME_FUNCTION(Runtime_RecordReplayBaselineInstrumentationGenerator) {
+  DCHECK_EQ(4, args.length());
+  OnGeneratorInstrumentationSite(isolate, args);
+  return args[3];
 }
 
 }  // namespace internal
