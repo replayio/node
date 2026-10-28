@@ -10398,9 +10398,9 @@ static void (*gRecordReplaySetCommandCallback)(const char* method, CommandCallba
 
 static void (*gRecordReplayPrint)(const char* format, va_list args);
 static void (*gRecordReplayDiagnostic)(const char* format, va_list args);
-static void (*gRecordReplayStructuredWarning)(const char* kind,
-                                              const RecordReplayWarningField* fields,
-                                              size_t count);
+static void (*gRecordReplayWarning)(const char* kind,
+                                    const RecordReplayWarningField* fields,
+                                    size_t count);
 static void (*gRecordReplayOnInstrument)(const char* kind, const char* function, int function_index);
 static void (*gRecordReplayAddPossibleBreakpoint)(int line, int column, const char* function, int function_index);
 static void (*gRecordReplayAssert)(const char*, va_list);
@@ -10674,14 +10674,14 @@ extern "C" void V8RecordReplayDiagnostic(const char* format, ...) {
 void recordreplay::Warning(
     const char* kind, std::initializer_list<RecordReplayWarningField> fields) {
   if (IsRecordingOrReplaying()) {
-    gRecordReplayStructuredWarning(kind, fields.begin(), fields.size());
+    gRecordReplayWarning(kind, fields.begin(), fields.size());
   }
 }
 
-extern "C" void V8RecordReplayStructuredWarning(
+extern "C" void V8RecordReplayWarning(
     const char* kind, const RecordReplayWarningField* fields, size_t count) {
   if (recordreplay::IsRecordingOrReplaying()) {
-    gRecordReplayStructuredWarning(kind, fields, count);
+    gRecordReplayWarning(kind, fields, count);
   }
 }
 
@@ -11137,8 +11137,7 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplaySetCommandCallback", gRecordReplaySetCommandCallback);
   RecordReplayLoadSymbol(handle, "RecordReplayPrint", gRecordReplayPrint);
   RecordReplayLoadSymbol(handle, "RecordReplayDiagnostic", gRecordReplayDiagnostic);
-  RecordReplayLoadSymbol(handle, "RecordReplayStructuredWarning",
-                         gRecordReplayStructuredWarning);
+  RecordReplayLoadSymbol(handle, "RecordReplayWarning", gRecordReplayWarning);
   RecordReplayLoadSymbol(handle, "RecordReplayAssert", gRecordReplayAssert);
   RecordReplayLoadSymbol(handle, "RecordReplayAssertBytes", gRecordReplayAssertBytes);
   RecordReplayLoadSymbol(handle, "RecordReplayDescribeAssertData",

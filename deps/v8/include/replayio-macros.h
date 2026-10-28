@@ -20,9 +20,8 @@
 #endif
 
 #ifdef __cplusplus
-// A detail of a structured warning (see recordreplay::Warning), handed to the
-// driver's RecordReplayStructuredWarning. Same layout as the driver's
-// RecordReplayWarningField.
+// A detail of a warning (see recordreplay::Warning), handed to the driver's
+// RecordReplayWarning. Same layout as the driver's RecordReplayWarningField.
 struct RecordReplayWarningField {
   enum Type : int { kString, kInt, kUnsigned, kDouble, kBool };
 
@@ -70,9 +69,9 @@ bool V8RecordReplayHasAsserts(void);
 void V8RecordReplayAssert(const char* format, ...);
 void V8RecordReplayAssertMaybeEventsDisallowed(const char* format, ...);
 #ifdef __cplusplus
-void V8RecordReplayStructuredWarning(const char* kind,
-                                     const struct RecordReplayWarningField* fields,
-                                     size_t count);
+void V8RecordReplayWarning(const char* kind,
+                           const struct RecordReplayWarningField* fields,
+                           size_t count);
 #endif
 
 #ifdef __cplusplus
