@@ -208,13 +208,6 @@ void BaselineAssembler::JumpIfByte(Condition cc, Register value, int32_t byte,
   __ cmpb(value, Immediate(byte));
   __ j(AsMasmCondition(cc), target, distance);
 }
-void BaselineAssembler::JumpIfCondition(Condition cc, Label* target,
-                                        Label::Distance distance) {
-  __ j(AsMasmCondition(cc), target, distance);
-}
-void BaselineAssembler::ComparePointer(Register value, MemOperand operand) {
-  __ cmpq(value, operand);
-}
 
 void BaselineAssembler::Move(interpreter::Register output, Register source) {
   return __ movq(RegisterFrameOperand(output), source);
@@ -402,10 +395,6 @@ void BaselineAssembler::AddSmi(Register lhs, Smi rhs) {
     __ Move(rhs_reg, rhs);
     __ addq(lhs, rhs_reg);
   }
-}
-
-void BaselineAssembler::AddPointer(Register output, Immediate value) {
-  __ addq(output, value);
 }
 
 void BaselineAssembler::Switch(Register reg, int case_value_base,

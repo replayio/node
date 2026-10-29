@@ -1268,6 +1268,14 @@ RUNTIME_FUNCTION(Runtime_RecordReplayBaselineExecutionProgress) {
   return args[1];
 }
 
+// Called by the baseline JIT once the progress counter it incremented inline
+// reaches the target progress.
+RUNTIME_FUNCTION(Runtime_RecordReplayBaselineTargetProgressReached) {
+  CHECK(*gProgressCounter == gTargetProgress);
+  RecordReplayOnTargetProgressReached();
+  return args[0];
+}
+
 // Assertion and instrumentation site indexes embedded in bytecodes are offset
 // by this value. This forces the bytecode emitter to always use four bytes to
 // encode the index, so that bytecode offsets will be stable between recording
