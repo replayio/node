@@ -22,7 +22,7 @@ class PerIsolatePlatformData;
 template <class T>
 class TaskQueue {
  public:
-  TaskQueue();
+  explicit TaskQueue(bool ordered = true);
   ~TaskQueue() = default;
 
   void Push(std::unique_ptr<T> task);
@@ -120,7 +120,11 @@ class PerIsolatePlatformData :
 // This acts as the single worker thread task runner for all Isolates.
 class WorkerThreadsTaskRunner {
  public:
-  explicit WorkerThreadsTaskRunner(int thread_pool_size);
+  // When recording/replaying, an unordered runner's threads run with events
+  // disallowed, so the tasks they run record nothing. It has no delayed tasks
+  // and is never shut down.
+  WorkerThreadsTaskRunner(int thread_pool_size,
+                          bool record_replay_unordered = false);
 
   void PostTask(std::unique_ptr<v8::Task> task);
   void PostDelayedTask(std::unique_ptr<v8::Task> task,
@@ -132,6 +136,7 @@ class WorkerThreadsTaskRunner {
   int NumberOfWorkerThreads() const;
 
  private:
+  bool record_replay_unordered_;
   TaskQueue<v8::Task> pending_worker_tasks_;
 
   class DelayedTaskScheduler;
@@ -187,6 +192,9 @@ class NodePlatform : public MultiIsolatePlatform {
 
   v8::TracingController* tracing_controller_;
   std::shared_ptr<WorkerThreadsTaskRunner> worker_thread_task_runner_;
+  // When recording/replaying, runs the worker tasks posted with events
+  // disallowed, as the GC posts its concurrent and parallel work. Leaked.
+  WorkerThreadsTaskRunner* record_replay_unordered_task_runner_ = nullptr;
   bool has_shut_down_ = false;
 };
 

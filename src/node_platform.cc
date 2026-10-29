@@ -23,9 +23,10 @@ struct PlatformWorkerData {
   ConditionVariable* platform_workers_ready;
   int* pending_platform_workers;
   int id;
+  bool record_replay_unordered;
 };
 
-static void PlatformWorkerThread(void* data) {
+static void RunPlatformWorkerThread(void* data) {
   std::unique_ptr<PlatformWorkerData>
       worker_data(static_cast<PlatformWorkerData*>(data));
 
@@ -43,6 +44,15 @@ static void PlatformWorkerThread(void* data) {
   while (std::unique_ptr<Task> task = pending_worker_tasks->BlockingPop()) {
     task->Run();
     pending_worker_tasks->NotifyOfCompletion();
+  }
+}
+
+static void PlatformWorkerThread(void* data) {
+  if (static_cast<PlatformWorkerData*>(data)->record_replay_unordered) {
+    v8::replayio::AutoDisallowEvents disallow("PlatformWorkerThread");
+    RunPlatformWorkerThread(data);
+  } else {
+    RunPlatformWorkerThread(data);
   }
 }
 
@@ -164,21 +174,27 @@ class WorkerThreadsTaskRunner::DelayedTaskScheduler {
   std::unordered_set<uv_timer_t*> timers_;
 };
 
-WorkerThreadsTaskRunner::WorkerThreadsTaskRunner(int thread_pool_size) {
+WorkerThreadsTaskRunner::WorkerThreadsTaskRunner(int thread_pool_size,
+                                                 bool record_replay_unordered)
+    : record_replay_unordered_(record_replay_unordered),
+      pending_worker_tasks_(/* ordered */ !record_replay_unordered) {
   Mutex platform_workers_mutex;
   ConditionVariable platform_workers_ready;
 
   Mutex::ScopedLock lock(platform_workers_mutex);
   int pending_platform_workers = thread_pool_size;
 
-  delayed_task_scheduler_ = std::make_unique<DelayedTaskScheduler>(
-      &pending_worker_tasks_);
-  threads_.push_back(delayed_task_scheduler_->Start());
+  if (!record_replay_unordered_) {
+    delayed_task_scheduler_ = std::make_unique<DelayedTaskScheduler>(
+        &pending_worker_tasks_);
+    threads_.push_back(delayed_task_scheduler_->Start());
+  }
 
   for (int i = 0; i < thread_pool_size; i++) {
     PlatformWorkerData* worker_data = new PlatformWorkerData{
       &pending_worker_tasks_, &platform_workers_mutex,
-      &platform_workers_ready, &pending_platform_workers, i
+      &platform_workers_ready, &pending_platform_workers, i,
+      record_replay_unordered_
     };
     std::unique_ptr<uv_thread_t> t { new uv_thread_t() };
     if (uv_thread_create(t.get(), PlatformWorkerThread,
@@ -201,6 +217,7 @@ void WorkerThreadsTaskRunner::PostTask(std::unique_ptr<Task> task) {
 
 void WorkerThreadsTaskRunner::PostDelayedTask(std::unique_ptr<Task> task,
                                               double delay_in_seconds) {
+  CHECK(!record_replay_unordered_);
   delayed_task_scheduler_->PostDelayedTask(std::move(task), delay_in_seconds);
 }
 
@@ -209,6 +226,7 @@ void WorkerThreadsTaskRunner::BlockingDrain() {
 }
 
 void WorkerThreadsTaskRunner::Shutdown() {
+  CHECK(!record_replay_unordered_);
   pending_worker_tasks_.Stop();
   delayed_task_scheduler_->Stop();
   for (size_t i = 0; i < threads_.size(); i++) {
@@ -359,6 +377,15 @@ NodePlatform::NodePlatform(int thread_pool_size,
   DCHECK_EQ(GetTracingController(), tracing_controller_);
   worker_thread_task_runner_ =
       std::make_shared<WorkerThreadsTaskRunner>(thread_pool_size);
+  // When recording/replaying, a fixed number of threads, like Chromium's
+  // thread pool for tasks posted with events disallowed. They are created
+  // here, where creating threads replays, and are never stopped: threads
+  // which record nothing can't be joined, and they may still be running GC
+  // work when the process exits.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    record_replay_unordered_task_runner_ = new WorkerThreadsTaskRunner(
+        4, /* record_replay_unordered */ true);
+  }
 }
 
 NodePlatform::~NodePlatform() {
@@ -509,6 +536,14 @@ bool PerIsolatePlatformData::FlushForegroundTasksInternal() {
 }
 
 void NodePlatform::CallOnWorkerThread(std::unique_ptr<Task> task) {
+  // When recording/replaying, tasks posted with events disallowed (e.g. by
+  // the GC) are posted at points which don't replay, so they run on threads
+  // which record nothing.
+  if (record_replay_unordered_task_runner_ &&
+      v8::recordreplay::AreEventsDisallowed()) {
+    record_replay_unordered_task_runner_->PostTask(std::move(task));
+    return;
+  }
   worker_thread_task_runner_->PostTask(std::move(task));
 }
 
@@ -579,8 +614,8 @@ Platform::StackTracePrinter NodePlatform::GetStackTracePrinter() {
 }
 
 template <class T>
-TaskQueue<T>::TaskQueue()
-    : lock_(/* ordered */ true), tasks_available_(), tasks_drained_(),
+TaskQueue<T>::TaskQueue(bool ordered)
+    : lock_(ordered), tasks_available_(), tasks_drained_(),
       outstanding_tasks_(0), stopped_(false), task_queue_() { }
 
 template <class T>
