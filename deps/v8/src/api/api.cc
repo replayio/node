@@ -10385,6 +10385,10 @@ namespace internal {
 // Builtins read this through
 // ExternalReference::record_replay_is_recording_or_replaying.
 bool gRecordReplayIsRecordingOrReplaying;
+
+// Use V8's GC as upstream does while recording/replaying.
+// This is on by default and controlled by the v8-flags-gc feature.
+bool gRecordReplayEnableGCFeatures;
 }  // namespace internal
 static bool gHasDisabledFeatures;
 static bool gAssertsDisabled;
@@ -10539,7 +10543,10 @@ static void RecordReplayProgressInterruptCallback() {
   CHECK(IsMainThread());
   Isolate* isolate = Isolate::Current();
   isolate->heap()->RecordReplayOnProgressInterrupt();
-  isolate->RecordReplayInvokeApiInterruptCallbacksAtProgress();
+  // The memory reducer triggers progress interrupts too.
+  if (recordreplay::IsRecordingOrReplaying("interrupts")) {
+    isolate->RecordReplayInvokeApiInterruptCallbacksAtProgress();
+  }
 }
 
 void RecordReplayInstrument(const char* kind, const char* function, int function_index) {
@@ -11111,9 +11118,13 @@ static void RecordReplayApplyFlagOverrides() {
   internal::FLAG_parallel_scavenge = false;
   internal::FLAG_scavenge_task = false;
 
-  // Incremental marking is what starts major GCs once the old generation
-  // allocation limit is reached, so it is only disabled while replaying.
-  if (recordreplay::IsReplaying() || !recordreplay::FeatureEnabled("v8-flags-gc", nullptr)) {
+  // Incremental marking is used when recording and replaying by default but
+  // can be disabled via a feature, which runs every GC atomically instead and
+  // expands the old generation where incremental marking would have started
+  // (see Heap::ShouldExpandOldGenerationOnSlowAllocation).
+  internal::gRecordReplayEnableGCFeatures =
+      recordreplay::FeatureEnabled("v8-flags-gc", nullptr);
+  if (!internal::gRecordReplayEnableGCFeatures) {
     internal::FLAG_incremental_marking = false;
   }
 
