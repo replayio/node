@@ -2227,43 +2227,28 @@ void BaselineCompiler::VisitIncBlockCounter() {
 }
 
 void BaselineCompiler::VisitRecordReplayIncExecutionProgressCounter() {
-  SaveAccumulatorScope accumulator_scope(&basm_);
+  // The progress call returns the accumulator, which is live after
+  // ResumeGenerator and at the start of catch blocks.
   // The optimized path is currently disabled.
   // See https://linear.app/replay/issue/RUN-744
-  if ((true)/*gRecordReplayAssertProgress*/) {
-    CallRuntime(Runtime::kRecordReplayAssertExecutionProgress,
-                __ FunctionOperand());
-  } else {
-    /*
-    BaselineAssembler::ScratchRegisterScope scratch_scope(&basm_);
-    Register reg1 = scratch_scope.AcquireScratch();
-    Register reg2 = scratch_scope.AcquireScratch();
-    __ Move(reg1, ExternalReference::record_replay_progress_counter());
-    __ Move(reg2, MemOperand(reg1, 0));
-    __ AddPointer(reg2, Immediate(1));
-    __ Move(MemOperand(reg1, 0), reg2);
-    __ Move(reg1, ExternalReference::record_replay_target_progress());
-    __ ComparePointer(reg2, MemOperand(reg1, 0));
-    Label done;
-    __ JumpIfCondition(Condition::kNotEqual, &done, Label::kNear);
-    CallRuntime(Runtime::kRecordReplayTargetProgressReached);
-    __ Bind(&done);
-    */
-  }
+  CallRuntime(Runtime::kRecordReplayBaselineExecutionProgress,
+              __ FunctionOperand(), kInterpreterAccumulatorRegister);
 }
 
+// The instrumentation calls return the accumulator, see
+// VisitRecordReplayIncExecutionProgressCounter.
 void BaselineCompiler::VisitRecordReplayInstrumentation() {
   uint32_t index = Index(0);
-  SaveAccumulatorScope accumulator_scope(&basm_);
-  CallRuntime(Runtime::kRecordReplayInstrumentation,
-              __ FunctionOperand(), Smi::FromInt(index));
+  CallRuntime(Runtime::kRecordReplayBaselineInstrumentation,
+              __ FunctionOperand(), Smi::FromInt(index),
+              kInterpreterAccumulatorRegister);
 }
 
 void BaselineCompiler::VisitRecordReplayInstrumentationGenerator() {
   uint32_t index = Index(0);
-  SaveAccumulatorScope accumulator_scope(&basm_);
-  CallRuntime(Runtime::kRecordReplayInstrumentationGenerator,
-              __ FunctionOperand(), Smi::FromInt(index), RegisterOperand(1));
+  CallRuntime(Runtime::kRecordReplayBaselineInstrumentationGenerator,
+              __ FunctionOperand(), Smi::FromInt(index), RegisterOperand(1),
+              kInterpreterAccumulatorRegister);
 }
 
 void BaselineCompiler::VisitRecordReplayAssertValue() {
