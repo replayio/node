@@ -252,6 +252,15 @@ String16 descriptionForError(v8::Local<v8::Context> context,
   v8::TryCatch tryCatch(isolate);
   String16 className = toProtocolString(isolate, object->GetConstructorName());
 
+  // Get("stack"|"message") can run user accessors via Execution::Call. With
+  // events disallowed this only describes values for Replay's own session,
+  // which never reads Error descriptions (previews are built in pauses), so
+  // any placeholder works.
+  if (v8::recordreplay::AreEventsDisallowed() &&
+      !v8::recordreplay::HasDivergedFromRecording()) {
+    return className + " (Divergent message + stack retrieval skipped)";
+  }
+
   v8::base::Optional<String16> stack;
   {
     v8::Local<v8::Value> stackValue;
