@@ -96,9 +96,10 @@ void MemoryReducer::NotifyTimer(const Event& event) {
                                             state_.started_gcs);
     }
     if (recordreplay::IsRecordingOrReplaying()) {
-      // Incremental marking is driven by tasks, which node's platform drops
-      // when recording/replaying, so on an idle program the GC wouldn't
-      // finish. Run it to completion instead.
+      // Incremental marking is driven by tasks, which node's platform only
+      // runs at the next event loop iteration when recording/replaying, so
+      // on an idle program the GC wouldn't finish. Run it to completion
+      // instead.
       heap()->CollectAllGarbage(Heap::kReduceMemoryFootprintMask,
                                 GarbageCollectionReason::kMemoryReducer,
                                 kGCCallbackFlagCollectAllExternalMemory);

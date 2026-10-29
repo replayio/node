@@ -11104,30 +11104,27 @@ static pthread_t gMainThread;
 // off, and V8 cannot switch e.g. concurrent marking on afterwards: the
 // marking worklists it would use were never created.
 static void RecordReplayApplyFlagOverrides() {
-  // The GC's foreground tasks are posted at points which don't replay, and
-  // node's platform drops them when recording/replaying (see
-  // PerIsolatePlatformData::PostTask). Incremental marking advances as the
-  // program allocates instead, and the memory reducer runs full GCs.
-  internal::FLAG_incremental_marking_task = false;
-  internal::FLAG_scavenge_task = false;
-
   // Concurrent, parallel and incremental GC are used when recording and
   // replaying by default but can be disabled via a feature, which runs every
   // GC on the main thread instead, and expands the old generation where
   // incremental marking would have started (see
   // Heap::ShouldExpandOldGenerationOnSlowAllocation). The GC posts its jobs
-  // with events disallowed, and node's platform runs them on worker threads
-  // which record nothing (see NodePlatform::CallOnWorkerThread).
+  // and tasks at points which don't replay, and node's platform runs them on
+  // worker threads which record nothing (see NodePlatform::CallOnWorkerThread)
+  // and at the main thread's next event loop iteration with events disallowed
+  // (see PerIsolatePlatformData::PostTask).
   internal::gRecordReplayEnableGCFeatures =
       recordreplay::FeatureEnabled("v8-flags-gc", nullptr);
   if (!internal::gRecordReplayEnableGCFeatures) {
     internal::FLAG_concurrent_array_buffer_sweeping = false;
     internal::FLAG_concurrent_marking = false;
     internal::FLAG_concurrent_sweeping = false;
+    internal::FLAG_incremental_marking_task = false;
     internal::FLAG_parallel_compaction = false;
     internal::FLAG_parallel_marking = false;
     internal::FLAG_parallel_pointer_update = false;
     internal::FLAG_parallel_scavenge = false;
+    internal::FLAG_scavenge_task = false;
     internal::FLAG_incremental_marking = false;
   }
 

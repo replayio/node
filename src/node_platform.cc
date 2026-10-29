@@ -245,6 +245,15 @@ PerIsolatePlatformData::PerIsolatePlatformData(
   CHECK_EQ(0, uv_async_init(loop, flush_tasks_, FlushTasks));
   flush_tasks_->data = static_cast<void*>(this);
   uv_unref(reinterpret_cast<uv_handle_t*>(flush_tasks_));
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    record_replay_check_ = new uv_check_t();
+    CHECK_EQ(0, uv_check_init(loop, record_replay_check_));
+    record_replay_check_->data = static_cast<void*>(this);
+    CHECK_EQ(0, uv_check_start(record_replay_check_,
+                               RunRecordReplayUnorderedTasks));
+    uv_unref(reinterpret_cast<uv_handle_t*>(record_replay_check_));
+    uv_handle_count_++;
+  }
 }
 
 std::shared_ptr<v8::TaskRunner>
@@ -261,9 +270,24 @@ void PerIsolatePlatformData::PostIdleTask(std::unique_ptr<v8::IdleTask> task) {
   UNREACHABLE();
 }
 
+void PerIsolatePlatformData::RunRecordReplayUnorderedTasks(
+    uv_check_t* handle) {
+  auto platform_data = static_cast<PerIsolatePlatformData*>(handle->data);
+  std::queue<std::unique_ptr<Task>> tasks =
+      platform_data->record_replay_unordered_tasks_.PopAll();
+  if (tasks.empty()) return;
+  v8::replayio::AutoDisallowEvents disallow(
+      "PerIsolatePlatformData::RunRecordReplayUnorderedTasks");
+  while (!tasks.empty()) {
+    std::unique_ptr<Task> task = std::move(tasks.front());
+    tasks.pop();
+    platform_data->RunForegroundTask(std::move(task));
+  }
+}
+
 void PerIsolatePlatformData::PostTask(std::unique_ptr<Task> task) {
   if (task->IsRecordReplayNonDeterministic() && v8::recordreplay::IsRecordingOrReplaying()) {
-    // For now we ignore non-deterministic tasks. This prevents the GC from working.
+    record_replay_unordered_tasks_.Push(std::move(task));
     return;
   }
   v8::recordreplay::Assert("PerIsolatePlatformData::PostTask");
@@ -280,8 +304,10 @@ void PerIsolatePlatformData::PostTask(std::unique_ptr<Task> task) {
 
 void PerIsolatePlatformData::PostDelayedTask(
     std::unique_ptr<Task> task, double delay_in_seconds) {
+  // The next event loop iteration is often later than the delay, which only
+  // keeps V8's tasks from running too often.
   if (task->IsRecordReplayNonDeterministic() && v8::recordreplay::IsRecordingOrReplaying()) {
-    // For now we ignore non-deterministic tasks. This prevents the GC from working.
+    record_replay_unordered_tasks_.Push(std::move(task));
     return;
   }
   v8::recordreplay::Assert("PerIsolatePlatformData::PostDelayedTask");
@@ -337,7 +363,23 @@ void PerIsolatePlatformData::Shutdown() {
   // effectively deleting the tasks instead of running them.
   foreground_delayed_tasks_.PopAll();
   foreground_tasks_.PopAll();
+  record_replay_unordered_tasks_.PopAll();
   scheduled_delayed_tasks_.clear();
+
+  if (record_replay_check_ != nullptr) {
+    // Closing flush_tasks_ below may drop the last reference first.
+    record_replay_check_->data =
+        new std::shared_ptr<PerIsolatePlatformData>(shared_from_this());
+    uv_close(reinterpret_cast<uv_handle_t*>(record_replay_check_),
+             [](uv_handle_t* handle) {
+      std::unique_ptr<uv_check_t> check {
+          reinterpret_cast<uv_check_t*>(handle) };
+      std::unique_ptr<std::shared_ptr<PerIsolatePlatformData>> platform_data {
+          static_cast<std::shared_ptr<PerIsolatePlatformData>*>(check->data) };
+      (*platform_data)->DecreaseHandleCount();
+    });
+    record_replay_check_ = nullptr;
+  }
 
   // Both destroying the scheduled_delayed_tasks_ lists and closing
   // flush_tasks_ handle add tasks to the event loop. We keep a count of all
