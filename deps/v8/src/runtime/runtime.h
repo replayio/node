@@ -150,6 +150,7 @@ namespace internal {
   F(RecordReplayAssertExecutionProgress, 1, 1)  \
   F(RecordReplayTargetProgressReached, 0, 1)    \
   F(RecordReplayBaselineExecutionProgress, 2, 1) \
+  F(RecordReplayBaselineTargetProgressReached, 1, 1) \
   F(RecordReplayAssertValue, 3, 1)              \
   F(RecordReplayInstrumentation, 2, 1)          \
   F(RecordReplayInstrumentationGenerator, 3, 1) \
