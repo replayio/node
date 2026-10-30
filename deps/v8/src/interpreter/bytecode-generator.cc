@@ -36,7 +36,6 @@
 
 namespace v8 {
 namespace internal {
-
 namespace interpreter {
 
 // Scoped class tracking context objects created by the visitor. Represents

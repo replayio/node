@@ -399,7 +399,9 @@ class PreParserExpressionList {
 
   int length() const { return length_; }
 
-  void Add(const PreParserExpression& expression) { ++length_; }
+  void Add(const PreParserExpression& expression) {
+    ++length_;
+  }
 
  private:
   int length_;
@@ -446,7 +448,9 @@ class PreParserStatement {
 
   bool IsStringLiteral() { return code_ == kStringLiteralExpressionStatement; }
 
-  bool IsJumpStatement() { return code_ == kJumpStatement; }
+  bool IsJumpStatement() {
+    return code_ == kJumpStatement;
+  }
 
   bool IsNull() { return code_ == kNullStatement; }
 
@@ -523,7 +527,8 @@ class PreParserFactory {
                                        int pos) {
     return PreParserExpression::Default();
   }
-  PreParserExpression NewNumberLiteral(double number, int pos) {
+  PreParserExpression NewNumberLiteral(double number,
+                                       int pos) {
     return PreParserExpression::Default();
   }
   PreParserExpression NewUndefinedLiteral(int pos) {
@@ -639,7 +644,8 @@ class PreParserFactory {
   }
   PreParserExpression NewCall(PreParserExpression expression,
                               const PreParserExpressionList& arguments, int pos,
-                              bool has_spread, int call_head_token_position = 0,
+                              bool has_spread,
+                              int call_head_token_position = 0,
                               Call::PossiblyEval possibly_eval = Call::NOT_EVAL,
                               bool optional_chain = false) {
     if (possibly_eval == Call::IS_POSSIBLY_EVAL) {
@@ -898,6 +904,7 @@ struct ParserTypes<PreParser> {
   using SourceRange = PreParserSourceRange;
   using SourceRangeScope = PreParserSourceRangeScope;
 };
+
 
 // Preparsing checks a JavaScript program and emits preparse-data that helps
 // a later parsing to be faster.
@@ -1393,7 +1400,8 @@ class PreParser : public ParserBase<PreParser> {
 
   V8_INLINE void DesugarBindingInForEachStatement(
       ForInfo* for_info, PreParserStatement* body_block,
-      PreParserExpression* each_variable) {}
+      PreParserExpression* each_variable) {
+  }
 
   V8_INLINE PreParserBlock CreateForEachStatementTDZ(PreParserBlock init_block,
                                                      const ForInfo& for_info) {
@@ -1637,7 +1645,8 @@ class PreParser : public ParserBase<PreParser> {
 
   V8_INLINE void DeclareArrowFunctionFormalParameters(
       PreParserFormalParameters* parameters, const PreParserExpression& params,
-      const Scanner::Location& params_loc) {}
+      const Scanner::Location& params_loc) {
+  }
 
   V8_INLINE PreParserExpression
   ExpressionListToExpression(const PreParserExpressionList& args) {

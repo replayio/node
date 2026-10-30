@@ -12,7 +12,6 @@
 #include <cinttypes>
 
 namespace node {
-
 namespace performance {
 
 using v8::Context;

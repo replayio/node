@@ -51,8 +51,9 @@ class RegisterTransferWriter final
 };
 
 BytecodeArrayBuilder::BytecodeArrayBuilder(
-    Zone* zone, int parameter_count, int locals_count, int script_id,
-    bool record_replay_ignore, FeedbackVectorSpec* feedback_vector_spec,
+    Zone* zone, int parameter_count, int locals_count,
+    int script_id, bool record_replay_ignore,
+    FeedbackVectorSpec* feedback_vector_spec,
     SourcePositionTableBuilder::RecordingMode source_position_mode)
     : zone_(zone),
       feedback_vector_spec_(feedback_vector_spec),

@@ -744,7 +744,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   inline void set_pending_message(Object message_obj);
 
   THREAD_LOCAL_TOP_ADDRESS(Object, scheduled_exception)
-
   inline Object scheduled_exception();
   inline bool has_scheduled_exception();
   inline void clear_scheduled_exception();

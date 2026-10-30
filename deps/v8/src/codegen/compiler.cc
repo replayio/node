@@ -2709,7 +2709,8 @@ MaybeHandle<SharedFunctionInfo> CompileScriptOnMainThread(
     UnoptimizedCompileFlags flags, Handle<String> source,
     const ScriptDetails& script_details, NativesFlag natives,
     v8::Extension* extension, Isolate* isolate,
-    MaybeHandle<Script> maybe_script, IsCompiledScope* is_compiled_scope) {
+    MaybeHandle<Script> maybe_script,
+    IsCompiledScope* is_compiled_scope) {
   SetRecordReplayFlags(flags, script_details);
 
   UnoptimizedCompileState compile_state(isolate);
@@ -2823,7 +2824,8 @@ MaybeHandle<SharedFunctionInfo> CompileScriptOnBothBackgroundAndMainThread(
     flags_copy.set_script_id(Script::kTemporaryScriptId);
     main_thread_maybe_result = CompileScriptOnMainThread(
         flags_copy, source, script_details, NOT_NATIVES_CODE, nullptr, isolate,
-        MaybeHandle<Script>(), &inner_is_compiled_scope);
+        MaybeHandle<Script>(),
+        &inner_is_compiled_scope);
     if (main_thread_maybe_result.is_null()) {
       // Assume all range errors are stack overflows.
       main_thread_had_stack_overflow = CompilationExceptionIsRangeError(

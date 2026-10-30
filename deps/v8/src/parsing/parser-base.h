@@ -1533,7 +1533,7 @@ class ParserBase {
 
   // Parser base's protected field members.
 
-  Scope* scope_;  // Scope stack.
+  Scope* scope_;                   // Scope stack.
   // Stack of scopes for object literals we're currently parsing.
   Scope* object_literal_scope_ = nullptr;
   Scope* original_scope_;  // The top scope for the current parsing item.
@@ -3140,14 +3140,9 @@ ParserBase<Impl>::ParseBinaryContinuation(ExpressionT x, int prec, int prec1) {
         // We have a comparison.
         Token::Value cmp = op;
         switch (op) {
-          case Token::NE:
-            cmp = Token::EQ;
-            break;
-          case Token::NE_STRICT:
-            cmp = Token::EQ_STRICT;
-            break;
-          default:
-            break;
+          case Token::NE: cmp = Token::EQ; break;
+          case Token::NE_STRICT: cmp = Token::EQ_STRICT; break;
+          default: break;
         }
         x = factory()->NewCompareOperation(cmp, x, y, pos);
         if (cmp != op) {
@@ -3478,8 +3473,8 @@ ParserBase<Impl>::ParseLeftHandSideContinuation(ExpressionT result) {
             CheckPossibleEvalCall(result, is_optional, scope());
 
         result = factory()->NewCall(result, args, pos, has_spread,
-                                    call_head_token_position, is_possibly_eval,
-                                    is_optional);
+                                    call_head_token_position,
+                                    is_possibly_eval, is_optional);
 
         fni_.RemoveLastFunction();
         break;
@@ -6421,9 +6416,9 @@ void ParserBase<Impl>::CheckClassMethodName(IdentifierT name,
     if (flags != ParseFunctionFlag::kIsNormal || IsAccessor(type)) {
       MessageTemplate msg = (flags & ParseFunctionFlag::kIsGenerator) != 0
                                 ? MessageTemplate::kConstructorIsGenerator
-                            : (flags & ParseFunctionFlag::kIsAsync) != 0
-                                ? MessageTemplate::kConstructorIsAsync
-                                : MessageTemplate::kConstructorIsAccessor;
+                                : (flags & ParseFunctionFlag::kIsAsync) != 0
+                                      ? MessageTemplate::kConstructorIsAsync
+                                      : MessageTemplate::kConstructorIsAccessor;
       ReportMessage(msg);
       return;
     }

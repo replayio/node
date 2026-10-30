@@ -47,7 +47,6 @@
 
 
 namespace node {
-
 namespace {  // NOLINT(build/namespaces)
 
 using v8::Array;

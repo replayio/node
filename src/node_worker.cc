@@ -40,7 +40,6 @@ using v8::TryCatch;
 using v8::Value;
 
 namespace node {
-
 namespace worker {
 
 constexpr double kMB = 1024 * 1024;

@@ -1129,7 +1129,6 @@ static int uv__stream_recv_cmsg(uv_stream_t* stream, struct msghdr* msg) {
 # pragma clang diagnostic ignored "-Wvla-extension"
 #endif
 
-
 static void uv__read(uv_stream_t* stream) {
   uv_buf_t buf;
   ssize_t nread;

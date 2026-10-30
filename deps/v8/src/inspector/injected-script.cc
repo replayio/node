@@ -346,8 +346,7 @@ class InjectedScript::ProtocolPromiseHandler {
 
 InjectedScript::InjectedScript(InspectedContext* context, int sessionId,
                                bool replayOwned)
-    : m_context(context),
-      m_sessionId(sessionId),
+    : m_context(context), m_sessionId(sessionId),
       m_replay_owned(replayOwned) {}
 
 InjectedScript::~InjectedScript() { discardEvaluateCallbacks(); }
