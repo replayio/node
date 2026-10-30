@@ -4,8 +4,10 @@
 
 #include "src/libplatform/default-job.h"
 
+#include "include/replayio.h"
 #include "src/base/bits.h"
 #include "src/base/macros.h"
+#include "src/base/optional.h"
 #include "v8.h"
 
 namespace v8 {
@@ -36,14 +38,21 @@ DefaultJobState::DefaultJobState(Platform* platform,
     : platform_(platform),
       job_task_(std::move(job_task)),
       priority_(priority),
-      num_worker_threads_(std::min(num_worker_threads, kMaxWorkersPerJob)) {}
+      num_worker_threads_(std::min(num_worker_threads, kMaxWorkersPerJob)),
+      record_replay_unordered_(recordreplay::IsRecordingOrReplaying() &&
+                               recordreplay::AreEventsDisallowed()) {}
 
 DefaultJobState::~DefaultJobState() { DCHECK_EQ(0U, active_workers_); }
 
 void DefaultJobState::NotifyConcurrencyIncrease() {
   if (is_canceled_.load(std::memory_order_relaxed)) return;
 
-  if (recordreplay::AreEventsDisallowed()) {
+  // When recording/replaying, a job posted with events disallowed, as the GC
+  // posts its jobs, runs on worker threads which don't record anything, and
+  // its tasks are posted with events disallowed so the platform sends them
+  // there. Other jobs can't add workers with events disallowed: their workers
+  // record, and which of them run would not replay.
+  if (!record_replay_unordered_ && recordreplay::AreEventsDisallowed()) {
     return;
   }
 
@@ -58,6 +67,10 @@ void DefaultJobState::NotifyConcurrencyIncrease() {
       pending_tasks_ += num_tasks_to_post;
     }
     priority = priority_;
+  }
+  base::Optional<replayio::AutoDisallowEvents> disallow;
+  if (record_replay_unordered_ && num_tasks_to_post) {
+    disallow.emplace("DefaultJobState::NotifyConcurrencyIncrease");
   }
   // Post additional worker tasks to reach |max_concurrency|.
   for (size_t i = 0; i < num_tasks_to_post; ++i) {

@@ -4,6 +4,8 @@
 
 #include "src/heap/memory-reducer.h"
 
+#include <cmath>
+
 #include "src/flags/flags.h"
 #include "src/heap/gc-tracer.h"
 #include "src/heap/heap-inl.h"
@@ -35,6 +37,24 @@ MemoryReducer::TimerTask::TimerTask(MemoryReducer* memory_reducer)
 
 
 void MemoryReducer::TimerTask::RunInternal() {
+  // When recording/replaying, the timer runs at the same point in both, but
+  // the memory reducer's state and what it decides depend on the GC's history,
+  // which differs between them. Like the GC, it runs with events disallowed,
+  // and posts the next timer afterwards if the recording requested one.
+  memory_reducer_->record_replay_timer_posted_ = false;
+  {
+    replayio::AutoDisallowEvents disallow("MemoryReducer::TimerTask::RunInternal");
+    if (!recordreplay::IsRecordingOrReplaying() ||
+        memory_reducer_->state_.action == kWait) {
+      RunTimer();
+    }
+  }
+  if (recordreplay::IsRecordingOrReplaying()) {
+    memory_reducer_->RecordReplayPostRequestedTimer();
+  }
+}
+
+void MemoryReducer::TimerTask::RunTimer() {
   Heap* heap = memory_reducer_->heap();
   Event event;
   double time_ms = heap->MonotonicallyIncreasingTimeInMs();
@@ -75,9 +95,19 @@ void MemoryReducer::NotifyTimer(const Event& event) {
       heap()->isolate()->PrintWithTimestamp("Memory reducer: started GC #%d\n",
                                             state_.started_gcs);
     }
-    heap()->StartIdleIncrementalMarking(
-        GarbageCollectionReason::kMemoryReducer,
-        kGCCallbackFlagCollectAllExternalMemory);
+    if (recordreplay::IsRecordingOrReplaying()) {
+      // Incremental marking is driven by tasks, which node's platform only
+      // runs at the next event loop iteration when recording/replaying, so
+      // on an idle program the GC wouldn't finish. Run it to completion
+      // instead.
+      heap()->CollectAllGarbage(Heap::kReduceMemoryFootprintMask,
+                                GarbageCollectionReason::kMemoryReducer,
+                                kGCCallbackFlagCollectAllExternalMemory);
+    } else {
+      heap()->StartIdleIncrementalMarking(
+          GarbageCollectionReason::kMemoryReducer,
+          kGCCallbackFlagCollectAllExternalMemory);
+    }
   } else if (state_.action == kWait) {
     if (!heap()->incremental_marking()->IsStopped() &&
         heap()->ShouldOptimizeForMemoryUsage()) {
@@ -210,16 +240,59 @@ MemoryReducer::State MemoryReducer::Step(const State& state,
   UNREACHABLE();
 }
 
+extern void RecordReplayTriggerProgressInterrupt();
+
 void MemoryReducer::ScheduleTimer(double delay_ms) {
-  if (recordreplay::IsRecordingOrReplaying("gc-changes", "MemoryReducer::ScheduleTimer")) {
-    return;
-  }
   DCHECK_LT(0, delay_ms);
   if (heap()->IsTearingDown()) return;
+  if (recordreplay::IsRecordingOrReplaying()) {
+    RecordReplayRequestTimer(delay_ms);
+    return;
+  }
+  PostTimer(delay_ms);
+}
+
+void MemoryReducer::PostTimer(double delay_ms) {
   // Leave some room for precision error in task scheduler.
   const double kSlackMs = 100;
   taskrunner_->PostDelayedTask(std::make_unique<MemoryReducer::TimerTask>(this),
                                (delay_ms + kSlackMs) / 1000.0);
+}
+
+// When recording/replaying, whether the timer is posted depends on the GC's
+// history, which differs between recording and replaying, while posting it
+// is a recorded event, and the GC often requests it with events disallowed.
+// A request is remembered and RecordReplayPostRequestedTimer posts the timer
+// at the next point which happens at the same time when replaying as when
+// recording, if the recording had a request and no posted timer is pending:
+// after the timer task, after a context disposal, or at a progress interrupt,
+// which a request triggers when recording. Only the main thread has progress
+// interrupts; memory reducers on other threads don't run.
+void MemoryReducer::RecordReplayRequestTimer(double delay_ms) {
+  if (!IsMainThread()) return;
+  record_replay_timer_delay_ms_ = delay_ms;
+  if (recordreplay::IsRecording()) {
+    RecordReplayTriggerProgressInterrupt();
+  }
+}
+
+void MemoryReducer::RecordReplayOnProgressInterrupt() {
+  RecordReplayPostRequestedTimer();
+}
+
+void MemoryReducer::RecordReplayPostRequestedTimer() {
+  if (!IsMainThread() || recordreplay::AreEventsDisallowed() ||
+      record_replay_timer_posted_) {
+    return;
+  }
+  uintptr_t delay_ms = recordreplay::RecordReplayValue(
+      "MemoryReducer::RecordReplayPostRequestedTimer",
+      static_cast<uintptr_t>(std::ceil(record_replay_timer_delay_ms_)));
+  record_replay_timer_delay_ms_ = 0;
+  if (delay_ms) {
+    PostTimer(static_cast<double>(delay_ms));
+    record_replay_timer_posted_ = true;
+  }
 }
 
 void MemoryReducer::TearDown() { state_ = State(kDone, 0, 0, 0.0, 0); }

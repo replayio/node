@@ -10385,6 +10385,10 @@ namespace internal {
 // Builtins read this through
 // ExternalReference::record_replay_is_recording_or_replaying.
 bool gRecordReplayIsRecordingOrReplaying;
+
+// Use V8's GC as upstream does while recording/replaying.
+// This is on by default and controlled by the v8-flags-gc feature.
+bool gRecordReplayEnableGCFeatures;
 }  // namespace internal
 static bool gHasDisabledFeatures;
 static bool gAssertsDisabled;
@@ -10539,7 +10543,10 @@ static void RecordReplayProgressInterruptCallback() {
   CHECK(IsMainThread());
   Isolate* isolate = Isolate::Current();
   isolate->heap()->RecordReplayOnProgressInterrupt();
-  isolate->RecordReplayInvokeApiInterruptCallbacksAtProgress();
+  // The memory reducer triggers progress interrupts too.
+  if (recordreplay::IsRecordingOrReplaying("interrupts")) {
+    isolate->RecordReplayInvokeApiInterruptCallbacksAtProgress();
+  }
 }
 
 void RecordReplayInstrument(const char* kind, const char* function, int function_index) {
@@ -11097,23 +11104,27 @@ static pthread_t gMainThread;
 // off, and V8 cannot switch e.g. concurrent marking on afterwards: the
 // marking worklists it would use were never created.
 static void RecordReplayApplyFlagOverrides() {
-  // Set flags to disable non-deterministic posting of tasks to other threads.
-  // Node's platform can't run these when recording/replaying: GC tasks posted
-  // to the main thread are dropped, and jobs can't be handed to worker threads
-  // while events are disallowed (see DefaultJobState::NotifyConcurrencyIncrease).
-  internal::FLAG_concurrent_array_buffer_sweeping = false;
-  internal::FLAG_concurrent_marking = false;
-  internal::FLAG_concurrent_sweeping = false;
-  internal::FLAG_incremental_marking_task = false;
-  internal::FLAG_parallel_compaction = false;
-  internal::FLAG_parallel_marking = false;
-  internal::FLAG_parallel_pointer_update = false;
-  internal::FLAG_parallel_scavenge = false;
-  internal::FLAG_scavenge_task = false;
-
-  // Incremental marking is what starts major GCs once the old generation
-  // allocation limit is reached, so it is only disabled while replaying.
-  if (recordreplay::IsReplaying() || !recordreplay::FeatureEnabled("v8-flags-gc", nullptr)) {
+  // Concurrent, parallel and incremental GC are used when recording and
+  // replaying by default but can be disabled via a feature, which runs every
+  // GC on the main thread instead, and expands the old generation where
+  // incremental marking would have started (see
+  // Heap::ShouldExpandOldGenerationOnSlowAllocation). The GC posts its jobs
+  // and tasks at points which don't replay, and node's platform runs them on
+  // worker threads which record nothing (see NodePlatform::CallOnWorkerThread)
+  // and at the main thread's next event loop iteration with events disallowed
+  // (see PerIsolatePlatformData::PostTask).
+  internal::gRecordReplayEnableGCFeatures =
+      recordreplay::FeatureEnabled("v8-flags-gc", nullptr);
+  if (!internal::gRecordReplayEnableGCFeatures) {
+    internal::FLAG_concurrent_array_buffer_sweeping = false;
+    internal::FLAG_concurrent_marking = false;
+    internal::FLAG_concurrent_sweeping = false;
+    internal::FLAG_incremental_marking_task = false;
+    internal::FLAG_parallel_compaction = false;
+    internal::FLAG_parallel_marking = false;
+    internal::FLAG_parallel_pointer_update = false;
+    internal::FLAG_parallel_scavenge = false;
+    internal::FLAG_scavenge_task = false;
     internal::FLAG_incremental_marking = false;
   }
 
