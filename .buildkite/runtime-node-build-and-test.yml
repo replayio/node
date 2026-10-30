@@ -174,7 +174,9 @@ steps:
             RECORD_REPLAY_API_KEY: "prod/public-api-key"
     command: |
       set -euo pipefail
-      PIN="__REPLAY_BACKEND_REV__"
+      # DIAGNOSTIC: backend's GC-traced backing-stores cases, on the pinned
+      # driver and linker.
+      PIN="6d3a4db99123ec2e859caf8188c538ff3c1d28f6"
       WORKDIR=$$(mktemp -d "/tmp/node-test-node-recording-$${BUILDKITE_JOB_ID}.XXXXXX")
       BACKEND_DIR="$$WORKDIR/backend"
       mkdir -p "$$BACKEND_DIR"
