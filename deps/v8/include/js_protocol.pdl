@@ -1470,6 +1470,8 @@ domain Runtime
       # Allocated heap size in bytes.
       number totalSize
 
+  type KeyIterationIndex extends integer
+
   # Returns properties of a given object. Object group of the result is inherited from the target
   # object.
   command getProperties
@@ -1484,6 +1486,10 @@ domain Runtime
       experimental optional boolean accessorPropertiesOnly
       # Whether preview should be generated for the results.
       experimental optional boolean generatePreview
+      # If > 0, returns up to `pageSize` properties only.
+      optional KeyIterationIndex pageSize
+      # If pageIndex > 0 and pageSize > 0, returns properties starting at pageIndex * pageSize.
+      optional KeyIterationIndex pageIndex
     returns
       # Object properties.
       array of PropertyDescriptor result

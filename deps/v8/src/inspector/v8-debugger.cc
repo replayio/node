@@ -779,17 +779,19 @@ v8::MaybeLocal<v8::Value> V8Debugger::generatorScopes(
 }
 
 v8::MaybeLocal<v8::Array> V8Debugger::collectionsEntries(
-    v8::Local<v8::Context> context, v8::Local<v8::Value> value) {
+    v8::Local<v8::Context> context, v8::Local<v8::Value> value,
+    const v8::KeyIterationParams* params) {
   v8::Isolate* isolate = context->GetIsolate();
   v8::Local<v8::Array> entries;
   bool isKeyValue = false;
-  if (!value->IsObject() ||
-      !value.As<v8::Object>()->PreviewEntries(&isKeyValue).ToLocal(&entries)) {
+  if (!value->IsObject() || !value.As<v8::Object>()
+                                 ->PreviewEntries(&isKeyValue, params)
+                                 .ToLocal(&entries)) {
     return v8::MaybeLocal<v8::Array>();
   }
 
   v8::Local<v8::Array> wrappedEntries = v8::Array::New(isolate);
-  CHECK(!isKeyValue || wrappedEntries->Length() % 2 == 0);
+  CHECK(!isKeyValue || entries->Length() % 2 == 0); // replay: discovered v8 bug
   if (!wrappedEntries->SetPrototype(context, v8::Null(isolate))
            .FromMaybe(false))
     return v8::MaybeLocal<v8::Array>();
@@ -817,12 +819,13 @@ v8::MaybeLocal<v8::Array> V8Debugger::collectionsEntries(
 }
 
 v8::MaybeLocal<v8::Array> V8Debugger::internalProperties(
-    v8::Local<v8::Context> context, v8::Local<v8::Value> value) {
+    v8::Local<v8::Context> context, v8::Local<v8::Value> value,
+    const v8::KeyIterationParams* params) {
   v8::Local<v8::Array> properties;
   if (!v8::debug::GetInternalProperties(m_isolate, value).ToLocal(&properties))
     return v8::MaybeLocal<v8::Array>();
   v8::Local<v8::Array> entries;
-  if (collectionsEntries(context, value).ToLocal(&entries)) {
+  if (collectionsEntries(context, value, params).ToLocal(&entries)) {
     createDataProperty(context, properties, properties->Length(),
                        toV8StringInternalized(m_isolate, "[[Entries]]"));
     createDataProperty(context, properties, properties->Length(), entries);

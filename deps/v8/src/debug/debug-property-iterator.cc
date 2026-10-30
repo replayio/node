@@ -15,10 +15,11 @@ namespace v8 {
 namespace internal {
 
 std::unique_ptr<DebugPropertyIterator> DebugPropertyIterator::Create(
-    Isolate* isolate, Handle<JSReceiver> receiver) {
+    Isolate* isolate, Handle<JSReceiver> receiver,
+    const v8::KeyIterationParams* params) {
   // Can't use std::make_unique as Ctor is private.
   auto iterator = std::unique_ptr<DebugPropertyIterator>(
-      new DebugPropertyIterator(isolate, receiver));
+      new DebugPropertyIterator(isolate, receiver, params));
 
   if (receiver->IsJSProxy()) {
     iterator->AdvanceToPrototype();
@@ -34,10 +35,12 @@ std::unique_ptr<DebugPropertyIterator> DebugPropertyIterator::Create(
 }
 
 DebugPropertyIterator::DebugPropertyIterator(Isolate* isolate,
-                                             Handle<JSReceiver> receiver)
+                                             Handle<JSReceiver> receiver,
+                                             const v8::KeyIterationParams* params)
     : isolate_(isolate),
       prototype_iterator_(isolate, receiver, kStartAtReceiver,
-                          PrototypeIterator::END_AT_NULL) {}
+                          PrototypeIterator::END_AT_NULL),
+      key_iteration_params_(params) {}
 
 bool DebugPropertyIterator::Done() const { return is_done_; }
 
@@ -163,7 +166,7 @@ bool DebugPropertyIterator::FillKeysForCurrentPrototypeAndStage() {
       stage_ == kEnumerableStrings ? ENUMERABLE_STRINGS : ALL_PROPERTIES;
   if (!KeyAccumulator::GetKeys(receiver, KeyCollectionMode::kOwnOnly, filter,
                                GetKeysConversion::kConvertToString, false,
-                               skip_indices)
+                               skip_indices, key_iteration_params_)
            .ToHandle(&keys_)) {
     keys_ = Handle<FixedArray>::null();
     return false;

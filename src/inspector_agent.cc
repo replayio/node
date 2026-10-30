@@ -295,6 +295,10 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
     }
   }
 
+  v8_inspector::V8InspectorSession* RecordReplayV8Session() {
+    return session_.get();
+  }
+
   void schedulePauseOnNextStatement(const std::string& reason) {
     std::unique_ptr<StringBuffer> buffer = Utf8ToStringView(reason);
     session_->schedulePauseOnNextStatement(buffer->string(), buffer->string());
@@ -369,6 +373,7 @@ class SameThreadInspectorSession : public InspectorSession {
       : session_id_(session_id), client_(client) {}
   ~SameThreadInspectorSession() override;
   void Dispatch(const v8_inspector::StringView& message) override;
+  v8_inspector::V8InspectorSession* RecordReplayV8Session() override;
 
  private:
   int session_id_;
@@ -519,6 +524,13 @@ class NodeInspectorClient : public V8InspectorClient {
 
   void dispatchMessageFromFrontend(int session_id, const StringView& message) {
     channels_[session_id]->dispatchProtocolMessage(message);
+  }
+
+  v8_inspector::V8InspectorSession* RecordReplayV8Session(int session_id) {
+    auto it = channels_.find(session_id);
+    if (it == channels_.end())
+      return nullptr;
+    return it->second->RecordReplayV8Session();
   }
 
   Local<Context> ensureDefaultContextInGroup(int contextGroupId) override {
@@ -990,6 +1002,14 @@ void SameThreadInspectorSession::Dispatch(
   auto client = client_.lock();
   if (client)
     client->dispatchMessageFromFrontend(session_id_, message);
+}
+
+v8_inspector::V8InspectorSession*
+SameThreadInspectorSession::RecordReplayV8Session() {
+  auto client = client_.lock();
+  if (!client)
+    return nullptr;
+  return client->RecordReplayV8Session(session_id_);
 }
 
 }  // namespace inspector

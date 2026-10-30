@@ -623,7 +623,8 @@ class V8_EXPORT_PRIVATE PropertyIterator {
   // Creating a PropertyIterator can potentially throw an exception.
   // The returned std::unique_ptr is empty iff that happens.
   V8_WARN_UNUSED_RESULT static std::unique_ptr<PropertyIterator> Create(
-      v8::Local<v8::Context> context, v8::Local<v8::Object> object);
+      v8::Local<v8::Context> context, v8::Local<v8::Object> object,
+      const v8::KeyIterationParams* params = v8::KeyIterationParams::Default());
 
   virtual ~PropertyIterator() = default;
 

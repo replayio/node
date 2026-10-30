@@ -13,6 +13,8 @@
 #include "src/inspector/v8-inspector-impl.h"
 #include "src/inspector/v8-value-utils.h"
 
+#include "src/inspector/string-util.h"
+
 namespace v8_inspector {
 
 using protocol::Response;
@@ -1179,6 +1181,61 @@ std::unique_ptr<ValueMirror> createNativeSetter(v8::Local<v8::Context> context,
   return ValueMirror::create(context, function);
 }
 
+static const char* allowed_getters[] = {
+    "type",
+    "fromElement",
+    "target",
+    "isTrusted",
+    "key",
+    "clientX",
+    "clientY",
+    "altKey",
+    "button",
+    "buttons",
+    "ctrlKey",
+    "currentTarget",
+    "defaultPrevented",
+    "eventPhase",
+    "metaKey",
+    "movementX",
+    "movementY",
+    "offsetX",
+    "offsetY",
+    "pageX",
+    "pageY",
+    "screenX",
+    "screenY",
+    "shiftKey",
+    "srcElement",
+    "timeStamp",
+    "which",
+    "x",
+    "y",
+};
+
+bool doesAttributeHaveObservableSideEffectOnGet(v8::Local<v8::Context> context,
+                                                v8::Local<v8::Object> object,
+                                                v8::Local<v8::Name> name) {
+  if (!name->IsString()) return false;
+
+  if (v8::recordreplay::IsRecordingOrReplaying() &&
+      v8::recordreplay::AreEventsDisallowed()) {
+    // Disallow most native getters while in Replay code, since they cause
+    // unwanted crashes.
+    // -> https://linear.app/replay/issue/RUN-1478
+    for (auto allowed : allowed_getters) {
+      v8::String::Utf8Value nameRaw(context->GetIsolate(),
+                                    name.As<v8::String>());
+      if (!strcmp(allowed, *nameRaw)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
 }  // anonymous namespace
 
 ValueMirror::~ValueMirror() = default;
@@ -1187,7 +1244,8 @@ ValueMirror::~ValueMirror() = default;
 bool ValueMirror::getProperties(v8::Local<v8::Context> context,
                                 v8::Local<v8::Object> object,
                                 bool ownProperties, bool accessorPropertiesOnly,
-                                PropertyAccumulator* accumulator) {
+                                PropertyAccumulator* accumulator,
+                                const v8::KeyIterationParams* params) {
   v8::Isolate* isolate = context->GetIsolate();
   v8::TryCatch tryCatch(isolate);
   v8::Local<v8::Set> set = v8::Set::New(isolate);
@@ -1210,7 +1268,24 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
     }
   }
 
-  auto iterator = v8::debug::PropertyIterator::Create(context, object);
+  // [RUN-3149] we're only interested in a subset of the properties on this
+  // object. In order to make sure we get enough own properties to satisfy
+  // expected behavior for objects, always request a much larger set of keys
+  // we will later prune returned properties down to the originally requested
+  // size.
+  const int SubsetPageSize = 100000;
+
+  v8::KeyIterationParams subsetIterationParams(SubsetPageSize, 0);
+  const v8::KeyIterationParams *keyIterationParams;
+  if (*params) {
+    // we're grabbing a subset.  use the larger subset params.
+    keyIterationParams = &subsetIterationParams;
+  } else {
+    // we're grabbing everything.  use the passed-in params.
+    keyIterationParams = params;
+  }
+  auto iterator = v8::debug::PropertyIterator::Create(context, object,
+                                                      keyIterationParams);
   if (!iterator) {
     CHECK(tryCatch.HasCaught());
     return false;
@@ -1290,7 +1365,9 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
           }
           isAccessorProperty = getterMirror || setterMirror;
           if (name != "__proto__" && !getterFunction.IsEmpty() &&
-              getterFunction->ScriptId() == v8::UnboundScript::kNoScriptId) {
+              getterFunction->ScriptId() == v8::UnboundScript::kNoScriptId &&
+              !doesAttributeHaveObservableSideEffectOnGet(context, object,
+                                                          v8Name)) {
             v8::TryCatch tryCatch(isolate);
             v8::Local<v8::Value> value;
             if (v8::debug::CallFunctionOn(context, getterFunction, object, 0,
@@ -1330,7 +1407,8 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
 // static
 void ValueMirror::getInternalProperties(
     v8::Local<v8::Context> context, v8::Local<v8::Object> object,
-    std::vector<InternalPropertyMirror>* mirrors) {
+    std::vector<InternalPropertyMirror>* mirrors,
+    const v8::KeyIterationParams* params) {
   v8::Isolate* isolate = context->GetIsolate();
   v8::MicrotasksScope microtasksScope(isolate,
                                       v8::MicrotasksScope::kDoNotRunMicrotasks);
@@ -1359,7 +1437,7 @@ void ValueMirror::getInternalProperties(
       static_cast<V8InspectorImpl*>(v8::debug::GetInspector(isolate))
           ->debugger();
   v8::Local<v8::Array> properties;
-  if (debugger->internalProperties(context, object).ToLocal(&properties)) {
+  if (debugger->internalProperties(context, object, params).ToLocal(&properties)) {
     for (uint32_t i = 0; i < properties->Length(); i += 2) {
       v8::Local<v8::Value> name;
       if (!properties->Get(context, i).ToLocal(&name) || !name->IsString()) {
