@@ -12,8 +12,6 @@
 #include "uv.h"
 #include "v8-fast-api-calls.h"
 #include "v8.h"
-#include "v8-inspector.h"
-#include "replayio.h"
 
 #include <vector>
 
@@ -34,23 +32,6 @@ typedef int mode_t;
 #include <sys/resource.h>  // getrlimit, setrlimit
 #include <termios.h>  // tcgetattr, tcsetattr
 #endif
-
-static const char* AnnotationHookJSName = "recordreplay.annotationHook";
-
-namespace v8 {
-
-extern void FunctionCallbackIsRecordingOrReplaying(const FunctionCallbackInfo<Value>& args);
-extern void FunctionCallbackRecordReplayOnConsoleAPI(const FunctionCallbackInfo<Value>& args);
-extern void FunctionCallbackRecordReplaySetCommandCallback(const FunctionCallbackInfo<Value>& args);
-extern void FunctionCallbackRecordReplaySetClearPauseDataCallback(const FunctionCallbackInfo<Value>& callArgs);
-extern void FunctionCallbackRecordReplayIgnoreScript(const FunctionCallbackInfo<Value>& args);
-extern void FunctionCallbackRecordReplayAssert(const FunctionCallbackInfo<Value>& args);
-extern void FunctionCallbackRecordReplayGetCurrentError(const FunctionCallbackInfo<Value>& args);
-extern void FunctionCallbackRecordReplayGetRecordingId(const FunctionCallbackInfo<Value>& args);
-extern void FunctionCallbackRecordReplayCurrentExecutionPoint(const FunctionCallbackInfo<Value>& args);
-extern void FunctionCallbackRecordReplayElapsedTimeMs(const FunctionCallbackInfo<Value>& args);
-
-}
 
 namespace node {
 
@@ -526,126 +507,6 @@ BindingData::BindingData(Environment* env, v8::Local<v8::Object> object)
   backing_store_ = ab->GetBackingStore();
 }
 
-static void RecordReplayLog(const FunctionCallbackInfo<Value>& args) {
-  CHECK(args.Length() == 1 && args[0]->IsString() &&
-        "must be called with a single string");
-  Utf8Value text(args.GetIsolate(), args[0]);
-  v8::recordreplay::Print("%s", text.ToString().c_str());
-}
-
-static void RecordReplayAreEventsUnavailable(
-    const FunctionCallbackInfo<Value>& args) {
-  args.GetReturnValue().Set(recordreplay::AreEventsUnavailable());
-}
-
-// Function to invoke on CDP responses and events.
-static v8::Eternal<v8::Function>* gCDPMessageCallback;
-
-static void RecordReplaySetCDPMessageCallback(const FunctionCallbackInfo<Value>& args) {
-  CHECK(!gCDPMessageCallback);
-  Isolate* isolate = args.GetIsolate();
-  CHECK(args[0]->IsFunction());
-  Local<v8::Function> callback = args[0].As<v8::Function>();
-  gCDPMessageCallback = new v8::Eternal<v8::Function>(isolate, callback);
-}
-
-static std::unique_ptr<inspector::InspectorSession> gRecordReplayInspectorSession;
-
-class RecordReplaySessionDelegate : public inspector::InspectorSessionDelegate {
- public:
-  void SendMessageToFrontend(const v8_inspector::StringView& message) override {
-    v8::replayio::AutoMarkReplayCode mark;
-    v8::replayio::AutoDisallowEvents disallow(
-        "RecordReplay_SendMessageToFrontend");
-    CHECK(v8::IsMainThread());
-
-    if (recordreplay::IsRecordingFinished()) {
-      return;
-    }
-
-    CHECK(gCDPMessageCallback);
-    CHECK(!message.is8Bit());
-
-    Isolate* isolate = v8::Isolate::GetCurrent();
-    v8::HandleScope scope(isolate);
-
-    Local<Context> context = isolate->GetCurrentContext();
-
-    Local<Value> arg = v8::String::NewFromTwoByte(isolate, message.characters16(),
-                                                  NewStringType::kNormal,
-                                                  message.length()).ToLocalChecked();
-    Local<v8::Function> callback = gCDPMessageCallback->Get(isolate);
-    v8::MaybeLocal<Value> rv = callback->Call(context, v8::Undefined(isolate), 1, &arg);
-    CHECK(!rv.IsEmpty());
-  }
-};
-
-static void RecordReplaySendCDPMessage(const FunctionCallbackInfo<Value>& args) {
-  CHECK(args.Length() == 1 && args[0]->IsString() &&
-        "must be called with a single string");
-  Utf8Value message(args.GetIsolate(), args[0]);
-
-  if (!gRecordReplayInspectorSession) {
-    Environment* env = Environment::GetCurrent(args);
-    inspector::Agent* agent = env->inspector_agent();
-
-    auto delegate = std::make_unique<RecordReplaySessionDelegate>();
-    {
-      v8::replayio::AutoMarkReplayCode mark;
-      v8::replayio::AutoDisallowEvents disallow(
-          "RecordReplaySendCDPMessage::Connect");
-      gRecordReplayInspectorSession = agent->Connect(std::move(delegate),
-                                                     /* prevent_shutdown */ false);
-    }
-    // process.exit() skips Environment destruction, so the process-owned Replay
-    // session would otherwise survive until static destruction, after V8's platform
-    // has been disposed. Reset it from AtExit, where Node normally waits for external
-    // debugger frontends to disconnect. This safely disables the debugger, which
-    // leaves WebAssembly modules tiered down (see V8Debugger::disable).
-    AtExit(env, [](void*) {
-      gRecordReplayInspectorSession.reset();
-    }, nullptr);
-  }
-
-  std::string nmessage(message.ToString());
-  v8_inspector::StringView messageView((const uint8_t*)nmessage.c_str(), nmessage.length());
-  {
-    v8::replayio::AutoMarkReplayCode mark;
-    v8::replayio::AutoDisallowEvents disallow("RecordReplaySendCDPMessage");
-    gRecordReplayInspectorSession->Dispatch(messageView);
-  }
-}
-
-// Called from javascript.
-// `recordreplay.annotationHook(kind, contents)`
-// Since this function is called from userland JS, we avoid assertions.
-// We don't want flawed uses of the API to crash the recording.
-static void RecordReplayAnnotationHook(
-    const FunctionCallbackInfo<Value>& args) {
-  if (!(args.Length() >= 2 && args[0]->IsString())) {
-    v8::recordreplay::Print("[RuntimeError] %s called with incorrect arguments",
-                            AnnotationHookJSName);
-    return;
-  }
-
-  v8::Isolate* isolate = args.GetIsolate();
-  v8::Local<v8::Object> payload = v8::Object::New(isolate);
-  v8::Local<v8::Context> context = isolate->GetCurrentContext();
-  payload->Set(context, v8::String::NewFromUtf8(isolate, "message").ToLocalChecked(), args[1]).Check();
-
-  v8::Local<v8::String> json;
-  if (!v8::JSON::Stringify(context, payload).ToLocal(&json)) {
-    v8::recordreplay::Print(
-        "[RuntimeError] %s contents failed to json stringify",
-        AnnotationHookJSName);
-    return;
-  }
-
-  v8::String::Utf8Value kind(args.GetIsolate(), args[0]);
-  v8::String::Utf8Value contents(args.GetIsolate(), json);
-  v8::recordreplay::OnAnnotation(*kind, *contents);
-}
-
 v8::CFunction BindingData::fast_number_(v8::CFunction::Make(FastNumber));
 v8::CFunction BindingData::fast_bigint_(v8::CFunction::Make(FastBigInt));
 
@@ -734,6 +595,11 @@ void BindingData::Deserialize(Local<Context> context,
   CHECK_NOT_NULL(binding);
 }
 
+// See node_recordreplay.cc.
+void InitializeRecordReplayMethods(Environment* env, Local<Object> target);
+void RegisterRecordReplayExternalReferences(
+    ExternalReferenceRegistry* registry);
+
 static void Initialize(Local<Object> target,
                        Local<Value> unused,
                        Local<Context> context,
@@ -771,37 +637,7 @@ static void Initialize(Local<Object> target,
   env->SetMethod(target, "reallyExit", ReallyExit);
   env->SetMethodNoSideEffect(target, "uptime", Uptime);
   env->SetMethod(target, "patchProcessObject", PatchProcessObject);
-
-  env->SetMethod(target, "isRecordingOrReplaying",
-                 v8::FunctionCallbackIsRecordingOrReplaying);
-  env->SetMethod(target, "recordReplayLog", RecordReplayLog);
-  env->SetMethod(target,
-                 "recordReplayAreEventsUnavailable",
-                 RecordReplayAreEventsUnavailable);
-  env->SetMethod(target, "recordReplayOnConsoleAPI",
-                 v8::FunctionCallbackRecordReplayOnConsoleAPI);
-  env->SetMethod(target, "recordReplaySetCommandCallback",
-                 v8::FunctionCallbackRecordReplaySetCommandCallback);
-  env->SetMethod(target, "recordReplaySetClearPauseDataCallback",
-                 v8::FunctionCallbackRecordReplaySetClearPauseDataCallback);
-  env->SetMethod(target, "recordReplayIgnoreScript",
-                 v8::FunctionCallbackRecordReplayIgnoreScript);
-  env->SetMethod(target, "recordReplayAssert",
-                 v8::FunctionCallbackRecordReplayAssert);
-  env->SetMethod(target, "recordReplayGetCurrentError",
-                 v8::FunctionCallbackRecordReplayGetCurrentError);
-  env->SetMethod(target, "recordReplaySetCDPMessageCallback",
-                 RecordReplaySetCDPMessageCallback);
-  env->SetMethod(target, "recordReplaySendCDPMessage",
-                 RecordReplaySendCDPMessage);
-  env->SetMethod(target, "recordReplayRecordingId",
-                 v8::FunctionCallbackRecordReplayGetRecordingId);
-  env->SetMethod(target, "recordReplayCurrentExecutionPoint",
-                 v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
-  env->SetMethod(target, "recordReplayElapsedTimeMs",
-                 v8::FunctionCallbackRecordReplayElapsedTimeMs);
-  env->SetMethod(
-      target, "recordReplayAnnotationHook", RecordReplayAnnotationHook);
+  InitializeRecordReplayMethods(env, target);
 }
 
 void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
@@ -831,22 +667,7 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(ReallyExit);
   registry->Register(Uptime);
   registry->Register(PatchProcessObject);
-
-  registry->Register(v8::FunctionCallbackIsRecordingOrReplaying);
-  registry->Register(RecordReplayLog);
-  registry->Register(RecordReplayAreEventsUnavailable);
-  registry->Register(v8::FunctionCallbackRecordReplayOnConsoleAPI);
-  registry->Register(v8::FunctionCallbackRecordReplaySetCommandCallback);
-  registry->Register(v8::FunctionCallbackRecordReplaySetClearPauseDataCallback);
-  registry->Register(v8::FunctionCallbackRecordReplayIgnoreScript);
-  registry->Register(v8::FunctionCallbackRecordReplayAssert);
-  registry->Register(v8::FunctionCallbackRecordReplayGetCurrentError);
-  registry->Register(RecordReplaySetCDPMessageCallback);
-  registry->Register(RecordReplaySendCDPMessage);
-  registry->Register(v8::FunctionCallbackRecordReplayGetRecordingId);
-  registry->Register(v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
-  registry->Register(v8::FunctionCallbackRecordReplayElapsedTimeMs);
-  registry->Register(RecordReplayAnnotationHook);
+  RegisterRecordReplayExternalReferences(registry);
 }
 
 }  // namespace process
