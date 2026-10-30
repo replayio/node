@@ -3581,19 +3581,24 @@ void BytecodeGraphBuilder::VisitIncBlockCounter() {
 void BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
   PrepareEagerCheckpoint();
 
-  // Use a VM call instead of an optimized path when we need to add assertions
-  // to the recording, or when replaying so that the calling code can be deoptimized
-  // when the target progress value has been reached.
-  if (gRecordReplayAssertProgress || recordreplay::IsReplaying()) {
+  // Assertions on progress need the VM call. Otherwise, as in baseline code,
+  // update the counter inline and only call into the VM at the target
+  // progress, where the call lazily deoptimizes this code if what runs there
+  // (pausing, breakpoints, instrumentation changes, API interrupt callbacks)
+  // discards it.
+  //
+  // Unlike baseline code, optimized code doesn't run progress checks.
+  // Checking gRecordReplayCheckProgress here would make all optimized code
+  // use the VM call: it is enabled while events are disallowed on the main
+  // thread, which they are while optimizing (Compiler::CompileOptimized), and
+  // loading it in the inline update instead slows optimized code down too much.
+  if (gRecordReplayAssertProgress) {
     Node* closure = GetFunctionClosure();
     const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayAssertExecutionProgress);
 
     Node* node = NewNode(op, closure);
     environment()->RecordAfterState(node, Environment::kAttachFrameState);
   } else {
-    // What runs at the target progress (API interrupt callbacks, e.g. the
-    // inspector's break near the heap limit) can walk the stack or deoptimize
-    // this code while the call is on the stack.
     const int offset = bytecode_iterator().current_offset();
     Node* frame_state = environment()->Checkpoint(
         BytecodeOffset(offset), OutputFrameStateCombine::Ignore(),
