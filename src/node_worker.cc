@@ -488,17 +488,15 @@ void Worker::JoinThread() {
 }
 
 Worker::~Worker() {
+  // Joined outside the mutex, which its thread may be waiting for: declared
+  // before the lock, so it is destroyed after the lock is released.
   std::unique_ptr<StopWatchdog> stop_watchdog;
-  {
-    Mutex::ScopedLock lock(mutex_);
+  Mutex::ScopedLock lock(mutex_);
 
-    CHECK(stopped_);
-    CHECK_NULL(env_);
-    CHECK(thread_joined_);
-    stop_watchdog = std::move(stop_watchdog_);
-  }
-  // Joined outside the mutex, which its thread may be waiting for.
-  stop_watchdog.reset();
+  CHECK(stopped_);
+  CHECK_NULL(env_);
+  CHECK(thread_joined_);
+  stop_watchdog = std::move(stop_watchdog_);
 
   Debug(this, "Worker %llu destroyed", thread_id_.id);
 }
