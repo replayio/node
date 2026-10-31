@@ -27,8 +27,9 @@ namespace v8 {
 namespace internal {
 namespace trap_handler {
 
-// FIXME using thread_local runs into problems when replaying, possibly related to
-// process forking.
+// Not a thread_local: when recording/replaying, other files reach an extern
+// thread_local through its TLS wrapper function (_ZTH...), which the replay
+// linker can't bind ("Call to unbound symbol").
 #if 0
 
 // We declare this as int rather than bool as a workaround for a glibc bug, in

@@ -118,7 +118,9 @@ inline bool IsTrapHandlerEnabled() {
   return g_is_trap_handler_enabled;
 }
 
-// Using thread_local runs into problems when recording/replaying for an unknown reason.
+// Not a thread_local: when recording/replaying, other files reach an extern
+// thread_local through its TLS wrapper function (_ZTH...), which the replay
+// linker can't bind ("Call to unbound symbol").
 #if 0
 
 #if defined(V8_OS_AIX)
