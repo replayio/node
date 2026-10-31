@@ -490,11 +490,9 @@ ScopeIterator::ScopeType ScopeIterator::Type() const {
   if (InInnerScope()) {
     switch (current_scope_->scope_type()) {
       case FUNCTION_SCOPE:
-        // This assertion busts sometimes when stress testing the Record Replay
-        // driver by gathering the stack at every point.
-        //DCHECK_IMPLIES(NeedsAndHasContext(),
-        //               context_->IsFunctionContext() ||
-        //                   context_->IsDebugEvaluateContext());
+        DCHECK_IMPLIES(NeedsAndHasContext(),
+                       context_->IsFunctionContext() ||
+                           context_->IsDebugEvaluateContext());
         return ScopeTypeLocal;
       case MODULE_SCOPE:
         DCHECK_IMPLIES(NeedsAndHasContext(), context_->IsModuleContext());
