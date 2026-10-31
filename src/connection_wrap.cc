@@ -18,6 +18,7 @@ using v8::Local;
 using v8::Object;
 using v8::Value;
 
+
 template <typename WrapType, typename UVType>
 ConnectionWrap<WrapType, UVType>::ConnectionWrap(Environment* env,
                                                  Local<Object> object,
