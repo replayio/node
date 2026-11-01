@@ -1749,7 +1749,12 @@ bool MarkCompactCollector::ProcessEphemeronsUntilFixpoint() {
       TRACE_GC(heap()->tracer(),
                GCTracer::Scope::MC_MARK_WEAK_CLOSURE_EPHEMERON_MARKING);
 
-      if (FLAG_parallel_marking) {
+      // When replaying, the main thread drains the ephemerons alone, as every
+      // iteration does in Chromium's V8. Parallel markers would pop and push
+      // the same few ephemerons as the main thread, and with the linker's
+      // lock interception, their contention on the worklists made a full GC
+      // with a long ephemeron chain take ~65% longer than marking alone.
+      if (FLAG_parallel_marking && !recordreplay::IsReplaying()) {
         heap_->concurrent_marking()->RescheduleJobIfNeeded(
             TaskPriority::kUserBlocking);
       }
