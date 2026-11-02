@@ -118,11 +118,6 @@ inline bool IsTrapHandlerEnabled() {
   return g_is_trap_handler_enabled;
 }
 
-// Not a thread_local: when recording/replaying, other files reach an extern
-// thread_local through its TLS wrapper function (_ZTH...), which the replay
-// linker can't bind ("Call to unbound symbol").
-#if 0
-
 #if defined(V8_OS_AIX)
 // `thread_local` does not link on AIX:
 // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=100641
@@ -130,12 +125,6 @@ extern __thread int g_thread_in_wasm_code;
 #else
 extern thread_local int g_thread_in_wasm_code;
 #endif
-
-#endif // 0
-
-extern int& IsThreadInWasmCode();
-
-#define g_thread_in_wasm_code IsThreadInWasmCode()
 
 // Return the address of the thread-local {g_thread_in_wasm_code} variable. This
 // pointer can be accessed and modified as long as the thread calling this
