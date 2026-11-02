@@ -42,7 +42,7 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
  public:
   BytecodeArrayBuilder(
       Zone* zone, int parameter_count, int locals_count,
-      int script_id, bool record_replay_ignore,
+      bool record_replay_ignore,
       FeedbackVectorSpec* feedback_vector_spec = nullptr,
       SourcePositionTableBuilder::RecordingMode source_position_mode =
           SourcePositionTableBuilder::RECORD_SOURCE_POSITIONS);

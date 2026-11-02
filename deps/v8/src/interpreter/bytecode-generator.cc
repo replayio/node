@@ -1135,7 +1135,6 @@ BytecodeGenerator::BytecodeGenerator(
     : zone_(compile_zone),
       builder_(zone(), info->num_parameters_including_this(),
                info->scope()->num_stack_slots(),
-               info->flags().script_id(),
                info->flags().record_replay_ignore(),
                info->feedback_vector_spec(),
                info->SourcePositionRecordingMode()),
