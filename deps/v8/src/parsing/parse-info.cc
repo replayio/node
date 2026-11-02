@@ -21,8 +21,6 @@
 namespace v8 {
 namespace internal {
 
-extern bool RecordReplayHasRegisteredScript(Script script);
-
 UnoptimizedCompileFlags::UnoptimizedCompileFlags(Isolate* isolate,
                                                  int script_id)
     : flags_(0),
@@ -164,9 +162,14 @@ void UnoptimizedCompileFlags::SetFlagsForFunctionFromScript(Script script) {
   set_block_coverage_enabled(block_coverage_enabled() &&
                              script.IsUserJavaScript());
 
-  if (!RecordReplayHasRegisteredScript(script)) {
-    set_record_replay_ignore(true);
-  }
+  RecordReplayInheritCompileFlags(*this, script);
+}
+
+// Compiles of an existing script follow the decision made when the script was
+// created, so that no script is ever decided twice.
+void RecordReplayInheritCompileFlags(UnoptimizedCompileFlags& flags,
+                                     Script script) {
+  flags.set_record_replay_ignore(!script.record_replay_instrumented());
 }
 
 UnoptimizedCompileState::UnoptimizedCompileState(Isolate* isolate)
@@ -266,6 +269,12 @@ Handle<Script> ParseInfo::CreateScript(
   }
   script->set_origin_options(origin_options);
   script->set_is_repl_mode(flags().is_repl_mode());
+  // Replay: the one place a script's instrumentation is decided, by the compile
+  // creating it. Compiles of an existing script inherit it
+  // (RecordReplayInheritCompileFlags).
+  script->set_record_replay_instrumented(
+      recordreplay::IsRecordingOrReplaying() &&
+      !flags().record_replay_ignore());
 
   DCHECK_EQ(is_wrapped_as_function(), !maybe_wrapped_arguments.is_null());
   if (is_wrapped_as_function()) {

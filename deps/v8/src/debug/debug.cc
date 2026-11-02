@@ -2857,6 +2857,7 @@ static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
                                      std::function<void(Handle<SharedFunctionInfo>,
                                                         int, bool)> aCallback) {
   // Based on Debug::GetPossibleBreakpoints.
+  bool tried_top_level_compile = false;
   while (true) {
     HandleScope scope(isolate);
     std::vector<Handle<SharedFunctionInfo>> candidates;
@@ -2867,6 +2868,21 @@ static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
       if (!info.IsSubjectToDebugging()) continue;
       if (!info.is_compiled() && !info.allows_lazy_compilation()) continue;
       candidates.push_back(i::handle(info, isolate));
+    }
+
+    // The GC collects the top-level function once nothing references it, and
+    // with it the functions only its bytecode referenced. Recompiling it
+    // recreates them, as Debug::FindSharedFunctionInfosIntersectingRange does.
+    if (!tried_top_level_compile && script->shared_function_info_count() > 0) {
+      MaybeObject top_level = script->shared_function_infos().Get(0);
+      HeapObject heap_object;
+      if (!top_level->GetHeapObject(&heap_object) ||
+          heap_object.IsUndefined()) {
+        tried_top_level_compile = true;
+        if (CompileTopLevel(isolate, script)) continue;
+        recordreplay::Warning("PossibleBreakpointsTopLevelCompileFailed",
+                              {{"scriptId", script->id()}});
+      }
     }
 
     // Compile any uncompiled functions found in the script.
@@ -3383,35 +3399,13 @@ bool RecordReplayIgnoreScriptByURL(const char* url) {
 typedef std::unordered_set<int> ScriptIdSet;
 static ScriptIdSet* gRegisteredScripts;
 
-typedef std::unordered_map<int, bool> ScriptIdBoolMap;
-typedef std::unordered_map<Isolate*, ScriptIdBoolMap> IsolateOpcodeEmitMap;
-static IsolateOpcodeEmitMap* gOpcodeEmitByScript = nullptr;
-static base::Mutex* gOpcodeEmitByScriptMutex = new base::Mutex;
-
-// Node lacks embedder HasDefaultContext; never permanently disable emit.
-static bool RecordReplayHasDefaultContext() { return true; }
-
-// Compiles diverge (GC bytecode flush, cache ageing, etc.); freeze first emit
-// decision per (isolate, script_id). Keep IsMainThread gate (no BCT counter).
-bool RecordReplayShouldEmitOpcodes(Isolate* isolate, int script_id,
-                                   bool record_replay_ignore) {
-  const bool base_emit_opcodes =
-      recordreplay::IsRecordingOrReplaying() && IsMainThread() &&
-      RecordReplayHasDefaultContext() && !record_replay_ignore;
-  if (script_id == v8::UnboundScript::kNoScriptId || isolate == nullptr) {
-    return base_emit_opcodes;
-  }
-  base::MutexGuard guard(gOpcodeEmitByScriptMutex);
-  if (!gOpcodeEmitByScript) {
-    gOpcodeEmitByScript = new IsolateOpcodeEmitMap;
-  }
-  ScriptIdBoolMap& emit_by_script = (*gOpcodeEmitByScript)[isolate];
-  auto it = emit_by_script.find(script_id);
-  if (it != emit_by_script.end()) {
-    return it->second;
-  }
-  emit_by_script[script_id] = base_emit_opcodes;
-  return base_emit_opcodes;
+// Whether a compile emits record/replay instrumentation: its flags say so,
+// which compiles take from the script they compile into, as decided once when
+// the script was created (ParseInfo::CreateScript). Bytecode generated off the
+// main thread is never instrumented; scripts created there aren't either.
+bool RecordReplayShouldEmitOpcodes(bool record_replay_ignore) {
+  return recordreplay::IsRecordingOrReplaying() && IsMainThread() &&
+         !record_replay_ignore;
 }
 
 bool RecordReplayHasRegisteredScript(Script script) {
@@ -3426,6 +3420,43 @@ bool RecordReplayIsDivergentUserJSWithoutPause(
          shared.script().IsScript() &&
          RecordReplayHasRegisteredScript(Script::cast(shared.script()));
 }
+
+static std::string RecordReplayScriptURL(Script script) {
+  if (script.name().IsUndefined()) {
+    return "";
+  }
+  std::unique_ptr<char[]> name = String::cast(script.name()).ToCString();
+  std::string name_str(name.get());
+  if (name_str.find("file://") == 0) {
+    return name_str;
+  }
+  return std::string("file://") + name_str;
+}
+
+// Tells the recorder about a registered script.
+static void RecordReplayAnnounceScript(Isolate* isolate, Handle<Script> script) {
+  std::string url = RecordReplayScriptURL(*script);
+  // Scripts are registered where they are compiled or instantiated, which only
+  // happens for instrumented scripts with events allowed; announcing would
+  // record an event. A script skipped here stays registered but its source
+  // stays unknown.
+  if (recordreplay::AreEventsDisallowed()) {
+    recordreplay::Warning("AnnounceScriptWithEventsDisallowed",
+                          {{"scriptId", script->id()}, {"url", url}});
+    return;
+  }
+
+  Handle<String> idStr = GetProtocolSourceId(isolate, script);
+  std::unique_ptr<char[]> id = String::cast(*idStr).ToCString();
+
+  RecordReplayOnNewSource(isolate, id.get(), "scriptSource", url.length() ? url.c_str() : nullptr);
+}
+
+extern bool gRecordReplayHasCheckpoint;
+
+// Ids of the scripts registered before the first checkpoint, in order. The
+// recorder only takes sources from the first checkpoint on.
+static std::vector<int>* gRecordReplayScriptsBeforeFirstCheckpoint;
 
 static void RecordReplayRegisterScript(Handle<Script> script) {
   CHECK(IsMainThread());
@@ -3444,33 +3475,24 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
   (*gRecordReplayScripts)[script->id()] =
     Eternal<Value>((v8::Isolate*)isolate, v8::Utils::ToLocal(script));
 
-  Handle<String> idStr = GetProtocolSourceId(isolate, script);
-  std::unique_ptr<char[]> id = String::cast(*idStr).ToCString();
-
-  if (script->type() == Script::TYPE_WASM) {
-    return;
-  }
-
-  std::string url;
-  if (!script->name().IsUndefined()) {
-    std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
-    if (RecordReplayIgnoreScriptByURL(name.get())) {
-      return;
+  // Registered scripts (Pause / CountStackFrames) are exactly the instrumented
+  // ones, so that every frame instrumentation pushes is counted and none other.
+  // Wasm, node's internals and Replay's own scripts aren't instrumented.
+  if (script->record_replay_instrumented()) {
+    if (!gRegisteredScripts) {
+      gRegisteredScripts = new ScriptIdSet;
     }
-    std::string name_str(name.get());
-    if (name_str.find("file://") == 0) {
-      url = name_str;
+    gRegisteredScripts->insert(script->id());
+
+    if (!gRecordReplayHasCheckpoint) {
+      if (!gRecordReplayScriptsBeforeFirstCheckpoint) {
+        gRecordReplayScriptsBeforeFirstCheckpoint = new std::vector<int>;
+      }
+      gRecordReplayScriptsBeforeFirstCheckpoint->push_back(script->id());
     } else {
-      url = std::string("file://") + name_str;
+      RecordReplayAnnounceScript(isolate, script);
     }
   }
-
-  if (!gRegisteredScripts) {
-    gRegisteredScripts = new ScriptIdSet;
-  }
-  gRegisteredScripts->insert(script->id());
-
-  RecordReplayOnNewSource(isolate, id.get(), "scriptSource", url.length() ? url.c_str() : nullptr);
 
   // If this is the first script we were notified about, look for other scripts
   // that were already added without a notification. It would be nice to figure
@@ -3492,6 +3514,35 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
     for (Handle<Script> handle : scriptHandles) {
       RecordReplayRegisterScript(handle);
     }
+  }
+}
+
+void RecordReplayRegisterScriptsBeforeFirstCheckpoint() {
+  if (!gRecordReplayScriptsBeforeFirstCheckpoint) {
+    return;
+  }
+  std::unique_ptr<std::vector<int>> script_ids(
+      gRecordReplayScriptsBeforeFirstCheckpoint);
+  gRecordReplayScriptsBeforeFirstCheckpoint = nullptr;
+
+  Isolate* isolate = Isolate::Current();
+  HandleScope scope(isolate);
+  for (int script_id : *script_ids) {
+    RecordReplayAnnounceScript(isolate, GetScript(isolate, script_id));
+  }
+}
+
+// Registers a top-level script as soon as its main-thread compile finishes.
+// ProcessCompileEvent only sees it once its function is instantiated, which
+// for a module waits for its whole import graph and never happens when that
+// graph fails to load.
+void RecordReplayRegisterCompiledScript(
+    Isolate* isolate, MaybeHandle<SharedFunctionInfo> maybe_function_info) {
+  Handle<SharedFunctionInfo> function_info;
+  if (maybe_function_info.ToHandle(&function_info) &&
+      recordreplay::IsRecordingOrReplaying() && IsMainThread()) {
+    RecordReplayRegisterScript(
+        handle(Script::cast(function_info->script()), isolate));
   }
 }
 
