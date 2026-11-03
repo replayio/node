@@ -358,6 +358,10 @@ class CompressionStream : public AsyncWrap, public ThreadPoolWork {
     if (!async) {
       // sync version
       AsyncWrap::env()->PrintSyncTrace();
+      // Sync compression calls this for every chunk of output, from a loop in
+      // node's own JS, and neither advances the progress counter, so replay
+      // hang detection sees the process is busy.
+      v8::recordreplay::NotifyActivity();
       DoThreadPoolWork();
       if (CheckError()) {
         UpdateWriteResult();
