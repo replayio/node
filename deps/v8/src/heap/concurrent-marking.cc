@@ -4,6 +4,8 @@
 
 #include "src/heap/concurrent-marking.h"
 
+#include "include/replayio.h"
+
 #include <stack>
 #include <unordered_map>
 
@@ -624,6 +626,7 @@ void ConcurrentMarking::ScheduleJob(GarbageCollector garbage_collector,
     job_handle_ = V8::GetCurrentPlatform()->PostJob(
         priority, std::make_unique<JobTaskMinor>(this));
   }
+  replayio::AutoDisallowEvents disallow("ConcurrentMarking::ScheduleJob");
   DCHECK(job_handle_->IsValid());
 }
 

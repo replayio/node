@@ -5,6 +5,7 @@
 #include "src/heap/incremental-marking.h"
 
 #include "src/base/logging.h"
+#include "include/replayio.h"
 #include "src/codegen/compilation-cache.h"
 #include "src/execution/vm-state-inl.h"
 #include "src/handles/global-handles.h"
@@ -60,6 +61,7 @@ IncrementalMarking::IncrementalMarking(Heap* heap, WeakObjects* weak_objects)
       old_generation_observer_(this, kOldGenerationAllocatedThreshold),
       marking_state_(heap->marking_state()),
       atomic_marking_state_(heap->atomic_marking_state()) {}
+  replayio::AutoDisallowEvents disallow("IncrementalMarking::MarkBlackAndVisitObjectDueToLayoutChange");
 
 void IncrementalMarking::MarkBlackBackground(HeapObject obj, int object_size) {
   CHECK(atomic_marking_state()->TryMark(obj) &&
