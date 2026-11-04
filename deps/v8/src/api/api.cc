@@ -11997,7 +11997,15 @@ CFunctionInfo::CFunctionInfo(const CTypeInfo& return_info,
   }
 }
 
-static bool gRecordingOrReplaying;
+namespace internal {
+// Builtins read this through
+// ExternalReference::record_replay_is_recording_or_replaying.
+bool gRecordReplayIsRecordingOrReplaying;
+
+// Use V8's GC as upstream does while recording/replaying.
+// This is on by default and controlled by the v8-flags-gc feature.
+bool gRecordReplayEnableGCFeatures;
+}  // namespace internal
 static bool gHasDisabledFeatures;
 static bool gAssertsDisabled;
 static void (*gRecordReplayOnNewSource)(const char* id, const char* kind,
@@ -12054,17 +12062,18 @@ static char* (*gRecordReplayCurrentExecutionPoint)();
 static void (*gRecordReplayFree)(void*);
 static size_t (*gRecordReplayElapsedTimeMs)();
 static void (*gRecordReplayOnAnnotation)(const char*, const char*);
+static void (*gRecordReplayNotifyActivity)();
 
 namespace internal {
 
 void RecordReplayOnNewSource(Isolate* isolate, const char* id,
                              const char* kind, const char* url) {
-  DCHECK(gRecordingOrReplaying);
+  DCHECK(gRecordReplayIsRecordingOrReplaying);
   gRecordReplayOnNewSource(id, kind, url);
 }
 
 void RecordReplayOnConsoleMessage(size_t bookmark) {
-  DCHECK(gRecordingOrReplaying);
+  DCHECK(gRecordReplayIsRecordingOrReplaying);
   gRecordReplayOnConsoleMessage(bookmark);
 }
 
@@ -12078,7 +12087,7 @@ extern "C" void V8RecordReplayGetCurrentException(MaybeLocal<Value>* exception) 
 }
 
 void RecordReplayOnExceptionUnwind(Isolate* isolate) {
-  CHECK(gRecordingOrReplaying);
+  CHECK(gRecordReplayIsRecordingOrReplaying);
   CHECK(IsMainThread());
 
   if (recordreplay::AreEventsDisallowed() || recordreplay::HasDivergedFromRecording()) {

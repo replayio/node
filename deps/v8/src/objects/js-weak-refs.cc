@@ -6,6 +6,7 @@
 
 #include "src/execution/execution.h"
 #include "src/objects/js-weak-refs-inl.h"
+#include "src/replay/finalization-registry.h"
 
 namespace v8 {
 namespace internal {
@@ -61,8 +62,19 @@ Maybe<bool> JSFinalizationRegistry::Cleanup(
   //    cell.[[WeakRefTarget]] is empty, an implementation may perform the
   //    following steps:
   bool key_map_may_need_shrink = false;
-  while (finalization_registry->NeedsCleanup()) {
+  while (true) {
     HandleScope scope(isolate);
+
+    // Which cell an iteration delivers, and how many a cleanup delivers at
+    // all, come from the recording: see ReplayFinalizationRegistries. It has
+    // to be asked before the test below, which is what it decides, and which
+    // the replay cannot be left to answer on its own.
+    if (finalization_registry->record_replay_id() != 0 &&
+        !replayio::ReplayFinalizationRegistries::NextCell(
+            isolate, indirect_handle(finalization_registry, isolate))) {
+      break;
+    }
+    if (!finalization_registry->NeedsCleanup()) break;
 
     // a. Choose any such cell.
     // b. Remove cell from finalizationRegistry.[[Cells]].

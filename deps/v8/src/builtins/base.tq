@@ -1499,6 +1499,7 @@ extern macro IsPrototypeTypedArrayPrototype(
 extern macro IsSetIteratorProtectorCellInvalid(): bool;
 extern macro IsMapIteratorProtectorCellInvalid(): bool;
 extern macro InvalidateStringWrapperToPrimitiveProtector(): void;
+extern macro IsRecordingOrReplaying(): bool;
 
 extern operator '.data_ptr' macro LoadJSTypedArrayDataPtr(JSTypedArray): RawPtr;
 

@@ -37,6 +37,7 @@ DirectHandle<JSFinalizationRegistry> ConstructJSFinalizationRegistry(
   finalization_registry->set_cleanup(
       isolate->native_context()->empty_function());
   finalization_registry->set_flags(0);
+  finalization_registry->set_record_replay_id(0);
 
 #ifdef VERIFY_HEAP
   finalization_registry->JSFinalizationRegistryVerify(isolate);
@@ -56,6 +57,7 @@ Handle<JSWeakRef> ConstructJSWeakRef(DirectHandle<JSReceiver> target,
       JSObject::New(weak_ref_fun, weak_ref_fun, Handle<AllocationSite>::null())
           .ToHandleChecked());
   weak_ref->set_target(*target);
+  weak_ref->set_record_replay_id(0);
 #ifdef VERIFY_HEAP
   weak_ref->JSWeakRefVerify(isolate);
 #endif  // VERIFY_HEAP
