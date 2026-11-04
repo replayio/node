@@ -245,6 +245,8 @@ class FileHandle final : public AsyncWrap, public StreamBase {
                          v8::Local<v8::Object> obj = v8::Local<v8::Object>());
   ~FileHandle() override;
 
+  void OnGCCollect() final;
+
   static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   int GetFD() override { return fd_; }

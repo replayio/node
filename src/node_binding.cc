@@ -404,6 +404,17 @@ inline InitializerCallback GetInitializerCallback(DLib* dlib) {
   return reinterpret_cast<InitializerCallback>(dlib->GetSymbolAddress(name));
 }
 
+// A module reached through its well-known initializer symbol uses the V8 API
+// directly, like a self-registering legacy module, which can't be recorded.
+inline void CallInitializerCallback(InitializerCallback callback,
+                                    Local<Object> exports,
+                                    Local<Value> module,
+                                    Local<Context> context) {
+  v8::recordreplay::InvalidateRecording(
+      "Binary module node_register_module initializer NYI");
+  callback(exports, module, context);
+}
+
 inline napi_addon_register_func GetNapiInitializerCallback(DLib* dlib) {
   const char* name =
       STRINGIFY(NAPI_MODULE_INITIALIZER_BASE) STRINGIFY(NAPI_MODULE_VERSION);
@@ -498,7 +509,7 @@ void DLOpen(const FunctionCallbackInfo<Value>& args) {
       dlib->SaveInGlobalHandleMap(mp);
     } else {
       if (auto callback = GetInitializerCallback(dlib)) {
-        callback(exports, module, context);
+        CallInitializerCallback(callback, exports, module, context);
         return true;
       } else if (auto napi_callback = GetNapiInitializerCallback(dlib)) {
         napi_module_register_by_symbol(exports, module, context, napi_callback);
@@ -524,7 +535,7 @@ void DLOpen(const FunctionCallbackInfo<Value>& args) {
       // wrong version. We must only give up after having checked to see if it
       // has an appropriate initializer callback.
       if (auto callback = GetInitializerCallback(dlib)) {
-        callback(exports, module, context);
+        CallInitializerCallback(callback, exports, module, context);
         return true;
       }
       char errmsg[1024];

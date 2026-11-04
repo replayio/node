@@ -5,6 +5,7 @@
 #include "env-inl.h"
 #include "js_native_api_v8.h"
 #include "js_native_api.h"
+#include "node_internals.h"
 #include "util-inl.h"
 
 #define CHECK_MAYBE_NOTHING(env, maybe, status) \
@@ -833,6 +834,22 @@ void Reference::SecondPassCallback(
     return;
   }
   reference->_secondPassParameter = nullptr;
+  // When recording/replaying, the GC collects the value at points which differ
+  // between the two, and the finalizer would be scheduled from here. A tracked
+  // reference (see RecordReplayTrack) is finalized from the next
+  // DeferredFinalization::Poll instead; when replaying, its value is never
+  // weak, so this only runs when recording. One created where it could not be
+  // tracked is left unfinalized: it stays on the env's list, so ~napi_env__
+  // finalizes it at environment teardown like any other live reference.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    if (reference->_record_replay_finalize_id) {
+      reference->_record_replay_finalization->OnCollected(
+          reference->_record_replay_finalize_id);
+    } else {
+      node::recordreplay::EnterLeakMemory("napi_ref");
+    }
+    return;
+  }
   reference->Finalize();
 }
 
