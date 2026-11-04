@@ -10,13 +10,18 @@
 #include "src/execution/v8threads.h"
 #include "src/heap/heap-inl.h"
 #include "src/objects/js-weak-refs-inl.h"
+#include "src/replay/finalization-registry.h"
+#include "src/replay/gc-poll.h"
 #include "src/tracing/trace-event.h"
 
 namespace v8 {
 namespace internal {
 
-FinalizationRegistryCleanupTask::FinalizationRegistryCleanupTask(Heap* heap)
-    : CancelableTask(heap->isolate()), heap_(heap) {}
+FinalizationRegistryCleanupTask::FinalizationRegistryCleanupTask(
+    Heap* heap, Heap::RecordReplayTracking record_replay_tracking)
+    : CancelableTask(heap->isolate()),
+      heap_(heap),
+      record_replay_tracking_(record_replay_tracking) {}
 
 void FinalizationRegistryCleanupTask::SlowAssertNoActiveJavaScript() {
 #ifdef ENABLE_SLOW_DCHECKS
@@ -44,11 +49,21 @@ void FinalizationRegistryCleanupTask::RunInternal() {
 
   HandleScope handle_scope(isolate);
   Handle<JSFinalizationRegistry> finalization_registry;
-  // There could be no dirty FinalizationRegistries. When a context is disposed
-  // by the embedder, its FinalizationRegistries are removed from the dirty
-  // list.
-  if (!heap_->DequeueDirtyJSFinalizationRegistry().ToHandle(
-          &finalization_registry)) {
+  if (record_replay_tracking_ == Heap::RecordReplayTracking::kTracked) {
+    // There is no registry when the recording's task found none, or when
+    // this point does not replay.
+    if (!replayio::ReplayFinalizationRegistries::TakeRegistryForTask(isolate)
+             .ToHandle(&finalization_registry)) {
+      replayio::ReplayGCPoll::Poll(isolate);
+      return;
+    }
+  } else if (!heap_
+                  ->RecordReplayDequeueDirtyJSFinalizationRegistry(
+                      Heap::RecordReplayTracking::kUntracked)
+                  .ToHandle(&finalization_registry)) {
+    // There could be no dirty FinalizationRegistries. When a context is
+    // disposed by the embedder, its FinalizationRegistries are removed from the
+    // dirty list.
     return;
   }
   finalization_registry->set_scheduled_for_cleanup(false);
@@ -91,6 +106,11 @@ void FinalizationRegistryCleanupTask::RunInternal() {
       !finalization_registry->scheduled_for_cleanup()) {
     auto nop = [](HeapObject, ObjectSlot, Object) {};
     heap_->EnqueueDirtyJSFinalizationRegistry(*finalization_registry, nop);
+  }
+
+  if (record_replay_tracking_ == Heap::RecordReplayTracking::kTracked) {
+    replayio::ReplayGCPoll::Poll(isolate);
+    return;
   }
 
   // Repost if there are remaining dirty FinalizationRegistries.
