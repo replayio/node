@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "include/v8.h"
 #include "src/base/address-region.h"
 #include "src/base/bit-field.h"
 #include "src/base/macros.h"
@@ -452,6 +453,11 @@ class V8_EXPORT_PRIVATE WasmCode final {
     DCHECK_LE(code_comments_offset, unpadded_binary_size);
     DCHECK_LE(constant_pool_offset, unpadded_binary_size);
     DCHECK_LE(jump_table_info_offset, unpadded_binary_size);
+    // Keep WasmCode objects around forever to avoid problems with them being
+    // destroyed at non-deterministic points.
+    if (recordreplay::IsRecordingOrReplaying("leak-references", "WasmCode")) {
+      IncRef();
+    }
   }
 
   std::unique_ptr<const uint8_t[]> ConcatenateBytes(

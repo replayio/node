@@ -48,7 +48,8 @@ class TaskQueue {
     Mutex::ScopedLock lock_;
   };
 
-  TaskQueue();
+  explicit TaskQueue(bool ordered = true);
+
   ~TaskQueue() = default;
 
   Locked Lock() { return Locked(this); }
@@ -157,6 +158,7 @@ class PerIsolatePlatformData
   void DecreaseHandleCount();
 
   static void FlushTasks(uv_async_t* handle);
+  static void RunRecordReplayUnorderedTasks(uv_check_t* handle);
   void RunForegroundTask(std::unique_ptr<v8::Task> task);
   static void RunForegroundTask(uv_timer_t* timer);
 
@@ -170,7 +172,8 @@ class PerIsolatePlatformData
   ShutdownCbList shutdown_callbacks_;
   // shared_ptr to self to keep this object alive during shutdown.
   std::shared_ptr<PerIsolatePlatformData> self_reference_;
-  uint32_t uv_handle_count_ = 1;  // 1 = flush_tasks_
+  // 1 = flush_tasks_, and record_replay_check_ when recording/replaying.
+  uint32_t uv_handle_count_ = 1;
 
   v8::Isolate* const isolate_;
   uv_loop_t* const loop_;
@@ -179,6 +182,12 @@ class PerIsolatePlatformData
   // first then foreground_delayed_tasks_ to avoid deadlocks.
   TaskQueue<TaskQueueEntry> foreground_tasks_;
   TaskQueue<DelayedTask> foreground_delayed_tasks_;
+  // When recording/replaying, tasks V8 posts at points which don't replay
+  // (see Task::IsRecordReplayNonDeterministic), as the GC posts its tasks.
+  // They run with events disallowed at the next event loop iteration, a point
+  // which replays, like Chromium runs them along with its next task.
+  TaskQueue<v8::Task> record_replay_unordered_tasks_{/* ordered */ false};
+  uv_check_t* record_replay_check_ = nullptr;
 
   // Use a custom deleter because libuv needs to close the handle first.
   typedef std::unique_ptr<DelayedTask, void (*)(DelayedTask*)>
@@ -190,8 +199,12 @@ class PerIsolatePlatformData
 // This acts as the single worker thread task runner for all Isolates.
 class WorkerThreadsTaskRunner {
  public:
-  explicit WorkerThreadsTaskRunner(int thread_pool_size,
-                                   PlatformDebugLogLevel debug_log_level);
+  // When recording/replaying, an unordered runner's threads run with events
+  // disallowed, so the tasks they run record nothing. It has no delayed tasks
+  // and is never shut down.
+  WorkerThreadsTaskRunner(int thread_pool_size,
+                          PlatformDebugLogLevel debug_log_level,
+                          bool record_replay_unordered = false);
 
   void PostTask(v8::TaskPriority priority,
                 std::unique_ptr<v8::Task> task,
@@ -207,6 +220,8 @@ class WorkerThreadsTaskRunner {
   int NumberOfWorkerThreads() const;
 
  private:
+  bool record_replay_unordered_;
+
   // A queue shared by all threads. The consumers are the worker threads which
   // take tasks from it to run in PlatformWorkerThread(). The producers can be
   // any thread. Both the foreground thread and the worker threads can push
@@ -281,6 +296,9 @@ class NodePlatform : public MultiIsolatePlatform {
   v8::TracingController* tracing_controller_;
   v8::PageAllocator* page_allocator_;
   std::shared_ptr<WorkerThreadsTaskRunner> worker_thread_task_runner_;
+  // When recording/replaying, runs the worker tasks posted with events
+  // disallowed, as the GC posts its concurrent and parallel work. Leaked.
+  WorkerThreadsTaskRunner* record_replay_unordered_task_runner_ = nullptr;
   bool has_shut_down_ = false;
   PlatformDebugLogLevel debug_log_level_ = PlatformDebugLogLevel::kNone;
 };

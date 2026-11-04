@@ -858,7 +858,7 @@ void GCTracer::Output(const char* format, ...) const {
 void GCTracer::Print() const {
   const base::TimeDelta duration = current_.end_time - current_.start_time;
   // Avoid getting the current time below at non-deterministic points.
-  if (recordreplay::IsRecordingOrReplaying()) {
+  if (recordreplay::IsRecordingOrReplaying("gc-changes", "GCTracer::Print")) {
     return;
   }
   const size_t kIncrementalStatsSize = 128;

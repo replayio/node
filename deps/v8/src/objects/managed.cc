@@ -10,10 +10,21 @@
 namespace v8 {
 namespace internal {
 
+bool ManagedFinalizersDeferredWhenEventsDisallowed() {
+  return recordreplay::IsRecordingOrReplaying(
+      "leak-references", "ManagedObjectFinalizerSecondPass");
+}
+
 namespace {
 // Called by the GC in its second pass when a Managed<CppType> is
 // garbage collected.
 void ManagedObjectFinalizerSecondPass(const v8::WeakCallbackInfo<void>& data) {
+  // Defer teardown to the deterministic Isolate::ReleaseSharedPtrs path
+  // instead of running it here at GC time.
+  if (recordreplay::AreEventsDisallowed() &&
+      ManagedFinalizersDeferredWhenEventsDisallowed()) {
+    return;
+  }
   auto destructor =
       reinterpret_cast<ManagedPtrDestructor*>(data.GetParameter());
   Isolate* isolate = reinterpret_cast<Isolate*>(data.GetIsolate());

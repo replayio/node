@@ -477,8 +477,16 @@ void V8::SetFlagsFromString(const char* str) {
   SetFlagsFromString(str, strlen(str));
 }
 
+static void RecordReplayApplyFlagOverrides();
+
 void V8::SetFlagsFromString(const char* str, size_t length) {
   i::FlagList::SetFlagsFromString(str, length);
+  // A program may turn the flags the driver forced off back on, e.g.
+  // v8.setFlagsFromString("--concurrent-marking"); keep them off.
+  if (recordreplay::IsRecordingOrReplaying()) {
+    recordreplay::Diagnostic("SetFlagsFromString %.*s", static_cast<int>(length), str);
+    RecordReplayApplyFlagOverrides();
+  }
 }
 
 void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
@@ -12443,8 +12451,7 @@ extern "C" void V8RecordReplayBytes(const char* why, void* buf, size_t size) {
 }
 
 bool recordreplay::AreEventsDisallowed(const char* why) {
-  (void)why;
-  if (IsRecordingOrReplaying()) {
+  if (IsRecordingOrReplaying("disallow-events", why)) {
     return gRecordReplayAreEventsDisallowed();
   }
   return false;
@@ -12745,9 +12752,131 @@ extern "C" const char* V8RecordReplayCrashReasonCallback();
 
 static pthread_t gMainThread;
 
+// The flag values record/replay needs, applied when the driver attaches and
+// again after any run-time flag change (V8::SetFlagsFromString, which Node
+// exposes as v8.setFlagsFromString()). The heap is set up with these flags
+// off, and V8 cannot switch e.g. concurrent marking on afterwards: the
+// marking worklists it would use were never created.
+static void RecordReplayApplyFlagOverrides() {
+  // Concurrent, parallel and incremental GC are used when recording and
+  // replaying by default but can be disabled via a feature, which runs every
+  // GC on the main thread instead, and expands the old generation where
+  // incremental marking would have started (see
+  // Heap::ShouldExpandOldGenerationOnSlowAllocation). The GC posts its jobs
+  // and tasks at points which don't replay, and node's platform runs them on
+  // worker threads which record nothing (see NodePlatform::CallOnWorkerThread)
+  // and at the main thread's next event loop iteration with events disallowed
+  // (see PerIsolatePlatformData::PostTask).
+  internal::gRecordReplayEnableGCFeatures =
+      recordreplay::FeatureEnabled("v8-flags-gc", nullptr);
+  if (!internal::gRecordReplayEnableGCFeatures) {
+    internal::v8_flags.concurrent_array_buffer_sweeping = false;
+    internal::v8_flags.concurrent_marking = false;
+    internal::v8_flags.concurrent_sweeping = false;
+    internal::v8_flags.incremental_marking_task = false;
+    internal::v8_flags.parallel_compaction = false;
+    internal::v8_flags.parallel_marking = false;
+    internal::v8_flags.parallel_pointer_update = false;
+    internal::v8_flags.parallel_scavenge = false;
+    internal::v8_flags.minor_gc_task = false;
+    internal::v8_flags.incremental_marking = false;
+  }
+
+  // For now the compilation cache is only used when recording.
+  if (recordreplay::IsReplaying() || !recordreplay::FeatureEnabled("v8-flags-compilation-cache", nullptr)) {
+    internal::v8_flags.compilation_cache = false;
+  }
+
+  // Compile optimized code on the thread that asked for it.
+  // CompileTurbofan_Concurrent CHECKs that it is never reached while recording
+  // or replaying -- "optimization jobs are generated non-deterministically and
+  // we don't support posting non-deterministic tasks to other threads yet" --
+  // and node 24 reaches it where node 22 did not, for reasons not established
+  // (node 24's V8 is built with V8_ENABLE_LEAPTIERING, a candidate rather than
+  // a finding). Whatever kept node 22 off that path, relying on it is worse
+  // than saying so here: 11 of the node-recording cases died on that CHECK.
+  internal::v8_flags.concurrent_recompilation = false;
+
+  // Compile Sparkplug code on the thread that asked for it. V8 13.6 turns
+  // concurrent_sparkplug on by default where node 22's V8 had it off, and the
+  // batch compiler then posts to a worker thread at whichever point fills a
+  // batch, which is not the same point when replaying: a recording reached
+  // BaselineBatchCompiler::CompileBatchConcurrent from Runtime_CompileLazy
+  // where the replay reached it from TieringManager::OnInterruptTick, so the
+  // ordered lock that posting takes on node's platform mutex was taken from a
+  // different stack. 118 of the node-recording cases died on that
+  // RecordedCallStackMismatch for OrderedLock UVMutex.
+  internal::v8_flags.concurrent_sparkplug = false;
+
+  // Disable wasm background compilation. The wasm module compiler is extremely
+  // complicated and getting this it to behave consistently when replaying in
+  // the presence of multiple threads isn't worth the hassle.
+  internal::v8_flags.wasm_num_compilation_tasks = 0;
+  internal::v8_flags.wasm_async_compilation = false;
+
+  // Don't reuse scope infos from previous compiles while replaying. A replay
+  // forces every variable to be context-allocated so that a debugger can read
+  // it (RUN-2604), but only on the paths a full parse takes:
+  // DeclarationScope::DeclareParameter and Scope::DeclareVariable force,
+  // while Scope::DeclareVariableName, which a lazy parse uses, leaves its
+  // variables alone. A scope info built without the forcing then disagrees
+  // with the same scope parsed with it, and reusing it trips
+  // CHECK_EQ(scope_info_->HasContext(), NeedsContext()) in
+  // Scope::AllocateScopeInfosRecursively, reached from
+  // IterativelyExecuteAndFinalizeUnoptimizedCompilationJobs. Measured on a
+  // reused FUNCTION_SCOPE: the scope info has no context where the fresh
+  // parse needs one, with two variables past the context header.
+  //
+  // Reusing such a scope info would also defeat the point of the forcing,
+  // since the variables it describes aren't in a context for a debugger to
+  // read, so this isn't only about the CHECK. V8 13.6 turns
+  // reuse_scope_infos on by default; node 22's V8 did not have the flag.
+  //
+  // Forcing the lazy path too would be narrower, but it would make
+  // correctness depend on every declaration path agreeing about context
+  // allocation, which is an invariant we cannot check. Giving up an
+  // optimization in the replay costs nothing next to forcing every variable
+  // into a context in the first place; the one optimization that reads the
+  // flag, MaglevGraphBuilder::ContextMayAlias, is disabled upstream anyway.
+  if (recordreplay::IsReplaying()) {
+    internal::v8_flags.reuse_scope_infos = false;
+  }
+
+  // Let only the major GC clear weak references, as it did through node 24.
+  // v26's scavenger grew a young generation path for them
+  // (ScavengerWeakObjectsProcessor, new in this version), so a WeakRef's
+  // target or a FinalizationRegistry's cell can now be cleared by a scavenge.
+  // That turns the recorder's own allocation into observable behaviour: a
+  // scavenge lands in a window where the same program running without a driver
+  // has none, and a WeakRef that still derefs unrecorded derefs to undefined
+  // in the recording -- one turn after it was created, before any GC the
+  // program asked for. Replaying it faithfully reproduces that, so this is not
+  // a divergence; it is the recording being a recording of something else.
+  // Keeping the targets to the next major GC is what node 22 and 24 do, and
+  // the spec allows a weak reference never to be cleared at all.
+  internal::v8_flags.handle_weak_ref_weakly_in_minor_gc = false;
+
+  // Don't let the memory pool release pooled pages on a timer. Every
+  // MemoryPool::Add, AddLarge and AddZoneReservation calls
+  // PostDelayedReleaseTaskIfNeeded, which reads TimeTicks::Now() and posts a
+  // release task once a deadline has passed. Both the clock reads and the
+  // branch on them happen on recorded threads, so the replay does not repeat
+  // them: a worker's Isolate::Deinit recorded the TimeTicks::Now() that
+  // MemoryPool::Add makes from PagedSpaceBase::TearDown, where the replay was
+  // already in ~ICUTimezoneCache. A timeout of 0 turns the whole timed path
+  // off (MemoryPool::PostDelayedReleaseTaskIfNeeded returns immediately);
+  // pooled pages are still released on teardown and before memory pressure
+  // GCs, which is what node 24's page pool did with no timer at all.
+  internal::v8_flags.memory_pool_timeout = 0;
+
+  // Async stack traces can vary when recording vs. replaying, apparently depending
+  // on how the code has been compiled.
+  internal::v8_flags.async_stack_traces = false;
+}
+
 void recordreplay::SetRecordingOrReplaying(void* handle) {
   if (!getenv("RECORD_REPLAY_PRETEND_NOT_RECORDING")) {
-    gRecordingOrReplaying = true;
+    internal::gRecordReplayIsRecordingOrReplaying = true;
   }
   gMainThread = pthread_self();
 
@@ -12852,32 +12981,7 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
                            internal::RecordReplayCallbackAssertDescribeData);
   }
 
-  // Set flags to disable non-deterministic posting of tasks to other threads.
-  // We don't support this yet when recording/replaying.
-  internal::FLAG_concurrent_array_buffer_sweeping = false;
-  internal::FLAG_concurrent_marking = false;
-  internal::FLAG_concurrent_sweeping = false;
-  internal::FLAG_incremental_marking_task = false;
-  internal::FLAG_parallel_compaction = false;
-  internal::FLAG_parallel_marking = false;
-  internal::FLAG_parallel_pointer_update = false;
-  internal::FLAG_parallel_scavenge = false;
-  internal::FLAG_scavenge_task = false;
-
-  // Incremental/compacting GC are also disabled for now. These could probably
-  // be supported for now it's not worth the bother.
-  internal::FLAG_incremental_marking = false;
-  internal::FLAG_never_compact = true;
-
-  // Disable wasm background compilation. The wasm module compiler is extremely
-  // complicated and getting this it to behave consistently when replaying in
-  // the presence of multiple threads isn't worth the hassle.
-  internal::FLAG_wasm_num_compilation_tasks = 0;
-  internal::FLAG_wasm_async_compilation = false;
-
-  // Async stack traces can vary when recording vs. replaying, apparently depending
-  // on how the code has been compiled.
-  internal::FLAG_async_stack_traces = false;
+  RecordReplayApplyFlagOverrides();
 }
 
 bool IsMainThread() {

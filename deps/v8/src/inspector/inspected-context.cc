@@ -23,6 +23,12 @@ class InspectedContext::ContextCollectedCallbacks final : public v8::Task {
 
   void Run() override;
 
+  // The GC decides when a context is collected, and the replay collects at
+  // other points, so posting this task must not enter the recording. It runs
+  // at the next event loop iteration instead, with events disallowed (see
+  // Task::IsRecordReplayNonDeterministic).
+  bool IsRecordReplayNonDeterministic() const override { return true; }
+
  private:
   std::unique_ptr<InspectedContext::WeakCallbackData> data_;
 };
