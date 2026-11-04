@@ -247,6 +247,12 @@ static void InstallGarbageCollectionTracking(
   Environment* env = Environment::GetCurrent(args);
   // Reset current_gc_type to 0
   env->performance_state()->current_gc_type = 0;
+
+  // GC performance entries are created at points which differ between
+  // recording and replaying, and are delivered to JS. Like other performance
+  // entries they are not supported when recording/replaying.
+  v8::recordreplay::InvalidateRecording("GC performance entries observed");
+
   env->isolate()->AddGCPrologueCallback(MarkGarbageCollectionStart,
                                         static_cast<void*>(env));
   env->isolate()->AddGCEpilogueCallback(MarkGarbageCollectionEnd,
