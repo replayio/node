@@ -406,6 +406,34 @@ std::string Basename(const std::string& str, const std::string& extension);
 
 node_module napi_module_to_node_module(const napi_module* mod);
 
+namespace recordreplay {
+
+// Throws a TypeError and returns true where the recording can't be used, e.g.
+// in an evaluation while paused, where operation_name would otherwise report
+// (or change) the replaying process instead of the recorded one. Matches
+// RecordReplayThrowIfEventsUnavailable in the Chromium fork.
+bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name);
+bool ThrowIfEventsUnavailable(const v8::FunctionCallbackInfo<v8::Value>& args,
+                              const char* operation_name);
+
+// Whether we're recording or replaying and the recording can't be used here,
+// the condition ThrowIfEventsUnavailable() throws on. Matches
+// AreEventsUnavailable() in the Chromium fork.
+bool AreEventsUnavailable();
+
+// Gates leaking an object whose cleanup would run at a point which differs
+// between recording and replaying, and notes it in the crash report
+// diagnostics. Matches recordreplay::EnterLeakMemory in the Chromium fork.
+inline bool EnterLeakMemory(const char* label) {
+  if (!v8::recordreplay::IsRecordingOrReplaying("leak-references", label)) {
+    return false;
+  }
+  v8::recordreplay::Diagnostic("LeakMemory %s", label);
+  return true;
+}
+
+}  // namespace recordreplay
+
 }  // namespace node
 
 #endif  // defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
