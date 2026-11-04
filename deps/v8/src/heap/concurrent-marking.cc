@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include "include/replayio.h"
 #include <stack>
 #include <unordered_map>
 
@@ -723,6 +724,7 @@ void ConcurrentMarking::TryScheduleJob(GarbageCollector garbage_collector,
                             TRACE_EVENT_FLAG_FLOW_OUT);
     job_handle_ = V8::GetCurrentPlatform()->PostJob(priority, std::move(job));
   }
+  replayio::AutoDisallowEvents disallow("ConcurrentMarking::ScheduleJob");
   DCHECK(job_handle_->IsValid());
 }
 

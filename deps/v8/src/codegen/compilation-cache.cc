@@ -284,6 +284,11 @@ InfoCellPair CompilationCache::LookupEval(
   InfoCellPair result;
   if (!IsEnabledScriptAndEval()) return result;
 
+  // Evaluations aren't cached when recording/replaying because new sources
+  // will not be generated on a cache hit, and sources need to be generated
+  // at deterministic points.
+  if (recordreplay::IsRecordingOrReplaying("no-eval-cache")) return result;
+
   const char* cache_type;
 
   DirectHandle<NativeContext> maybe_native_context;
@@ -329,6 +334,8 @@ void CompilationCache::PutEval(DirectHandle<String> source,
                                DirectHandle<FeedbackCell> feedback_cell,
                                int position) {
   if (!IsEnabledScriptAndEval()) return;
+
+  if (recordreplay::IsRecordingOrReplaying("no-eval-cache")) return;
 
   const char* cache_type;
   HandleScope scope(isolate());
