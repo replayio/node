@@ -814,9 +814,17 @@ void V8::SetFlagsFromString(const char* str) {
   SetFlagsFromString(str, strlen(str));
 }
 
+static void RecordReplayApplyFlagOverrides();
+
 void V8::SetFlagsFromString(const char* str, size_t length) {
   i::FlagList::SetFlagsFromString(str, length);
   i::FlagList::EnforceFlagImplications();
+  // A program may turn the flags the driver forced off back on, e.g.
+  // v8.setFlagsFromString("--concurrent-marking"); keep them off.
+  if (recordreplay::IsRecordingOrReplaying()) {
+    recordreplay::Diagnostic("SetFlagsFromString %.*s", static_cast<int>(length), str);
+    RecordReplayApplyFlagOverrides();
+  }
 }
 
 void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
@@ -11626,8 +11634,7 @@ extern "C" void V8RecordReplayBytes(const char* why, void* buf, size_t size) {
 }
 
 bool recordreplay::AreEventsDisallowed(const char* why) {
-  (void)why;
-  if (IsRecordingOrReplaying()) {
+  if (IsRecordingOrReplaying("disallow-events", why)) {
     return gRecordReplayAreEventsDisallowed();
   }
   return false;
@@ -11928,9 +11935,55 @@ extern "C" const char* V8RecordReplayCrashReasonCallback();
 
 static pthread_t gMainThread;
 
+// The flag values record/replay needs, applied when the driver attaches and
+// again after any run-time flag change (V8::SetFlagsFromString, which Node
+// exposes as v8.setFlagsFromString()). The heap is set up with these flags
+// off, and V8 cannot switch e.g. concurrent marking on afterwards: the
+// marking worklists it would use were never created.
+static void RecordReplayApplyFlagOverrides() {
+  // Concurrent, parallel and incremental GC are used when recording and
+  // replaying by default but can be disabled via a feature, which runs every
+  // GC on the main thread instead, and expands the old generation where
+  // incremental marking would have started (see
+  // Heap::ShouldExpandOldGenerationOnSlowAllocation). The GC posts its jobs
+  // and tasks at points which don't replay, and node's platform runs them on
+  // worker threads which record nothing (see NodePlatform::CallOnWorkerThread)
+  // and at the main thread's next event loop iteration with events disallowed
+  // (see PerIsolatePlatformData::PostTask).
+  internal::gRecordReplayEnableGCFeatures =
+      recordreplay::FeatureEnabled("v8-flags-gc", nullptr);
+  if (!internal::gRecordReplayEnableGCFeatures) {
+    internal::v8_flags.concurrent_array_buffer_sweeping = false;
+    internal::v8_flags.concurrent_marking = false;
+    internal::v8_flags.concurrent_sweeping = false;
+    internal::v8_flags.incremental_marking_task = false;
+    internal::v8_flags.parallel_compaction = false;
+    internal::v8_flags.parallel_marking = false;
+    internal::v8_flags.parallel_pointer_update = false;
+    internal::v8_flags.parallel_scavenge = false;
+    internal::v8_flags.minor_gc_task = false;
+    internal::v8_flags.incremental_marking = false;
+  }
+
+  // For now the compilation cache is only used when recording.
+  if (recordreplay::IsReplaying() || !recordreplay::FeatureEnabled("v8-flags-compilation-cache", nullptr)) {
+    internal::v8_flags.compilation_cache = false;
+  }
+
+  // Disable wasm background compilation. The wasm module compiler is extremely
+  // complicated and getting this it to behave consistently when replaying in
+  // the presence of multiple threads isn't worth the hassle.
+  internal::v8_flags.wasm_num_compilation_tasks = 0;
+  internal::v8_flags.wasm_async_compilation = false;
+
+  // Async stack traces can vary when recording vs. replaying, apparently depending
+  // on how the code has been compiled.
+  internal::v8_flags.async_stack_traces = false;
+}
+
 void recordreplay::SetRecordingOrReplaying(void* handle) {
   if (!getenv("RECORD_REPLAY_PRETEND_NOT_RECORDING")) {
-    gRecordingOrReplaying = true;
+    internal::gRecordReplayIsRecordingOrReplaying = true;
   }
   gMainThread = pthread_self();
 
@@ -12035,32 +12088,7 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
                            internal::RecordReplayCallbackAssertDescribeData);
   }
 
-  // Set flags to disable non-deterministic posting of tasks to other threads.
-  // We don't support this yet when recording/replaying.
-  internal::FLAG_concurrent_array_buffer_sweeping = false;
-  internal::FLAG_concurrent_marking = false;
-  internal::FLAG_concurrent_sweeping = false;
-  internal::FLAG_incremental_marking_task = false;
-  internal::FLAG_parallel_compaction = false;
-  internal::FLAG_parallel_marking = false;
-  internal::FLAG_parallel_pointer_update = false;
-  internal::FLAG_parallel_scavenge = false;
-  internal::FLAG_scavenge_task = false;
-
-  // Incremental/compacting GC are also disabled for now. These could probably
-  // be supported for now it's not worth the bother.
-  internal::FLAG_incremental_marking = false;
-  internal::FLAG_never_compact = true;
-
-  // Disable wasm background compilation. The wasm module compiler is extremely
-  // complicated and getting this it to behave consistently when replaying in
-  // the presence of multiple threads isn't worth the hassle.
-  internal::FLAG_wasm_num_compilation_tasks = 0;
-  internal::FLAG_wasm_async_compilation = false;
-
-  // Async stack traces can vary when recording vs. replaying, apparently depending
-  // on how the code has been compiled.
-  internal::FLAG_async_stack_traces = false;
+  RecordReplayApplyFlagOverrides();
 }
 
 bool IsMainThread() {

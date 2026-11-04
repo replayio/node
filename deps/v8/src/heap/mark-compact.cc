@@ -5,9 +5,11 @@
 #include "src/heap/mark-compact.h"
 
 #include <memory>
+#include "include/replayio.h"
 #include <unordered_map>
 #include <unordered_set>
 
+#include "include/v8.h"
 #include "src/base/logging.h"
 #include "src/base/optional.h"
 #include "src/base/platform/mutex.h"

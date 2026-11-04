@@ -646,6 +646,7 @@ bool PagedSpaceBase::TryAllocationFromFreeListMain(size_t size_in_bytes,
   return true;
 }
 
+
 base::Optional<std::pair<Address, size_t>>
 PagedSpaceBase::TryAllocationFromFreeListBackground(size_t min_size_in_bytes,
                                                     size_t max_size_in_bytes,
@@ -910,6 +911,8 @@ bool PagedSpaceBase::RawRefillLabMain(int size_in_bytes,
   if (TryExtendLAB(size_in_bytes)) return true;
 
   static constexpr int kMaxPagesToSweep = 1;
+
+  replayio::AutoDisallowEvents disallow("PagedSpaceBase::RawRefillLabMain");
 
   if (TryAllocationFromFreeListMain(size_in_bytes, origin)) return true;
 

@@ -5,7 +5,7 @@
 #include "src/heap/cppgc/heap-base.h"
 
 #include <memory>
-
+#include "include/replayio.h"
 #include "include/cppgc/heap-consistency.h"
 #include "include/cppgc/platform.h"
 #include "src/base/logging.h"
@@ -218,6 +218,9 @@ void HeapBase::ResetRememberedSet() {
 #endif  // defined(CPPGC_YOUNG_GENERATION)
 
 void HeapBase::Terminate() {
+  // The pre-finalizers run here belong to whatever earlier GCs left alive,
+  // which differs between recording and replay.
+  v8::replayio::AutoDisallowEvents disallow("HeapBase::Terminate");
   DCHECK(!IsMarking());
   CHECK(!in_disallow_gc_scope());
 

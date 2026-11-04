@@ -49,6 +49,8 @@ class GCInvoker::GCInvokerImpl final : public GarbageCollector {
           saved_epoch_(collector->epoch()) {}
 
    private:
+    bool IsRecordReplayNonDeterministic() const override { return true; }
+
     void Run() final {
       CHECK_NULL(collector_->override_stack_state());
 
