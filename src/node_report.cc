@@ -9,6 +9,7 @@
 #include "node_worker.h"
 #include "permission/permission.h"
 #include "util.h"
+#include "replayio.h"
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -19,10 +20,12 @@
 #endif
 
 #include <iostream>
+#include <memory>
 #include <cstring>
 #include <ctime>
 #include <cwctype>
 #include <fstream>
+#include <sstream>
 
 constexpr int NODE_REPORT_VERSION = 4;
 constexpr int NANOS_PER_SEC = 1000 * 1000 * 1000;
@@ -62,7 +65,25 @@ static void WriteNodeReport(Isolate* isolate,
                             std::ostream& out,
                             Local<Value> error,
                             bool compact,
-                            bool exclude_network = false);
+                            bool exclude_network = false,
+                            const std::vector<std::string>* worker_reports =
+                                nullptr);
+static std::vector<std::string> CollectWorkerReports(Environment* env,
+                                                     const char* trigger);
+static std::string RecordedNodeReport(Isolate* isolate,
+                                      Environment* env,
+                                      const char* message,
+                                      const char* trigger,
+                                      const std::string& filename,
+                                      Local<Value> error,
+                                      bool compact,
+                                      bool exclude_network);
+static std::string WriteRecordedReportFile(Isolate* isolate,
+                                           Environment* env,
+                                           const char* message,
+                                           const char* trigger,
+                                           const std::string& filename,
+                                           Local<Value> error);
 static void PrintVersionInformation(JSONWriter* writer,
                                     bool exclude_network = false);
 static void PrintJavaScriptErrorStack(JSONWriter* writer,
@@ -86,6 +107,233 @@ static void PrintRelease(JSONWriter* writer);
 static void PrintCpuInfo(JSONWriter* writer);
 static void PrintNetworkInterfaceInfo(JSONWriter* writer);
 
+// Reports when recording/replaying: the replay has to report exactly the
+// report the recording made, but several sections are read from the process's
+// own memory and differ in the replaying process: V8's heap statistics, the
+// native stack, the libuv handles' addresses and the loaded libraries
+// (dl_iterate_phdr isn't replayed).
+//
+// So the finished report text is recorded rather than each of its inputs. It's
+// small (around 16 KB), recorded in one place, and doesn't have to follow the
+// report's contents as node changes them, while some inputs, like stack frames
+// and pointers, have no meaningful replayed value. Throwing on reports instead
+// isn't an option: they are mostly made in error handlers and on crashes.
+//
+// When recording, the report is generated with events passed through, so none
+// of its system calls, locks or values are recorded, except where it reads the
+// JavaScript error it is made for (see RecordReplayRecordedSection). That runs
+// the program's code (getters, toString(), Error.prepareStackTrace), which is
+// recorded and runs the same way when replaying. When replaying, only the
+// error is read, and the recorded text is used instead of a report.
+//
+// The worker threads' subreports are the exception: each worker makes its
+// subreport on its own thread, as a recorded report of its own, so the
+// workers are asked for them with events recorded, when recording and when
+// replaying, for their threads to run the same way (see CollectWorkerReports).
+static thread_local bool generating_unrecorded_report = false;
+
+// Records the program's code that reading the error runs within a report
+// generated outside the recording.
+class RecordReplayRecordedSection {
+ public:
+  RecordReplayRecordedSection()
+      : passed_through_(generating_unrecorded_report) {
+    if (passed_through_) {
+      generating_unrecorded_report = false;
+      v8::recordreplay::EndPassThroughEvents();
+    }
+  }
+  ~RecordReplayRecordedSection() {
+    if (passed_through_) {
+      v8::recordreplay::BeginPassThroughEvents();
+      generating_unrecorded_report = true;
+    }
+  }
+
+ private:
+  bool passed_through_;
+};
+
+static std::string RecordedNodeReport(Isolate* isolate,
+                                      Environment* env,
+                                      const char* message,
+                                      const char* trigger,
+                                      const std::string& filename,
+                                      Local<Value> error,
+                                      bool compact,
+                                      bool exclude_network) {
+  // Asked for before the report is generated, so that the replay asks the
+  // workers at the same point as the recording; the recording's report stands
+  // in for them when replaying.
+  std::vector<std::string> worker_reports;
+  if (env != nullptr) {
+    worker_reports = CollectWorkerReports(env, trigger);
+  }
+
+  std::string text;
+  if (v8::recordreplay::IsRecording()) {
+    std::ostringstream report;
+    bool was_generating = generating_unrecorded_report;
+    generating_unrecorded_report = true;
+    {
+      v8::replayio::AutoPassThroughEvents pass_through;
+      WriteNodeReport(isolate, env, message, trigger, filename, report, error,
+                      compact, exclude_network, &worker_reports);
+    }
+    generating_unrecorded_report = was_generating;
+    text = report.str();
+  } else if (isolate != nullptr) {
+    // Run the program's code as the recording's report did.
+    std::ostringstream unused;
+    JSONWriter writer(unused, compact);
+    PrintJavaScriptErrorStack(&writer, isolate, error, trigger);
+    PrintJavaScriptErrorProperties(&writer, isolate, error);
+  }
+  size_t length =
+      v8::recordreplay::RecordReplayValue("NodeReport length", text.length());
+  text.resize(length);
+  if (length) {
+    v8::recordreplay::RecordReplayBytes("NodeReport", &text[0], length);
+  }
+  return text;
+}
+
+// Writes all of text to fd, with as many write calls as the system takes.
+static void WriteAll(uv_file fd, const std::string& text) {
+  size_t written = 0;
+  while (written < text.length()) {
+    uv_fs_t req;
+    uv_buf_t buf = uv_buf_init(const_cast<char*>(text.data()) + written,
+                               text.length() - written);
+    int rv = uv_fs_write(nullptr, &req, fd, &buf, 1, -1, nullptr);
+    uv_fs_req_cleanup(&req);
+    if (rv <= 0) {
+      return;
+    }
+    written += rv;
+  }
+}
+
+// TriggerNodeReport when recording/replaying. The report and the messages
+// about it are written with plain system calls rather than C++ streams, whose
+// calls differ when replaying with another C++ standard library.
+static std::string WriteRecordedReportFile(Isolate* isolate,
+                                           Environment* env,
+                                           const char* message,
+                                           const char* trigger,
+                                           const std::string& filename,
+                                           Local<Value> error) {
+  uv_file fd;
+  if (filename == "stdout") {
+    fd = 1;
+  } else if (filename == "stderr") {
+    fd = 2;
+  } else {
+    std::string report_directory;
+    {
+      Mutex::ScopedLock lock(per_process::cli_options_mutex);
+      report_directory = per_process::cli_options->report_directory;
+    }
+    std::string path = filename;
+    if (report_directory.length() > 0) {
+      path = report_directory + node::kPathSeparator + filename;
+    }
+    uv_fs_t req;
+    fd = uv_fs_open(nullptr, &req, path.c_str(),
+                    UV_FS_O_WRONLY | UV_FS_O_CREAT | UV_FS_O_TRUNC, 0644,
+                    nullptr);
+    uv_fs_req_cleanup(&req);
+    if (fd < 0) {
+      std::string failure = "\nFailed to open Node.js report file: " + filename;
+      if (report_directory.length() > 0) {
+        failure += " directory: " + report_directory;
+      }
+      WriteAll(2, failure + " (errno: " + std::to_string(-fd) + ")\n");
+      return "";
+    }
+    WriteAll(2, "\nWriting Node.js report to file: " + filename);
+  }
+
+  bool compact;
+  {
+    Mutex::ScopedLock lock(per_process::cli_options_mutex);
+    compact = per_process::cli_options->report_compact;
+  }
+  bool exclude_network = env != nullptr ? env->options()->report_exclude_network
+                                        : per_process::cli_options->per_isolate
+                                              ->per_env->report_exclude_network;
+  WriteAll(fd, RecordedNodeReport(isolate, env, message, trigger, filename,
+                                  error, compact, exclude_network));
+
+  if (fd > 2) {
+    uv_fs_t req;
+    uv_fs_close(nullptr, &req, fd, nullptr);
+    uv_fs_req_cleanup(&req);
+  }
+  // Do not mix JSON and free-form text on stderr.
+  if (filename != "stderr") {
+    WriteAll(2, "\nNode.js report completed\n");
+  }
+  return filename;
+}
+
+static constexpr uint64_t kWorkerReportTimeoutMs = 5000;
+
+// The worker subreports being collected, shared with the workers' interrupt
+// callbacks, which may run after the collection gave up waiting for them.
+struct WorkerReports {
+  // Ordered: the replay doesn't wait on an ordered mutex's condition variable
+  // but wakes the thread at the recorded point, so it never times out there.
+  Mutex mutex{/* ordered */ true};
+  ConditionVariable notify;
+  std::string trigger;
+  std::vector<std::string> infos;
+};
+
+// Asks each of env's worker threads for a report of its own, through an
+// interrupt on the worker thread, and waits for them.
+static std::vector<std::string> CollectWorkerReports(Environment* env,
+                                                     const char* trigger) {
+  auto reports = std::make_shared<WorkerReports>();
+  reports->trigger = trigger;
+  size_t expected_results = 0;
+
+  env->ForEachWorker([&](Worker* w) {
+    expected_results += w->RequestInterrupt([reports](Environment* env) {
+      std::ostringstream os;
+
+      GetNodeReport(env,
+                    "Worker thread subreport",
+                    reports->trigger.c_str(),
+                    Local<Object>(),
+                    os);
+
+      Mutex::ScopedLock lock(reports->mutex);
+      reports->infos.emplace_back(os.str());
+      reports->notify.Signal(lock);
+    });
+  });
+
+  Mutex::ScopedLock lock(reports->mutex);
+  reports->infos.reserve(expected_results);
+  while (reports->infos.size() < expected_results) {
+    if (reports->notify.TimedWait(lock, kWorkerReportTimeoutMs * 1000000) ||
+        !v8::recordreplay::IsRecording()) {
+      continue;
+    }
+    // When recording, a worker only answers from its event loop
+    // (Environment::RequestInterruptFromV8), which one blocked in
+    // Atomics.wait() or in a loop that never yields never gets to. Give up on
+    // the recording, and on the subreports still missing.
+    v8::recordreplay::InvalidateRecording(
+        node::SPrintF("A worker did not answer a report request within %ds",
+                      kWorkerReportTimeoutMs / 1000)
+            .c_str());
+    break;
+  }
+  return reports->infos;
+}
+
 // Internal function to coordinate and write the various
 // sections of the report to the supplied stream
 static void WriteNodeReport(Isolate* isolate,
@@ -96,7 +344,8 @@ static void WriteNodeReport(Isolate* isolate,
                             std::ostream& out,
                             Local<Value> error,
                             bool compact,
-                            bool exclude_network) {
+                            bool exclude_network,
+                            const std::vector<std::string>* worker_reports) {
   // Obtain the current time and the pid.
   TIME_TYPE tm_struct;
   DiagnosticFilename::LocalTime(&tm_struct);
@@ -224,29 +473,13 @@ static void WriteNodeReport(Isolate* isolate,
 
   writer.json_arraystart("workers");
   if (env != nullptr) {
-    Mutex workers_mutex;
-    ConditionVariable notify;
-    std::vector<std::string> worker_infos;
-    size_t expected_results = 0;
-
-    env->ForEachWorker([&](Worker* w) {
-      expected_results += w->RequestInterrupt([&](Environment* env) {
-        std::ostringstream os;
-
-        GetNodeReport(
-            env, "Worker thread subreport", trigger, Local<Value>(), os);
-
-        Mutex::ScopedLock lock(workers_mutex);
-        worker_infos.emplace_back(os.str());
-        notify.Signal(lock);
-      });
-    });
-
-    Mutex::ScopedLock lock(workers_mutex);
-    worker_infos.reserve(expected_results);
-    while (worker_infos.size() < expected_results)
-      notify.Wait(lock);
-    for (const std::string& worker_info : worker_infos)
+    // The subreports were collected already when the report is recorded.
+    std::vector<std::string> collected;
+    if (worker_reports == nullptr) {
+      collected = CollectWorkerReports(env, trigger);
+      worker_reports = &collected;
+    }
+    for (const std::string& worker_info : *worker_reports)
       writer.json_element(JSONWriter::ForeignJSON { worker_info });
   }
   writer.json_arrayend();
@@ -390,6 +623,7 @@ static void PrintNetworkInterfaceInfo(JSONWriter* writer) {
 static void PrintJavaScriptErrorProperties(JSONWriter* writer,
                                            Isolate* isolate,
                                            Local<Value> error) {
+  RecordReplayRecordedSection recorded_section;
   writer->json_objectstart("errorProperties");
   if (!error.IsEmpty() && error->IsObject()) {
     TryCatch try_catch(isolate);
@@ -505,6 +739,8 @@ static void PrintJavaScriptErrorStack(JSONWriter* writer,
                                       Isolate* isolate,
                                       Local<Value> error,
                                       const char* trigger) {
+  RecordReplayRecordedSection recorded_section;
+
   if (error.IsEmpty()) {
     return PrintJavaScriptStack(writer, isolate, trigger);
   }
@@ -875,6 +1111,14 @@ std::string TriggerNodeReport(Isolate* isolate,
     }
   }
 
+  // Where the recording can't be used, the report is made as without it, e.g.
+  // on a fatal error during GC, where events are disallowed and the process
+  // aborts right after.
+  if (node::recordreplay::AreEventsAvailable()) {
+    return report::WriteRecordedReportFile(isolate, env, message, trigger,
+                                           filename, error);
+  }
+
   // Open the report file stream for writing. Supports stdout/err,
   // user-specified or (default) generated name
   std::ofstream outfile;
@@ -984,6 +1228,12 @@ void GetNodeReport(Isolate* isolate,
   bool exclude_network = env != nullptr ? env->options()->report_exclude_network
                                         : per_process::cli_options->per_isolate
                                               ->per_env->report_exclude_network;
+  if (node::recordreplay::AreEventsAvailable()) {
+    out << report::RecordedNodeReport(isolate, env, message, trigger, "", error,
+                                      false, exclude_network);
+    return;
+  }
+
   report::WriteNodeReport(
       isolate, env, message, trigger, "", out, error, false, exclude_network);
 }
@@ -1001,6 +1251,12 @@ void GetNodeReport(Environment* env,
   bool exclude_network = env != nullptr ? env->options()->report_exclude_network
                                         : per_process::cli_options->per_isolate
                                               ->per_env->report_exclude_network;
+  if (node::recordreplay::AreEventsAvailable()) {
+    out << report::RecordedNodeReport(isolate, env, message, trigger, "", error,
+                                      false, exclude_network);
+    return;
+  }
+
   report::WriteNodeReport(
       isolate, env, message, trigger, "", out, error, false, exclude_network);
 }
