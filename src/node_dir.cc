@@ -1,5 +1,6 @@
 #include "node_dir.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "node_file-inl.h"
 #include "node_process-inl.h"
 #include "memory_tracker-inl.h"
@@ -196,6 +197,9 @@ void AfterClose(uv_fs_t* req) {
 
 void DirHandle::Close(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "dir.close")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 1);
@@ -294,6 +298,9 @@ static void AfterDirRead(uv_fs_t* req) {
 
 void DirHandle::Read(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "dir.read")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   const int argc = args.Length();
@@ -374,6 +381,9 @@ void AfterOpenDir(uv_fs_t* req) {
 
 static void OpenDir(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.opendir")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   const int argc = args.Length();
