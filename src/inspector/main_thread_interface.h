@@ -40,9 +40,7 @@ using MessageQueue = std::deque<std::unique_ptr<Request>>;
 
 class MainThreadHandle : public std::enable_shared_from_this<MainThreadHandle> {
  public:
-  explicit MainThreadHandle(MainThreadInterface* main_thread)
-                            : main_thread_(main_thread) {
-  }
+  explicit MainThreadHandle(MainThreadInterface* main_thread);
   ~MainThreadHandle() {
     Mutex::ScopedLock scoped_lock(block_lock_);
     CHECK_NULL(main_thread_);  // main_thread_ should have called Reset
@@ -66,7 +64,10 @@ class MainThreadHandle : public std::enable_shared_from_this<MainThreadHandle> {
   void Reset();
 
   MainThreadInterface* main_thread_;
-  Mutex block_lock_;
+  // Whether main_thread_ is the process's main thread's interface rather than
+  // a worker's.
+  const bool for_main_thread_;
+  Mutex block_lock_ { /* ordered */ true };
   int next_session_id_ = 0;
   std::atomic_int next_object_id_ = {1};
   std::optional<int> target_session_id_ = std::nullopt;
@@ -81,6 +82,7 @@ class MainThreadInterface :
   ~MainThreadInterface();
 
   void DispatchMessages();
+  void DispatchMainThreadRequests();
   void Post(std::unique_ptr<Request> request);
   bool WaitForFrontendEvent();
   void StopWaitingForFrontendEvent();
@@ -88,6 +90,9 @@ class MainThreadInterface :
   Agent* inspector_agent() {
     return agent_;
   }
+  // Whether this is the process's main thread's interface rather than a
+  // worker's.
+  bool is_main_thread() const { return is_main_thread_; }
   void AddObject(int handle, std::unique_ptr<Deletable> object);
   Deletable* GetObject(int id);
   Deletable* GetObjectIfExists(int id);
