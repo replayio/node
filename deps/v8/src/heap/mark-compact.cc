@@ -1822,11 +1822,18 @@ void MarkCompactCollector::ProcessEphemeronsLinear() {
   DCHECK(weak_objects_.current_ephemerons.IsEmpty());
   weak_objects_.current_ephemerons.Swap(weak_objects_.next_ephemerons);
 
+  const bool record_replay = recordreplay::IsRecordingOrReplaying();
+  size_t ephemerons_processed = 0;
   while (weak_objects_.current_ephemerons.Pop(kMainThreadTask, &ephemeron)) {
     ProcessEphemeron(ephemeron.key, ephemeron.value);
 
     if (non_atomic_marking_state()->IsWhite(ephemeron.value)) {
       key_to_values.insert(std::make_pair(ephemeron.key, ephemeron.value));
+    }
+
+    // This pass opens no GC scopes, and the ephemerons can number millions.
+    if (V8_UNLIKELY(record_replay && ++ephemerons_processed % 0x10000 == 0)) {
+      recordreplay::NotifyActivity();
     }
   }
 
@@ -1929,6 +1936,7 @@ std::pair<size_t, size_t> MarkCompactCollector::ProcessMarkingWorklist(
   size_t objects_processed = 0;
   bool is_per_context_mode = local_marking_worklists()->IsPerContextMode();
   Isolate* isolate = heap()->isolate();
+  const bool record_replay = recordreplay::IsRecordingOrReplaying();
   while (local_marking_worklists()->Pop(&object) ||
          local_marking_worklists()->PopOnHold(&object)) {
     // Left trimming may result in grey or black filler objects on the marking
@@ -1967,6 +1975,10 @@ std::pair<size_t, size_t> MarkCompactCollector::ProcessMarkingWorklist(
     }
     bytes_processed += visited_size;
     objects_processed++;
+    // Marking a large heap opens no further GC scopes.
+    if (V8_UNLIKELY(record_replay && objects_processed % 0x10000 == 0)) {
+      recordreplay::NotifyActivity();
+    }
     if (bytes_to_process && bytes_processed >= bytes_to_process) {
       break;
     }
