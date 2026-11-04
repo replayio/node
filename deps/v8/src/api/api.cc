@@ -51,6 +51,7 @@
 #include "src/execution/embedder-state.h"
 #include "src/execution/execution.h"
 #include "src/execution/frames-inl.h"
+#include "src/execution/futex-emulation.h"
 #include "src/execution/isolate-inl.h"
 #include "src/execution/messages.h"
 #include "src/execution/microtask-queue.h"
@@ -12106,6 +12107,7 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
 
   internal::gRecordReplayInstrumentNodeInternals = !!getenv("RECORD_REPLAY_INSTRUMENT_NODE");
   internal::InitializeRecordReplayAsserts();
+  internal::FutexEmulation::RecordReplayInitialize();
 
   if (internal::gRecordReplayAssertProgress) {
     void (*setAssertDataCallbacks)(
