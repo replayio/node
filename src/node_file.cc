@@ -27,6 +27,7 @@
 #include "node_external_reference.h"
 #include "node_file-inl.h"
 #include "node_metadata.h"
+#include "node_internals.h"
 #include "node_process-inl.h"
 #include "node_stat_watcher.h"
 #include "node_url.h"
@@ -519,6 +520,9 @@ MaybeLocal<Promise> FileHandle::ClosePromise() {
 }
 
 void FileHandle::Close(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "filehandle.close")) {
+    return;
+  }
   FileHandle* fd;
   ASSIGN_OR_RETURN_UNWRAP(&fd, args.This());
   Local<Promise> ret;
@@ -970,7 +974,9 @@ void AfterScanDir(uv_fs_t* req) {
 
 void Access(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
-
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.access")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
   HandleScope scope(isolate);
 
@@ -1009,6 +1015,9 @@ void Access(const FunctionCallbackInfo<Value>& args) {
 
 void Close(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.close")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 1);
@@ -1068,6 +1077,9 @@ static void ExistsSync(const FunctionCallbackInfo<Value>& args) {
 // Permission Model checks.
 static void InternalModuleReadJSON(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "require")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
   uv_loop_t* loop = env->event_loop();
 
@@ -1165,6 +1177,9 @@ static void InternalModuleReadJSON(const FunctionCallbackInfo<Value>& args) {
 // The speedup comes from not creating thousands of Stat and Error objects.
 static void InternalModuleStat(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "require")) {
+    return;
+  }
 
   CHECK(args[0]->IsString());
   node::Utf8Value path(env->isolate(), args[0]);
@@ -1192,6 +1207,9 @@ static void Stat(const FunctionCallbackInfo<Value>& args) {
   Realm* realm = Realm::GetCurrent(args);
   BindingData* binding_data = realm->GetBindingData<BindingData>();
   Environment* env = realm->env();
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.stat")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 3);
@@ -1239,6 +1257,9 @@ static void LStat(const FunctionCallbackInfo<Value>& args) {
   Realm* realm = Realm::GetCurrent(args);
   BindingData* binding_data = realm->GetBindingData<BindingData>();
   Environment* env = realm->env();
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.lstat")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 3);
@@ -1279,6 +1300,9 @@ static void FStat(const FunctionCallbackInfo<Value>& args) {
   Realm* realm = Realm::GetCurrent(args);
   BindingData* binding_data = realm->GetBindingData<BindingData>();
   Environment* env = realm->env();
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.fstat")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 2);
@@ -1366,6 +1390,9 @@ static void StatFs(const FunctionCallbackInfo<Value>& args) {
 
 static void Symlink(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.symlink")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   const int argc = args.Length();
@@ -1409,6 +1436,9 @@ static void Symlink(const FunctionCallbackInfo<Value>& args) {
 
 static void Link(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.link")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   const int argc = args.Length();
@@ -1468,6 +1498,9 @@ static void Link(const FunctionCallbackInfo<Value>& args) {
 
 static void ReadLink(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.readlink")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   const int argc = args.Length();
@@ -1513,6 +1546,9 @@ static void ReadLink(const FunctionCallbackInfo<Value>& args) {
 
 static void Rename(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.rename")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   const int argc = args.Length();
@@ -1570,6 +1606,9 @@ static void Rename(const FunctionCallbackInfo<Value>& args) {
 
 static void FTruncate(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.ftruncate")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 2);
@@ -1597,6 +1636,9 @@ static void FTruncate(const FunctionCallbackInfo<Value>& args) {
 
 static void Fdatasync(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.fdatasync")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 1);
@@ -1622,6 +1664,9 @@ static void Fdatasync(const FunctionCallbackInfo<Value>& args) {
 
 static void Fsync(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.fsync")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 1);
@@ -1647,6 +1692,9 @@ static void Fsync(const FunctionCallbackInfo<Value>& args) {
 
 static void Unlink(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.unlink")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 1);
@@ -1680,6 +1728,9 @@ static void Unlink(const FunctionCallbackInfo<Value>& args) {
 
 static void RMDir(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.rmdir")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 1);
@@ -1868,6 +1919,9 @@ int MKDirpAsync(uv_loop_t* loop,
 
 static void MKDir(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.mkdir")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 3);
@@ -1923,6 +1977,9 @@ static void MKDir(const FunctionCallbackInfo<Value>& args) {
 
 static void RealPath(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.realpath")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   const int argc = args.Length();
@@ -1975,6 +2032,9 @@ static void RealPath(const FunctionCallbackInfo<Value>& args) {
 
 static void ReadDir(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.readdir")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   const int argc = args.Length();
@@ -2130,6 +2190,9 @@ static inline Maybe<void> CheckOpenPermissions(Environment* env,
 
 static void Open(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.open")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 3);
@@ -2170,6 +2233,9 @@ static void OpenFileHandle(const FunctionCallbackInfo<Value>& args) {
   Realm* realm = Realm::GetCurrent(args);
   BindingData* binding_data = realm->GetBindingData<BindingData>();
   Environment* env = realm->env();
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fsPromises.open")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 3);
@@ -2209,6 +2275,9 @@ static void OpenFileHandle(const FunctionCallbackInfo<Value>& args) {
 
 static void CopyFile(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.copyFile")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   const int argc = args.Length();
@@ -2272,6 +2341,9 @@ static void CopyFile(const FunctionCallbackInfo<Value>& args) {
 //             if null, write from the current position
 static void WriteBuffer(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.write")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 4);
@@ -2332,6 +2404,9 @@ static void WriteBuffer(const FunctionCallbackInfo<Value>& args) {
 //             if null, write from the current position
 static void WriteBuffers(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.writev")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 3);
@@ -2391,6 +2466,9 @@ static void WriteBuffers(const FunctionCallbackInfo<Value>& args) {
 // 3 enc       encoding of string
 static void WriteString(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.write")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   const int argc = args.Length();
@@ -2569,6 +2647,9 @@ static void WriteFileUtf8(const FunctionCallbackInfo<Value>& args) {
  */
 static void Read(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.read")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 5);
@@ -2697,6 +2778,9 @@ static void ReadFileUtf8(const FunctionCallbackInfo<Value>& args) {
 //             if null, read from the current position
 static void ReadBuffers(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.readv")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 3);
@@ -2743,6 +2827,9 @@ static void ReadBuffers(const FunctionCallbackInfo<Value>& args) {
  */
 static void Chmod(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.chmod")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 2);
@@ -2775,6 +2862,9 @@ static void Chmod(const FunctionCallbackInfo<Value>& args) {
  */
 static void FChmod(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.fchmod")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 2);
@@ -2805,6 +2895,9 @@ static void FChmod(const FunctionCallbackInfo<Value>& args) {
  */
 static void Chown(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.chown")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 3);
@@ -2848,6 +2941,9 @@ static void Chown(const FunctionCallbackInfo<Value>& args) {
  */
 static void FChown(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.fchown")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 3);
@@ -2879,6 +2975,9 @@ static void FChown(const FunctionCallbackInfo<Value>& args) {
 
 static void LChown(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.lchown")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 3);
@@ -2918,6 +3017,9 @@ static void LChown(const FunctionCallbackInfo<Value>& args) {
 
 static void UTimes(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.utimes")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 3);
@@ -2950,6 +3052,9 @@ static void UTimes(const FunctionCallbackInfo<Value>& args) {
 
 static void FUTimes(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.futimes")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 3);
@@ -2981,6 +3086,9 @@ static void FUTimes(const FunctionCallbackInfo<Value>& args) {
 
 static void LUTimes(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.lutimes")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 3);
@@ -3013,6 +3121,9 @@ static void LUTimes(const FunctionCallbackInfo<Value>& args) {
 
 static void Mkdtemp(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.mkdtemp")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   const int argc = args.Length();
