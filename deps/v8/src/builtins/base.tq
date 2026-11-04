@@ -1405,6 +1405,7 @@ extern macro IsPrototypeTypedArrayPrototype(
     implicit context: Context)(Map): bool;
 extern macro IsSetIteratorProtectorCellInvalid(): bool;
 extern macro IsMapIteratorProtectorCellInvalid(): bool;
+extern macro IsRecordingOrReplaying(): bool;
 
 extern operator '.data_ptr' macro LoadJSTypedArrayDataPtr(JSTypedArray): RawPtr;
 
