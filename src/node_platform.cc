@@ -353,7 +353,15 @@ void PerIsolatePlatformData::AddShutdownCallback(void (*callback)(void*),
 }
 
 void PerIsolatePlatformData::Shutdown() {
-  if (flush_tasks_ == nullptr)
+  uv_async_t* async_handle;
+  {
+    // A post from another thread that took the lock first has sent its task;
+    // any later one finds flush_tasks_ null and discards it.
+    Mutex::ScopedLock lock(flush_tasks_mutex_);
+    async_handle = flush_tasks_;
+    flush_tasks_ = nullptr;
+  }
+  if (async_handle == nullptr)
     return;
 
   // While there should be no V8 tasks in the queues at this point, it is
@@ -394,7 +402,6 @@ void PerIsolatePlatformData::Shutdown() {
     platform_data->DecreaseHandleCount();
     platform_data->self_reference_.reset();
   });
-  flush_tasks_ = nullptr;
 }
 
 void PerIsolatePlatformData::DecreaseHandleCount() {
