@@ -4,6 +4,8 @@
 
 #include "src/heap/cppgc/stats-collector.h"
 
+#include "include/replayio.h"
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -69,6 +71,8 @@ void StatsCollector::NotifySafePointForTesting() {
 }
 
 void StatsCollector::AllocatedObjectSizeSafepointImpl() {
+  v8::replayio::AutoDisallowEvents disallow("StatsCollector::AllocatedObjectSizeSafepointImpl");
+
   allocated_bytes_since_end_of_marking_ +=
       static_cast<int64_t>(allocated_bytes_since_safepoint_) -
       static_cast<int64_t>(explicitly_freed_bytes_since_safepoint_);
