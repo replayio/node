@@ -4,6 +4,8 @@
 
 #include "src/heap/cppgc/heap-base.h"
 
+#include "include/replayio.h"
+
 #include "include/cppgc/heap-consistency.h"
 #include "src/base/platform/platform.h"
 #include "src/base/sanitizer/lsan-page-allocator.h"
@@ -103,6 +105,9 @@ void HeapBase::ExecutePreFinalizers() {
 }
 
 void HeapBase::Terminate() {
+  // The pre-finalizers run here belong to whatever earlier GCs left alive,
+  // which differs between recording and replay.
+  v8::replayio::AutoDisallowEvents disallow("HeapBase::Terminate");
   DCHECK(!IsMarking());
   CHECK(!in_disallow_gc_scope());
 

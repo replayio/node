@@ -4,8 +4,11 @@
 
 #include "src/heap/mark-compact.h"
 
+#include "include/replayio.h"
+
 #include <unordered_map>
 
+#include "include/v8.h"
 #include "src/base/optional.h"
 #include "src/base/utils/random-number-generator.h"
 #include "src/codegen/compilation-cache.h"
@@ -645,6 +648,8 @@ void MarkCompactCollector::VerifyMarkbitsAreClean() {
 #endif  // VERIFY_HEAP
 
 void MarkCompactCollector::EnsureSweepingCompleted() {
+  replayio::AutoDisallowEvents disallow("Heap::EnsureSweepingCompleted");
+
   if (!sweeper()->sweeping_in_progress()) return;
 
   sweeper()->EnsureCompleted();

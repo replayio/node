@@ -166,6 +166,9 @@ AllocationResult OldLargeObjectSpace::AllocateRawBackground(
   // If so, fail the allocation.
   if (!heap()->CanExpandOldGenerationBackground(local_heap, object_size) ||
       !heap()->ShouldExpandOldGenerationOnSlowAllocation(local_heap)) {
+    recordreplay::Diagnostic("[RUN-851] OldLargeObjectSpace::AllocateRawBackground Failed %d %d",
+                             heap()->CanExpandOldGenerationBackground(local_heap, object_size),
+                             heap()->ShouldExpandOldGenerationOnSlowAllocation(local_heap));
     return AllocationResult::Retry(identity());
   }
 
