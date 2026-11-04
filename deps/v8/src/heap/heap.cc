@@ -90,6 +90,7 @@
 #include "src/objects/slots-atomic-inl.h"
 #include "src/objects/slots-inl.h"
 #include "src/regexp/regexp.h"
+#include "src/replay/gc-poll.h"
 #include "src/snapshot/embedded/embedded-data.h"
 #include "src/snapshot/serializer-deserializer.h"
 #include "src/snapshot/snapshot.h"
@@ -6689,8 +6690,24 @@ void Heap::SetInterpreterEntryTrampolineForProfiling(Code code) {
 
 void Heap::PostFinalizationRegistryCleanupTaskIfNeeded() {
   // Only one cleanup task is posted at a time.
-  if (!HasDirtyJSFinalizationRegistries() ||
-      is_finalization_registry_cleanup_task_posted_) {
+  if (is_finalization_registry_cleanup_task_posted_) return;
+  // Cleanup of record/replay tracked registries is scheduled by
+  // ReplayGCPoll::Poll instead.
+  if (!RecordReplayHasDirtyJSFinalizationRegistries(
+          RecordReplayTracking::kUntracked)) {
+    return;
+  }
+  // The cleanup of a registry without a record/replay id would run at a point
+  // which depends on when the GC ran, which differs between recording and
+  // replaying. Leave its cleared cells uncollected instead.
+  if (recordreplay::IsRecordingOrReplaying()) {
+    static bool reported = false;
+    if (!reported) {
+      reported = true;
+      recordreplay::Diagnostic(
+          "LeakMemory FinalizationRegistry cleanup: registry has no "
+          "record/replay id");
+    }
     return;
   }
   auto taskrunner = V8::GetCurrentPlatform()->GetForegroundTaskRunner(
@@ -6728,19 +6745,47 @@ void Heap::EnqueueDirtyJSFinalizationRegistry(
   // ProcessWeakListRoots.
 }
 
-MaybeHandle<JSFinalizationRegistry> Heap::DequeueDirtyJSFinalizationRegistry() {
-  // Take a FinalizationRegistry from the head of the dirty list for fairness.
-  if (HasDirtyJSFinalizationRegistries()) {
-    Handle<JSFinalizationRegistry> head(
-        JSFinalizationRegistry::cast(dirty_js_finalization_registries_list()),
-        isolate());
-    set_dirty_js_finalization_registries_list(head->next_dirty());
-    head->set_next_dirty(ReadOnlyRoots(this).undefined_value());
-    if (*head == dirty_js_finalization_registries_list_tail()) {
-      set_dirty_js_finalization_registries_list_tail(
-          ReadOnlyRoots(this).undefined_value());
+bool Heap::RecordReplayHasDirtyJSFinalizationRegistries(
+    RecordReplayTracking tracking) {
+  const bool tracked = tracking == RecordReplayTracking::kTracked;
+  Object current = dirty_js_finalization_registries_list();
+  while (!current.IsUndefined(isolate())) {
+    JSFinalizationRegistry finalization_registry =
+        JSFinalizationRegistry::cast(current);
+    if ((finalization_registry.record_replay_id() != 0) == tracked) return true;
+    current = finalization_registry.next_dirty();
+  }
+  return false;
+}
+
+MaybeHandle<JSFinalizationRegistry>
+Heap::RecordReplayDequeueDirtyJSFinalizationRegistry(
+    RecordReplayTracking tracking) {
+  const bool tracked = tracking == RecordReplayTracking::kTracked;
+  Isolate* isolate = this->isolate();
+  Object prev = ReadOnlyRoots(isolate).undefined_value();
+  Object current = dirty_js_finalization_registries_list();
+  while (!current.IsUndefined(isolate)) {
+    JSFinalizationRegistry finalization_registry =
+        JSFinalizationRegistry::cast(current);
+    if ((finalization_registry.record_replay_id() != 0) != tracked) {
+      prev = current;
+      current = finalization_registry.next_dirty();
+      continue;
     }
-    return head;
+    if (prev.IsUndefined(isolate)) {
+      set_dirty_js_finalization_registries_list(
+          finalization_registry.next_dirty());
+    } else {
+      JSFinalizationRegistry::cast(prev).set_next_dirty(
+          finalization_registry.next_dirty());
+    }
+    if (finalization_registry == dirty_js_finalization_registries_list_tail()) {
+      set_dirty_js_finalization_registries_list_tail(prev);
+    }
+    finalization_registry.set_next_dirty(
+        ReadOnlyRoots(isolate).undefined_value());
+    return handle(finalization_registry, isolate);
   }
   return {};
 }
@@ -6790,6 +6835,20 @@ void Heap::KeepDuringJob(Handle<JSReceiver> target) {
 
 void Heap::ClearKeptObjects() {
   set_weak_refs_keep_during_job(ReadOnlyRoots(isolate()).undefined_value());
+
+  // Cleanup of record/replay tracked registries is scheduled from here and not
+  // from the GC, so the decision is made at a deterministic point. The poll
+  // runs at every microtask checkpoint with events allowed.
+  //
+  // Tradeoff: a GC that dirties a registry inside an unordered task is not
+  // followed by such a checkpoint, so its cleanup waits for the next one, which
+  // an ordered task brings. Callbacks run later than upstream in that case;
+  // nothing diverges.
+  //
+  // If this delay ever matters, add a second poll just before the event loop
+  // goes idle. That needs an embedder hook from node's platform to the
+  // isolate, for the main thread and workers.
+  replayio::ReplayGCPoll::Poll(isolate());
 }
 
 size_t Heap::NumberOfTrackedHeapObjectTypes() {
