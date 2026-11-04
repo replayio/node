@@ -122,6 +122,9 @@ class ModuleWrap;
 class Environment;
 class Realm;
 
+namespace recordreplay {
+class DeferredFinalization;
+}  // namespace recordreplay
 struct IsolateDataSerializeInfo {
   std::vector<SnapshotIndex> primitive_values;
   std::vector<PropInfo> template_values;
@@ -882,6 +885,10 @@ class Environment final : public MemoryRetainer {
   // List of id's that have been destroyed and need the destroy() cb called.
   inline std::vector<double>* destroy_async_id_list();
 
+  // Cleanup for what the GC collected, run at deterministic points when
+  // recording/replaying.
+  inline recordreplay::DeferredFinalization* deferred_finalization();
+
   builtins::BuiltinLoader* builtin_loader();
 
   std::unordered_multimap<int, loader::ModuleWrap*> hash_to_module_map;
@@ -1275,6 +1282,7 @@ class Environment final : public MemoryRetainer {
   size_t async_callback_scope_depth_ = 0;
   std::vector<double> destroy_async_id_list_;
   std::unordered_set<shadow_realm::ShadowRealm*> shadow_realms_;
+  std::unique_ptr<recordreplay::DeferredFinalization> deferred_finalization_;
 
 #if HAVE_INSPECTOR
   std::unique_ptr<profiler::V8CoverageConnection> coverage_connection_;
