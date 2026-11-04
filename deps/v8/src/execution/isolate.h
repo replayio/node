@@ -81,6 +81,10 @@ class ConsoleDelegate;
 class AsyncEventDelegate;
 }  // namespace debug
 
+namespace replayio {
+class ReplayIsolateData;
+}  // namespace replayio
+
 namespace internal {
 
 namespace heap {
@@ -1270,6 +1274,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   GlobalHandles* global_handles() const { return global_handles_; }
 
   EternalHandles* eternal_handles() const { return eternal_handles_; }
+
+  replayio::ReplayIsolateData* replay_data() const { return replay_data_.get(); }
+  replayio::ReplayIsolateData* EnsureReplayData();
 
   ThreadManager* thread_manager() const { return thread_manager_; }
 
