@@ -338,6 +338,8 @@ class FileHandle final : public AsyncWrap, public StreamBase {
                          std::optional<int64_t> maybeLength = std::nullopt);
   ~FileHandle() override;
 
+  void OnGCCollect() final;
+
   static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   int GetFD() override { return fd_; }
