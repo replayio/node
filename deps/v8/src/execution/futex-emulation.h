@@ -133,6 +133,9 @@ class FutexWaitListNode {
 
   // State used for an async wait; nullptr on sync waits.
   const std::unique_ptr<AsyncState> async_state_;
+  // While recording or replaying, the id of the task that resolves this async
+  // waiter's promise once it is notified.
+  uint64_t record_replay_resolve_id_ = 0;
 };
 
 class FutexEmulation : public AllStatic {
@@ -185,6 +188,11 @@ class FutexEmulation : public AllStatic {
   // Called before |isolate| dies. Removes async waiters owned by |isolate|.
   static void IsolateDeinit(Isolate* isolate);
 
+  // Creates the ordered lock that orders notifies against waiters entering and
+  // leaving the wait list and going away with their isolate, while recording
+  // or replaying.
+  static void RecordReplayInitialize();
+
   // Return the number of threads or async waiters waiting on |addr|. Should
   // only be used for testing.
   static int NumWaitersForTesting(Tagged<JSArrayBuffer> array_buffer,
@@ -226,13 +234,20 @@ class FutexEmulation : public AllStatic {
                                   int64_t rel_timeout_ns, CallType call_type);
 
   // Resolve the Promises of the async waiters which belong to |isolate|.
-  static void ResolveAsyncWaiterPromises(Isolate* isolate);
+  // While recording or replaying, only those given record_replay_resolve_id.
+  static void ResolveAsyncWaiterPromises(Isolate* isolate,
+                                         uint64_t record_replay_resolve_id = 0);
 
   static void ResolveAsyncWaiterPromise(FutexWaitListNode* node);
 
   static void HandleAsyncWaiterTimeout(FutexWaitListNode* node);
 
-  static void NotifyAsyncWaiter(FutexWaitListNode* node);
+  // While recording or replaying, the tasks to post once events are allowed
+  // again.
+  class RecordReplayTasksToPost;
+
+  static void NotifyAsyncWaiter(FutexWaitListNode* node,
+                                RecordReplayTasksToPost* record_replay_tasks);
 
   // Remove the node's Promise from the NativeContext's Promise set.
   static void CleanupAsyncWaiterPromise(FutexWaitListNode* node);
