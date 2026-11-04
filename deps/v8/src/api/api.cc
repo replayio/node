@@ -10575,15 +10575,34 @@ void RecordReplayOnTargetProgressReached() {
   if (recordreplay::AreEventsDisallowed()) {
     // We should not have progress updates when events disallowed.
     if (!recordreplay::HasDivergedFromRecording()) {
-      recordreplay::Warning("OnProgressReached PC=%zu", (size_t)*gProgressCounter);
+      recordreplay::Warning("TargetProgressReachedWithEventsDisallowed",
+                            {{"progress", *gProgressCounter}});
     }
     return;
   }
   gRecordReplayProgressReached();
 }
 
-void RecordReplayInstrument(const char* kind, const char* function, int offset) {
-  gRecordReplayOnInstrument(kind, function, offset);
+// Have the driver invoke the API interrupt callbacks when the progress counter
+// next advances, when recording; when replaying, the driver invokes them at the
+// same progress value (see Isolate::InvokeApiInterruptCallbacks).
+void RecordReplayTriggerProgressInterrupt() {
+  CHECK(recordreplay::IsRecording() && IsMainThread());
+  gRecordReplayTriggerProgressInterrupt();
+}
+
+static void RecordReplayProgressInterruptCallback() {
+  CHECK(IsMainThread());
+  Isolate* isolate = Isolate::Current();
+  isolate->heap()->RecordReplayOnProgressInterrupt();
+  // The memory reducer triggers progress interrupts too.
+  if (recordreplay::IsRecordingOrReplaying("interrupts")) {
+    isolate->RecordReplayInvokeApiInterruptCallbacksAtProgress();
+  }
+}
+
+void RecordReplayInstrument(const char* kind, const char* function, int function_index) {
+  gRecordReplayOnInstrument(kind, function, function_index);
 }
 
 extern char* CommandCallback(const char* command, const char* params);
@@ -11293,6 +11312,10 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   void (*setProgressCallback)(void (*aCallback)(uint64_t));
   RecordReplayLoadSymbol(handle, "RecordReplaySetProgressCallback", setProgressCallback);
   setProgressCallback(internal::RecordReplaySetTargetProgress);
+
+  void (*setProgressInterruptCallback)(void (*aCallback)());
+  RecordReplayLoadSymbol(handle, "RecordReplaySetProgressInterruptCallback", setProgressInterruptCallback);
+  setProgressInterruptCallback(internal::RecordReplayProgressInterruptCallback);
 
   void (*enableProgressCheckpoints)();
   RecordReplayLoadSymbol(handle, "RecordReplayEnableProgressCheckpoints", enableProgressCheckpoints);
