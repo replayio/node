@@ -903,10 +903,6 @@ std::unique_ptr<InspectorSession> Agent::ConnectToMainThread(
                                     permission::PermissionScope::kInspector,
                                     "ConnectToMainThread",
                                     std::unique_ptr<InspectorSession>{});
-  // Worker inspection is NYI when recording/replaying.
-  if (v8::recordreplay::IsRecordingOrReplaying()) {
-    return nullptr;
-  }
   if (!parent_env_->should_create_inspector() && !client_) {
     ThrowUninitializedInspectorError(parent_env_);
     return std::unique_ptr<InspectorSession>{};
