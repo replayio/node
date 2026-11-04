@@ -12,6 +12,7 @@
 #include "src/api/api-inl.h"
 #include "src/api/api-natives.h"
 #include "src/base/platform/mutex.h"
+#include "src/base/replayio.h"
 #include "src/builtins/builtins.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/codegen/compilation-cache.h"
@@ -3415,9 +3416,7 @@ bool RecordReplayHasRegisteredScript(Script script) {
 
 bool RecordReplayIsDivergentUserJSWithoutPause(
     const SharedFunctionInfo& shared) {
-  return recordreplay::AreEventsDisallowed() &&
-         !recordreplay::HasDivergedFromRecording() &&
-         shared.script().IsScript() &&
+  return replayio::MustNotRunUserJS() && shared.script().IsScript() &&
          RecordReplayHasRegisteredScript(Script::cast(shared.script()));
 }
 
