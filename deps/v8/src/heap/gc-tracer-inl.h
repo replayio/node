@@ -5,10 +5,12 @@
 #ifndef V8_HEAP_GC_TRACER_INL_H_
 #define V8_HEAP_GC_TRACER_INL_H_
 
+#include "include/v8.h"
 #include "src/base/platform/platform.h"
 #include "src/execution/isolate.h"
 #include "src/heap/gc-tracer.h"
 #include "src/heap/heap-inl.h"
+#include "src/heap/heap.h"
 
 namespace v8 {
 namespace internal {
@@ -35,6 +37,13 @@ GCTracer::Scope::Scope(GCTracer* tracer, ScopeId scope, ThreadKind thread_kind)
       scope_(scope),
       thread_kind_(thread_kind),
       start_time_(tracer_->MonotonicallyIncreasingTimeInMs()) {
+  // While replaying, GCs are atomic (no incremental marking) and advance
+  // nothing that hang detection counts as progress. Scopes opened outside a GC
+  // (e.g. sweeping on allocation) don't count as activity.
+  if (thread_kind_ == ThreadKind::kMain &&
+      tracer_->heap_->gc_state() != Heap::NOT_IN_GC) {
+    recordreplay::NotifyActivity();
+  }
 #ifdef V8_RUNTIME_CALL_STATS
   if (V8_LIKELY(!TracingFlags::is_runtime_stats_enabled())) return;
   if (thread_kind_ == ThreadKind::kMain) {
