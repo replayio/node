@@ -4,9 +4,12 @@
 
 #include "src/heap/mark-compact.h"
 
+#include "include/replayio.h"
+
 #include <unordered_map>
 #include <unordered_set>
 
+#include "include/v8.h"
 #include "src/base/logging.h"
 #include "src/base/optional.h"
 #include "src/base/utils/random-number-generator.h"
@@ -698,6 +701,8 @@ void MarkCompactCollector::FinishSweepingIfOutOfWork() {
 
 void MarkCompactCollector::EnsureSweepingCompleted(
     SweepingForcedFinalizationMode mode) {
+  replayio::AutoDisallowEvents disallow("Heap::EnsureSweepingCompleted");
+
   if (sweeper()->sweeping_in_progress()) {
     TRACE_GC_EPOCH(heap()->tracer(), GCTracer::Scope::MC_COMPLETE_SWEEPING,
                    ThreadKind::kMain);
