@@ -12677,8 +12677,8 @@ size_t RecordReplayElapsedTimeMs() {
 
 namespace internal {
 
-void RecordReplayAddPossibleBreakpoint(int line, int column, const char* function, int offset) {
-  gRecordReplayAddPossibleBreakpoint(line, column, function, offset);
+void RecordReplayAddPossibleBreakpoint(int line, int column, const char* function, int function_index) {
+  gRecordReplayAddPossibleBreakpoint(line, column, function, function_index);
 }
 
 } // namespace internal
