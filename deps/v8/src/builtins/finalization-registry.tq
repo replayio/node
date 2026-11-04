@@ -8,6 +8,10 @@ extern runtime ShrinkFinalizationRegistryUnregisterTokenMap(
     Context, JSFinalizationRegistry): void;
 extern runtime JSFinalizationRegistryRegisterWeakCellWithUnregisterToken(
     implicit context: Context)(JSFinalizationRegistry, WeakCell): void;
+extern runtime RecordReplayFinalizationRegistryConstruct(
+    implicit context: Context)(JSFinalizationRegistry): void;
+extern runtime RecordReplayFinalizationRegistryRegister(
+    implicit context: Context)(JSFinalizationRegistry, WeakCell): void;
 }
 
 namespace weakref {
@@ -60,6 +64,11 @@ transitioning javascript builtin FinalizationRegistryConstructor(
   dcheck(finalizationRegistry.active_cells == Undefined);
   dcheck(finalizationRegistry.cleared_cells == Undefined);
   dcheck(finalizationRegistry.key_map == Undefined);
+  finalizationRegistry.record_replay_id = 0;
+  dcheck(finalizationRegistry.record_replay_cells == Undefined);
+  if (IsRecordingOrReplaying()) {
+    runtime::RecordReplayFinalizationRegistryConstruct(finalizationRegistry);
+  }
   // 8. Return finalizationRegistry.
   return finalizationRegistry;
 }
@@ -113,8 +122,16 @@ transitioning javascript builtin FinalizationRegistryRegister(
     prev: Undefined,
     next: Undefined,
     key_list_prev: Undefined,
-    key_list_next: Undefined
+    key_list_next: Undefined,
+    record_replay_id: 0
   };
+  // The cell gets its record/replay id before a marker can reach it through
+  // the registry. A registry without an id, e.g. one deserialized from a
+  // snapshot, gets one here when it has no cells yet.
+  if (IsRecordingOrReplaying()) {
+    runtime::RecordReplayFinalizationRegistryRegister(
+        finalizationRegistry, cell);
+  }
   // 7. Append cell to finalizationRegistry.[[Cells]].
   PushCell(finalizationRegistry, cell);
   if (unregisterToken != Undefined) {
