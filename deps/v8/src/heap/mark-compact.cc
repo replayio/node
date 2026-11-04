@@ -9,8 +9,10 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include "include/replayio.h"
 
 #include "src/base/bits.h"
+#include "include/v8.h"
 #include "src/base/logging.h"
 #include "src/base/platform/mutex.h"
 #include "src/base/platform/platform.h"

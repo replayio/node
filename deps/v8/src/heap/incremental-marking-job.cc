@@ -5,7 +5,7 @@
 #include "src/heap/incremental-marking-job.h"
 
 #include <optional>
-
+#include "include/replayio.h"
 #include "src/base/platform/mutex.h"
 #include "src/base/platform/time.h"
 #include "src/execution/isolate-inl.h"
@@ -53,6 +53,7 @@ IncrementalMarkingJob::IncrementalMarkingJob(Heap* heap)
 }
 
 void IncrementalMarkingJob::ScheduleTask() {
+  replayio::AutoDisallowEvents disallow("IncrementalMarkingJob::ScheduleTask");
   base::MutexGuard guard(&mutex_);
 
   if (pending_task_ || heap_->IsTearingDown()) {
@@ -80,6 +81,10 @@ void IncrementalMarkingJob::ScheduleTask() {
 }
 
 void IncrementalMarkingJob::Task::RunInternal() {
+  // RUN-2140: This shouldn't be necessary, this task should run at non-deterministic
+  // points in general and be unordered.
+  replayio::AutoDisallowEvents disallow("IncrementalMarkingJob::Task::RunInternal");
+
   VMState<GC> state(isolate());
   TRACE_EVENT_CALL_STATS_SCOPED(isolate(), "v8",
                                 "V8.IncrementalMarkingJob.Task");
