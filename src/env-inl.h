@@ -406,6 +406,11 @@ inline std::vector<double>* Environment::destroy_async_id_list() {
   return &destroy_async_id_list_;
 }
 
+inline recordreplay::DeferredFinalization*
+Environment::deferred_finalization() {
+  return deferred_finalization_.get();
+}
+
 inline builtins::BuiltinLoader* Environment::builtin_loader() {
   return &builtin_loader_;
 }
