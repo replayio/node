@@ -1056,6 +1056,9 @@ class Heap {
   // Invoked when GC was requested via the stack guard.
   void HandleGCRequest();
 
+  // Called at each progress interrupt when recording/replaying.
+  void RecordReplayOnProgressInterrupt();
+
   // ===========================================================================
   // Builtins. =================================================================
   // ===========================================================================
@@ -1914,6 +1917,8 @@ class Heap {
   void EagerlyFreeExternalMemory();
 
   bool InvokeNearHeapLimitCallback();
+  // Runs the last near-heap-limit callback and applies the limit it returns.
+  bool CallNearHeapLimitCallback();
 
   void ComputeFastPromotionMode();
 
@@ -2466,6 +2471,10 @@ class Heap {
   std::unique_ptr<CollectionBarrier> collection_barrier_;
 
   int gc_callbacks_depth_ = 0;
+
+  // Record/replay: near-heap-limit callback calls since the last progress
+  // interrupt when recording, see InvokeNearHeapLimitCallback.
+  size_t record_replay_near_heap_limit_calls_ = 0;
 
   bool deserialization_complete_ = false;
 
