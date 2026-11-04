@@ -99,6 +99,29 @@ bool node_napi_env__::can_call_into_js() const {
   return node_env()->can_call_into_js();
 }
 
+// Calls a module's finalizer. Finalizers are module code, which doesn't run
+// when replaying: like a callback's (see napi_module_register_by_symbol), the
+// N-API calls a finalizer makes are recorded in a callback region and replayed
+// at the same point, which the finalizer reaches on both sides as it runs from
+// the GC poll node::recordreplay::DeferredFinalization drives. The calls made
+// at environment teardown, after the recording finished, are not replayed.
+static void CallModuleFinalizer(napi_env env,
+                                napi_finalize cb,
+                                void* data,
+                                void* hint) {
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    cb(env, data, hint);
+    return;
+  }
+  if (!node::recordreplay::AreEventsRecorded() ||
+      node::recordreplay::IsRecordingFinished()) {
+    if (!v8::recordreplay::IsReplaying()) cb(env, data, hint);
+    return;
+  }
+  node::recordreplay::AutoCallbackRegion region;
+  if (!v8::recordreplay::IsReplaying()) cb(env, data, hint);
+}
+
 void node_napi_env__::CallFinalizer(napi_finalize cb, void* data, void* hint) {
   CallFinalizer<true>(cb, data, hint);
 }
@@ -108,7 +131,7 @@ void node_napi_env__::CallFinalizer(napi_finalize cb, void* data, void* hint) {
   v8::HandleScope handle_scope(isolate);
   v8::Context::Scope context_scope(context());
   CallbackIntoModule<enforceUncaughtExceptionPolicy>(
-      [&](napi_env env) { cb(env, data, hint); });
+      [&](napi_env env) { CallModuleFinalizer(env, cb, data, hint); });
 }
 
 void node_napi_env__::EnqueueFinalizer(v8impl::RefTracker* finalizer) {
@@ -544,6 +567,13 @@ class ThreadSafeFunction : public node::AsyncResource {
   bool handles_closing;
 };
 
+// Whether the module's current N-API call is also made when replaying, which
+// is the case for calls in callbacks the driver intercepts.
+static bool RecordReplayInModuleCallback() {
+  return node::recordreplay::AreEventsRecorded() &&
+         node::recordreplay::IsInsideInterceptedCallback();
+}
+
 /**
  * Compared to node::AsyncResource, the resource object in AsyncContext is
  * gc-able. AsyncContext holds a weak reference to the resource object.
@@ -564,8 +594,16 @@ class AsyncContext {
     context_frame_.Reset(isolate, node::async_context_frame::current(isolate));
     lost_reference_ = false;
     if (externally_managed_resource) {
-      resource_.SetWeak(
-          this, AsyncContext::WeakCallback, v8::WeakCallbackType::kParameter);
+      // The GC collects the module's resource at other points when replaying
+      // than when recording. For a context the replay creates too, hold the
+      // resource strongly when replaying, and drop it where the recording
+      // found it collected (see EnsureReference).
+      record_replay_lost_reference_ = RecordReplayInModuleCallback();
+      if (!record_replay_lost_reference_ ||
+          !v8::recordreplay::IsReplaying()) {
+        resource_.SetWeak(
+            this, AsyncContext::WeakCallback, v8::WeakCallbackType::kParameter);
+      }
     }
 
     node::AsyncWrap::EmitAsyncInit(node_env(),
@@ -607,6 +645,15 @@ class AsyncContext {
   }
 
   inline void EnsureReference() {
+    if (record_replay_lost_reference_ && RecordReplayInModuleCallback()) {
+      bool lost = v8::recordreplay::RecordReplayValue(
+          "AsyncContext::EnsureReference lost", lost_reference_);
+      if (lost && !lost_reference_) {
+        resource_.Reset();
+        lost_reference_ = true;
+      }
+      CHECK_EQ(lost, lost_reference_);
+    }
     if (lost_reference_) {
       const v8::HandleScope handle_scope(node_env()->isolate());
       resource_.Reset(node_env()->isolate(),
@@ -652,6 +699,8 @@ class AsyncContext {
   v8::Global<v8::Object> resource_;
   bool lost_reference_;
   v8::Global<v8::Value> context_frame_;
+  // Whether lost_reference_ is recorded/replayed, see the constructor.
+  bool record_replay_lost_reference_ = false;
 };
 
 }  // end of anonymous namespace
@@ -1110,6 +1159,17 @@ napi_create_external_buffer(napi_env env,
   return napi_set_last_error(env, napi_no_external_buffers_allowed);
 #else
   v8::Isolate* isolate = env->isolate;
+
+  // The replayed call has no finalizer (the driver passes it as null), but
+  // the buffer has to be finalized along the same path as when recording, see
+  // CallModuleFinalizer.
+  if (v8impl::RecordReplayInModuleCallback() &&
+      v8::recordreplay::RecordReplayValue(
+          "napi_create_external_buffer has finalizer",
+          finalize_cb != nullptr) &&
+      finalize_cb == nullptr) {
+    finalize_cb = [](napi_env env, void* data, void* hint) {};
+  }
 
   // The finalizer object will delete itself after invoking the callback.
   v8impl::BufferFinalizer* finalizer =
