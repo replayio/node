@@ -4245,26 +4245,72 @@ void Heap::AutomaticallyRestoreInitialHeapLimit(double threshold_percent) {
       limits()->initial_max_old_generation_size() * threshold_percent;
 }
 
+extern void RecordReplayTriggerProgressInterrupt();
+
+// When recording/replaying, a GC reaches the heap limit at different points
+// when replaying than when recording, as the heap's contents and the GC's
+// timings differ, and callbacks request interrupts that must run at the same
+// point on both sides (the inspector's break on the heap limit). Here the GC
+// only raises the limit and counts the call, and the callbacks run at the next
+// progress interrupt, which this triggers when recording: there,
+// RecordReplayOnProgressInterrupt records the count and runs them as many
+// times on both sides, with events allowed (e.g. so the ordered lock
+// RequestInterrupt takes is ordered). Only the main thread has progress
+// interrupts.
 bool Heap::InvokeNearHeapLimitCallback() {
   if (!near_heap_limit_callbacks_.empty()) {
-    AllowGarbageCollection allow_gc;
-    TRACE_GC(tracer(), GCTracer::Scope::HEAP_EXTERNAL_NEAR_HEAP_LIMIT);
-    VMState<EXTERNAL> callback_state(isolate());
-    HandleScope scope(isolate());
-    v8::NearHeapLimitCallback callback =
-        near_heap_limit_callbacks_.back().first;
-    void* data = near_heap_limit_callbacks_.back().second;
-    size_t heap_limit = callback(data, limits()->max_old_generation_size(),
-                                 limits()->initial_max_old_generation_size());
-    if (heap_limit > limits()->max_old_generation_size()) {
-      limits()->SetMaximumSizes(
-          std::min(heap_limit,
-                   AllocatorLimitOnMaxOldGenerationSize(physical_memory())),
-          physical_memory());
-      return true;
+    if (recordreplay::IsRecordingOrReplaying("interrupts") &&
+        v8::IsMainThread()) {
+      record_replay_near_heap_limit_calls_++;
+      if (recordreplay::IsRecording()) {
+        RecordReplayTriggerProgressInterrupt();
+      }
+      size_t heap_limit =
+          std::min(2 * limits()->max_old_generation_size(),
+                   AllocatorLimitOnMaxOldGenerationSize(physical_memory()));
+      if (heap_limit > limits()->max_old_generation_size()) {
+        limits()->SetMaximumSizes(heap_limit, physical_memory());
+        return true;
+      }
+      return false;
     }
+    return CallNearHeapLimitCallback();
   }
   return false;
+}
+
+bool Heap::CallNearHeapLimitCallback() {
+  AllowGarbageCollection allow_gc;
+  TRACE_GC(tracer(), GCTracer::Scope::HEAP_EXTERNAL_NEAR_HEAP_LIMIT);
+  VMState<EXTERNAL> callback_state(isolate());
+  HandleScope scope(isolate());
+  v8::NearHeapLimitCallback callback = near_heap_limit_callbacks_.back().first;
+  void* data = near_heap_limit_callbacks_.back().second;
+  size_t heap_limit = callback(data, limits()->max_old_generation_size(),
+                               limits()->initial_max_old_generation_size());
+  if (heap_limit > limits()->max_old_generation_size()) {
+    limits()->SetMaximumSizes(
+        std::min(heap_limit,
+                 AllocatorLimitOnMaxOldGenerationSize(physical_memory())),
+        physical_memory());
+    return true;
+  }
+  return false;
+}
+
+void Heap::RecordReplayOnProgressInterrupt() {
+  if (memory_reducer_) {
+    memory_reducer_->RecordReplayOnProgressInterrupt();
+  }
+  if (recordreplay::IsRecordingOrReplaying("interrupts")) {
+    size_t calls = recordreplay::RecordReplayValue(
+        "Heap::RecordReplayOnProgressInterrupt NearHeapLimitCalls",
+        record_replay_near_heap_limit_calls_);
+    record_replay_near_heap_limit_calls_ = 0;
+    for (size_t i = 0; i < calls && near_heap_limit_callbacks_.size(); i++) {
+      CallNearHeapLimitCallback();
+    }
+  }
 }
 
 bool Heap::MeasureMemory(std::unique_ptr<v8::MeasureMemoryDelegate> delegate,
