@@ -167,8 +167,15 @@ bool StackGuard::CheckInterrupt(InterruptFlag flag) {
 }
 
 void StackGuard::RequestInterrupt(InterruptFlag flag) {
-  if (flag == TERMINATE_EXECUTION) {
-    recordreplay::InvalidateRecording("Requested terminate execution");
+  // Terminating execution stops the isolate's thread at whichever stack check
+  // it reaches next. Requested by that thread itself, as a worker's
+  // process.exit() does, that is the next stack check in the same code, which
+  // the replay reaches the same way; requested from another thread, it is a
+  // point the replay can't reproduce.
+  if (flag == TERMINATE_EXECUTION &&
+      isolate_->thread_id() != ThreadId::Current()) {
+    recordreplay::InvalidateRecording(
+        "Requested terminate execution from another thread");
   }
 
   ExecutionAccess access(isolate_);
@@ -306,6 +313,11 @@ Tagged<Object> StackGuard::HandleInterrupts(InterruptLevel level) {
   isolate_->heap()->VerifyNewSpaceTop();
 #endif
 
+  // Interrupts must happen at deterministic points, ignore them when code is running
+  // while events are disallowed, such as during command callbacks.
+  if (recordreplay::AreEventsDisallowed())
+    return ReadOnlyRoots(isolate_).undefined_value();
+
   if (v8_flags.verify_predictable) {
     // Advance synthetic time by making a time request.
     isolate_->heap()->MonotonicallyIncreasingTimeInMs();
@@ -320,7 +332,6 @@ Tagged<Object> StackGuard::HandleInterrupts(InterruptLevel level) {
 
   if (TestAndClear(&interrupt_flags, TERMINATE_EXECUTION)) {
     TRACE_EVENT0("v8.execute", "V8.TerminateExecution");
-    recordreplay::InvalidateRecording("Terminate execution from execution interrupt");
     return isolate_->TerminateExecution();
   }
 
