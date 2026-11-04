@@ -15,6 +15,8 @@ class DirHandle : public AsyncWrap {
   static DirHandle* New(Environment* env, uv_dir_t* dir);
   ~DirHandle() override;
 
+  void OnGCCollect() final;
+
   static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Read(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Close(const v8::FunctionCallbackInfo<v8::Value>& args);

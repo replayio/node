@@ -26,6 +26,7 @@
 
 #include "base_object.h"
 #include "env-inl.h"
+#include "node_deferred_finalization.h"
 #include "util.h"
 
 #include "v8.h"
