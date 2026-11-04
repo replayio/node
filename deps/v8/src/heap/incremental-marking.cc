@@ -11,6 +11,7 @@
 #include "src/base/logging.h"
 #include "src/base/platform/time.h"
 #include "src/common/globals.h"
+#include "include/replayio.h"
 #include "src/execution/vm-state-inl.h"
 #include "src/flags/flags.h"
 #include "src/handles/global-handles.h"

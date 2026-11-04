@@ -4,6 +4,8 @@
 
 #include "src/heap/cppgc/sweeper.h"
 
+#include "include/replayio.h"
+
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -802,6 +804,7 @@ class Sweeper::SweeperImpl final {
   ~SweeperImpl() { CancelSweepers(); }
 
   void Start(SweepingConfig config, cppgc::Platform* platform) {
+    v8::replayio::AutoDisallowEvents disallow("SweeperImpl::Start");
     StatsCollector::EnabledScope stats_scope(stats_collector_,
                                              StatsCollector::kAtomicSweep);
     is_in_progress_ = true;
@@ -837,6 +840,7 @@ class Sweeper::SweeperImpl final {
 
   bool SweepForAllocationIfRunning(NormalPageSpace* space, size_t size,
                                    v8::base::TimeDelta max_duration) {
+    v8::replayio::AutoDisallowEvents disallow("Sweeper::SweepForAllocationIfRunning");
     if (!is_in_progress_) return false;
 
     // Bail out for recursive sweeping calls. This can happen when finalizers
@@ -894,6 +898,7 @@ class Sweeper::SweeperImpl final {
 
   bool FinishIfRunning() {
     if (!is_in_progress_) return false;
+    v8::replayio::AutoDisallowEvents disallow("SweeperImpl::FinishIfRunning");
 
     // Bail out for recursive sweeping calls. This can happen when finalizers
     // allocate new memory.
@@ -1091,6 +1096,8 @@ class Sweeper::SweeperImpl final {
     }
 
    private:
+    bool IsRecordReplayNonDeterministic() const override { return true; }
+
     void Run() override {
       if (handle_.IsCanceled()) return;
 

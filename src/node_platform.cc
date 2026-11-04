@@ -25,6 +25,7 @@ struct PlatformWorkerData {
   int* pending_platform_workers;
   int id;
   PlatformDebugLogLevel debug_log_level;
+  bool record_replay_unordered;
 };
 
 const char* GetTaskPriorityName(TaskPriority priority) {
@@ -49,7 +50,7 @@ static void PrintSourceLocation(const v8::SourceLocation& location) {
   }
 }
 
-static void PlatformWorkerThread(void* data) {
+static void RunPlatformWorkerThread(void* data) {
   std::unique_ptr<PlatformWorkerData>
       worker_data(static_cast<PlatformWorkerData*>(data));
 
@@ -78,6 +79,15 @@ static void PlatformWorkerThread(void* data) {
     }
     task->Run();
     pending_worker_tasks->Lock().NotifyOfCompletion();
+  }
+}
+
+static void PlatformWorkerThread(void* data) {
+  if (static_cast<PlatformWorkerData*>(data)->record_replay_unordered) {
+    v8::replayio::AutoDisallowEvents disallow("PlatformWorkerThread");
+    RunPlatformWorkerThread(data);
+  } else {
+    RunPlatformWorkerThread(data);
   }
 }
 
@@ -230,17 +240,22 @@ class WorkerThreadsTaskRunner::DelayedTaskScheduler {
 };
 
 WorkerThreadsTaskRunner::WorkerThreadsTaskRunner(
-    int thread_pool_size, PlatformDebugLogLevel debug_log_level)
-    : debug_log_level_(debug_log_level) {
+    int thread_pool_size, PlatformDebugLogLevel debug_log_level,
+    bool record_replay_unordered)
+    : record_replay_unordered_(record_replay_unordered),
+      pending_worker_tasks_(/* ordered */ !record_replay_unordered),
+      debug_log_level_(debug_log_level) {
   Mutex platform_workers_mutex;
   ConditionVariable platform_workers_ready;
 
   Mutex::ScopedLock lock(platform_workers_mutex);
   int pending_platform_workers = thread_pool_size;
 
-  delayed_task_scheduler_ = std::make_unique<DelayedTaskScheduler>(
-      &pending_worker_tasks_);
-  threads_.push_back(delayed_task_scheduler_->Start());
+  if (!record_replay_unordered_) {
+    delayed_task_scheduler_ = std::make_unique<DelayedTaskScheduler>(
+        &pending_worker_tasks_);
+    threads_.push_back(delayed_task_scheduler_->Start());
+  }
 
   for (int i = 0; i < thread_pool_size; i++) {
     PlatformWorkerData* worker_data =
@@ -249,7 +264,8 @@ WorkerThreadsTaskRunner::WorkerThreadsTaskRunner(
                                &platform_workers_ready,
                                &pending_platform_workers,
                                i,
-                               debug_log_level_};
+                               debug_log_level_,
+                               record_replay_unordered_};
     std::unique_ptr<uv_thread_t> t { new uv_thread_t() };
     if (uv_thread_create(t.get(), PlatformWorkerThread,
                          worker_data) != 0) {
@@ -271,6 +287,7 @@ void WorkerThreadsTaskRunner::PostTask(std::unique_ptr<Task> task) {
 
 void WorkerThreadsTaskRunner::PostDelayedTask(std::unique_ptr<Task> task,
                                               double delay_in_seconds) {
+  CHECK(!record_replay_unordered_);
   delayed_task_scheduler_->PostDelayedTask(std::move(task), delay_in_seconds);
 }
 
@@ -279,6 +296,7 @@ void WorkerThreadsTaskRunner::BlockingDrain() {
 }
 
 void WorkerThreadsTaskRunner::Shutdown() {
+  CHECK(!record_replay_unordered_);
   pending_worker_tasks_.Lock().Stop();
   delayed_task_scheduler_->Stop();
   for (size_t i = 0; i < threads_.size(); i++) {
@@ -297,6 +315,15 @@ PerIsolatePlatformData::PerIsolatePlatformData(
   CHECK_EQ(0, uv_async_init(loop, flush_tasks_, FlushTasks));
   flush_tasks_->data = static_cast<void*>(this);
   uv_unref(reinterpret_cast<uv_handle_t*>(flush_tasks_));
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    record_replay_check_ = new uv_check_t();
+    CHECK_EQ(0, uv_check_init(loop, record_replay_check_));
+    record_replay_check_->data = static_cast<void*>(this);
+    CHECK_EQ(0, uv_check_start(record_replay_check_,
+                               RunRecordReplayUnorderedTasks));
+    uv_unref(reinterpret_cast<uv_handle_t*>(record_replay_check_));
+    uv_handle_count_++;
+  }
 }
 
 std::shared_ptr<v8::TaskRunner>
@@ -313,6 +340,21 @@ void PerIsolatePlatformData::PostIdleTask(std::unique_ptr<v8::IdleTask> task) {
   UNREACHABLE();
 }
 
+void PerIsolatePlatformData::RunRecordReplayUnorderedTasks(
+    uv_check_t* handle) {
+  auto platform_data = static_cast<PerIsolatePlatformData*>(handle->data);
+  std::queue<std::unique_ptr<Task>> tasks =
+      platform_data->record_replay_unordered_tasks_.Lock().PopAll();
+  if (tasks.empty()) return;
+  v8::replayio::AutoDisallowEvents disallow(
+      "PerIsolatePlatformData::RunRecordReplayUnorderedTasks");
+  while (!tasks.empty()) {
+    std::unique_ptr<Task> task = std::move(tasks.front());
+    tasks.pop();
+    platform_data->RunForegroundTask(std::move(task));
+  }
+}
+
 void PerIsolatePlatformData::PostTask(std::unique_ptr<Task> task) {
   // The task can be posted from any V8 background worker thread, even when
   // the foreground task runner is being cleaned up by Shutdown(). In that
@@ -324,12 +366,14 @@ void PerIsolatePlatformData::PostTask(std::unique_ptr<Task> task) {
       DumpNativeBacktrace(stderr);
     }
     fflush(stderr);
-  if (task->IsRecordReplayNonDeterministic() && v8::recordreplay::IsRecordingOrReplaying()) {
-    // For now we ignore non-deterministic tasks. This prevents the GC from working.
+  }
+
+  if (task->IsRecordReplayNonDeterministic() &&
+      v8::recordreplay::IsRecordingOrReplaying()) {
+    record_replay_unordered_tasks_.Lock().Push(std::move(task));
     return;
   }
   v8::recordreplay::Assert("PerIsolatePlatformData::PostTask");
-  }
 
   auto locked = foreground_tasks_.Lock();
   if (flush_tasks_ == nullptr) return;
@@ -348,12 +392,16 @@ void PerIsolatePlatformData::PostDelayedTask(
       DumpNativeBacktrace(stderr);
     }
     fflush(stderr);
-  if (task->IsRecordReplayNonDeterministic() && v8::recordreplay::IsRecordingOrReplaying()) {
-    // For now we ignore non-deterministic tasks. This prevents the GC from working.
+  }
+
+  // The next event loop iteration is often later than the delay, which only
+  // keeps V8's tasks from running too often.
+  if (task->IsRecordReplayNonDeterministic() &&
+      v8::recordreplay::IsRecordingOrReplaying()) {
+    record_replay_unordered_tasks_.Lock().Push(std::move(task));
     return;
   }
   v8::recordreplay::Assert("PerIsolatePlatformData::PostDelayedTask");
-  }
 
   auto locked = foreground_delayed_tasks_.Lock();
   if (flush_tasks_ == nullptr) return;
@@ -388,9 +436,29 @@ void PerIsolatePlatformData::Shutdown() {
   auto foreground_tasks_locked = foreground_tasks_.Lock();
   auto foreground_delayed_tasks_locked = foreground_delayed_tasks_.Lock();
 
+  // While there should be no V8 tasks in the queues at this point, it is
+  // possible that Node.js-internal tasks from e.g. the inspector are still
+  // lying around. We clear these queues and ignore the return value,
+  // effectively deleting the tasks instead of running them.
   foreground_delayed_tasks_locked.PopAll();
   foreground_tasks_locked.PopAll();
+  record_replay_unordered_tasks_.Lock().PopAll();
   scheduled_delayed_tasks_.clear();
+
+  if (record_replay_check_ != nullptr) {
+    // Closing flush_tasks_ below may drop the last reference first.
+    record_replay_check_->data =
+        new std::shared_ptr<PerIsolatePlatformData>(shared_from_this());
+    uv_close(reinterpret_cast<uv_handle_t*>(record_replay_check_),
+             [](uv_handle_t* handle) {
+      std::unique_ptr<uv_check_t> check {
+          reinterpret_cast<uv_check_t*>(handle) };
+      std::unique_ptr<std::shared_ptr<PerIsolatePlatformData>> platform_data {
+          static_cast<std::shared_ptr<PerIsolatePlatformData>*>(check->data) };
+      (*platform_data)->DecreaseHandleCount();
+    });
+    record_replay_check_ = nullptr;
+  }
 
   if (flush_tasks_ != nullptr) {
     // Both destroying the scheduled_delayed_tasks_ lists and closing
@@ -450,6 +518,15 @@ NodePlatform::NodePlatform(int thread_pool_size,
   thread_pool_size = GetActualThreadPoolSize(thread_pool_size);
   worker_thread_task_runner_ = std::make_shared<WorkerThreadsTaskRunner>(
       thread_pool_size, debug_log_level_);
+  // When recording/replaying, a fixed number of threads, like Chromium's
+  // thread pool for tasks posted with events disallowed. They are created
+  // here, where creating threads replays, and are never stopped: threads
+  // which record nothing can't be joined, and they may still be running GC
+  // work when the process exits.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    record_replay_unordered_task_runner_ = new WorkerThreadsTaskRunner(
+        4, debug_log_level_, /* record_replay_unordered */ true);
+  }
 }
 
 NodePlatform::~NodePlatform() {
@@ -637,6 +714,15 @@ void NodePlatform::PostTaskOnWorkerThreadImpl(
     }
     fflush(stderr);
   }
+
+  // When recording/replaying, tasks posted with events disallowed (e.g. by
+  // the GC) are posted at points which don't replay, so they run on threads
+  // which record nothing.
+  if (record_replay_unordered_task_runner_ &&
+      v8::recordreplay::AreEventsDisallowed()) {
+    record_replay_unordered_task_runner_->PostTask(std::move(task));
+    return;
+  }
   worker_thread_task_runner_->PostTask(std::move(task));
 }
 
@@ -738,8 +824,8 @@ v8::PageAllocator* NodePlatform::GetPageAllocator() {
 }
 
 template <class T>
-TaskQueue<T>::TaskQueue()
-    : lock_(/* ordered */ true), tasks_available_(), tasks_drained_(),
+TaskQueue<T>::TaskQueue(bool ordered)
+    : lock_(ordered), tasks_available_(), tasks_drained_(),
       outstanding_tasks_(0), stopped_(false), task_queue_() { }
 
 template <class T>
