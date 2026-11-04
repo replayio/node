@@ -5,6 +5,7 @@
 #ifndef V8_HEAP_FINALIZATION_REGISTRY_CLEANUP_TASK_H_
 #define V8_HEAP_FINALIZATION_REGISTRY_CLEANUP_TASK_H_
 
+#include "src/heap/heap.h"
 #include "src/objects/js-weak-refs.h"
 #include "src/tasks/cancelable-task.h"
 
@@ -16,7 +17,11 @@ namespace internal {
 // cleanup task if there are remaining dirty FinalizationRegistries on the list.
 class FinalizationRegistryCleanupTask : public CancelableTask {
  public:
-  explicit FinalizationRegistryCleanupTask(Heap* heap);
+  // Record/replay: a kTracked task is posted by ReplayGCPoll::Poll and runs for
+  // a registry whose cleanup is driven by the recording.
+  explicit FinalizationRegistryCleanupTask(
+      Heap* heap, Heap::RecordReplayTracking record_replay_tracking =
+                      Heap::RecordReplayTracking::kUntracked);
   ~FinalizationRegistryCleanupTask() override = default;
   FinalizationRegistryCleanupTask(const FinalizationRegistryCleanupTask&) =
       delete;
@@ -27,6 +32,7 @@ class FinalizationRegistryCleanupTask : public CancelableTask {
   void SlowAssertNoActiveJavaScript();
 
   Heap* heap_;
+  Heap::RecordReplayTracking record_replay_tracking_;
 };
 
 }  // namespace internal
