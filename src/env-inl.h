@@ -624,6 +624,11 @@ inline std::vector<double>* Environment::destroy_async_id_list() {
   return &destroy_async_id_list_;
 }
 
+inline recordreplay::DeferredFinalization*
+Environment::deferred_finalization() {
+  return deferred_finalization_.get();
+}
+
 inline double Environment::new_async_id() {
   async_hooks()->async_id_fields()[AsyncHooks::kAsyncIdCounter] += 1;
   return async_hooks()->async_id_fields()[AsyncHooks::kAsyncIdCounter];
