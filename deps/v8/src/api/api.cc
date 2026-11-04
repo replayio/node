@@ -11092,6 +11092,12 @@ void recordreplay::OnAnnotation(const char* kind, const char* contents) {
   }
 }
 
+void recordreplay::NotifyActivity() {
+  if (IsRecordingOrReplaying()) {
+    gRecordReplayNotifyActivity();
+  }
+}
+
 extern "C" size_t V8RecordReplayNewBookmark() {
   if (recordreplay::IsRecordingOrReplaying()) {
     return gRecordReplayNewBookmark();
@@ -11257,6 +11263,8 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplayElapsedTimeMs", gRecordReplayElapsedTimeMs);
   RecordReplayLoadSymbol(handle, "RecordReplayOnAnnotation",
                          gRecordReplayOnAnnotation);
+  RecordReplayLoadSymbol(handle, "RecordReplayNotifyActivity",
+                         gRecordReplayNotifyActivity);
 
   void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
   RecordReplayLoadSymbol(handle, "RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);
