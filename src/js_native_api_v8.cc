@@ -5,6 +5,7 @@
 #include "env-inl.h"
 #include "js_native_api.h"
 #include "js_native_api_v8.h"
+#include "node_internals.h"
 #include "util-inl.h"
 
 #define CHECK_MAYBE_NOTHING(env, maybe, status)                                \
