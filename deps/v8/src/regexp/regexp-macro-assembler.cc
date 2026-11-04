@@ -292,6 +292,10 @@ int NativeRegExpMacroAssembler::CheckStackGuardState(
   DCHECK_LE(re_code->instruction_start(), old_pc);
   DCHECK_LE(old_pc, re_code->code(kAcquireLoad)->instruction_end());
 
+  // When recording or replaying, generated code also calls this periodically
+  // while backtracking, without an interrupt.
+  recordreplay::NotifyActivity();
+
   StackLimitCheck check(isolate);
   bool js_has_overflowed = check.JsHasOverflowed(gap);
 

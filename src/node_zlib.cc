@@ -488,6 +488,10 @@ class CompressionStream : public AsyncWrap, public ThreadPoolWork {
     if constexpr (!async) {
       // sync version
       AsyncWrap::env()->PrintSyncTrace();
+      // Sync compression calls this for every chunk of output, from a loop in
+      // node's own JS, and neither advances the progress counter, so replay
+      // hang detection sees the process is busy.
+      v8::recordreplay::NotifyActivity();
       DoThreadPoolWork();
       if (CheckError()) {
         UpdateWriteResult();
@@ -624,6 +628,10 @@ class CompressionStream : public AsyncWrap, public ThreadPoolWork {
 
   static void* AllocForBrotli(void* data, size_t size) {
     size += reserveSizeAndAlign;
+    // A single high quality Brotli encode can run for many seconds without
+    // advancing the progress counter, but it allocates for every block it
+    // compresses, so replay hang detection sees the process is busy.
+    v8::recordreplay::NotifyActivity();
     CompressionStream* ctx = static_cast<CompressionStream*>(data);
     char* memory = UncheckedMalloc(size);
     if (memory == nullptr) [[unlikely]] {
