@@ -52,7 +52,6 @@
 
 
 namespace node {
-
 namespace cares_wrap {
 
 using v8::Array;

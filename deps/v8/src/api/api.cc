@@ -2437,6 +2437,11 @@ i::ScriptDetails GetScriptDetails(i::Isolate* isolate,
 
 }  // namespace
 
+namespace internal {
+extern void RecordReplayRegisterCompiledScript(
+    Isolate* isolate, MaybeHandle<SharedFunctionInfo> maybe_function_info);
+}  // namespace internal
+
 MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundInternal(
     Isolate* v8_isolate, Source* source, CompileOptions options,
     NoCacheReason no_cache_reason) {
@@ -2465,6 +2470,7 @@ MaybeLocal<UnboundScript> ScriptCompiler::CompileUnboundInternal(
       i::Compiler::GetSharedFunctionInfoForScript(
           isolate, str, script_details, nullptr, script_data, options,
           no_cache_reason, i::NOT_NATIVES_CODE);
+  i::RecordReplayRegisterCompiledScript(isolate, maybe_function_info);
   if (options == kConsumeCodeCache) {
     source->cached_data->rejected = script_data->rejected();
   }
@@ -2656,8 +2662,11 @@ i::MaybeHandle<i::SharedFunctionInfo> CompileStreamedSource(
                        origin.ColumnOffset(), origin.SourceMapUrl(),
                        origin.HostDefinedOptions(), origin.Options());
   i::ScriptStreamingData* data = v8_source->impl();
-  return i::Compiler::GetSharedFunctionInfoForStreamedScript(
-      isolate, str, script_details, data);
+  i::MaybeHandle<i::SharedFunctionInfo> maybe_function_info =
+      i::Compiler::GetSharedFunctionInfoForStreamedScript(
+          isolate, str, script_details, data);
+  i::RecordReplayRegisterCompiledScript(isolate, maybe_function_info);
+  return maybe_function_info;
 }
 
 }  // namespace
@@ -10385,6 +10394,10 @@ namespace internal {
 // Builtins read this through
 // ExternalReference::record_replay_is_recording_or_replaying.
 bool gRecordReplayIsRecordingOrReplaying;
+
+// Use V8's GC as upstream does while recording/replaying.
+// This is on by default and controlled by the v8-flags-gc feature.
+bool gRecordReplayEnableGCFeatures;
 }  // namespace internal
 static bool gHasDisabledFeatures;
 static bool gAssertsDisabled;
@@ -10539,7 +10552,10 @@ static void RecordReplayProgressInterruptCallback() {
   CHECK(IsMainThread());
   Isolate* isolate = Isolate::Current();
   isolate->heap()->RecordReplayOnProgressInterrupt();
-  isolate->RecordReplayInvokeApiInterruptCallbacksAtProgress();
+  // The memory reducer triggers progress interrupts too.
+  if (recordreplay::IsRecordingOrReplaying("interrupts")) {
+    isolate->RecordReplayInvokeApiInterruptCallbacksAtProgress();
+  }
 }
 
 void RecordReplayInstrument(const char* kind, const char* function, int function_index) {
@@ -10623,6 +10639,21 @@ bool RecordReplayShouldAssertForSource(const char* source) {
 }
 
 bool gRecordReplayHasCheckpoint;
+
+extern void RecordReplayRegisterScriptsBeforeFirstCheckpoint();
+
+// The recording starts the progress counter from zero at the first checkpoint,
+// and nothing should advance it before: node takes the first checkpoint
+// (StartExecution) before any instrumented JS runs. The reset is defensive; it
+// is safe, as nothing before the first checkpoint is addressed by progress and
+// recording and replaying run the same code before it.
+static void RecordReplayBeforeFirstCheckpoint() {
+  if (*gProgressCounter) {
+    recordreplay::Warning("ProgressBeforeFirstCheckpoint",
+                          {{"progress", *gProgressCounter}});
+  }
+  *gProgressCounter = 0;
+}
 
 } // namespace internal
 
@@ -10883,15 +10914,29 @@ void recordreplay::InvalidateRecording(const char* why) {
 
 void recordreplay::NewCheckpoint() {
   if (IsRecordingOrReplaying()) {
+    bool first = !internal::gRecordReplayHasCheckpoint;
+    if (first) {
+      internal::RecordReplayBeforeFirstCheckpoint();
+    }
     internal::gRecordReplayHasCheckpoint = true;
     gRecordReplayNewCheckpoint();
+    if (first) {
+      internal::RecordReplayRegisterScriptsBeforeFirstCheckpoint();
+    }
   }
 }
 
 void RecordReplayNewCheckpointFlushed() {
   if (recordreplay::IsRecordingOrReplaying()) {
+    bool first = !internal::gRecordReplayHasCheckpoint;
+    if (first) {
+      internal::RecordReplayBeforeFirstCheckpoint();
+    }
     internal::gRecordReplayHasCheckpoint = true;
     gRecordReplayNewCheckpointFlushed();
+    if (first) {
+      internal::RecordReplayRegisterScriptsBeforeFirstCheckpoint();
+    }
   }
 }
 
@@ -11097,23 +11142,27 @@ static pthread_t gMainThread;
 // off, and V8 cannot switch e.g. concurrent marking on afterwards: the
 // marking worklists it would use were never created.
 static void RecordReplayApplyFlagOverrides() {
-  // Set flags to disable non-deterministic posting of tasks to other threads.
-  // Node's platform can't run these when recording/replaying: GC tasks posted
-  // to the main thread are dropped, and jobs can't be handed to worker threads
-  // while events are disallowed (see DefaultJobState::NotifyConcurrencyIncrease).
-  internal::FLAG_concurrent_array_buffer_sweeping = false;
-  internal::FLAG_concurrent_marking = false;
-  internal::FLAG_concurrent_sweeping = false;
-  internal::FLAG_incremental_marking_task = false;
-  internal::FLAG_parallel_compaction = false;
-  internal::FLAG_parallel_marking = false;
-  internal::FLAG_parallel_pointer_update = false;
-  internal::FLAG_parallel_scavenge = false;
-  internal::FLAG_scavenge_task = false;
-
-  // Incremental marking is what starts major GCs once the old generation
-  // allocation limit is reached, so it is only disabled while replaying.
-  if (recordreplay::IsReplaying() || !recordreplay::FeatureEnabled("v8-flags-gc", nullptr)) {
+  // Concurrent, parallel and incremental GC are used when recording and
+  // replaying by default but can be disabled via a feature, which runs every
+  // GC on the main thread instead, and expands the old generation where
+  // incremental marking would have started (see
+  // Heap::ShouldExpandOldGenerationOnSlowAllocation). The GC posts its jobs
+  // and tasks at points which don't replay, and node's platform runs them on
+  // worker threads which record nothing (see NodePlatform::CallOnWorkerThread)
+  // and at the main thread's next event loop iteration with events disallowed
+  // (see PerIsolatePlatformData::PostTask).
+  internal::gRecordReplayEnableGCFeatures =
+      recordreplay::FeatureEnabled("v8-flags-gc", nullptr);
+  if (!internal::gRecordReplayEnableGCFeatures) {
+    internal::FLAG_concurrent_array_buffer_sweeping = false;
+    internal::FLAG_concurrent_marking = false;
+    internal::FLAG_concurrent_sweeping = false;
+    internal::FLAG_incremental_marking_task = false;
+    internal::FLAG_parallel_compaction = false;
+    internal::FLAG_parallel_marking = false;
+    internal::FLAG_parallel_pointer_update = false;
+    internal::FLAG_parallel_scavenge = false;
+    internal::FLAG_scavenge_task = false;
     internal::FLAG_incremental_marking = false;
   }
 

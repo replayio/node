@@ -776,6 +776,15 @@ bool IterativelyExecuteAndFinalizeUnoptimizedCompilationJobs(
         jobs_to_retry_finalization_on_main_thread) {
   DeclarationScope::AllocateScopeInfos(parse_info, isolate);
 
+  // Replay: a compile emits instrumentation exactly when the script it compiles
+  // into is instrumented. Checked where reading the script is safe: the main
+  // thread, or the thread that just created the script.
+  if (recordreplay::IsRecordingOrReplaying() &&
+      (IsMainThread() || parse_info->flags().is_toplevel())) {
+    CHECK_EQ(!parse_info->flags().record_replay_ignore(),
+             script->record_replay_instrumented());
+  }
+
   std::vector<FunctionLiteral*> functions_to_compile;
   functions_to_compile.push_back(parse_info->literal());
 
@@ -1516,11 +1525,21 @@ DeferredFinalizationJobData::DeferredFinalizationJobData(
     : function_handle_(isolate->heap()->NewPersistentHandle(function_handle)),
       job_(std::move(job)) {}
 
+// Streamed scripts compile on a background thread, where bytecode is never
+// instrumented (RecordReplayShouldEmitOpcodes), so the script isn't either.
+static UnoptimizedCompileFlags RecordReplayStreamingFlags(
+    UnoptimizedCompileFlags flags) {
+  if (recordreplay::IsRecordingOrReplaying()) {
+    flags.set_record_replay_ignore(true);
+  }
+  return flags;
+}
+
 BackgroundCompileTask::BackgroundCompileTask(ScriptStreamingData* streamed_data,
                                              Isolate* isolate, ScriptType type)
-    : flags_(UnoptimizedCompileFlags::ForToplevelCompile(
+    : flags_(RecordReplayStreamingFlags(UnoptimizedCompileFlags::ForToplevelCompile(
           isolate, true, construct_language_mode(FLAG_use_strict),
-          REPLMode::kNo, type, FLAG_lazy_streaming)),
+          REPLMode::kNo, type, FLAG_lazy_streaming))),
       compile_state_(isolate),
       info_(std::make_unique<ParseInfo>(isolate, flags_, &compile_state_)),
       isolate_for_local_isolate_(isolate),
@@ -2709,8 +2728,15 @@ MaybeHandle<SharedFunctionInfo> CompileScriptOnMainThread(
     UnoptimizedCompileFlags flags, Handle<String> source,
     const ScriptDetails& script_details, NativesFlag natives,
     v8::Extension* extension, Isolate* isolate,
-    MaybeHandle<Script> maybe_script, IsCompiledScope* is_compiled_scope) {
+    MaybeHandle<Script> maybe_script,
+    IsCompiledScope* is_compiled_scope) {
   SetRecordReplayFlags(flags, script_details);
+  Handle<Script> existing;
+  if (maybe_script.ToHandle(&existing)) {
+    // Compiling into an existing script (a cache hit the replay recompiles)
+    // follows the decision made when it was created.
+    RecordReplayInheritCompileFlags(flags, *existing);
+  }
 
   UnoptimizedCompileState compile_state(isolate);
   ParseInfo parse_info(isolate, flags, &compile_state);
@@ -2823,7 +2849,8 @@ MaybeHandle<SharedFunctionInfo> CompileScriptOnBothBackgroundAndMainThread(
     flags_copy.set_script_id(Script::kTemporaryScriptId);
     main_thread_maybe_result = CompileScriptOnMainThread(
         flags_copy, source, script_details, NOT_NATIVES_CODE, nullptr, isolate,
-        MaybeHandle<Script>(), &inner_is_compiled_scope);
+        MaybeHandle<Script>(),
+        &inner_is_compiled_scope);
     if (main_thread_maybe_result.is_null()) {
       // Assume all range errors are stack overflows.
       main_thread_had_stack_overflow = CompilationExceptionIsRangeError(
@@ -2909,6 +2936,9 @@ MaybeHandle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForScript(
     if (maybe_result.ToHandle(&cached_sfi) && cached_sfi->script().IsScript()) {
       maybe_script = handle(Script::cast(cached_sfi->script()), isolate);
     }
+    // Replaying turns the compilation cache off (api.cc), so a script the
+    // replay compiles into is only ever one the recording found (below).
+    CHECK(!recordreplay::IsReplaying() || maybe_script.is_null());
 
     // The compilation cache isn't enabled when replaying, but we still need
     // to record/replay whether a script was found when recording so that the

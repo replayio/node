@@ -941,6 +941,7 @@ void Environment::RunTimers(uv_timer_t* handle) {
   }
 }
 
+
 void Environment::CheckImmediate(uv_check_t* handle) {
   // We're near the top of the event loop, periodically create new
   // checkpoints so that the recording can be processed more efficiently.
@@ -984,6 +985,7 @@ void Environment::ToggleImmediateRef(bool ref) {
     uv_idle_stop(immediate_idle_handle());
   }
 }
+
 
 Local<Value> Environment::GetNow() {
   // https://github.com/RecordReplay/backend/issues/4886

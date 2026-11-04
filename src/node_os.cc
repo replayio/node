@@ -58,6 +58,7 @@ using v8::Object;
 using v8::String;
 using v8::Value;
 
+
 static void GetHostname(const FunctionCallbackInfo<Value>& args) {
   if (recordreplay::ThrowIfEventsUnavailable(args, "os.hostname")) {
     return;

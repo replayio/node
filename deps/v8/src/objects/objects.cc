@@ -408,6 +408,16 @@ MaybeHandle<String> Object::ConvertToString(Isolate* isolate,
     if (input->IsBigInt()) {
       return BigInt::ToString(isolate, Handle<BigInt>::cast(input));
     }
+    // ToPrimitive can run user Symbol.toPrimitive / toString / valueOf. With
+    // events disallowed, that happens when the inspector describes a logged
+    // Date for Replay's own session: this V8's descriptionForDate converts the
+    // Date with ToString. Upstream V8 made Date descriptions side-effect free
+    // (25c69ecbc14, "[inspector] Side-effect free DateMirror descriptions"),
+    // so this can be dropped once deps/v8 includes that.
+    if (recordreplay::AreEventsDisallowed() &&
+        !recordreplay::HasDivergedFromRecording()) {
+      return isolate->factory()->object_to_string();
+    }
     ASSIGN_RETURN_ON_EXCEPTION(
         isolate, input,
         JSReceiver::ToPrimitive(Handle<JSReceiver>::cast(input),

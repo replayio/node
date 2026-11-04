@@ -200,7 +200,6 @@ void V8_Fatal(const char* format, ...) {
   if (v8::base::g_print_stack_trace) v8::base::g_print_stack_trace();
 
   fflush(stderr);
-
   v8::base::OS::Abort();
 }
 

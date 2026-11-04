@@ -95,10 +95,11 @@ class BufferFinalizer : private Finalizer {
       v8::Context::Scope context_scope(finalizer->_env->context());
 
       finalizer->_env->CallIntoModule([&](napi_env env) {
-        CallModuleFinalizer(env,
-                            finalizer->_finalize_callback,
-                            finalizer->_finalize_data,
-                            finalizer->_finalize_hint);
+        CallModuleFinalizer(
+            env,
+            finalizer->_finalize_callback,
+            finalizer->_finalize_data,
+            finalizer->_finalize_hint);
       });
     });
   }

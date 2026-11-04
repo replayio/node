@@ -1904,6 +1904,9 @@ int Heap::NotifyContextDisposed(bool dependant_context) {
     event.type = MemoryReducer::kPossibleGarbage;
     event.time_ms = MonotonicallyIncreasingTimeInMs();
     memory_reducer_->NotifyPossibleGarbage(event);
+    if (recordreplay::IsRecordingOrReplaying()) {
+      memory_reducer_->RecordReplayPostRequestedTimer();
+    }
   }
   isolate()->AbortConcurrentOptimization(BlockingBehavior::kDontBlock);
   if (!isolate()->context().is_null()) {
@@ -4244,13 +4247,17 @@ bool Heap::CallNearHeapLimitCallback() {
 }
 
 void Heap::RecordReplayOnProgressInterrupt() {
-  if (!recordreplay::IsRecordingOrReplaying("interrupts")) return;
-  size_t calls = recordreplay::RecordReplayValue(
-      "Heap::RecordReplayOnProgressInterrupt NearHeapLimitCalls",
-      record_replay_near_heap_limit_calls_);
-  record_replay_near_heap_limit_calls_ = 0;
-  for (size_t i = 0; i < calls && near_heap_limit_callbacks_.size(); i++) {
-    CallNearHeapLimitCallback();
+  if (memory_reducer_) {
+    memory_reducer_->RecordReplayOnProgressInterrupt();
+  }
+  if (recordreplay::IsRecordingOrReplaying("interrupts")) {
+    size_t calls = recordreplay::RecordReplayValue(
+        "Heap::RecordReplayOnProgressInterrupt NearHeapLimitCalls",
+        record_replay_near_heap_limit_calls_);
+    record_replay_near_heap_limit_calls_ = 0;
+    for (size_t i = 0; i < calls && near_heap_limit_callbacks_.size(); i++) {
+      CallNearHeapLimitCallback();
+    }
   }
 }
 
@@ -5286,6 +5293,8 @@ bool Heap::ShouldOptimizeForLoadTime() {
              isolate()->LoadStartTimeMs() + kMaxLoadTimeMs;
 }
 
+extern bool gRecordReplayEnableGCFeatures;
+
 // This predicate is called when an old generation space cannot allocated from
 // the free list and is about to add a new page. Returning false will cause a
 // major GC. It happens when the old generation allocation limit is reached and
@@ -5326,11 +5335,9 @@ bool Heap::ShouldExpandOldGenerationOnSlowAllocation(LocalHeap* local_heap) {
 
   if (incremental_marking()->IsStopped() &&
       IncrementalMarkingLimitReached() == IncrementalMarkingLimit::kNoLimit &&
-      // When recording/replaying, keep expanding the old generation here
-      // instead of forcing a GC. Incremental marking is disabled when
-      // replaying, and when recording it starts major GCs once its limit is
-      // reached.
-      !recordreplay::IsRecordingOrReplaying("gc-changes", "NoIncrementalMarking")) {
+      // Incremental marking is disabled when recording/replaying with the
+      // v8-flags-gc feature disabled. Expand instead of collecting then.
+      (gRecordReplayEnableGCFeatures || !recordreplay::IsRecordingOrReplaying())) {
     // We cannot start incremental marking.
     return false;
   }
