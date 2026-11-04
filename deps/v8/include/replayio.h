@@ -47,6 +47,35 @@ struct AutoDisallowEvents {
   }
 };
 
+// Lets the embedder describe what the GC did to its own objects at the same
+// deterministic points as V8's WeakRefs and FinalizationRegistries, so that
+// each of those points records a single value (see src/replay/gc-poll.h).
+//
+// The embedder's weak callbacks only note what the GC collected. When
+// recording, the poll records whether an active participant has notes. Where
+// one did, the poll calls Poll() on every active participant on both sides,
+// which records/replays the notes and runs the cleanup.
+class ReplayGCPollParticipant {
+ public:
+  virtual ~ReplayGCPollParticipant() = default;
+
+  // Whether the poll records a value on this participant's behalf. Has to be
+  // the same when recording and replaying.
+  virtual bool IsActive() const = 0;
+  // Only called when recording: whether anything was noted since the last
+  // Poll().
+  virtual bool HasPending() const = 0;
+  // Called on every active participant, in the order they were added, after
+  // V8's own work. Must not add or remove participants.
+  virtual void Poll() = 0;
+};
+
+// Must be called at deterministic points, on the isolate's thread.
+V8_EXPORT void AddReplayGCPollParticipant(Isolate* isolate,
+                                          ReplayGCPollParticipant* participant);
+V8_EXPORT void RemoveReplayGCPollParticipant(
+    Isolate* isolate, ReplayGCPollParticipant* participant);
+
 }  // namespace replayio
 }  // namespace v8
 
