@@ -165,6 +165,25 @@ void RegExpMacroAssemblerX64::Backtrack() {
 
     __ bind(&next);
   }
+  // A match can backtrack for many seconds without advancing the progress
+  // counter. Every 2^20 backtracks, call the preemption handler, which reports
+  // activity so replay hang detection sees the process is busy, and continues
+  // the match unless an interrupt is pending. Matches with a backtrack limit
+  // (which node doesn't set) use the counter for it.
+  if (recordreplay::IsRecordingOrReplaying() && !has_backtrack_limit()) {
+    Label no_activity;
+    // The counter's low 32 bits wrap to zero every 2^20 additions.
+    __ addl(Operand(rbp, kBacktrackCount), Immediate(1 << 12));
+    __ j(not_zero, &no_activity);
+    // Near the stack limit, the handler would report a stack overflow that
+    // the match doesn't otherwise have.
+    __ load_rax(ExternalReference::address_of_jslimit(isolate()));
+    __ addq(rax, Immediate(4 * KB));
+    __ cmpq(rsp, rax);
+    __ j(below_equal, &no_activity);
+    SafeCall(&check_preempt_label_);
+    __ bind(&no_activity);
+  }
   // Pop Code offset from backtrack stack, add Code and jump to location.
   Pop(rbx);
   __ addq(rbx, code_object_pointer());
