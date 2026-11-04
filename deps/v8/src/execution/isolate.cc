@@ -1487,12 +1487,31 @@ void Isolate::CancelTerminateExecution() {
 }
 
 void Isolate::RequestInterrupt(InterruptCallback callback, void* data) {
+  recordreplay::OrderedLock(record_replay_api_interrupts_ordered_lock_id_);
   ExecutionAccess access(this);
   api_interrupts_queue_.push(InterruptEntry(callback, data));
   stack_guard()->RequestApiInterrupt();
+  recordreplay::OrderedUnlock(record_replay_api_interrupts_ordered_lock_id_);
 }
 
+extern void RecordReplayTriggerProgressInterrupt();
+
 void Isolate::InvokeApiInterruptCallbacks() {
+  if (recordreplay::IsRecordingOrReplaying("interrupts")) {
+    // When recording, we can't invoke API interrupt callbacks at arbitrary points
+    // where we check for interrupts, as we won't be able to invoke those callbacks
+    // at the same point when replaying. Instead, after detecting that interrupts
+    // have been added to the queue we trigger an interrupt the next time the progress
+    // counter advances, and will invoke the callbacks then.
+    if (recordreplay::IsRecording() && IsMainThread()) {
+      ExecutionAccess access(this);
+      if (!api_interrupts_queue_.empty()) {
+        RecordReplayTriggerProgressInterrupt();
+      }
+    }
+    return;
+  }
+
   RCS_SCOPE(this, RuntimeCallCounterId::kInvokeApiInterruptCallbacks);
   // Note: callback below should be called outside of execution access lock.
   while (true) {
@@ -1507,6 +1526,64 @@ void Isolate::InvokeApiInterruptCallbacks() {
     HandleScope handle_scope(this);
     entry.first(reinterpret_cast<v8::Isolate*>(this), entry.second);
   }
+}
+
+void Isolate::RecordReplayInvokeApiInterruptCallbacksAtProgress() {
+  CHECK(recordreplay::IsRecordingOrReplaying("interrupts"));
+  CHECK(IsMainThread());
+
+  // A callback that advances progress without running JS (an inspector
+  // command's response adds a bookmark) reaches the progress interrupt
+  // requested for callbacks queued meanwhile. Running them there would nest
+  // every queued callback inside the previous one, until C stack limit checks
+  // (e.g. in RegExp parsing) fail at a depth that differs between recording
+  // and replaying. They wait for the next progress interrupt instead, once the
+  // enclosing callback runs JS or returns. JS entered from a callback (e.g. an
+  // inspector command's evaluation) still runs them, so they can interrupt
+  // that JS: the enclosing invocation's topmost JS frame stays on the stack,
+  // so a different topmost fp means newer JS frames.
+  Address js_fp = kNullAddress;
+  {
+    JavaScriptFrameIterator it(this);
+    if (!it.done()) js_fp = it.frame()->fp();
+  }
+  if (record_replay_invoking_api_interrupts_ &&
+      record_replay_api_interrupts_js_fp_ == js_fp) {
+    // The interrupt that got us here is used up. Request it again so JS the
+    // enclosing callback runs next still requests a progress interrupt for
+    // whatever is queued, instead of waiting for the callback to return.
+    stack_guard()->RequestApiInterrupt();
+    return;
+  }
+  bool was_invoking = record_replay_invoking_api_interrupts_;
+  Address previous_js_fp = record_replay_api_interrupts_js_fp_;
+  record_replay_invoking_api_interrupts_ = true;
+  record_replay_api_interrupts_js_fp_ = js_fp;
+
+  // One ordered lock round per drain, whatever the queue holds. An entry
+  // queued by code which only runs when recording (a binary module calling
+  // RequestInterrupt) exists only there, so the drain must not record anything
+  // which depends on the entries: taking the lock once per entry made the
+  // recorded lock order differ from the replay's. Callbacks still run outside
+  // the lock; an entry one of them queues waits for the next trigger.
+  std::queue<InterruptEntry> entries;
+  recordreplay::OrderedLock(record_replay_api_interrupts_ordered_lock_id_);
+  {
+    ExecutionAccess access(this);
+    entries.swap(api_interrupts_queue_);
+  }
+  recordreplay::OrderedUnlock(record_replay_api_interrupts_ordered_lock_id_);
+
+  while (!entries.empty()) {
+    InterruptEntry entry = entries.front();
+    entries.pop();
+    VMState<EXTERNAL> state(this);
+    HandleScope handle_scope(this);
+    entry.first(reinterpret_cast<v8::Isolate*>(this), entry.second);
+  }
+
+  record_replay_invoking_api_interrupts_ = was_invoking;
+  record_replay_api_interrupts_js_fp_ = previous_js_fp;
 }
 
 namespace {

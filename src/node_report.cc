@@ -19,10 +19,12 @@
 #endif
 
 #include <iostream>
+#include <memory>
 #include <cstring>
 #include <ctime>
 #include <cwctype>
 #include <fstream>
+#include <sstream>
 
 constexpr int NODE_REPORT_VERSION = 2;
 constexpr int NANOS_PER_SEC = 1000 * 1000 * 1000;
@@ -442,7 +444,8 @@ static void WriteNodeReport(Isolate* isolate,
                             const std::string& filename,
                             std::ostream& out,
                             Local<Value> error,
-                            bool compact) {
+                            bool compact,
+                            const std::vector<std::string>* worker_reports) {
   // Obtain the current time and the pid.
   TIME_TYPE tm_struct;
   DiagnosticFilename::LocalTime(&tm_struct);
@@ -566,33 +569,13 @@ static void WriteNodeReport(Isolate* isolate,
 
   writer.json_arraystart("workers");
   if (env != nullptr) {
-    Mutex workers_mutex;
-    ConditionVariable notify;
-    std::vector<std::string> worker_infos;
-    size_t expected_results = 0;
-
-    env->ForEachWorker([&](Worker* w) {
-      expected_results += w->RequestInterrupt([&](Environment* env) {
-        std::ostringstream os;
-
-        GetNodeReport(env->isolate(),
-                      env,
-                      "Worker thread subreport",
-                      trigger,
-                      Local<Object>(),
-                      os);
-
-        Mutex::ScopedLock lock(workers_mutex);
-        worker_infos.emplace_back(os.str());
-        notify.Signal(lock);
-      });
-    });
-
-    Mutex::ScopedLock lock(workers_mutex);
-    worker_infos.reserve(expected_results);
-    while (worker_infos.size() < expected_results)
-      notify.Wait(lock);
-    for (const std::string& worker_info : worker_infos)
+    // The subreports were collected already when the report is recorded.
+    std::vector<std::string> collected;
+    if (worker_reports == nullptr) {
+      collected = CollectWorkerReports(env, trigger);
+      worker_reports = &collected;
+    }
+    for (const std::string& worker_info : *worker_reports)
       writer.json_element(JSONWriter::ForeignJSON { worker_info });
   }
   writer.json_arrayend();
