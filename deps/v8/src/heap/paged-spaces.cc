@@ -613,6 +613,8 @@ base::Optional<std::pair<Address, size_t>> PagedSpace::RawRefillLabBackground(
          origin == AllocationOrigin::kGC);
   DCHECK_IMPLIES(!local_heap, origin == AllocationOrigin::kGC);
 
+  replayio::AutoDisallowEvents disallow("ConcurrentAllocator::AllocateFromSpaceFreeList");
+
   base::Optional<std::pair<Address, size_t>> result =
       TryAllocationFromFreeListBackground(min_size_in_bytes, max_size_in_bytes,
                                           alignment, origin);
@@ -655,6 +657,11 @@ base::Optional<std::pair<Address, size_t>> PagedSpace::RawRefillLabBackground(
       DCHECK_EQ(Heap::GetFillToAlign(result->first, alignment), 0);
       return result;
     }
+    recordreplay::Diagnostic("[RUN-851] ConcurrentAllocator::AllocateFromSpaceFreeList TryExpandBackgroundFailed");
+  } else {
+    recordreplay::Diagnostic("[RUN-851] ConcurrentAllocator::AllocateFromSpaceFreeList CantExpand %d %d",
+                             heap()->ShouldExpandOldGenerationOnSlowAllocation(local_heap),
+                             heap()->CanExpandOldGenerationBackground(local_heap, AreaSize()));
   }
 
   if (collector->sweeping_in_progress()) {
@@ -937,6 +944,8 @@ bool PagedSpace::RawRefillLabMain(int size_in_bytes, AllocationOrigin origin) {
   // Allocation in this space has failed.
   DCHECK_GE(size_in_bytes, 0);
   const int kMaxPagesToSweep = 1;
+
+  replayio::AutoDisallowEvents disallow("PagedSpaceBase::RawRefillLabMain");
 
   if (TryAllocationFromFreeListMain(size_in_bytes, origin)) return true;
 

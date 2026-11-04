@@ -4,6 +4,8 @@
 
 #include "src/heap/local-heap.h"
 
+#include "include/replayio.h"
+
 #include <atomic>
 #include <memory>
 
@@ -77,6 +79,8 @@ LocalHeap::LocalHeap(Heap* heap, ThreadKind kind,
 }
 
 LocalHeap::~LocalHeap() {
+  recordreplay::Diagnostic("LocalHeap Destroy %p", this);
+
   // Park thread since removing the local heap could block.
   EnsureParkedBeforeDestruction();
 
@@ -225,6 +229,8 @@ void LocalHeap::ParkSlowPath() {
 }
 
 void LocalHeap::UnparkSlowPath() {
+  replayio::AutoDisallowEvents disallow("LocalHeap::UnparkSlowPath");
+
   while (true) {
     ThreadState current_state = ThreadState::Parked();
     if (state_.CompareExchangeStrong(current_state, ThreadState::Running()))
@@ -285,6 +291,8 @@ void LocalHeap::EnsureParkedBeforeDestruction() {
 }
 
 void LocalHeap::SafepointSlowPath() {
+  replayio::AutoDisallowEvents disallow("LocalHeap::SafepointSlowPath");
+
   ThreadState current_state = state_.load_relaxed();
   DCHECK(current_state.IsRunning());
 
@@ -364,6 +372,8 @@ bool LocalHeap::TryPerformCollection() {
     heap_->CollectGarbageForBackground(this);
     return true;
   } else {
+  replayio::AutoDisallowEvents disallow("LocalHeap::TryPerformCollection");
+
     DCHECK(IsRunning());
     if (!heap_->collection_barrier_->TryRequestGC()) return false;
 
@@ -385,6 +395,8 @@ bool LocalHeap::TryPerformCollection() {
 Address LocalHeap::PerformCollectionAndAllocateAgain(
     int object_size, AllocationType type, AllocationOrigin origin,
     AllocationAlignment alignment) {
+  replayio::AutoDisallowEvents disallow("LocalHeap::PerformCollectionAndAllocateAgain");
+
   CHECK(!allocation_failed_);
   CHECK(!main_thread_parked_);
   allocation_failed_ = true;

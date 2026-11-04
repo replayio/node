@@ -99,6 +99,10 @@ class V8_PLATFORM_EXPORT DefaultJobState
   base::ConditionVariable worker_released_condition_;
 
   std::atomic<uint32_t> assigned_task_ids_{0};
+
+  // Whether the job was posted with events disallowed when recording/replaying,
+  // see NotifyConcurrencyIncrease.
+  const bool record_replay_unordered_;
 };
 
 class V8_PLATFORM_EXPORT DefaultJobHandle : public JobHandle {
