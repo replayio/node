@@ -12,6 +12,7 @@
 #include "src/heap/heap-layout-inl.h"
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/objects/smi-inl.h"
+#include "src/replay/finalization-registry.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -111,6 +112,8 @@ bool JSFinalizationRegistry::RemoveUnregisterToken(
       switch (removal_mode) {
         case kRemoveMatchedCellsFromRegistry:
           weak_cell->RemoveFromFinalizationRegistryCells(isolate);
+          replayio::ReplayFinalizationRegistries::OnUnregisterCell(
+              isolate, *this, weak_cell);
           break;
         case kKeepMatchedCellsInRegistry:
           // Do nothing.
