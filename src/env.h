@@ -574,6 +574,9 @@ class NoArrayBufferZeroFillScope {
   V(url_constructor_function, v8::Function)
 
 class Environment;
+namespace recordreplay {
+class DeferredFinalization;
+}  // namespace recordreplay
 
 typedef size_t SnapshotIndex;
 class NODE_EXTERN_PRIVATE IsolateData : public MemoryRetainer {
@@ -1154,6 +1157,10 @@ class Environment : public MemoryRetainer {
   // List of id's that have been destroyed and need the destroy() cb called.
   inline std::vector<double>* destroy_async_id_list();
 
+  // Cleanup for what the GC collected, run at deterministic points when
+  // recording/replaying.
+  inline recordreplay::DeferredFinalization* deferred_finalization();
+
   std::set<struct node_module*> internal_bindings;
   std::set<std::string> builtins_with_cache;
   std::set<std::string> builtins_without_cache;
@@ -1446,6 +1453,7 @@ class Environment : public MemoryRetainer {
 
   size_t async_callback_scope_depth_ = 0;
   std::vector<double> destroy_async_id_list_;
+  std::unique_ptr<recordreplay::DeferredFinalization> deferred_finalization_;
 
 #if HAVE_INSPECTOR
   std::unique_ptr<profiler::V8CoverageConnection> coverage_connection_;

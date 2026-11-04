@@ -415,7 +415,7 @@ class RefBase : protected Finalizer, RefTracker {
   bool _delete_self;
 };
 
-class Reference : public RefBase {
+class Reference : public RefBase, public node::recordreplay::Finalizable {
   using SecondPassCallParameterRef = Reference*;
 
  protected:
@@ -457,6 +457,13 @@ class Reference : public RefBase {
   v8impl::Persistent<v8::Value> _persistent;
   SecondPassCallParameterRef* _secondPassParameter;
   bool _secondPassScheduled;
+  int _record_replay_id = 0;
+  // The finalization of a tracked reference is deferred to a point which
+  // replays, see RecordReplayTrack.
+  node::recordreplay::DeferredFinalization* _record_replay_finalization =
+      nullptr;
+  int _record_replay_finalize_id = 0;
+  bool _record_replay_has_finalizer = false;
 
   FRIEND_TEST(JsNativeApiV8Test, Reference);
 };
