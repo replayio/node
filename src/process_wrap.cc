@@ -20,6 +20,7 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "env-inl.h"
+#include "node_internals.h"
 #include "stream_base-inl.h"
 #include "stream_wrap.h"
 #include "util-inl.h"
@@ -143,6 +144,9 @@ class ProcessWrap : public HandleWrap {
 
   static void Spawn(const FunctionCallbackInfo<Value>& args) {
     Environment* env = Environment::GetCurrent(args);
+    if (recordreplay::ThrowIfEventsUnavailable(env, "child_process.spawn")) {
+      return;
+    }
     Local<Context> context = env->context();
     ProcessWrap* wrap;
     ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
@@ -288,6 +292,9 @@ class ProcessWrap : public HandleWrap {
 
   static void Kill(const FunctionCallbackInfo<Value>& args) {
     Environment* env = Environment::GetCurrent(args);
+    if (recordreplay::ThrowIfEventsUnavailable(env, "subprocess.kill")) {
+      return;
+    }
     ProcessWrap* wrap;
     ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
     int signal = args[0]->Int32Value(env->context()).FromJust();
