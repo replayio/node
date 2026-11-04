@@ -28,6 +28,7 @@
 #include "node_external_reference.h"
 #include "node_profiling.h"
 #include "permission/permission.h"
+#include "node_internals.h"
 #include "util-inl.h"
 #include "v8-profiler.h"
 #include "v8.h"
@@ -218,6 +219,9 @@ static inline double RecordReplayDouble(const char* why, double d) {
 }
 
 void UpdateHeapStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "v8.getHeapStatistics")) {
+    return;
+  }
   BindingData* data = Realm::GetBindingData<BindingData>(args);
   HeapStatistics s;
   args.GetIsolate()->GetHeapStatistics(&s);
@@ -231,6 +235,10 @@ void UpdateHeapStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
 
 
 void UpdateHeapSpaceStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "v8.getHeapSpaceStatistics")) {
+    return;
+  }
   BindingData* data = Realm::GetBindingData<BindingData>(args);
   HeapSpaceStatistics s;
   Isolate* const isolate = args.GetIsolate();
@@ -248,6 +256,10 @@ void UpdateHeapSpaceStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
 }
 
 void UpdateHeapCodeStatisticsBuffer(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "v8.getHeapCodeStatistics")) {
+    return;
+  }
   BindingData* data = Realm::GetBindingData<BindingData>(args);
   HeapCodeStatistics s;
   args.GetIsolate()->GetHeapCodeAndMetadataStatistics(&s);

@@ -271,6 +271,9 @@ static bool ThrowIfUvMightBeUsingIoUring(Environment* env, const char* fn) {
 
 static void GetUid(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.getuid")) {
+    return;
+  }
   CHECK(env->has_run_bootstrapping_code());
   // uid_t is an uint32_t on all supported platforms.
   args.GetReturnValue().Set(static_cast<uint32_t>(getuid()));
@@ -278,6 +281,9 @@ static void GetUid(const FunctionCallbackInfo<Value>& args) {
 
 static void GetGid(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.getgid")) {
+    return;
+  }
   CHECK(env->has_run_bootstrapping_code());
   // gid_t is an uint32_t on all supported platforms.
   args.GetReturnValue().Set(static_cast<uint32_t>(getgid()));
@@ -285,6 +291,9 @@ static void GetGid(const FunctionCallbackInfo<Value>& args) {
 
 static void GetEUid(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.geteuid")) {
+    return;
+  }
   CHECK(env->has_run_bootstrapping_code());
   // uid_t is an uint32_t on all supported platforms.
   args.GetReturnValue().Set(static_cast<uint32_t>(geteuid()));
@@ -292,6 +301,9 @@ static void GetEUid(const FunctionCallbackInfo<Value>& args) {
 
 static void GetEGid(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.getegid")) {
+    return;
+  }
   CHECK(env->has_run_bootstrapping_code());
   // gid_t is an uint32_t on all supported platforms.
   args.GetReturnValue().Set(static_cast<uint32_t>(getegid()));
@@ -299,6 +311,9 @@ static void GetEGid(const FunctionCallbackInfo<Value>& args) {
 
 static void SetGid(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.setgid")) {
+    return;
+  }
   CHECK(env->owns_process_state());
 
   CHECK_EQ(args.Length(), 1);
@@ -320,6 +335,9 @@ static void SetGid(const FunctionCallbackInfo<Value>& args) {
 
 static void SetEGid(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.setegid")) {
+    return;
+  }
   CHECK(env->owns_process_state());
 
   CHECK_EQ(args.Length(), 1);
@@ -341,6 +359,9 @@ static void SetEGid(const FunctionCallbackInfo<Value>& args) {
 
 static void SetUid(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.setuid")) {
+    return;
+  }
   CHECK(env->owns_process_state());
 
   CHECK_EQ(args.Length(), 1);
@@ -362,6 +383,9 @@ static void SetUid(const FunctionCallbackInfo<Value>& args) {
 
 static void SetEUid(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.seteuid")) {
+    return;
+  }
   CHECK(env->owns_process_state());
 
   CHECK_EQ(args.Length(), 1);
@@ -383,6 +407,9 @@ static void SetEUid(const FunctionCallbackInfo<Value>& args) {
 
 static void GetGroups(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.getgroups")) {
+    return;
+  }
   CHECK(env->has_run_bootstrapping_code());
 
   int ngroups = getgroups(0, nullptr);
@@ -405,6 +432,9 @@ static void GetGroups(const FunctionCallbackInfo<Value>& args) {
 
 static void SetGroups(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.setgroups")) {
+    return;
+  }
 
   CHECK_EQ(args.Length(), 1);
   CHECK(args[0]->IsArray());
@@ -441,6 +471,9 @@ static void SetGroups(const FunctionCallbackInfo<Value>& args) {
 
 static void InitGroups(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.initgroups")) {
+    return;
+  }
 
   CHECK_EQ(args.Length(), 2);
   CHECK(args[0]->IsUint32() || args[0]->IsString());
