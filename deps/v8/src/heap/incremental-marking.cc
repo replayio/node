@@ -5,6 +5,7 @@
 #include "src/heap/incremental-marking.h"
 
 #include "src/base/logging.h"
+#include "include/replayio.h"
 #include "src/codegen/compilation-cache.h"
 #include "src/execution/vm-state-inl.h"
 #include "src/handles/global-handles.h"

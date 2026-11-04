@@ -187,6 +187,10 @@ AllocationResult OldLargeObjectSpace::AllocateRawBackground(
   if (!heap()->CanExpandOldGenerationBackground(local_heap, object_size) ||
       !heap()->ShouldExpandOldGenerationOnSlowAllocation(
           local_heap, AllocationOrigin::kRuntime)) {
+    recordreplay::Diagnostic("[RUN-851] OldLargeObjectSpace::AllocateRawBackground Failed %d %d",
+                             heap()->CanExpandOldGenerationBackground(local_heap, object_size),
+                             heap()->ShouldExpandOldGenerationOnSlowAllocation(
+                                 local_heap, AllocationOrigin::kRuntime));
     return AllocationResult::Failure();
   }
 
