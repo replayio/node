@@ -8,6 +8,7 @@
 #include "src/objects/managed.h"
 // Include the non-inl header before the rest of the headers.
 
+#include "include/v8.h"  // For replay.
 #include "src/handles/global-handles-inl.h"
 
 namespace v8::internal {
@@ -18,6 +19,15 @@ namespace detail {
 template <typename CppType>
 static void Destructor(void* ptr) {
   auto shared_ptr_ptr = reinterpret_cast<std::shared_ptr<CppType>*>(ptr);
+  // Not the shared pointer's use count: other isolates share the object
+  // (e.g. a wasm NativeModule shared with workers) and release their
+  // references on their own threads, which nothing orders with this one,
+  // so the count differs when replaying.
+  // Parenthesized: turboshaft's define-assembler-macros.inc defines a
+  // function-like Assert macro and includes other headers while it is in
+  // effect (see wasm-in-js-inlining-reducer-inl.h), so an unparenthesized call
+  // in a header can be rewritten into recordreplay::AssertImpl.
+  (recordreplay::Assert)("Managed::Destructor");
   delete shared_ptr_ptr;
 }
 }  // namespace detail

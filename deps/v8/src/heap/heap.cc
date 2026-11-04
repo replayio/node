@@ -1277,6 +1277,8 @@ bool GCCallbacksScope::CheckReenter() const {
 }
 
 void Heap::HandleGCRequest() {
+  replayio::AutoDisallowEvents disallow("Heap::HandleGCRequest");
+
   if (IsStressingScavenge() && stress_scavenge_observer_->HasRequestedGC()) {
     CollectGarbage(NEW_SPACE, GarbageCollectionReason::kTesting);
     stress_scavenge_observer_->RequestedGCDone();
@@ -1369,6 +1371,7 @@ void FreeCachesOnMemoryPressure(Isolate* isolate) {
 }  // anonymous namespace
 
 void Heap::CollectAllAvailableGarbage(GarbageCollectionReason gc_reason) {
+  replayio::AutoDisallowEvents disallow("Heap::CollectAllAvailableGarbage");
   // Min and max number of attempts for GC. The method will continue with more
   // GCs until the root set is stable.
   static constexpr int kMaxNumberOfAttempts = 7;
@@ -1471,6 +1474,7 @@ void Heap::PreciseCollectAllGarbage(GCFlags gc_flags,
 }
 
 void Heap::HandleExternalMemoryInterrupt() {
+  replayio::AutoDisallowEvents disallow("Heap::HandleExternalMemoryInterrupt");
   const GCCallbackFlags kGCCallbackFlagsForExternalMemory =
       static_cast<GCCallbackFlags>(
           kGCCallbackFlagSynchronousPhantomCallbackProcessing |
@@ -1581,7 +1585,7 @@ void Heap::CollectGarbage(
   SealHandleScope scope(isolate_);
   DCHECK_EQ(Isolate::TryGetCurrent(), isolate_);
   DCHECK_EQ(resize_new_space_mode_, ResizeNewSpaceMode::kNone);
-  replayio::AutoDisallowEvents disallow;
+  replayio::AutoDisallowEvents disallow("Heap::CollectGarbage");
   if (V8_UNLIKELY(!deserialization_complete_)) {
     // During isolate initialization heap always grows. GC is only requested
     // if a new page allocation fails. In such a case we should crash with
@@ -1932,6 +1936,9 @@ int Heap::NotifyContextDisposed(bool has_dependent_context) {
     if (memory_reducer_) {
       memory_reducer_->NotifyPossibleGarbage();
     }
+    if (recordreplay::IsRecordingOrReplaying()) {
+      memory_reducer_->RecordReplayPostRequestedTimer();
+    }
   } else if (v8_flags.idle_gc_on_context_disposal &&
              !v8_flags.single_generation) {
     DCHECK_NOT_NULL(new_space());
@@ -1956,6 +1963,8 @@ void Heap::StartIncrementalMarking(GCFlags gc_flags,
                                    const char* reason) {
   DCHECK(incremental_marking()->IsStopped());
   DCHECK_EQ(isolate(), Isolate::TryGetCurrent());
+
+  replayio::AutoDisallowEvents disallow("Heap::StartIncrementalMarking");
 
   if (gc_callbacks_depth_ > 0) {
     // Do not start incremental marking while invoking GC callbacks.
@@ -2077,6 +2086,7 @@ void Heap::StartIncrementalMarkingOnInterrupt() {
 void Heap::StartIncrementalMarkingIfAllocationLimitIsReached(
     LocalHeap* local_heap, GCFlags gc_flags,
     const GCCallbackFlags gc_callback_flags) {
+  replayio::AutoDisallowEvents disallow("Heap::StartIncrementalMarkingIfAllocationLimitIsReached");
   if (incremental_marking()->IsStopped() &&
       incremental_marking()->CanAndShouldBeStarted()) {
     auto [limit, reason] = IncrementalMarkingLimitReached();
@@ -2326,13 +2336,8 @@ void ClearStubCaches(Isolate* isolate) {
 void Heap::PerformGarbageCollection(GarbageCollector collector,
                                     GarbageCollectionReason gc_reason,
                                     const char* collector_reason) {
-  // For now we are completely disabling GC in the old space when
-  // recording/replaying to avoid crashes and needing to deal with
-  // non-deterministic behavior that can be triggered by sweeping.
-  if (recordreplay::IsRecordingOrReplaying() &&
-      collector == GarbageCollector::MARK_COMPACTOR) {
-    return;
-  }
+  DisallowJavascriptExecution no_js(isolate());
+
   if (IsYoungGenerationCollector(collector)) {
     if (v8_flags.sticky_mark_bits) {
       DCHECK_EQ(GarbageCollector::MINOR_MARK_SWEEPER, collector);
@@ -2590,6 +2595,7 @@ void Heap::CompleteSweepingYoung(CompleteSweepingReason reason) {
 
 void Heap::EnsureSweepingCompletedForObject(Tagged<HeapObject> object) {
   if (!sweeping_in_progress()) return;
+  replayio::AutoDisallowEvents disallow("Heap::EnsureSweepingCompletedForObject");
 
   MemoryChunk* chunk = MemoryChunk::FromHeapObject(object);
   if (chunk->InReadOnlySpace()) {
@@ -3766,6 +3772,7 @@ void Heap::ActivateMemoryReducerIfNeededOnMainThread() {
   const int kMinCommittedMemory = 7 * NormalPage::kPageSize;
   if (ms_count_ == 0 && CommittedMemory() > kMinCommittedMemory &&
       isolate()->is_backgrounded()) {
+    replayio::AutoDisallowEvents disallow("Heap::ActivateMemoryReducerIfNeeded");
     memory_reducer_->NotifyPossibleGarbage();
   }
 }
@@ -4122,6 +4129,8 @@ void Heap::CheckMemoryPressure() {
 }
 
 void Heap::CollectGarbageOnMemoryPressure() {
+  replayio::AutoDisallowEvents disallow("Heap::CollectGarbageOnMemoryPressure");
+
   const int kGarbageThresholdInBytes = 8 * MB;
   const double kGarbageThresholdAsFractionOfTotalMemory = 0.1;
   // This constant is the maximum response time in RAIL performance model.
@@ -4159,6 +4168,8 @@ void Heap::CollectGarbageOnMemoryPressure() {
 
 void Heap::MemoryPressureNotification(MemoryPressureLevel level,
                                       bool is_isolate_locked) {
+  replayio::AutoDisallowEvents disallow("Heap::MemoryPressureNotification");
+
   TRACE_EVENT1("devtools.timeline,v8", "V8.MemoryPressureNotification", "level",
                static_cast<int>(level));
   MemoryPressureLevel previous =
@@ -5582,6 +5593,8 @@ bool Heap::IsInputHandlingInitialized() const {
   return input_handling_state_.IsInitialized();
 }
 
+extern bool gRecordReplayEnableGCFeatures;
+
 // This predicate is called when an old generation space cannot allocated from
 // the free list and is about to add a new page. Returning false will cause a
 // major GC. It happens when the old generation allocation limit is reached and
@@ -5589,7 +5602,14 @@ bool Heap::IsInputHandlingInitialized() const {
 // - or the incremental marking is not in progress and we cannot start it.
 bool Heap::ShouldExpandOldGenerationOnSlowAllocation(LocalHeap* local_heap,
                                                      AllocationOrigin origin) {
-  replayio::AutoDisallowEvents disallow;
+  replayio::AutoDisallowEvents disallow("Heap::ShouldExpandOldGenerationOnSlowAllocation");
+
+  // Always allow background threads to allocate while replaying without
+  // triggering GC. Waiting on a main thread GC can introduce deadlocks if the
+  // main thread is itself waiting on an ordered lock which this thread is next
+  // in line to acquire.
+  if (recordreplay::IsReplaying() && local_heap && !local_heap->is_main_thread())
+    return true;
   if (always_allocate()) {
     return true;
   }
@@ -5652,8 +5672,10 @@ bool Heap::ShouldExpandOldGenerationOnSlowAllocation(LocalHeap* local_heap,
     auto [limit, reason] = IncrementalMarkingLimitReached();
 
     if (limit == IncrementalMarkingLimit::kNoLimit &&
-        // Incremental marking is disabled when recording/replaying.
-        !recordreplay::IsRecordingOrReplaying()) {
+        // Incremental marking is disabled when recording/replaying with the
+        // v8-flags-gc feature disabled. Expand instead of collecting then.
+        (gRecordReplayEnableGCFeatures ||
+         !recordreplay::IsRecordingOrReplaying())) {
       // We cannot start incremental marking.
       return false;
     }
@@ -6324,7 +6346,7 @@ void Heap::NotifyBootstrapComplete() {
 void Heap::NotifyOldGenerationExpansion(
     LocalHeap* local_heap, AllocationSpace space, MutablePage* chunk_metadata,
     OldGenerationExpansionNotificationOrigin notification_origin) {
-  replayio::AutoDisallowEvents disallow;
+  replayio::AutoDisallowEvents disallow("Heap::NotifyOldGenerationExpansion");
   // Pages created during bootstrapping may contain immortal immovable objects.
   if (!deserialization_complete()) {
     DCHECK_NE(NEW_SPACE, chunk_metadata->owner()->identity());
@@ -6388,6 +6410,8 @@ const ::heap::base::Stack& Heap::stack() const {
 }
 
 void Heap::StartTearDown() {
+  replayio::AutoDisallowEvents disallow("Heap::StartTearDown");
+
   if (cpp_heap_) {
     // This may invoke a GC in case marking is running to get us into a
     // well-defined state for tear down.
@@ -7703,6 +7727,8 @@ void Heap::FinishSweepingIfOutOfWork(CompleteSweepingReason reason) {
 
 void Heap::EnsureSweepingCompleted(SweepingForcedFinalizationMode mode,
                                    CompleteSweepingReason reason) {
+  replayio::AutoDisallowEvents disallow("Heap::EnsureSweepingCompleted");
+
   TRACE_GC_EPOCH(tracer(), GCTracer::Scope::HEAP_ENSURE_SWEEPING_COMPLETED,
                  ThreadKind::kMain, "value", [&](perfetto::TracedValue ctx) {
                    auto dict = std::move(ctx).WriteDictionary();

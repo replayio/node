@@ -465,6 +465,12 @@ class MemoryPool::ReleasePooledChunksTask final : public CancelableTask {
   ReleasePooledChunksTask(const ReleasePooledChunksTask&) = delete;
   ReleasePooledChunksTask& operator=(const ReleasePooledChunksTask&) = delete;
 
+  // Which isolate pools pages and which one releases them follows the heap's
+  // own behaviour and the isolates' race, neither of which the replay repeats,
+  // so posting this task must not enter the recording (see
+  // Task::IsRecordReplayNonDeterministic).
+  bool IsRecordReplayNonDeterministic() const override { return true; }
+
  private:
   void RunInternal() override {
     const ReleaseStats stats = pool_->ReleaseUpTo(release_epoch_);
