@@ -29,6 +29,7 @@
 #include "memory_tracker.h"
 #include "node_v8_embedder.h"
 #include "util.h"
+#include "node_deferred_finalization.h"
 #include "v8.h"
 
 namespace node {
@@ -43,7 +44,7 @@ namespace worker {
 class TransferData;
 }
 
-class BaseObject : public MemoryRetainer {
+class BaseObject : public MemoryRetainer, public recordreplay::Finalizable {
  public:
   enum InternalFields { kEmbedderType, kSlot, kInternalFieldCount };
 
@@ -100,6 +101,15 @@ class BaseObject : public MemoryRetainer {
   // Undo `MakeWeak()`, i.e. turn this into a strong reference that is a GC
   // root and will not be touched by the garbage collector.
   inline void ClearWeak();
+
+  // When recording/replaying, runs the cleanup which collecting this object
+  // causes (OnGCCollect()) at a deterministic point instead of from the weak
+  // callback, see recordreplay::DeferredFinalization. Call before MakeWeak().
+  // Only an object created at a deterministic point can be tracked; for the
+  // others OnGCCollect() runs from the weak callback as usual, and subclasses
+  // fall back to leaking (recordreplay::EnterLeakMemory).
+  void RecordReplayTrack(const char* label);
+  bool IsRecordReplayTracked() const;
 
   // Reports whether this BaseObject is using a weak reference or detached,
   // i.e. whether is can be deleted by GC once no strong BaseObjectPtrs refer
@@ -198,6 +208,10 @@ class BaseObject : public MemoryRetainer {
   template <typename T, bool kIsWeak>
   friend class BaseObjectPtrImpl;
 
+  // Called by DeferredFinalization::Poll for a tracked object the recording's
+  // GC collected: runs OnGCCollect() as the weak callback would have.
+  void RecordReplayFinalize() override;
+
   v8::Global<v8::Object> persistent_handle_;
 
   // Metadata that is associated with this BaseObject if there are BaseObjectPtr
@@ -232,6 +246,8 @@ class BaseObject : public MemoryRetainer {
   Realm* realm_;
   PointerData* pointer_data_ = nullptr;
   ListNode<BaseObject> base_object_list_node_;
+  // The id DeferredFinalization tracks this object by, or 0.
+  int record_replay_id_ = 0;
 
   friend class BaseObjectList;
 };
