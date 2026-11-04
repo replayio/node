@@ -38,6 +38,12 @@ class WeakReference : public SnapshotableObject {
                 v8::Local<v8::Object> object,
                 v8::Local<v8::Object> target,
                 uint64_t reference_count);
+  // Holds the target weakly unless replaying, where RecordReplayTargetLiveness
+  // lets it go at the point the recording saw the GC collect it.
+  void SetTargetWeak();
+  // Makes the target's liveness match the recording at a deterministic point.
+  void RecordReplayTargetLiveness();
+
   v8::Global<v8::Object> target_;
   uint64_t reference_count_ = 0;
 
