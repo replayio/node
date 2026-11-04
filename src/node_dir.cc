@@ -98,6 +98,7 @@ static const char* get_dir_func_name_by_type(uv_fs_type req_type) {
 DirHandle::DirHandle(Environment* env, Local<Object> obj, uv_dir_t* dir)
     : AsyncWrap(env, obj, AsyncWrap::PROVIDER_DIRHANDLE),
       dir_(dir) {
+  RecordReplayTrack("DirHandle");
   MakeWeak();
 
   dir_->nentries = 0;
@@ -121,15 +122,24 @@ void DirHandle::New(const FunctionCallbackInfo<Value>& args) {
 
 DirHandle::~DirHandle() {
   CHECK(!closing_);  // We should not be deleting while explicitly closing!
-
-  // When recording/replaying we can't close directories at non-deterministic
-  // points. Let the directory leak.
-  if (v8::recordreplay::IsRecordingOrReplaying()) {
-    return;
-  }
-
   GCClose();         // Close synchronously and emit warning
   CHECK(closed_);    // We have to be closed at the point
+}
+
+void DirHandle::OnGCCollect() {
+  // When recording/replaying, the GC collects this at points which differ
+  // between the two, and closing it here schedules JS (a process warning). A
+  // tracked handle (see RecordReplayTrack) gets here from
+  // DeferredFinalization::Poll instead, at a deterministic point, and is
+  // closed. One created where it could not be tracked is leaked while it is
+  // open. An explicit close() is unaffected, and the cleanup hook still closes
+  // the directory when the environment is torn down. Once closed, destroying
+  // it has no effect beyond freeing memory.
+  if (!closed_ && !IsRecordReplayTracked() &&
+      recordreplay::EnterLeakMemory("DirHandle")) {
+    return;
+  }
+  BaseObject::OnGCCollect();
 }
 
 void DirHandle::MemoryInfo(MemoryTracker* tracker) const {

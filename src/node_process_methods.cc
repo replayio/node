@@ -300,12 +300,27 @@ static void GetActiveRequests(const FunctionCallbackInfo<Value>& args) {
 
 // Non-static, friend of HandleWrap. Could have been a HandleWrap method but
 // implemented here for consistency with GetActiveRequests().
+// Whether the JS object of an active handle is alive. The GC may have
+// collected the owner of a weak wrap (e.g. IntervalHistogram) without closing
+// the handle yet: when recording/replaying, the wrap is closed at the next GC
+// poll (see HandleWrap::OnGCCollect), and until then the owner's liveness
+// differs between the two, so it is recorded. When replaying, such owners are
+// held strongly until then (see BaseObject::RecordReplayTrack).
+static bool IsHandleOwnerAlive(HandleWrap* w) {
+  bool alive = !w->persistent().IsEmpty();
+  if (recordreplay::AreEventsRecorded()) {
+    alive = v8::recordreplay::RecordReplayValue("HandleWrap owner alive", alive);
+    CHECK(!alive || !w->persistent().IsEmpty());
+  }
+  return alive;
+}
+
 void GetActiveHandles(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
 
   std::vector<Local<Value>> handle_v;
   for (auto w : *env->handle_wrap_queue()) {
-    if (!HandleWrap::HasRef(w))
+    if (!HandleWrap::HasRef(w) || !IsHandleOwnerAlive(w))
       continue;
     handle_v.emplace_back(w->GetOwner());
   }
@@ -327,7 +342,7 @@ static void GetActiveResourcesInfo(const FunctionCallbackInfo<Value>& args) {
 
   // Active handles
   for (HandleWrap* w : *env->handle_wrap_queue()) {
-    if (w->persistent().IsEmpty() || !HandleWrap::HasRef(w)) continue;
+    if (!HandleWrap::HasRef(w) || !IsHandleOwnerAlive(w)) continue;
     resources_info.emplace_back(
         OneByteString(env->isolate(), w->MemoryInfoName()));
   }
