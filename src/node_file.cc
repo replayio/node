@@ -242,6 +242,7 @@ FileHandle::FileHandle(BindingData* binding_data,
       original_name_(std::move(original_name)),
       fd_(fd),
       binding_data_(binding_data) {
+  RecordReplayTrack("FileHandle");
   MakeWeak();
   StreamBase::AttachToObject(GetObject());
 }
@@ -299,6 +300,22 @@ FileHandle::~FileHandle() {
   CHECK(!closing_);  // We should not be deleting while explicitly closing!
   Close();           // Close synchronously and emit warning
   CHECK(closed_);    // We have to be closed at the point
+}
+
+void FileHandle::OnGCCollect() {
+  // When recording/replaying, the GC collects this at points which differ
+  // between the two, and closing it here schedules JS (a process warning). A
+  // tracked handle (see RecordReplayTrack) gets here from
+  // DeferredFinalization::Poll instead, at a deterministic point, and is
+  // closed. One created where it could not be tracked is leaked while it is
+  // open. An explicit close() is unaffected, and the cleanup hook still closes
+  // the fd when the environment is torn down. Once closed, destroying it has
+  // no effect beyond freeing memory.
+  if (!closed_ && !IsRecordReplayTracked() &&
+      recordreplay::EnterLeakMemory("FileHandle")) {
+    return;
+  }
+  BaseObject::OnGCCollect();
 }
 
 int FileHandle::DoWrite(WriteWrap* w,

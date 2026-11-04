@@ -285,6 +285,11 @@ static void ReconcileGarbageCollectionTracking(Environment* env) {
 static void UpdateGarbageCollectionTracking(
     const FunctionCallbackInfo<Value>& args) {
   ReconcileGarbageCollectionTracking(Environment::GetCurrent(args));
+
+  // GC performance entries are created at points which differ between
+  // recording and replaying, and are delivered to JS. Like other performance
+  // entries they are not supported when recording/replaying.
+  v8::recordreplay::InvalidateRecording("GC performance entries observed");
 }
 
 // Notify a custom PerformanceEntry to observers
