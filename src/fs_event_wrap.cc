@@ -24,6 +24,7 @@
 #include "handle_wrap.h"
 #include "node.h"
 #include "node_external_reference.h"
+#include "node_internals.h"
 #include "string_bytes.h"
 
 namespace node {
@@ -55,6 +56,7 @@ class FSEventWrap: public HandleWrap {
   static void RegisterExternalReferences(ExternalReferenceRegistry* registry);
   static void New(const FunctionCallbackInfo<Value>& args);
   static void Start(const FunctionCallbackInfo<Value>& args);
+  static void Close(const FunctionCallbackInfo<Value>& args);
   static void GetInitialized(const FunctionCallbackInfo<Value>& args);
 
   SET_NO_MEMORY_INFO()
@@ -102,6 +104,7 @@ void FSEventWrap::Initialize(Local<Object> target,
 
   t->Inherit(HandleWrap::GetConstructorTemplate(env));
   env->SetProtoMethod(t, "start", Start);
+  env->SetProtoMethod(t, "close", Close);
 
   Local<FunctionTemplate> get_initialized_templ =
       FunctionTemplate::New(env->isolate(),
@@ -122,6 +125,7 @@ void FSEventWrap::RegisterExternalReferences(
     ExternalReferenceRegistry* registry) {
   registry->Register(New);
   registry->Register(Start);
+  registry->Register(Close);
   registry->Register(GetInitialized);
 }
 
@@ -131,9 +135,24 @@ void FSEventWrap::New(const FunctionCallbackInfo<Value>& args) {
   new FSEventWrap(env, args.This());
 }
 
+// Closing a started watcher removes its inotify watch, which can't be replayed
+// in a pause.
+void FSEventWrap::Close(const FunctionCallbackInfo<Value>& args) {
+  FSEventWrap* wrap;
+  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+  if (!wrap->IsHandleClosing() &&
+      recordreplay::ThrowIfEventsUnavailable(args, "watcher.close")) {
+    return;
+  }
+  HandleWrap::Close(args);
+}
+
 // wrap.start(filename, persistent, recursive, encoding)
 void FSEventWrap::Start(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.watch")) {
+    return;
+  }
 
   FSEventWrap* wrap = Unwrap<FSEventWrap>(args.This());
   CHECK_NOT_NULL(wrap);
