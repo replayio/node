@@ -124,6 +124,11 @@ V8_OBJECT class WeakCell : public HeapObjectLayout {
   class BodyDescriptor;
 
   // Provide relaxed load access to target field.
+  // Record/replay: see js-weak-refs.tq. Torque generates these for the
+  // registry and the weak ref, but this class spells its layout out by hand.
+  inline int record_replay_id() const;
+  inline void set_record_replay_id(int value);
+
   inline Tagged<HeapObject> relaxed_target() const;
 
   // Provide relaxed load access to the unregister token field.
@@ -154,6 +159,7 @@ V8_OBJECT class WeakCell : public HeapObjectLayout {
   TaggedMember<UnionOf<WeakCell, Undefined>> next_;
   TaggedMember<UnionOf<WeakCell, Undefined>> key_list_prev_;
   TaggedMember<UnionOf<WeakCell, Undefined>> key_list_next_;
+  TaggedMember<Smi> record_replay_id_;
 
   friend class JSFinalizationRegistry;
   friend class MarkCompactCollector;

@@ -870,6 +870,15 @@ ExternalReference ExternalReference::record_replay_progress_counter() {
 ExternalReference ExternalReference::record_replay_target_progress() {
   return ExternalReference(&gTargetProgress);
 }
+
+ExternalReference ExternalReference::record_replay_check_progress() {
+  return ExternalReference(&gRecordReplayCheckProgress);
+}
+
+ExternalReference
+ExternalReference::record_replay_is_recording_or_replaying() {
+  return ExternalReference(&gRecordReplayIsRecordingOrReplaying);
+}
 ExternalReference ExternalReference::address_of_min_int() {
   return ExternalReference(reinterpret_cast<Address>(&double_min_int_constant));
 }

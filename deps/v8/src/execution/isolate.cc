@@ -119,6 +119,7 @@
 #include "src/roots/roots.h"
 #include "src/roots/static-roots.h"
 #include "src/sandbox/js-dispatch-table-inl.h"
+#include "src/replay/replay-isolate-data.h"
 #include "src/snapshot/embedded/embedded-data-inl.h"
 #include "src/snapshot/embedded/embedded-file-writer-interface.h"
 #include "src/snapshot/read-only-deserializer.h"
@@ -4549,6 +4550,15 @@ Isolate::Isolate(IsolateGroup* isolate_group)
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   MicrotaskQueue::SetUpDefaultMicrotaskQueue(this);
+
+  record_replay_api_interrupts_ordered_lock_id_ = (int)recordreplay::CreateOrderedLock("APIInterrupts");
+}
+
+replayio::ReplayIsolateData* Isolate::EnsureReplayData() {
+  if (!replay_data_) {
+    replay_data_ = std::make_unique<replayio::ReplayIsolateData>();
+  }
+  return replay_data_.get();
 }
 
 void Isolate::CheckIsolateLayout() {
@@ -4800,6 +4810,10 @@ void Isolate::Deinit() {
 
   FreeThreadResources();
 
+  // Holds v8::Globals, which have to be destroyed before the global handles,
+  // and is used by the GC, which can still run before the heap tear down.
+  replay_data_.reset();
+  // This stops cancelable tasks (i.e. concurrent marking tasks).
   // Stop concurrent tasks before destroying resources since they might still
   // use those.
   cancelable_task_manager()->CancelAndWait();
