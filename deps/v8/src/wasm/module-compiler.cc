@@ -682,6 +682,10 @@ class CompilationStateImpl {
 
   Counters* counters() const { return async_counters_.get(); }
 
+  int recompilation_ordered_lock_id() const {
+    return recompilation_ordered_lock_id_;
+  }
+
   void SetWireBytesStorage(
       std::shared_ptr<WireBytesStorage> wire_bytes_storage) {
     base::MutexGuard guard(&mutex_);
@@ -795,6 +799,10 @@ class CompilationStateImpl {
 
   // End of fields protected by {callbacks_mutex_}.
   //////////////////////////////////////////////////////////////////////////////
+
+  // Held by RecompileNativeModule when recording or replaying, see there.
+  const int recompilation_ordered_lock_id_ = static_cast<int>(
+      recordreplay::CreateOrderedLock("RecompileNativeModule"));
 
   // {publish_mutex_} protects {publish_queue_} and {publisher_running_}.
   base::Mutex publish_mutex_;
@@ -1812,6 +1820,14 @@ void RecompileNativeModule(NativeModule* native_module,
   // Install a callback to notify us once background recompilation finished.
   auto recompilation_finished_semaphore = std::make_shared<base::Semaphore>(0);
   auto* compilation_state = Impl(native_module->compilation_state());
+
+  // When several isolates share the module, their recompilations would share
+  // the compilation units, and how the units split between the isolates'
+  // threads depends on their timing, but compiling records calls on the
+  // thread doing it. When recording or replaying, the threads take turns, so
+  // none compiles units of another's recompilation.
+  recordreplay::AutoOrderedLock ordered_lock(
+      compilation_state->recompilation_ordered_lock_id());
 
   // The callback captures a shared ptr to the semaphore.
   // Initialize the compilation units and kick off background compile tasks.
