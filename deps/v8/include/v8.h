@@ -12728,6 +12728,10 @@ static bool HasDivergedFromRecording();
 static bool AllowSideEffects();
 static void OnAnnotation(const char* kind, const char* contents);
 
+// Long running work that doesn't advance the progress counter calls this
+// regularly, so replay hang detection sees the process is busy.
+static void NotifyActivity();
+
 }; // class recordreplay
 
 }  // namespace v8
