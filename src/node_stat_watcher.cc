@@ -25,6 +25,7 @@
 #include "memory_tracker-inl.h"
 #include "node_external_reference.h"
 #include "node_file-inl.h"
+#include "node_internals.h"
 #include "util-inl.h"
 
 #include <cstring>
@@ -103,6 +104,9 @@ void StatWatcher::New(const FunctionCallbackInfo<Value>& args) {
 
 // wrap.start(filename, interval)
 void StatWatcher::Start(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "fs.watchFile")) {
+    return;
+  }
   CHECK_EQ(args.Length(), 2);
 
   StatWatcher* wrap;
