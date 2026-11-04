@@ -4137,6 +4137,17 @@ v8_source_set("v8_base_without_compiler") {
     "src/zone/type-stats.cc",
     "src/zone/zone-segment.cc",
     "src/zone/zone.cc",
+    "src/replay/finalization-registry.cc",
+    "src/replay/finalization-registry.h",
+    "src/replay/gc-poll.cc",
+    "src/replay/gc-poll.h",
+    "src/replay/replay-isolate-data.cc",
+    "src/replay/replay-isolate-data.h",
+    "src/replay/replay-runtime-weak-refs.cc",
+    "src/replay/replayio.cc",
+    "src/replay/replayio.h",
+    "src/replay/weak-refs.cc",
+    "src/replay/weak-refs.h",
   ]
 
   if (v8_enable_webassembly) {
