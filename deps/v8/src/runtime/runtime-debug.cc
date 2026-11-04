@@ -6,6 +6,7 @@
 #include <sstream>
 #include <vector>
 
+#include "src/base/replayio.h"
 #include "src/codegen/compiler.h"
 #include "src/common/globals.h"
 #include "src/debug/debug-coverage.h"
@@ -1225,8 +1226,7 @@ static void OnExecutionProgress(Isolate* isolate, Handle<JSFunction> function) {
     CHECK(gRecordReplayHasCheckpoint);
     CHECK(!RecordReplayIgnoreScript(*script));
 
-    if (recordreplay::AreEventsDisallowed() &&
-        !recordreplay::HasDivergedFromRecording()) {
+    if (replayio::MustNotRunUserJS()) {
       // Print JS stack if user JS was executed non-deterministically
       // and we were not paused.
       if (!gHasPrintedStack) {  // Prevent flood.
