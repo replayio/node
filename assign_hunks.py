@@ -29,12 +29,13 @@ def git(*a):
 
 raw = dict(l.split("=", 1) for l in open(PRMAP).read().split() if "=" in l)
 # commit -> dest
-subj = {}
+subj, prnum = {}, {}
 for c in git("rev-list", f"{OLD}..{NEW}").split():
     s = git("log", "-1", "--format=%s", c).strip()
     m = re.search(r"\(#(\d+)\)", s)
     key = m.group(1) if m else git("rev-parse", "--short=11", c).strip()
     subj[c] = raw.get(key, "?" + key)
+    prnum[c] = key if key.isdigit() else ""
 
 owners = {}
 def owner_of(f):
@@ -113,23 +114,27 @@ if OVERRIDES:
             over[k.strip()] = v.strip()
 
 specs, report, mixed, unknown = collections.defaultdict(list), [], 0, 0
+prs_by_dest = collections.defaultdict(set)
 for f, hunks in files.items():
     for i, h in enumerate(hunks, 1):
         m = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)", h[0])
         newline = int(m.group(1)) if m else 0
         votes = collections.Counter()
+        hunk_prs = set()
         n = newline
         for l in h[1:]:
             if l.startswith("+"):
                 c = blames[f].get(n)
                 if c:
                     votes[dest_for(c, f)] += 1
+                    hunk_prs.add(prnum.get(c, ""))
                 n += 1
             elif l.startswith("-"):
                 s = l[1:].strip()
                 cs = delidx.get((f, s))
                 if cs:
                     votes[dest_for(cs[0], f)] += 1
+                    hunk_prs.add(prnum.get(cs[0], ""))
             elif not l.startswith("\\"):
                 n += 1
         if not votes:
@@ -161,6 +166,10 @@ for f, hunks in files.items():
             report.append(f"UNMAPPED {f}:{i} -> {best}")
             unknown += 1
         specs[best].append(f"{f}:{i}")
+        for d_ in votes:
+            if d_ == best:
+                continue
+        prs_by_dest[best].update(hunk_prs)
 
 import os
 os.makedirs(OUT, exist_ok=True)
@@ -173,6 +182,10 @@ for d, items in specs.items():
         for f, idxs in byfile.items():
             fh.write(f"{f}:{','.join(str(i) for i in sorted(idxs))}\n")
 open(f"{OUT}/report.txt", "w").write("\n".join(report) + "\n")
+with open(f"{OUT}/dest_prs.txt", "w") as fh:
+    for d, prs in sorted(prs_by_dest.items()):
+        nums = sorted(int(p) for p in prs if p)
+        fh.write(f"{d}={','.join(str(n) for n in nums)}\n")
 tot = sum(len(v) for v in files.values())
 print(f"hunks: {tot}  destinations: {len(specs)}  mixed: {mixed}  unmapped/novote: {unknown}")
 print("per-destination hunk counts:")
