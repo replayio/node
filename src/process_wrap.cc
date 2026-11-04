@@ -23,6 +23,7 @@
 #include "node_errors.h"
 #include "node_external_reference.h"
 #include "permission/permission.h"
+#include "node_internals.h"
 #include "stream_base-inl.h"
 #include "stream_wrap.h"
 #include "util-inl.h"
@@ -195,6 +196,9 @@ class ProcessWrap : public HandleWrap {
 
   static void Spawn(const FunctionCallbackInfo<Value>& args) {
     Environment* env = Environment::GetCurrent(args);
+    if (recordreplay::ThrowIfEventsUnavailable(env, "child_process.spawn")) {
+      return;
+    }
     Local<Context> context = env->context();
     ProcessWrap* wrap;
     ASSIGN_OR_RETURN_UNWRAP(&wrap, args.This());
@@ -357,6 +361,9 @@ class ProcessWrap : public HandleWrap {
 
   static void Kill(const FunctionCallbackInfo<Value>& args) {
     Environment* env = Environment::GetCurrent(args);
+    if (recordreplay::ThrowIfEventsUnavailable(env, "subprocess.kill")) {
+      return;
+    }
     ProcessWrap* wrap;
     ASSIGN_OR_RETURN_UNWRAP(&wrap, args.This());
     int signal;
