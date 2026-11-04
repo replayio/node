@@ -582,6 +582,11 @@ int MarkingVisitorBase<ConcreteVisitor>::VisitJSWeakRef(
     Tagged<Map> map, Tagged<JSWeakRef> weak_ref) {
   int size = concrete_visitor()->VisitJSObjectSubclass(map, weak_ref);
   if (size == 0) return 0;
+  // When replaying, the recording decides when deref() stops returning the
+  // target.
+  if (record_replay_is_replaying_) {
+    VisitPointer(weak_ref, weak_ref->RawField(JSWeakRef::kTargetOffset));
+  }
   if (IsHeapObject(weak_ref->target())) {
     Tagged<HeapObject> target = HeapObject::cast(weak_ref->target());
     SynchronizePageAccess(target);
@@ -609,6 +614,10 @@ int MarkingVisitorBase<ConcreteVisitor>::VisitWeakCell(
   WeakCell::BodyDescriptor::IterateBody(map, weak_cell, size, this);
   Tagged<HeapObject> target = weak_cell->relaxed_target();
   Tagged<HeapObject> unregister_token = weak_cell->relaxed_unregister_token();
+  // When replaying, the recording decides when a tracked cell is cleared.
+  if (record_replay_is_replaying_ && weak_cell->record_replay_id() != 0) {
+    VisitPointer(weak_cell, weak_cell->RawField(WeakCell::kTargetOffset));
+  }
   SynchronizePageAccess(target);
   SynchronizePageAccess(unregister_token);
   if ((InReadOnlySpace(target) || concrete_visitor()->IsMarked(target)) &&
