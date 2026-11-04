@@ -5,7 +5,7 @@
 #include "src/heap/cppgc/heap-base.h"
 
 #include <memory>
-
+#include "include/replayio.h"
 #include "include/cppgc/heap-consistency.h"
 #include "include/cppgc/platform.h"
 #include "src/base/logging.h"
@@ -228,6 +228,9 @@ void HeapBase::Terminate() {
   // Cannot use IsGCAllowed() as `Terminate()` will be invoked after detaching
   // which implies GC is prohibited at this point.
   CHECK(!sweeper().IsSweepingOnMutatorThread());
+  // The pre-finalizers run here belong to whatever earlier GCs left alive,
+  // which differs between recording and replay.
+  v8::replayio::AutoDisallowEvents disallow("HeapBase::Terminate");
 
   sweeper().FinishIfRunning();
 

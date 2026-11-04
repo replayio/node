@@ -372,6 +372,13 @@ std::unique_ptr<ObjectIterator> PagedSpaceBase::GetObjectIterator(Heap* heap) {
       new PagedSpaceObjectIterator(heap, this));
 }
 
+
+  replayio::AutoDisallowEvents disallow("ConcurrentAllocator::AllocateFromSpaceFreeList");
+    recordreplay::Diagnostic("[RUN-851] ConcurrentAllocator::AllocateFromSpaceFreeList TryExpandBackgroundFailed");
+  } else {
+    recordreplay::Diagnostic("[RUN-851] ConcurrentAllocator::AllocateFromSpaceFreeList CantExpand %d %d",
+                             heap()->ShouldExpandOldGenerationOnSlowAllocation(local_heap),
+                             heap()->CanExpandOldGenerationBackground(local_heap, AreaSize()));
 #ifdef DEBUG
 void PagedSpaceBase::Print() {}
 #endif
@@ -511,6 +518,8 @@ void PagedSpaceBase::AddRangeToActiveSystemPages(PageMetadata* page,
                                                  Address start, Address end) {
   MemoryChunk* chunk = page->Chunk();
   DCHECK_LE(chunk->address(), start);
+
+  replayio::AutoDisallowEvents disallow("PagedSpaceBase::RawRefillLabMain");
   DCHECK_LT(start, end);
   DCHECK_LE(end, chunk->address() + PageMetadata::kPageSize);
 
