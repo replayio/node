@@ -1355,6 +1355,19 @@ void ContextifyScript::Trace(cppgc::Visitor* visitor) const {
 
 ContextifyScript::ContextifyScript(Environment* env, Local<Object> object) {
   CppgcMixin::Wrap(this, env, object);
+  // A function the script created can call import() after the script object
+  // was dropped, and ImportModuleDynamically then looks this up by id and
+  // passes the script object to the importModuleDynamically callback. When
+  // recording/replaying, the GC collects this at points which differ between
+  // the two, so keep it alive instead. node 24 hands the wrapper to cppgc,
+  // which collects it with the JS object, so the wrapper is rooted here; the
+  // cleanup hook frees the root when the environment is torn down.
+  if (recordreplay::EnterLeakMemory("ContextifyScript")) {
+    auto* root = new v8::Global<v8::Object>(env->isolate(), object);
+    env->AddCleanupHook(
+        [](void* data) { delete static_cast<v8::Global<v8::Object>*>(data); },
+        root);
+  }
 }
 
 ContextifyScript::~ContextifyScript() {}

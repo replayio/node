@@ -1750,6 +1750,32 @@ bool IsRecordingFinished();
 void BeginCallbackRegion();
 void EndCallbackRegion();
 
+// Lets the driver load the library opened by the next dlopen() of name on this
+// thread as an addon, which doesn't run when replaying.
+void MarkNextDlopenAsAddon(const char* name);
+
+// Whether a binary module is running code for a callback which the driver
+// recorded, or is replaying. Its N-API calls are then made at the same points
+// when replaying, which isn't the case for other module code (e.g. finalizers).
+bool IsInsideInterceptedCallback();
+
+// Whether the recording can be used at this point: we're recording or
+// replaying, events aren't disallowed and the replay hasn't diverged.
+bool AreEventsAvailable();
+
+// Whether a value recorded at this point is also replayed at this point:
+// events are available and not passed through. Bookkeeping that has to agree
+// between recording and replaying, e.g. of what the GC collected, checks this,
+// since RecordReplayValue() returns its input unrecorded while events are
+// passed through. A side effect or a read that only needs the recording checks
+// AreEventsAvailable(), as a pass-through region has to work like a process
+// that isn't recording. This split is the Chromium fork's: its bookkeeping
+// checks AreEventsPassedThrough() on top of AreEventsUnavailable(), and V8's
+// WeakRef and FinalizationRegistry handling applies the same checks in
+// v8::replayio::AreEventsAvailable(), after its own check that record/replay
+// is enabled, which this includes.
+bool AreEventsRecorded();
+
 struct AutoCallbackRegion {
   AutoCallbackRegion() { BeginCallbackRegion(); }
   ~AutoCallbackRegion() { EndCallbackRegion(); }
