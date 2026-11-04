@@ -500,13 +500,25 @@ bool CheckSpecialClassRanges(uint32_t current_char,
 
 }  // namespace
 
+// A match can backtrack for many seconds without advancing the progress
+// counter. When recording or replaying, a match without a backtrack limit
+// stops at every 2^20th backtrack instead, to report activity so replay hang
+// detection sees the process is busy.
+static constexpr uint32_t kRecordReplayActivityBacktracks = 0x100000;
+
+static bool RecordReplayReportActivity(uint32_t* backtrack_limit) {
+  recordreplay::NotifyActivity();
+  *backtrack_limit += kRecordReplayActivityBacktracks;
+  return true;
+}
+
 template <typename Char>
 IrregexpInterpreter::Result RawMatch(
     Isolate* isolate, Tagged<TrustedByteArray>* code_array,
     Tagged<String>* subject_string, base::Vector<const Char> subject,
     int* output_registers, int output_register_count, int total_register_count,
     int current, uint32_t current_char, RegExp::CallOrigin call_origin,
-    const uint32_t backtrack_limit) {
+    uint32_t backtrack_limit) {
   DisallowGarbageCollection no_gc;
 
 #if V8_USE_COMPUTED_GOTO
@@ -565,6 +577,12 @@ IrregexpInterpreter::Result RawMatch(
   BacktrackStack backtrack_stack;
 
   uint32_t backtrack_count = 0;
+  const bool record_replay_activity =
+      recordreplay::IsRecordingOrReplaying() &&
+      backtrack_limit == JSRegExp::kNoBacktrackLimit;
+  if (record_replay_activity) {
+    backtrack_limit = kRecordReplayActivityBacktracks;
+  }
 
   while (true) {
     const uint8_t* next_pc = pc;
@@ -644,7 +662,9 @@ IrregexpInterpreter::Result RawMatch(
     }
     BYTECODE(Backtrack, return_code) {
       static_assert(JSRegExp::kNoBacktrackLimit == 0);
-      if (++backtrack_count == backtrack_limit) {
+      if (++backtrack_count == backtrack_limit &&
+          !(record_replay_activity &&
+            RecordReplayReportActivity(&backtrack_limit))) {
         return static_cast<IrregexpInterpreter::Result>(return_code);
       }
 

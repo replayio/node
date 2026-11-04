@@ -2218,6 +2218,8 @@ void MarkCompactCollector::MarkTransitiveClosureLinear() {
   DCHECK(key_to_values_.empty());
   DCHECK(
       local_weak_objects()->current_ephemerons_local.IsLocalAndGlobalEmpty());
+  const bool record_replay = recordreplay::IsRecordingOrReplaying();
+  size_t ephemerons_processed = 0;
 
   // Update visitor to directly add new ephemerons to key_to_values_.
   marking_visitor_->SetKeyToValues(&key_to_values_);
@@ -2228,6 +2230,11 @@ void MarkCompactCollector::MarkTransitiveClosureLinear() {
         EphemeronResult::kUnresolved) {
       auto it = key_to_values_.try_emplace(ephemeron.key).first;
       it->second.push_back(ephemeron.value);
+    }
+
+    // This pass opens no GC scopes, and the ephemerons can number millions.
+    if (V8_UNLIKELY(record_replay && ++ephemerons_processed % 0x10000 == 0)) {
+      recordreplay::NotifyActivity();
     }
   }
 
@@ -2291,6 +2298,7 @@ std::pair<size_t, size_t> MarkCompactCollector::ProcessMarkingWorklist(
   const bool is_per_context_mode = local_marking_worklists_->IsPerContextMode();
   Isolate* const isolate = heap_->isolate();
   const auto start = v8::base::TimeTicks::Now();
+  const bool record_replay = recordreplay::IsRecordingOrReplaying();
   PtrComprCageBase cage_base(isolate);
 
   if (parallel_marking_ && UseBackgroundThreadsInCycle()) {
@@ -2342,6 +2350,10 @@ std::pair<size_t, size_t> MarkCompactCollector::ProcessMarkingWorklist(
     }
     bytes_processed += visited_size;
     objects_processed++;
+    // Marking a large heap opens no further GC scopes.
+    if (V8_UNLIKELY(record_replay && objects_processed % 0x10000 == 0)) {
+      recordreplay::NotifyActivity();
+    }
     static_assert(base::bits::IsPowerOfTwo(kDeadlineCheckInterval),
                   "kDeadlineCheckInterval must be power of 2");
     // The below check is an optimized version of
