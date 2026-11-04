@@ -4204,28 +4204,28 @@ extern void RecordReplayTriggerProgressInterrupt();
 // When recording/replaying, a GC reaches the heap limit at different points
 // when replaying than when recording, as the heap's contents and the GC's
 // timings differ, and callbacks request interrupts that must run at the same
-// point on both sides (the inspector's break on the heap limit). When
-// recording, the callback runs here and the call is counted, and
-// RecordReplayOnProgressInterrupt records the count at the next progress
-// interrupt, which this triggers. When replaying, the callback runs there as
-// many times as the recording's did, and this only raises the limit for the
-// GC, as the callback did when recording. Only the main thread has progress
+// point on both sides (the inspector's break on the heap limit). Here the GC
+// only raises the limit and counts the call, and the callbacks run at the next
+// progress interrupt, which this triggers when recording: there,
+// RecordReplayOnProgressInterrupt records the count and runs them as many
+// times on both sides, with events allowed (e.g. so the ordered lock
+// RequestInterrupt takes is ordered). Only the main thread has progress
 // interrupts.
 bool Heap::InvokeNearHeapLimitCallback() {
   if (near_heap_limit_callbacks_.size() > 0) {
     if (recordreplay::IsRecordingOrReplaying("interrupts") &&
         v8::IsMainThread()) {
-      if (recordreplay::IsReplaying()) {
-        size_t heap_limit = std::min(2 * max_old_generation_size(),
-                                     AllocatorLimitOnMaxOldGenerationSize());
-        if (heap_limit > max_old_generation_size()) {
-          set_max_old_generation_size(heap_limit);
-          return true;
-        }
-        return false;
-      }
       record_replay_near_heap_limit_calls_++;
-      RecordReplayTriggerProgressInterrupt();
+      if (recordreplay::IsRecording()) {
+        RecordReplayTriggerProgressInterrupt();
+      }
+      size_t heap_limit = std::min(2 * max_old_generation_size(),
+                                   AllocatorLimitOnMaxOldGenerationSize());
+      if (heap_limit > max_old_generation_size()) {
+        set_max_old_generation_size(heap_limit);
+        return true;
+      }
+      return false;
     }
     return CallNearHeapLimitCallback();
   }
@@ -4255,14 +4255,8 @@ void Heap::RecordReplayOnProgressInterrupt() {
         "Heap::RecordReplayOnProgressInterrupt NearHeapLimitCalls",
         record_replay_near_heap_limit_calls_);
     record_replay_near_heap_limit_calls_ = 0;
-    if (recordreplay::IsReplaying() && calls) {
-      // The recording's calls ran in GCs, where events are disallowed (e.g.
-      // the ordered lock RequestInterrupt takes passes through).
-      replayio::AutoDisallowEvents disallow(
-          "Heap::RecordReplayOnProgressInterrupt");
-      for (size_t i = 0; i < calls && near_heap_limit_callbacks_.size(); i++) {
-        CallNearHeapLimitCallback();
-      }
+    for (size_t i = 0; i < calls && near_heap_limit_callbacks_.size(); i++) {
+      CallNearHeapLimitCallback();
     }
   }
 }
