@@ -5,6 +5,7 @@
 #ifndef V8_HEAP_MARKING_VISITOR_H_
 #define V8_HEAP_MARKING_VISITOR_H_
 
+#include "include/v8.h"
 #include "src/common/globals.h"
 #include "src/heap/marking-worklist.h"
 #include "src/heap/marking.h"
@@ -154,7 +155,8 @@ class MarkingVisitorBase : public HeapVisitor<int, ConcreteVisitor> {
         code_flush_mode_(code_flush_mode),
         is_embedder_tracing_enabled_(is_embedder_tracing_enabled),
         should_keep_ages_unchanged_(should_keep_ages_unchanged),
-        is_shared_heap_(heap->IsShared())
+        is_shared_heap_(heap->IsShared()),
+        record_replay_is_replaying_(recordreplay::IsReplaying())
 #ifdef V8_SANDBOXED_EXTERNAL_POINTERS
         ,
         external_pointer_table_(&heap->isolate()->external_pointer_table())
@@ -284,6 +286,8 @@ class MarkingVisitorBase : public HeapVisitor<int, ConcreteVisitor> {
   const bool is_embedder_tracing_enabled_;
   const bool should_keep_ages_unchanged_;
   const bool is_shared_heap_;
+  // Cached, as asking the record/replay driver for each visited object is slow.
+  const bool record_replay_is_replaying_;
 #ifdef V8_SANDBOXED_EXTERNAL_POINTERS
   ExternalPointerTable* const external_pointer_table_;
 #endif  // V8_SANDBOXED_EXTERNAL_POINTERS
