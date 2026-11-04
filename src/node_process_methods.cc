@@ -66,6 +66,9 @@ Mutex umask_mutex;
 #define NANOS_PER_SEC 1000000000
 
 static void Abort(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "process.abort")) {
+    return;
+  }
   ABORT();
 }
 
@@ -78,6 +81,9 @@ static void CauseSegfault(const FunctionCallbackInfo<Value>& args) {
 
 static void Chdir(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.chdir")) {
+    return;
+  }
   CHECK(env->owns_process_state());
 
   CHECK_EQ(args.Length(), 1);
@@ -113,6 +119,9 @@ inline Local<ArrayBuffer> get_fields_array_buffer(
 // passed to the function.
 static void CPUUsage(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.cpuUsage")) {
+    return;
+  }
   uv_rusage_t rusage;
 
   // Call libuv to get the values we'll return.
@@ -147,6 +156,9 @@ static void Cwd(const FunctionCallbackInfo<Value>& args) {
 
 static void Kill(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.kill")) {
+    return;
+  }
   Local<Context> context = env->context();
 
   if (args.Length() < 2) {
@@ -173,6 +185,9 @@ static void Kill(const FunctionCallbackInfo<Value>& args) {
 
 static void Rss(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.memoryUsage.rss")) {
+    return;
+  }
 
   size_t rss;
   int err = uv_resident_set_memory(&rss);
@@ -184,6 +199,9 @@ static void Rss(const FunctionCallbackInfo<Value>& args) {
 
 static void MemoryUsage(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.memoryUsage")) {
+    return;
+  }
 
   Isolate* isolate = env->isolate();
   // V8 memory usage
@@ -235,6 +253,9 @@ void RawDebug(const FunctionCallbackInfo<Value>& args) {
 
 static void Umask(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.umask")) {
+    return;
+  }
   CHECK(env->has_run_bootstrapping_code());
   CHECK_EQ(args.Length(), 1);
   CHECK(args[0]->IsUndefined() || args[0]->IsUint32());
@@ -327,6 +348,9 @@ static void GetActiveResourcesInfo(const FunctionCallbackInfo<Value>& args) {
 
 static void ResourceUsage(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.resourceUsage")) {
+    return;
+  }
 
   uv_rusage_t rusage;
   int err = uv_getrusage(&rusage);
@@ -464,6 +488,9 @@ static void DebugEnd(const FunctionCallbackInfo<Value>& args) {
 
 static void ReallyExit(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.exit")) {
+    return;
+  }
   RunAtExit(env);
   ExitCode code = ExitCode::kNoFailure;
   Maybe<int32_t> code_int = args[0]->Int32Value(env->context());
