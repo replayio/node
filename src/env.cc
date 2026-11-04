@@ -1220,22 +1220,28 @@ Environment::~Environment() {
     // so as not to leak memory.
     *interrupt_data = nullptr;
 
-    Isolate::AllowJavascriptExecutionScope allow_js_here(isolate());
-    TryCatch try_catch(isolate());
-    Context::Scope context_scope(ctx);
+    // When recording or replaying, V8 runs the interrupts when the progress
+    // counter next advances rather than at the script's stack check, which it
+    // may never do again: the entry and its Environment** are left behind.
+    if (!v8::recordreplay::IsRecordingOrReplaying()) {
+      Isolate::AllowJavascriptExecutionScope allow_js_here(isolate());
+      TryCatch try_catch(isolate());
+      Context::Scope context_scope(ctx);
 
 #ifdef DEBUG
-    bool consistency_check = false;
-    isolate()->RequestInterrupt([](Isolate*, void* data) {
-      *static_cast<bool*>(data) = true;
-    }, &consistency_check);
+      bool consistency_check = false;
+      isolate()->RequestInterrupt([](Isolate*, void* data) {
+        *static_cast<bool*>(data) = true;
+      }, &consistency_check);
 #endif
 
-    Local<Script> script;
-    if (Script::Compile(ctx, String::Empty(isolate())).ToLocal(&script))
-      USE(script->Run(ctx));
+      Local<Script> script;
+      if (Script::Compile(ctx, String::Empty(isolate())).ToLocal(&script)) {
+        USE(script->Run(ctx));
+      }
 
-    DCHECK(consistency_check);
+      DCHECK(consistency_check);
+    }
   }
 
   // FreeEnvironment() should have set this.
@@ -1708,8 +1714,14 @@ void Environment::RunAndClearNativeImmediates(bool only_refed) {
 }
 
 void Environment::RequestInterruptFromV8() {
-  // V8 interrupts will not be replayed at precise positions.
-  v8::recordreplay::InvalidateRecording("RequestInterruptFromV8 called");
+  // When recording or replaying, V8 runs the main thread's interrupt callbacks
+  // when the progress counter next advances, where the replay runs them too
+  // (Isolate::InvokeApiInterruptCallbacks). Worker threads have no progress
+  // counter, so V8 never runs theirs: their interrupts only run from the event
+  // loop (RunAndClearNativeImmediates), which RequestInterrupt() wakes.
+  if (!is_main_thread() && v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
 
   // The Isolate may outlive the Environment, so some logic to handle the
   // situation in which the Environment is destroyed before the handler runs
@@ -1738,7 +1750,11 @@ void Environment::RequestInterruptFromV8() {
       // handled during cleanup.
       return;
     }
-    env->interrupt_data_.store(nullptr);
+    {
+      // See RequestInterrupt().
+      Mutex::ScopedLock lock(env->native_immediates_threadsafe_mutex_);
+      env->interrupt_data_.store(nullptr);
+    }
     env->is_processing_v8_interrupt_ = true;
     env->RunAndClearInterrupts();
     env->is_processing_v8_interrupt_ = false;
