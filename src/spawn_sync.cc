@@ -381,6 +381,10 @@ void SyncProcessRunner::Spawn(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   Local<Context> context = env->context();
 
+  if (recordreplay::ThrowIfEventsUnavailable(env, "child_process.spawnSync")) {
+    return;
+  }
+
   std::string resource = "";
   if (env->permission()->enabled() && args[0]->IsObject()) {
     Local<Object> js_options = args[0].As<Object>();
