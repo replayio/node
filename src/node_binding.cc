@@ -536,7 +536,16 @@ void DLOpen(const FunctionCallbackInfo<Value>& args) {
       } else if (auto napi_callback = GetNapiInitializerCallback(dlib)) {
         int32_t module_api_version = NODE_API_DEFAULT_MODULE_API_VERSION;
         if (auto get_version = GetNapiAddonGetApiVersionCallback(dlib)) {
-          module_api_version = get_version();
+          // The addon's own code does not run when replaying (see
+          // napi_module_register_by_symbol), so the version it reports comes
+          // from the recording instead.
+          if (!v8::recordreplay::IsReplaying()) {
+            module_api_version = get_version();
+          }
+        }
+        if (v8::recordreplay::IsRecordingOrReplaying()) {
+          module_api_version = v8::recordreplay::RecordReplayValue(
+              "DLOpen ModuleApiVersion", module_api_version);
         }
         napi_module_register_by_symbol(
             exports, module, context, napi_callback, module_api_version);
