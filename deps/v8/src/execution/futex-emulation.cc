@@ -604,13 +604,17 @@ Object FutexEmulation::WaitSync(Isolate* isolate,
         // HandleInterrupts() leaves the interrupts for the next stack check,
         // which a waiter only reaches once woken. A termination left pending
         // would send it back to waiting, so that a worker terminated while
-        // blocked here never stopped. Only another thread can terminate a
-        // blocked thread, which invalidates the recording, so the termination
-        // is handled here.
+        // blocked here never stopped, so the termination is handled here, with
+        // events allowed. Either this thread requested it before waiting (e.g.
+        // a worker's process.exit()), which the replay reaches the same way,
+        // or another thread did, which invalidated the recording.
         if (!interrupt_object.IsException(isolate) &&
             isolate->stack_guard()->CheckTerminateExecution()) {
           isolate->stack_guard()->ClearTerminateExecution();
+          recordreplay::EndDisallowEvents();
           interrupt_object = isolate->TerminateExecution();
+          recordreplay::BeginDisallowEventsWithLabel(
+              "FutexEmulation::WaitSync");
         }
         if (interrupt_object.IsException(isolate)) {
           result = handle(interrupt_object, isolate);
