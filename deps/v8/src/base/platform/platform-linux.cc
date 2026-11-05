@@ -44,6 +44,7 @@
 #include "src/base/platform/platform-posix-time.h"
 #include "src/base/platform/platform-posix.h"
 #include "src/base/platform/platform.h"
+#include "src/base/replayio.h"
 
 namespace v8 {
 namespace base {
@@ -91,6 +92,14 @@ std::optional<OS::MemoryRange> OS::GetFirstFreeMemoryRangeWithin(
     OS::Address boundary_start, OS::Address boundary_end, size_t minimum_size,
     size_t alignment) {
   std::optional<OS::MemoryRange> result;
+  // The gaps between the mappings in /proc/self/maps aren't the same when
+  // recording and when replaying, so a hint derived from them would place the
+  // code range differently in the two. Behave as if the OS didn't support
+  // this, which callers already handle by falling back to a hint that only
+  // depends on the binary's own layout.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return {};
+  }
   // This function assumes that the layout of the file is as follows:
   // hex_start_addr-hex_end_addr rwxp <unused data> [binary_file_name]
   // and the lines are arranged in increasing order of address.
