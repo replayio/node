@@ -2836,7 +2836,16 @@ napi_create_external(napi_env env,
   v8::Local<v8::External> external_value =
       v8impl::ExternalWrapper::New(env, data);
 
-  if (finalize_cb) {
+  bool has_finalizer = finalize_cb != nullptr;
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    // A replayed call has no finalizer of its own, since the driver passes the
+    // module's pointer as null (see RecordReplayFinalizerStub), so the branch
+    // below has to follow the recording rather than this call's arguments.
+    has_finalizer = v8::recordreplay::RecordReplayValue(
+        "napi_create_external has finalizer", has_finalizer);
+  }
+
+  if (has_finalizer) {
     // The Reference object will delete itself after invoking the finalizer
     // callback.
     v8impl::ReferenceWithFinalizer::New(env,
