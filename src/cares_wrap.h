@@ -177,6 +177,8 @@ class ChannelWrap final : public AsyncWrap {
   inline int active_query_count() { return active_query_count_; }
   inline NodeAresTask::List* task_list() { return &task_list_; }
 
+  void OnGCCollect() override;
+
   void MemoryInfo(MemoryTracker* tracker) const override;
   SET_MEMORY_INFO_NAME(ChannelWrap)
   SET_SELF_SIZE(ChannelWrap)
