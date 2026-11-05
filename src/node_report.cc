@@ -181,7 +181,6 @@ static std::string RecordedNodeReport(Isolate* isolate,
     std::ostringstream unused;
     JSONWriter writer(unused, compact);
     PrintJavaScriptErrorStack(&writer, isolate, error, trigger);
-    PrintJavaScriptErrorProperties(&writer, isolate, error);
   }
   size_t length =
       v8::recordreplay::RecordReplayValue("NodeReport length", text.length());
@@ -746,8 +745,10 @@ static void PrintJavaScriptErrorStack(JSONWriter* writer,
   Local<Context> context = isolate->GetCurrentContext();
   std::string ss = "";
   if (!ErrorToString(isolate, context, error).To(&ss)) {
-    PrintEmptyJavaScriptStack(writer);
-    return;
+    // Only the message and the stack are unavailable: fall through so that the
+    // error's own properties are still reported. Upstream returns here, which
+    // would skip PrintJavaScriptErrorProperties() below.
+    ss = "No stack.\nUnavailable.\n";
   }
 
   int line = ss.find('\n');
