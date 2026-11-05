@@ -12,6 +12,7 @@
 
 #include "src/base/logging.h"
 #include "src/base/macros.h"
+#include "src/base/replayio.h"
 
 // Runtime-detection of PKU support with {dlsym()}.
 //
@@ -83,6 +84,14 @@ void MemoryProtectionKey::InitializeMemoryProtectionKeySupport() {
   // Flip {pkey_api_initialized} (in debug mode) and check the new value.
   DCHECK_EQ(true, pkey_api_initialized = !pkey_api_initialized);
 #if V8_HAS_PKU_JIT_WRITE_PROTECT
+
+  // Whether protection keys are usable depends on the kernel and glibc of the
+  // machine this runs on, which the checks below ask about directly. Leave the
+  // pkey functions unset, the state upstream uses when the platform has no
+  // support, so that the code space is protected with mprotect() instead.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
   // PKU was broken on Linux kernels before 5.13 (see
   // https://lore.kernel.org/all/20210623121456.399107624@linutronix.de/).
   // A fix is also included in the 5.4.182 and 5.10.103 versions ("x86/fpu:
