@@ -604,6 +604,8 @@ class Http2Session : public AsyncWrap,
                SessionType type = NGHTTP2_SESSION_SERVER);
   ~Http2Session() override;
 
+  void OnGCCollect() override;
+
   StreamBase* underlying_stream() {
     return static_cast<StreamBase*>(stream_);
   }
