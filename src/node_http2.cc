@@ -474,6 +474,7 @@ Http2Session::Http2Session(Http2State* http2_state,
       js_fields_(http2_state->env()->isolate()),
       session_type_(type),
       http2_state_(http2_state) {
+  RecordReplayTrack("Http2Session");
   MakeWeak();
   statistics_.session_type = type;
   statistics_.start_time = uv_hrtime();
@@ -523,6 +524,20 @@ Http2Session::Http2Session(Http2State* http2_state,
   Local<Uint8Array> uint8_arr =
       Uint8Array::New(js_fields_.GetArrayBuffer(), 0, kSessionUint8FieldCount);
   USE(wrap->Set(env()->context(), env()->fields_string(), uint8_arr));
+}
+
+void Http2Session::OnGCCollect() {
+  // When recording/replaying, the GC collects this at points which differ
+  // between the two, and destroying the session detaches it from the socket it
+  // consumes, after which the socket's data goes to its JS listener instead,
+  // which the program observes. A tracked session (see RecordReplayTrack) gets
+  // here from DeferredFinalization::Poll instead, at a deterministic point, and
+  // is destroyed. One created where it could not be tracked is leaked.
+  if (!IsRecordReplayTracked() &&
+      recordreplay::EnterLeakMemory("Http2Session")) {
+    return;
+  }
+  BaseObject::OnGCCollect();
 }
 
 Http2Session::~Http2Session() {
