@@ -642,9 +642,24 @@ ChannelWrap::ChannelWrap(
     : AsyncWrap(env, object, PROVIDER_DNSCHANNEL),
       timeout_(timeout),
       tries_(tries) {
+  RecordReplayTrack("ChannelWrap");
   MakeWeak();
 
   Setup();
+}
+
+void ChannelWrap::OnGCCollect() {
+  // When recording/replaying, the GC collects this at points which differ
+  // between the two, and destroying the channel closes the file its random
+  // state reads from (see ares__destroy_rand_state), a recorded call. A
+  // tracked channel (see RecordReplayTrack) gets here from
+  // DeferredFinalization::Poll instead, at a deterministic point, and is
+  // destroyed. One created where it could not be tracked is leaked.
+  if (!IsRecordReplayTracked() &&
+      recordreplay::EnterLeakMemory("ChannelWrap")) {
+    return;
+  }
+  BaseObject::OnGCCollect();
 }
 
 void ChannelWrap::MemoryInfo(MemoryTracker* tracker) const {
