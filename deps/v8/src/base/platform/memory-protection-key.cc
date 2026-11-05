@@ -11,6 +11,7 @@
 
 #include "src/base/logging.h"
 #include "src/base/macros.h"
+#include "src/base/replayio.h"
 
 // Declare all the pkey functions as weak to support older glibc versions where
 // they don't exist yet.
@@ -47,6 +48,14 @@ int GetProtectionFromMemoryPermission(PageAllocator::Permission permission) {
 bool MemoryProtectionKey::InitializeMemoryProtectionKeySupport() {
   // Flip {pkey_api_initialized} (in debug mode) and check the new value.
   DCHECK_EQ(true, pkey_api_initialized = !pkey_api_initialized);
+
+  // Whether protection keys are usable depends on the kernel and glibc of the
+  // machine this runs on, which the checks below ask about directly. Leave the
+  // pkey functions unset, the state upstream uses when the platform has no
+  // support, so that the code space is protected with mprotect() instead.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return false;
+  }
 
   if (!pkey_mprotect) return false;
   // If {pkey_mprotect} is available, the others must also be available.
