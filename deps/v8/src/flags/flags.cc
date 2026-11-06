@@ -630,7 +630,6 @@ uint32_t ComputeFlagListHash() {
                   1;
   DCHECK_NE(hash, 0);
   return hash;
-  flag_hash_recorded = false;
 }
 
 }  // namespace
@@ -1058,10 +1057,10 @@ void FlagList::EnforceFlagImplications() {
 
 // static
 uint32_t FlagList::Hash() {
-  if (uint32_t hash = flag_hash.load(std::memory_order_relaxed)) return hash;
-  uint32_t hash = ComputeFlagListHash();
-  flag_hash.store(hash, std::memory_order_relaxed);
-  return hash;
+  if (flag_hash.load(std::memory_order_relaxed) == 0) {
+    flag_hash.store(ComputeFlagListHash(), std::memory_order_relaxed);
+    flag_hash_recorded = false;
+  }
 
   // Some flags are set differently when recording and when replaying, e.g. by
   // recordreplay::SetRecordingOrReplaying and the heap limit the driver gives
@@ -1079,6 +1078,7 @@ uint32_t FlagList::Hash() {
         "FlagList::Hash", flag_hash.load())));
     flag_hash_recorded = true;
   }
+  return flag_hash.load(std::memory_order_relaxed);
 }
 
 // static
