@@ -278,8 +278,19 @@ void Environment::InitializeDiagnostics() {
   isolate_->GetHeapProfiler()->AddBuildEmbedderGraphCallback(
       Environment::BuildEmbedderGraph, this);
   if (options_->heap_snapshot_near_heap_limit > 0) {
-    isolate_->AddNearHeapLimitCallback(Environment::NearHeapLimitCallback,
-                                       this);
+    // Heap snapshots aren't supported in Replay recordings. This isn't a
+    // process warning because console messages logged while bootstrapping
+    // crash replaying processes that collect console messages.
+    if (v8::recordreplay::IsRecordingOrReplaying()) {
+      if (is_main_thread()) {
+        FPrintF(stderr,
+                "Taking a heap snapshot is not supported in Replay "
+                "recordings, ignoring --heapsnapshot-near-heap-limit\n");
+      }
+    } else {
+      isolate_->AddNearHeapLimitCallback(Environment::NearHeapLimitCallback,
+                                         this);
+    }
   }
   if (options_->trace_uncaught)
     isolate_->SetCaptureStackTraceForUncaughtExceptions(true);
