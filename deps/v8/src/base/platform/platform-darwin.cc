@@ -38,6 +38,7 @@
 #include "src/base/platform/platform-posix-time.h"
 #include "src/base/platform/platform-posix.h"
 #include "src/base/platform/platform.h"
+#include "src/base/replayio.h"
 
 #if defined(V8_TARGET_OS_IOS)
 #include "src/base/ios-headers.h"
@@ -183,6 +184,14 @@ void* OS::AllocateShared(void* hint, size_t size, MemoryPermission access,
 // static
 bool OS::RemapPages(const void* address, size_t size, void* new_address,
                     MemoryPermission access) {
+  // Whether the caller gets here depends on where the code range landed
+  // relative to the embedded builtins, which differs between recording and
+  // replaying, so report no support and leave it copying the builtins instead
+  // (the same as the Linux implementation does, see there).
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return false;
+  }
+
   DCHECK(IsAligned(reinterpret_cast<uintptr_t>(address), AllocatePageSize()));
   DCHECK(
       IsAligned(reinterpret_cast<uintptr_t>(new_address), AllocatePageSize()));
