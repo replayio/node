@@ -181,6 +181,7 @@ static void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
   struct uv__queue* q;
   uv_async_t* h;
   _Atomic int *pending;
+  int was_pending;
 
   V8RecordReplayAssert("uv__async_io");
 
@@ -221,7 +222,14 @@ static void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
 
     /* Atomically fetch and clear pending flag */
     pending = (_Atomic int*) &h->pending;
-    if (atomic_exchange(pending, 0) == 0) {
+    /* uv_async_send sets this flag under the handle's ordered lock, so clear it
+     * under the lock too: which of the two got there first then follows the
+     * recorded order of the lock rather than the threads' timing. The callback
+     * runs outside the lock, since it may send to this handle itself. */
+    V8RecordReplayOrderedLock(h->ordered_lock_id);
+    was_pending = atomic_exchange(pending, 0);
+    V8RecordReplayOrderedUnlock(h->ordered_lock_id);
+    if (was_pending == 0) {
       V8RecordReplayAssert("uv__async_io #3");
       continue;  /* Not pending. */
     }
