@@ -707,7 +707,10 @@ void NotifyDebuggerPausedEventSent(v8::Isolate* isolate);
 
 uint64_t GetIsolateId(v8::Isolate* isolate);
 void SetIsolateId(v8::Isolate* isolate, uint64_t id);
-
+// Whether Replay's own session leaves this script's frames out of what it
+// collects (see getStackFrames in lib/internal/recordreplay/main.js).
+V8_EXPORT_PRIVATE bool RecordReplayIgnoreScript(Isolate* isolate,
+                                                int script_id);
 }  // namespace debug
 }  // namespace v8
 
