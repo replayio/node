@@ -893,6 +893,7 @@ void Reference::WeakCallback(const v8::WeakCallbackInfo<Reference>& data) {
     }
     return;
   }
+  reference->InvokeFinalizerFromGC();
 }
 
 ReferenceWithData* ReferenceWithData::New(napi_env env,
@@ -902,6 +903,7 @@ ReferenceWithData* ReferenceWithData::New(napi_env env,
                                           void* data) {
   ReferenceWithData* reference =
       new ReferenceWithData(env, value, initial_refcount, ownership, data);
+  reference->RecordReplayTrack();
   reference->Link(&env->reflist);
   return reference;
 }
@@ -929,6 +931,7 @@ ReferenceWithFinalizer* ReferenceWithFinalizer::New(
                                  finalize_callback,
                                  finalize_data,
                                  finalize_hint);
+  reference->RecordReplayTrack();
   reference->Link(&env->finalizing_reflist);
   return reference;
 }
