@@ -446,12 +446,13 @@ class Reference : public RefTracker, public node::recordreplay::Finalizable {
             ReferenceOwnership ownership);
   virtual void CallUserFinalizer() {}
   virtual void InvokeFinalizerFromGC();
+  // Each subclass's New() tracks its reference, as node 18's single New() did.
+  void RecordReplayTrack();
 
  private:
   static void WeakCallback(const v8::WeakCallbackInfo<Reference>& data);
   void SetWeak();
   void Finalize() override;
-  void RecordReplayTrack();
 
  private:
   v8impl::Persistent<v8::Value> persistent_;
