@@ -60,6 +60,8 @@ class GCInvoker::GCInvokerImpl final : public GarbageCollector {
           saved_epoch_(collector->epoch()) {}
 
    private:
+    bool IsRecordReplayNonDeterministic() const override { return true; }
+
     void Run() final {
       if (handle_.IsCanceled() || (collector_->epoch() != saved_epoch_)) return;
 

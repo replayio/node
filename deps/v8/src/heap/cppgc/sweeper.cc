@@ -1096,6 +1096,8 @@ class Sweeper::SweeperImpl final {
     }
 
    private:
+    bool IsRecordReplayNonDeterministic() const override { return true; }
+
     void Run() override {
       if (handle_.IsCanceled()) return;
 
