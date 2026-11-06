@@ -647,12 +647,6 @@ bool PagedSpaceBase::TryAllocationFromFreeListMain(size_t size_in_bytes,
 }
 
 
-  replayio::AutoDisallowEvents disallow("ConcurrentAllocator::AllocateFromSpaceFreeList");
-    recordreplay::Diagnostic("[RUN-851] ConcurrentAllocator::AllocateFromSpaceFreeList TryExpandBackgroundFailed");
-  } else {
-    recordreplay::Diagnostic("[RUN-851] ConcurrentAllocator::AllocateFromSpaceFreeList CantExpand %d %d",
-                             heap()->ShouldExpandOldGenerationOnSlowAllocation(local_heap),
-                             heap()->CanExpandOldGenerationBackground(local_heap, AreaSize()));
 base::Optional<std::pair<Address, size_t>>
 PagedSpaceBase::TryAllocationFromFreeListBackground(size_t min_size_in_bytes,
                                                     size_t max_size_in_bytes,

@@ -723,7 +723,7 @@ static void CreatePerContextProperties(Local<Object> target,
                                        void* priv) {
   Realm* realm = Realm::GetCurrent(context);
   realm->AddBindingData<BindingData>(target);
-  InitializeRecordReplayMethods(env, target);
+  InitializeRecordReplayMethods(realm->env(), target);
 }
 
 void RegisterExternalReferences(ExternalReferenceRegistry* registry) {

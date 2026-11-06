@@ -189,6 +189,8 @@ ConcurrentAllocator::AllocateFromSpaceFreeList(size_t min_size_in_bytes,
          origin == AllocationOrigin::kGC);
   DCHECK_IMPLIES(!local_heap_, origin == AllocationOrigin::kGC);
 
+  replayio::AutoDisallowEvents disallow("ConcurrentAllocator::AllocateFromSpaceFreeList");
+
   base::Optional<std::pair<Address, size_t>> result =
       space_->TryAllocationFromFreeListBackground(min_size_in_bytes,
                                                   max_size_in_bytes, origin);
@@ -237,6 +239,13 @@ ConcurrentAllocator::AllocateFromSpaceFreeList(size_t min_size_in_bytes,
                                                       space_->AreaSize())) {
     result = space_->TryExpandBackground(max_size_in_bytes);
     if (result) return result;
+    recordreplay::Diagnostic("[RUN-851] ConcurrentAllocator::AllocateFromSpaceFreeList TryExpandBackgroundFailed");
+  } else {
+    recordreplay::Diagnostic("[RUN-851] ConcurrentAllocator::AllocateFromSpaceFreeList CantExpand %d %d",
+                             owning_heap()->ShouldExpandOldGenerationOnSlowAllocation(
+                                 local_heap_, origin),
+                             owning_heap()->CanExpandOldGenerationBackground(
+                                 local_heap_, space_->AreaSize()));
   }
 
   if (owning_heap()->sweeping_in_progress()) {

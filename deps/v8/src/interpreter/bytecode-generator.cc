@@ -3747,9 +3747,6 @@ void BytecodeGenerator::BuildReturn(int source_position) {
     builder()->StoreAccumulatorInRegister(result).CallRuntime(
         Runtime::kTraceExit, result);
   }
-  if (info()->flags().collect_type_profile()) {
-    builder()->CollectTypeProfile(info()->literal()->return_position());
-  }
   builder()->SetStatementPosition(source_position,
                                   /* record_replay_breakpoint */ false);
   builder()->RecordReplayInstrumentation("exit");

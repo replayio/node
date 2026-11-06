@@ -1899,6 +1899,8 @@ void Heap::StartIncrementalMarking(int gc_flags,
                                    GarbageCollector collector) {
   DCHECK(incremental_marking()->IsStopped());
 
+  replayio::AutoDisallowEvents disallow("Heap::StartIncrementalMarking");
+
   // Delay incremental marking start while concurrent sweeping still has work.
   // This helps avoid large CompleteSweep blocks on the main thread when major
   // incremental marking should be scheduled following a minor GC.
@@ -1914,7 +1916,6 @@ void Heap::StartIncrementalMarking(int gc_flags,
     // starting marking again.
     CompleteSweepingFull();
   }
-  replayio::AutoDisallowEvents disallow("Heap::StartIncrementalMarking");
 
   base::Optional<SafepointScope> safepoint_scope;
 
@@ -1994,6 +1995,7 @@ void Heap::CompleteSweepingFull() {
 
 void Heap::StartIncrementalMarkingIfAllocationLimitIsReached(
     int gc_flags, const GCCallbackFlags gc_callback_flags) {
+  replayio::AutoDisallowEvents disallow("Heap::StartIncrementalMarkingIfAllocationLimitIsReached");
   if (v8_flags.separate_gc_phases && gc_callbacks_depth_ > 0) {
     // Do not start incremental marking while invoking GC callbacks.
     // Heap::CollectGarbage already decided which GC is going to be invoked. In
@@ -2001,7 +2003,6 @@ void Heap::StartIncrementalMarkingIfAllocationLimitIsReached(
     // callbacks would break the separate GC phases guarantee.
     return;
   }
-  replayio::AutoDisallowEvents disallow("Heap::StartIncrementalMarkingIfAllocationLimitIsReached");
   if (incremental_marking()->IsStopped()) {
     switch (IncrementalMarkingLimitReached()) {
       case IncrementalMarkingLimit::kHardLimit:
@@ -3758,8 +3759,8 @@ void Heap::ActivateMemoryReducerIfNeeded() {
   const int kMinCommittedMemory = 7 * Page::kPageSize;
   if (ms_count_ == 0 && CommittedMemory() > kMinCommittedMemory &&
       isolate()->IsIsolateInBackground()) {
-    memory_reducer_->NotifyPossibleGarbage();
     replayio::AutoDisallowEvents disallow("Heap::ActivateMemoryReducerIfNeeded");
+    memory_reducer_->NotifyPossibleGarbage();
   }
 }
 
@@ -3811,8 +3812,9 @@ size_t Heap::NewSpaceCapacity() const {
 
 void Heap::FinalizeIncrementalMarkingIfComplete(
     GarbageCollectionReason gc_reason) {
-  if (incremental_marking()->IsMajorMarkingComplete()) {
   replayio::AutoDisallowEvents disallow("Heap::FinalizeIncrementalMarkingIfComplete");
+
+  if (incremental_marking()->IsMajorMarkingComplete()) {
     CollectAllGarbage(current_gc_flags_, gc_reason, current_gc_callback_flags_);
   }
 }
@@ -3840,7 +3842,6 @@ void Heap::InvokeIncrementalMarkingEpilogueCallbacks() {
 namespace {
 thread_local Address pending_layout_change_object_address = kNullAddress;
 }  // namespace
-  replayio::AutoDisallowEvents disallow("Heap::FinalizeIncrementalMarkingIncrementally");
 
 void Heap::NotifyObjectLayoutChange(
     HeapObject object, const DisallowGarbageCollection&,
@@ -7322,6 +7323,8 @@ void Heap::FinishSweepingIfOutOfWork() {
 }
 
 void Heap::EnsureSweepingCompleted(SweepingForcedFinalizationMode mode) {
+  replayio::AutoDisallowEvents disallow("Heap::EnsureSweepingCompleted");
+
   CompleteArrayBufferSweeping(this);
 
   if (sweeper()->sweeping_in_progress()) {

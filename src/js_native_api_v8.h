@@ -352,6 +352,11 @@ class Finalizer {
   void ResetFinalizer();
   void CallFinalizer();
 
+  // Record/replay: whether the module gave a finalizer, and installing the
+  // stub a replayed call may need in its place (see Reference).
+  bool has_finalizer() const { return finalize_callback_ != nullptr; }
+  void set_finalizer(napi_finalize cb) { finalize_callback_ = cb; }
+
  private:
   napi_env env_;
   napi_finalize finalize_callback_;
@@ -426,6 +431,11 @@ class Reference : public RefTracker, public node::recordreplay::Finalizable {
 
   // Record/replay id, if this reference is tracked.
   int RecordReplayId() const { return _record_replay_id; }
+  // Node 20 keeps the env and the user finalizer off Reference, so the
+  // record/replay bookkeeping carries its own env and asks the subclass that
+  // owns the finalizer about it.
+  virtual bool RecordReplayHasUserFinalizer() const { return false; }
+  virtual void RecordReplaySetFinalizerStub() {}
   static void RecordReplayFlushClearedRefs(napi_env env);
   void RecordReplayFinalize() override;
 
@@ -448,6 +458,7 @@ class Reference : public RefTracker, public node::recordreplay::Finalizable {
   uint32_t refcount_;
   ReferenceOwnership ownership_;
   bool can_be_weak_;
+  napi_env _record_replay_env = nullptr;
   int _record_replay_id = 0;
   // The finalization of a tracked reference is deferred to a point which
   // replays, see RecordReplayTrack.
@@ -492,6 +503,10 @@ class ReferenceWithFinalizer final : public Reference {
   ~ReferenceWithFinalizer() override;
 
   void ResetFinalizer() override { finalizer_.ResetFinalizer(); }
+  bool RecordReplayHasUserFinalizer() const override {
+    return finalizer_.has_finalizer();
+  }
+  void RecordReplaySetFinalizerStub() override;
   void* Data() override { return finalizer_.data(); }
 
  private:

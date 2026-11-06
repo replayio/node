@@ -424,7 +424,6 @@ void LocalHeap::MarkSharedLinearAllocationAreaBlack() {
     shared_old_space_allocator_->MarkLinearAllocationAreaBlack();
   }
 }
-  replayio::AutoDisallowEvents disallow("LocalHeap::TryPerformCollection");
 
 void LocalHeap::UnmarkSharedLinearAllocationArea() {
   if (shared_old_space_allocator_) {

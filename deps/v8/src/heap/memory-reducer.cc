@@ -48,7 +48,7 @@ void MemoryReducer::TimerTask::RunInternal() {
   {
     replayio::AutoDisallowEvents disallow("MemoryReducer::TimerTask::RunInternal");
     if (!recordreplay::IsRecordingOrReplaying() ||
-        memory_reducer_->state_.action == kWait) {
+        memory_reducer_->state_.id() == kWait) {
       RunTimer();
     }
   }

@@ -107,11 +107,11 @@ static void uv__async_spin(uv_async_t* handle) {
   pending = (_Atomic int*) &handle->pending;
   busy = (_Atomic int*) &handle->u.fd;
 
+  V8RecordReplayOrderedLock(handle->ordered_lock_id);
+
   /* Set the pending flag first, so no new events will be added by other
    * threads after this function returns. */
   atomic_store(pending, 1);
-
-  V8RecordReplayOrderedLock(handle->ordered_lock_id);
 
   for (;;) {
     /* 997 is not completely chosen at random. It's a prime number, acyclic by
@@ -119,7 +119,7 @@ static void uv__async_spin(uv_async_t* handle) {
      */
     for (i = 0; i < 997; i++) {
       if (atomic_load(busy) == 0)
-        return;
+        goto done;
 
       /* Other thread is busy with this handle, spin until it's done. */
       uv__cpu_relax();
@@ -135,8 +135,7 @@ static void uv__async_spin(uv_async_t* handle) {
 done:
   V8RecordReplayOrderedUnlock(handle->ordered_lock_id);
 
-  V8RecordReplayAssert("uv__async_spin %d", rc);
-  return rc;
+  V8RecordReplayAssert("uv__async_spin");
 }
 
 

@@ -189,11 +189,9 @@ class MarkingVisitorBase : public HeapVisitor<int, ConcreteVisitor> {
   const bool trace_embedder_fields_;
   const bool should_keep_ages_unchanged_;
   const bool should_mark_shared_heap_;
-#ifdef V8_ENABLE_SANDBOX
-  const bool is_shared_heap_;
   // Cached, as asking the record/replay driver for each visited object is slow.
   const bool record_replay_is_replaying_;
-#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
+#ifdef V8_ENABLE_SANDBOX
   ExternalPointerTable* const external_pointer_table_;
   ExternalPointerTable* const shared_external_pointer_table_;
 #endif  // V8_ENABLE_SANDBOX

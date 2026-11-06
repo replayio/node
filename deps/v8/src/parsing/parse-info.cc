@@ -275,8 +275,6 @@ Handle<Script> ParseInfo::CreateScript(
   }
   raw_script.set_origin_options(origin_options);
   raw_script.set_is_repl_mode(flags().is_repl_mode());
-  script->set_origin_options(origin_options);
-  script->set_is_repl_mode(flags().is_repl_mode());
   // Replay: the one place a script's instrumentation is decided, by the compile
   // creating it. Compiles of an existing script inherit it
   // (RecordReplayInheritCompileFlags).

@@ -3352,7 +3352,6 @@ MaybeHandle<SharedFunctionInfo> CompileScriptOnMainThread(
     const ScriptDetails& script_details, NativesFlag natives,
     v8::Extension* extension, Isolate* isolate,
     MaybeHandle<Script> maybe_script, IsCompiledScope* is_compiled_scope) {
-    IsCompiledScope* is_compiled_scope) {
   SetRecordReplayFlags(flags, script_details);
   Handle<Script> existing;
   if (maybe_script.ToHandle(&existing)) {

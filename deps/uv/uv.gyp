@@ -52,6 +52,7 @@
       'src/strtok.c',
       'src/strtok.h',
       'src/thread-common.c',
+      'src/replay-stubs.c',
       'src/threadpool.c',
       'src/timer.c',
       'src/uv-data-getter-setters.c',

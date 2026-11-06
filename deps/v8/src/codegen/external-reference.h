@@ -110,7 +110,6 @@ class StatsCounter;
   V(record_replay_check_progress, "record_replay_check_progress")              \
   V(record_replay_is_recording_or_replaying,                                   \
     "record_replay_is_recording_or_replaying")                                 \
-  V(address_of_builtin_subclassing_flag, "FLAG_builtin_subclassing")           \
   V(address_of_double_abs_constant, "double_absolute_constant")                \
   V(address_of_double_neg_constant, "double_negate_constant")                  \
   V(address_of_enable_experimental_regexp_engine,                              \
