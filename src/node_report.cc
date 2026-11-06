@@ -76,7 +76,8 @@ static std::string RecordedNodeReport(Isolate* isolate,
                                       const char* trigger,
                                       const std::string& filename,
                                       Local<Value> error,
-                                      bool compact);
+                                      bool compact,
+                                      bool exclude_network);
 static std::string WriteRecordedReportFile(Isolate* isolate,
                                            Environment* env,
                                            const char* message,
@@ -159,7 +160,8 @@ static std::string RecordedNodeReport(Isolate* isolate,
                                       const char* trigger,
                                       const std::string& filename,
                                       Local<Value> error,
-                                      bool compact) {
+                                      bool compact,
+                                      bool exclude_network) {
   // Asked for before the report is generated, so that the replay asks the
   // workers at the same point as the recording; the recording's report stands
   // in for them when replaying.
@@ -176,7 +178,7 @@ static std::string RecordedNodeReport(Isolate* isolate,
     {
       v8::replayio::AutoPassThroughEvents pass_through;
       WriteNodeReport(isolate, env, message, trigger, filename, report, error,
-                      compact, &worker_reports);
+                      compact, exclude_network, &worker_reports);
     }
     generating_unrecorded_report = was_generating;
     text = report.str();
@@ -256,8 +258,11 @@ static std::string WriteRecordedReportFile(Isolate* isolate,
     Mutex::ScopedLock lock(per_process::cli_options_mutex);
     compact = per_process::cli_options->report_compact;
   }
-  WriteAll(fd, RecordedNodeReport(isolate, env, message, trigger,
-                                           filename, error, compact));
+  bool exclude_network = env != nullptr ? env->options()->report_exclude_network
+                                        : per_process::cli_options->per_isolate
+                                              ->per_env->report_exclude_network;
+  WriteAll(fd, RecordedNodeReport(isolate, env, message, trigger, filename,
+                                  error, compact, exclude_network));
 
   if (fd > 2) {
     uv_fs_t req;
@@ -1221,15 +1226,15 @@ void GetNodeReport(Isolate* isolate,
   if (isolate != nullptr) {
     env = Environment::GetCurrent(isolate);
   }
-  if (node::recordreplay::AreEventsAvailable()) {
-    out << report::RecordedNodeReport(isolate, env, message, trigger, "",
-                                      error, false);
-    return;
-  }
-
   bool exclude_network = env != nullptr ? env->options()->report_exclude_network
                                         : per_process::cli_options->per_isolate
                                               ->per_env->report_exclude_network;
+  if (node::recordreplay::AreEventsAvailable()) {
+    out << report::RecordedNodeReport(isolate, env, message, trigger, "", error,
+                                      false, exclude_network);
+    return;
+  }
+
   report::WriteNodeReport(
       isolate, env, message, trigger, "", out, error, false, exclude_network);
 }
@@ -1244,15 +1249,15 @@ void GetNodeReport(Environment* env,
   if (env != nullptr) {
     isolate = env->isolate();
   }
-  if (node::recordreplay::AreEventsAvailable()) {
-    out << report::RecordedNodeReport(isolate, env, message, trigger, "",
-                                      error, false);
-    return;
-  }
-
   bool exclude_network = env != nullptr ? env->options()->report_exclude_network
                                         : per_process::cli_options->per_isolate
                                               ->per_env->report_exclude_network;
+  if (node::recordreplay::AreEventsAvailable()) {
+    out << report::RecordedNodeReport(isolate, env, message, trigger, "", error,
+                                      false, exclude_network);
+    return;
+  }
+
   report::WriteNodeReport(
       isolate, env, message, trigger, "", out, error, false, exclude_network);
 }
