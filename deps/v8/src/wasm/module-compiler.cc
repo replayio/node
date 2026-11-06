@@ -3910,22 +3910,32 @@ void CompilationStateImpl::CommitCompilationUnits(
     js_to_wasm_wrapper_units_.insert(js_to_wasm_wrapper_units_.end(),
                                      js_to_wasm_wrapper_units.begin(),
                                      js_to_wasm_wrapper_units.end());
-    js_to_wasm_wrapper_job_ = V8::GetCurrentPlatform()->PostJob(
-        TaskPriority::kUserBlocking,
-        std::make_unique<AsyncCompileJSToWasmWrapperJob>(
-            native_module_weak_, js_to_wasm_wrapper_units_.size()));
+    // With no background compilation tasks the thread that joins the job in
+    // WaitForCompilationEvent does the work: create the job without spawning
+    // workers for it, as the synchronous CompileJsToWasmWrappers does for the
+    // same flag. V8 10.2 posted none of the wasm jobs with the flag at 0.
+    auto job = std::make_unique<AsyncCompileJSToWasmWrapperJob>(
+        native_module_weak_, js_to_wasm_wrapper_units_.size());
+    js_to_wasm_wrapper_job_ =
+        v8_flags.wasm_num_compilation_tasks > 0
+            ? V8::GetCurrentPlatform()->PostJob(TaskPriority::kUserBlocking,
+                                                std::move(job))
+            : V8::GetCurrentPlatform()->CreateJob(TaskPriority::kUserBlocking,
+                                                  std::move(job));
   }
   if (!baseline_units.empty() || !top_tier_units.empty()) {
     compilation_unit_queues_.AddUnits(baseline_units, top_tier_units,
                                       native_module_->module());
   }
-  if (!baseline_units.empty()) {
-    DCHECK(baseline_compile_job_->IsValid());
-    baseline_compile_job_->NotifyConcurrencyIncrease();
-  }
-  if (!top_tier_units.empty()) {
-    DCHECK(top_tier_compile_job_->IsValid());
-    top_tier_compile_job_->NotifyConcurrencyIncrease();
+  if (v8_flags.wasm_num_compilation_tasks > 0) {
+    if (!baseline_units.empty()) {
+      DCHECK(baseline_compile_job_->IsValid());
+      baseline_compile_job_->NotifyConcurrencyIncrease();
+    }
+    if (!top_tier_units.empty()) {
+      DCHECK(top_tier_compile_job_->IsValid());
+      top_tier_compile_job_->NotifyConcurrencyIncrease();
+    }
   }
 }
 
@@ -3940,7 +3950,9 @@ void CompilationStateImpl::AddTopTierPriorityCompilationUnit(
   // We should not have a {CodeSpaceWriteScope} open at this point, as
   // {NotifyConcurrencyIncrease} can spawn new threads which could inherit PKU
   // permissions (which would be a security issue).
-  top_tier_compile_job_->NotifyConcurrencyIncrease();
+  if (v8_flags.wasm_num_compilation_tasks > 0) {
+    top_tier_compile_job_->NotifyConcurrencyIncrease();
+  }
 }
 
 std::shared_ptr<JSToWasmWrapperCompilationUnit>
