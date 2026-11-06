@@ -289,6 +289,17 @@ std::vector<OS::SharedLibraryAddress> OS::GetSharedLibraryAddresses() {
 // static
 bool OS::RemapPages(const void* address, size_t size, void* new_address,
                     MemoryPermission access) {
+  // Finding the mapping the embedded builtins come from reads /proc/self/maps,
+  // whose contents describe the recording's address space, and the caller only
+  // gets here when the code range landed outside pc-relative reach of the
+  // builtins, which also differs between recording and replaying (see
+  // Isolate::MaybeRemapEmbeddedBuiltinsIntoCodeRange). Behave as if the OS
+  // didn't support this, which leaves the caller copying the builtins into the
+  // code range, as every platform did before V8 could remap them.
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    return false;
+  }
+
   uintptr_t address_addr = reinterpret_cast<uintptr_t>(address);
 
   DCHECK(IsAligned(address_addr, AllocatePageSize()));
