@@ -28,6 +28,11 @@
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 namespace v8 {
+
+namespace internal {
+bool RecordReplayIgnoreScriptById(Isolate* isolate, int script_id);
+}  // namespace internal
+
 namespace debug {
 
 void SetContextId(Local<Context> context, int id) {
@@ -1491,6 +1496,11 @@ std::unique_ptr<PropertyIterator> PropertyIterator::Create(
 
   return i::DebugPropertyIterator::Create(
       isolate, Utils::OpenDirectHandle(*object), skip_indices);
+}
+
+bool RecordReplayIgnoreScript(Isolate* isolate, int script_id) {
+  return i::RecordReplayIgnoreScriptById(reinterpret_cast<i::Isolate*>(isolate),
+                                         script_id);
 }
 
 }  // namespace debug
