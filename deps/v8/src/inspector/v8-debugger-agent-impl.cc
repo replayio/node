@@ -453,7 +453,6 @@ V8DebuggerAgentImpl::V8DebuggerAgentImpl(
       m_debugger(m_inspector->debugger()),
       m_session(session),
       m_enableState(kDisabled),
-      m_enabled(false),
       m_replay_owned(session->replayOwned()),
       m_state(state),
       m_frontend(frontendChannel),
@@ -2322,7 +2321,14 @@ void V8DebuggerAgentImpl::didPause(
   if (!response.IsSuccess())
     protocolCallFrames = std::make_unique<Array<CallFrame>>();
 
-  v8::debug::NotifyDebuggerPausedEventSent(m_debugger->isolate());
+  // Replay reports itself as paused wherever its pause scripts inspect the
+  // stack, even though V8 isn't stopped in the debugger there (see isPaused),
+  // and enabling a session takes this path for that reason. Upstream's sample
+  // of the pause-to-paused-event latency needs the DebugScope that only a real
+  // pause creates, so take it only for one.
+  if (m_debugger->isPausedInContextGroup(m_session->contextGroupId())) {
+    v8::debug::NotifyDebuggerPausedEventSent(m_debugger->isolate());
+  }
   m_frontend.paused(std::move(protocolCallFrames), breakReason,
                     std::move(breakAuxData), std::move(hitBreakpointIds),
                     currentAsyncStackTrace(), currentExternalStackTrace());
