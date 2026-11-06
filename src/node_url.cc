@@ -1625,7 +1625,6 @@ std::string URL::SerializeURL(const url_data& url,
   if (!exclude && (url.flags & URL_FLAGS_HAS_FRAGMENT)) {
     output += "#" + url.fragment;
   }
-  output.shrink_to_fit();
   return output;
 }
 
