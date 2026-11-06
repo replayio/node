@@ -11339,6 +11339,10 @@ void RecordReplayChangeInstrument(bool enabled) {
   // as instrumentation calls will be optimized out when instrumentation is
   // disabled.
   Isolate* isolate = Isolate::Current();
+  // Deoptimizing walks the code space, which enters a safepoint that reads the
+  // clock (as in Debug::DiscardBaselineCode). The driver only changes the
+  // instrumentation while replaying, so the walk runs with events disallowed.
+  replayio::AutoDisallowEvents disallow("RecordReplayChangeInstrument");
   Deoptimizer::DeoptimizeAll(isolate);
 }
 
