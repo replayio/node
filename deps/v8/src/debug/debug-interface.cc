@@ -31,6 +31,11 @@
 #include "src/api/api-macros.h"
 
 namespace v8 {
+
+namespace internal {
+bool RecordReplayIgnoreScriptById(Isolate* isolate, int script_id);
+}  // namespace internal
+
 namespace debug {
 
 void SetContextId(Local<Context> context, int id) {
@@ -1432,6 +1437,11 @@ std::unique_ptr<PropertyIterator> PropertyIterator::Create(
     call_depth_scope.Escape();
   }
   return result;
+}
+
+bool RecordReplayIgnoreScript(Isolate* isolate, int script_id) {
+  return i::RecordReplayIgnoreScriptById(reinterpret_cast<i::Isolate*>(isolate),
+                                         script_id);
 }
 
 }  // namespace debug
