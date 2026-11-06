@@ -119,6 +119,10 @@ AllocationResult OldLargeObjectSpace::AllocateRaw(LocalHeap* local_heap,
   if (!heap()->ShouldExpandOldGenerationOnSlowAllocation(
           local_heap, AllocationOrigin::kRuntime) ||
       !heap()->CanExpandOldGeneration(object_size)) {
+    recordreplay::Diagnostic("[RUN-851] OldLargeObjectSpace::AllocateRaw Failed %d %d",
+                             heap()->CanExpandOldGeneration(object_size),
+                             heap()->ShouldExpandOldGenerationOnSlowAllocation(
+                                 local_heap, AllocationOrigin::kRuntime));
     return AllocationResult::Failure();
   }
 
@@ -127,9 +131,6 @@ AllocationResult OldLargeObjectSpace::AllocateRaw(LocalHeap* local_heap,
       kGCCallbackScheduleIdleGarbageCollection);
 
   LargePageMetadata* page = AllocateLargePage(object_size, executable);
-    recordreplay::Diagnostic("[RUN-851] OldLargeObjectSpace::AllocateRawBackground Failed %d %d",
-                             heap()->CanExpandOldGenerationBackground(local_heap, object_size),
-                             heap()->ShouldExpandOldGenerationOnSlowAllocation(local_heap));
   if (page == nullptr) return AllocationResult::Failure();
   page->SetOldGenerationPageFlags(
       heap()->incremental_marking()->marking_mode());

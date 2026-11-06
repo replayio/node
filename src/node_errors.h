@@ -243,11 +243,11 @@ ERRORS_WITH_CODE(V)
     return code(isolate, message);                                             \
   }                                                                            \
   inline void THROW_##code(v8::Isolate* isolate) {                             \
+    v8::recordreplay::Assert("ThrowException %s", message);                    \
     isolate->ThrowException(code(isolate, message));                           \
   }                                                                            \
   inline void THROW_##code(Environment* env) { THROW_##code(env->isolate()); }
 PREDEFINED_ERROR_MESSAGES(V)
-    v8::recordreplay::Assert("ThrowException %s", message);                  \
 #undef V
 
 // Errors with predefined non-static messages

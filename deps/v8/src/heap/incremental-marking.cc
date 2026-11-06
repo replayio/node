@@ -103,7 +103,6 @@ IncrementalMarking::IncrementalMarking(Heap* heap, WeakObjects* weak_objects)
                                kMajorGCYoungGenerationAllocationObserverStep),
       old_generation_observer_(this,
                                kMajorGCOldGenerationAllocationObserverStep) {}
-  replayio::AutoDisallowEvents disallow("IncrementalMarking::MarkBlackAndVisitObjectDueToLayoutChange");
 
 void IncrementalMarking::MarkBlackBackground(Tagged<HeapObject> obj,
                                              int object_size) {

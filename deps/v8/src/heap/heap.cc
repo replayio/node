@@ -2014,6 +2014,8 @@ void Heap::StartIncrementalMarking(GCFlags gc_flags,
   CHECK_IMPLIES(!v8_flags.allow_allocation_in_fast_api_call,
                 !isolate()->InFastCCall());
 
+  replayio::AutoDisallowEvents disallow("Heap::StartIncrementalMarking");
+
   if (v8_flags.separate_gc_phases && gc_callbacks_depth_ > 0) {
     // Do not start incremental marking while invoking GC callbacks.
     // Heap::CollectGarbage already decided which GC is going to be
@@ -2030,7 +2032,6 @@ void Heap::StartIncrementalMarking(GCFlags gc_flags,
     // starting marking again.
     CompleteSweepingFull();
   }
-  replayio::AutoDisallowEvents disallow("Heap::StartIncrementalMarking");
 
   base::Optional<SafepointScope> safepoint_scope;
 
@@ -3869,8 +3870,8 @@ void Heap::ActivateMemoryReducerIfNeededOnMainThread() {
   const int kMinCommittedMemory = 7 * PageMetadata::kPageSize;
   if (ms_count_ == 0 && CommittedMemory() > kMinCommittedMemory &&
       isolate()->IsIsolateInBackground()) {
-    memory_reducer_->NotifyPossibleGarbage();
     replayio::AutoDisallowEvents disallow("Heap::ActivateMemoryReducerIfNeeded");
+    memory_reducer_->NotifyPossibleGarbage();
   }
 }
 
@@ -3986,7 +3987,6 @@ class ExternalPointerSlotInvalidator : public ObjectVisitor {
 #endif  // V8_ENABLE_SANDBOX
 
 }  // namespace
-  replayio::AutoDisallowEvents disallow("Heap::FinalizeIncrementalMarkingIncrementally");
 
 void Heap::NotifyObjectLayoutChange(
     Tagged<HeapObject> object, const DisallowGarbageCollection&,
@@ -7589,6 +7589,8 @@ void Heap::FinishSweepingIfOutOfWork() {
 }
 
 void Heap::EnsureSweepingCompleted(SweepingForcedFinalizationMode mode) {
+  replayio::AutoDisallowEvents disallow("Heap::EnsureSweepingCompleted");
+
   CompleteArrayBufferSweeping(this);
 
   if (sweeper()->sweeping_in_progress()) {

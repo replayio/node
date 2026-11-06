@@ -1796,7 +1796,7 @@ void Isolate::RecordReplayInvokeApiInterruptCallbacksAtProgress() {
   // so a different topmost fp means newer JS frames.
   Address js_fp = kNullAddress;
   {
-    JavaScriptFrameIterator it(this);
+    JavaScriptStackFrameIterator it(this);
     if (!it.done()) js_fp = it.frame()->fp();
   }
   if (record_replay_invoking_api_interrupts_ &&
@@ -3755,10 +3755,6 @@ Isolate::Isolate(std::unique_ptr<i::IsolateAllocator> isolate_allocator)
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   MicrotaskQueue::SetUpDefaultMicrotaskQueue(this);
-
-  if (is_shared_) {
-    global_safepoint_ = std::make_unique<GlobalSafepoint>(this);
-  }
 
   record_replay_api_interrupts_ordered_lock_id_ = (int)recordreplay::CreateOrderedLock("APIInterrupts");
 }

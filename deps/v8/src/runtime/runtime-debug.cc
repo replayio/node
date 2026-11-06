@@ -12,6 +12,7 @@
 #include "src/debug/debug-scopes.h"
 #include "src/debug/debug.h"
 #include "src/debug/liveedit.h"
+#include "src/execution/arguments-inl.h"
 #include "src/execution/frames-inl.h"
 #include "src/execution/isolate-inl.h"
 #include "src/heap/heap-inl.h"  // For ToBoolean. TODO(jkummerow): Drop.
@@ -1226,7 +1227,7 @@ std::string GetStackContents(Isolate* isolate, size_t max_frames) {
   size_t num_frames = 0;
 
   std::string contents;
-  for (JavaScriptFrameIterator it(isolate); !it.done(); it.Advance()) {
+  for (JavaScriptStackFrameIterator it(isolate); !it.done(); it.Advance()) {
     JavaScriptFrame* frame = it.frame();
     std::vector<FrameSummary> frames;
     frame->Summarize(&frames);

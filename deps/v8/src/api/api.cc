@@ -12248,32 +12248,32 @@ static void RecordReplayApplyFlagOverrides() {
   internal::gRecordReplayEnableGCFeatures =
       recordreplay::FeatureEnabled("v8-flags-gc", nullptr);
   if (!internal::gRecordReplayEnableGCFeatures) {
-    internal::FLAG_concurrent_array_buffer_sweeping = false;
-    internal::FLAG_concurrent_marking = false;
-    internal::FLAG_concurrent_sweeping = false;
-    internal::FLAG_incremental_marking_task = false;
-    internal::FLAG_parallel_compaction = false;
-    internal::FLAG_parallel_marking = false;
-    internal::FLAG_parallel_pointer_update = false;
-    internal::FLAG_parallel_scavenge = false;
-    internal::FLAG_scavenge_task = false;
-    internal::FLAG_incremental_marking = false;
+    internal::v8_flags.concurrent_array_buffer_sweeping = false;
+    internal::v8_flags.concurrent_marking = false;
+    internal::v8_flags.concurrent_sweeping = false;
+    internal::v8_flags.incremental_marking_task = false;
+    internal::v8_flags.parallel_compaction = false;
+    internal::v8_flags.parallel_marking = false;
+    internal::v8_flags.parallel_pointer_update = false;
+    internal::v8_flags.parallel_scavenge = false;
+    internal::v8_flags.minor_gc_task = false;
+    internal::v8_flags.incremental_marking = false;
   }
 
   // For now the compilation cache is only used when recording.
   if (recordreplay::IsReplaying() || !recordreplay::FeatureEnabled("v8-flags-compilation-cache", nullptr)) {
-    internal::FLAG_compilation_cache = false;
+    internal::v8_flags.compilation_cache = false;
   }
 
   // Disable wasm background compilation. The wasm module compiler is extremely
   // complicated and getting this it to behave consistently when replaying in
   // the presence of multiple threads isn't worth the hassle.
-  internal::FLAG_wasm_num_compilation_tasks = 0;
-  internal::FLAG_wasm_async_compilation = false;
+  internal::v8_flags.wasm_num_compilation_tasks = 0;
+  internal::v8_flags.wasm_async_compilation = false;
 
   // Async stack traces can vary when recording vs. replaying, apparently depending
   // on how the code has been compiled.
-  internal::FLAG_async_stack_traces = false;
+  internal::v8_flags.async_stack_traces = false;
 }
 
 void recordreplay::SetRecordingOrReplaying(void* handle) {

@@ -36,6 +36,7 @@ extern int V8RecordReplayIsReplaying(void);
 extern uintptr_t V8RecordReplayValue(const char* why, uintptr_t value);
 extern void V8RecordReplayBeginPassThroughEvents(void);
 extern void V8RecordReplayEndPassThroughEvents(void);
+
 static uv_once_t once = UV_ONCE_INIT;
 static mach_timebase_info_data_t timebase;
 

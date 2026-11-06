@@ -3486,7 +3486,6 @@ MaybeHandle<SharedFunctionInfo> CompileScriptOnMainThread(
     MaybeHandle<Script> maybe_script, IsCompiledScope* is_compiled_scope,
     CompileHintCallback compile_hint_callback = nullptr,
     void* compile_hint_callback_data = nullptr) {
-    IsCompiledScope* is_compiled_scope) {
   SetRecordReplayFlags(flags, script_details);
   Handle<Script> existing;
   if (maybe_script.ToHandle(&existing)) {

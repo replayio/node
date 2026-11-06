@@ -680,6 +680,7 @@ Reference::Reference(napi_env env,
       refcount_(initial_refcount),
       ownership_(ownership),
       can_be_weak_(CanBeHeldWeakly(value)) {
+  _record_replay_env = env;
   if (refcount_ == 0) {
     SetWeak();
   }
@@ -687,8 +688,8 @@ Reference::Reference(napi_env env,
 
 Reference::~Reference() {
   if (_record_replay_id) {
-    env_->record_replay_refs.erase(_record_replay_id);
-    env_->record_replay_cleared_refs.erase(_record_replay_id);
+    _record_replay_env->record_replay_refs.erase(_record_replay_id);
+    _record_replay_env->record_replay_cleared_refs.erase(_record_replay_id);
   }
   if (_record_replay_finalize_id) {
     _record_replay_finalization->Untrack(_record_replay_finalize_id);
@@ -730,9 +731,9 @@ void Reference::RecordReplayTrack() {
   if (!RecordReplayInModuleCallback()) {
     return;
   }
-  _record_replay_id = ++env_->record_replay_last_ref_id;
+  _record_replay_id = ++_record_replay_env->record_replay_last_ref_id;
   v8::recordreplay::Assert("napi_ref created %d", _record_replay_id);
-  env_->record_replay_refs[_record_replay_id] = this;
+  _record_replay_env->record_replay_refs[_record_replay_id] = this;
   if (v8::recordreplay::IsReplaying() && refcount() == 0) {
     // The constructor made the value weak; hold it strongly instead, until the
     // recording shows the GC collecting it.
@@ -741,14 +742,15 @@ void Reference::RecordReplayTrack() {
     }
   }
   _record_replay_finalization =
-      node::Environment::GetCurrent(env_->context())->deferred_finalization();
+      node::Environment::GetCurrent(_record_replay_env->context())
+          ->deferred_finalization();
   _record_replay_finalize_id =
       _record_replay_finalization->Track(this, "napi_ref");
   if (_record_replay_finalize_id) {
     // Whether the recording's module gave a finalizer, which the replayed call
     // may not have (see RecordReplayFinalizerStub).
     _record_replay_has_finalizer = v8::recordreplay::RecordReplayValue(
-        "napi_ref has finalizer", finalize_callback_ != nullptr);
+        "napi_ref has finalizer", RecordReplayHasUserFinalizer());
   }
 }
 
@@ -759,9 +761,9 @@ void Reference::RecordReplayFinalize() {
   // behaves alike from now on.
   persistent_.Reset();
   // The value is gone on both sides now, so a later read needs no flush.
-  env_->record_replay_cleared_refs.erase(_record_replay_id);
-  if (_record_replay_has_finalizer && finalize_callback_ == nullptr) {
-    finalize_callback_ = RecordReplayFinalizerStub;
+  _record_replay_env->record_replay_cleared_refs.erase(_record_replay_id);
+  if (_record_replay_has_finalizer && !RecordReplayHasUserFinalizer()) {
+    RecordReplaySetFinalizerStub();
   }
   Finalize();
 }
@@ -872,7 +874,7 @@ void Reference::WeakCallback(const v8::WeakCallbackInfo<Reference>& data) {
   // The reference must be reset during the weak callback per V8 API protocol.
   reference->persistent_.Reset();
   if (reference->_record_replay_id) {
-    reference->env_->record_replay_cleared_refs.insert(
+    reference->_record_replay_env->record_replay_cleared_refs.insert(
         reference->_record_replay_id);
   }
   // When recording/replaying, the GC collects the value at points which differ
@@ -945,6 +947,10 @@ ReferenceWithFinalizer::ReferenceWithFinalizer(napi_env env,
 ReferenceWithFinalizer::~ReferenceWithFinalizer() {
   // Try to remove the finalizer from the scheduled second pass callback.
   finalizer_.env()->DequeueFinalizer(this);
+}
+
+void ReferenceWithFinalizer::RecordReplaySetFinalizerStub() {
+  finalizer_.set_finalizer(RecordReplayFinalizerStub);
 }
 
 void ReferenceWithFinalizer::CallUserFinalizer() {
@@ -2995,7 +3001,7 @@ napi_status NAPI_CDECL napi_get_reference_value(napi_env env,
   if (record_replay) {
     v8impl::Reference::RecordReplayFlushClearedRefs(env);
   }
-  v8::Local<v8::Value> value = reference->Get();
+  v8::Local<v8::Value> value = reference->Get(env);
   if (record_replay && reference->RecordReplayId()) {
     v8::recordreplay::Assert("napi_get_reference_value %d %d",
                              reference->RecordReplayId(), !value.IsEmpty());

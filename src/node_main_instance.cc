@@ -86,8 +86,9 @@ NodeMainInstance::~NodeMainInstance() {
   isolate_->Dispose();
 }
 
-ExitCode NodeMainInstance::Run() {
 extern void RecordReplayFinishRecording();
+
+ExitCode NodeMainInstance::Run() {
   Locker locker(isolate_);
   Isolate::Scope isolate_scope(isolate_);
   HandleScope handle_scope(isolate_);

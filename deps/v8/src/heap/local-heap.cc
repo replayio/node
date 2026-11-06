@@ -429,7 +429,6 @@ void LocalHeap::UnmarkSharedLinearAllocationsArea() {
 }
 
 AllocationResult LocalHeap::PerformCollectionAndAllocateAgain(
-  replayio::AutoDisallowEvents disallow("LocalHeap::TryPerformCollection");
     int object_size, AllocationType type, AllocationOrigin origin,
     AllocationAlignment alignment) {
   // All allocation tries in this method should have this flag enabled.

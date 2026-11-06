@@ -431,8 +431,9 @@ std::ostream& operator<<(std::ostream& os, const Flag& flag) {
 static std::atomic<uint32_t> flag_hash{0};
 static std::atomic<bool> flags_frozen{false};
 
-uint32_t ComputeFlagListHash() {
 static bool flag_hash_recorded = false;
+
+uint32_t ComputeFlagListHash() {
   std::ostringstream modified_args_as_string;
   if (COMPRESS_POINTERS_BOOL) modified_args_as_string << "ptr-compr";
   if (DEBUG_BOOL) modified_args_as_string << "debug";

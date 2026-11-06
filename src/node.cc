@@ -1195,7 +1195,7 @@ void ApplyRecordReplayMaxOldSpace();
 
     if (per_process::cli_options->print_build_id) {
       printf("%s\n", gBuildId);
-      result->exit_code_ = 0;
+      result->exit_code_ = ExitCode::kNoFailure;
       result->early_return_ = true;
       return result;
     }

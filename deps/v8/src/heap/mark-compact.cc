@@ -464,7 +464,6 @@ void MarkCompactCollector::VerifyMarkbitsAreClean() {
 
 #endif  // VERIFY_HEAP
 
-  replayio::AutoDisallowEvents disallow("Heap::EnsureSweepingCompleted");
 void MarkCompactCollector::ComputeEvacuationHeuristics(
     size_t area_size, int* target_fragmentation_percent,
     size_t* max_evacuated_bytes) {

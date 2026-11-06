@@ -371,6 +371,9 @@ IntervalHistogram::IntervalHistogram(
   // where it could not be tracked is leaked when collected, and held strongly
   // when replaying so that its handle stays listed as the recording sees it.
   RecordReplayTrack("IntervalHistogram");
+  if (IsRecordReplayTracked() || !v8::recordreplay::IsReplaying()) {
+    MakeWeak();
+  }
   wrap->SetAlignedPointerInInternalField(
       HistogramImpl::InternalFields::kImplField,
       static_cast<HistogramImpl*>(this));

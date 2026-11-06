@@ -2,7 +2,6 @@
 #include "node_dotenv.h"
 #include "node_errors.h"
 #include "node_external_reference.h"
-#include "node_internals.h"
 #include "util-inl.h"
 #include "v8-fast-api-calls.h"
 
