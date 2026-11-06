@@ -4328,7 +4328,7 @@ bool RecordReplayIgnoreScript(Tagged<Script> script) {
   return rv;
 }
 
-static bool RecordReplayIgnoreScriptById(Isolate* isolate, int script_id) {
+bool RecordReplayIgnoreScriptById(Isolate* isolate, int script_id) {
   Handle<Script> script = GetScript(isolate, script_id);
   return RecordReplayIgnoreScript(*script);
 }
