@@ -11588,7 +11588,8 @@ void RecordReplayOnExceptionUnwind(Isolate* isolate) {
   CHECK(isolate->has_exception());
   Handle<Object> exception(isolate->exception(), isolate);
   if (isolate->is_catchable_by_javascript(*exception)) {
-    isolate->clear_exception();
+    // Only the slot, as in MessageHandler::MakeMessageObject.
+    isolate->clear_internal_exception();
     Handle<Object> message(isolate->pending_message(), isolate);
     isolate->clear_pending_message();
     gCurrentException = &exception;

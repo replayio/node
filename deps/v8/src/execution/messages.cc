@@ -110,7 +110,9 @@ Handle<JSMessageObject> MessageHandler::MakeMessageObject(
     Handle<Object> exception;
     if (isolate->has_exception()) {
       exception = Handle<Object>(isolate->exception(), isolate);
-      isolate->clear_exception();
+      // Only the slot: clear_exception() would also reset the embedder's
+      // TryCatch, which is how the exception gets reported.
+      isolate->clear_internal_exception();
       gCurrentException = &exception;
     }
     Handle<Object> message;
