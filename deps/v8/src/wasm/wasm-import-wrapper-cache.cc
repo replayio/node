@@ -17,11 +17,6 @@
 #include "src/wasm/wasm-code-pointer-table-inl.h"
 #include "src/wasm/wasm-engine.h"
 
-namespace v8 {
-// Defined in api.cc, which is where the record/replay API lives.
-extern void RecordReplayAddOrderedMutex(const char* name, base::Mutex* mutex);
-}  // namespace v8
-
 namespace v8::internal::wasm {
 
 WasmCode* WasmImportWrapperCache::ModificationScope::operator[](
@@ -33,6 +28,7 @@ WasmCode* WasmImportWrapperCache::ModificationScope::operator[](
 // this action is triggered by some isolate; so we use this isolate for error
 // reporting and running GCs if required.
 void WasmImportWrapperCache::LazyInitialize(Isolate* triggering_isolate) {
+  recordreplay::AutoOrderedLock ordered(record_replay_ordered_lock_);
   base::MutexGuard lock(&mutex_);
   if (code_allocator_.get() != nullptr) return;  // Already initialized.
   // Most wrappers are small (200-300 bytes), most modules don't need many.
@@ -146,6 +142,7 @@ WasmCode* WasmImportWrapperCache::ModificationScope::AddWrapper(
 
 WasmCode* WasmImportWrapperCache::FindWrapper(WasmCodePointer call_target) {
   if (call_target == kInvalidWasmCodePointer) return nullptr;
+  recordreplay::AutoOrderedLock ordered(record_replay_ordered_lock_);
   base::MutexGuard lock(&mutex_);
   auto iter = codes_.find(
       GetProcessWideWasmCodePointerTable()->GetEntrypointWithoutSignatureCheck(
@@ -194,6 +191,7 @@ WasmCode* WasmImportWrapperCache::CompileWasmImportCallWrapper(
 }
 
 void WasmImportWrapperCache::LogForIsolate(Isolate* isolate) {
+  recordreplay::AutoOrderedLock ordered(record_replay_ordered_lock_);
   base::MutexGuard lock(&mutex_);
   for (const auto& entry : codes_) {
     entry.second->LogCode(isolate, "", -1);  // No source URL, no ScriptId.
@@ -201,6 +199,7 @@ void WasmImportWrapperCache::LogForIsolate(Isolate* isolate) {
 }
 
 void WasmImportWrapperCache::Free(std::vector<WasmCode*>& wrappers) {
+  recordreplay::AutoOrderedLock ordered(record_replay_ordered_lock_);
   base::MutexGuard lock(&mutex_);
   if (codes_.empty() || wrappers.empty()) return;
   // {WasmCodeAllocator::FreeCode()} wants code objects to be sorted.
@@ -230,13 +229,27 @@ void WasmImportWrapperCache::Free(std::vector<WasmCode*>& wrappers) {
 }
 
 WasmImportWrapperCache::WasmImportWrapperCache() {
-  RecordReplayAddOrderedMutex("WasmImportWrapperCache::mutex_", &mutex_);
+  // Order the acquisitions that compile or publish a wrapper, rather than the
+  // mutex itself. V8 13.6 made this cache process wide and put it on the stack
+  // walk: WasmCodeManager::LookupCode(pc) falls through to Lookup() for every
+  // pc that is in no NativeModule, so an ordered mutex was taken by every
+  // stack walk in every program, wasm or not -- including the walks Replay's
+  // own CDP handling does with events disallowed, where there is no order to
+  // record. Recording and replaying then disagreed about whether the lock was
+  // taken at all, and 132 of the 151 node-recording cases died on it.
+  //
+  // Lookup() needs no order: it only reads codes_ for a pc, and the entries it
+  // finds were published under the order below. node 22's V8 returned nullptr
+  // here instead, which is why this is new.
+  record_replay_ordered_lock_ =
+      static_cast<int>(recordreplay::CreateOrderedLock("WasmImportWrapperCache"));
 }
 
 WasmCode* WasmImportWrapperCache::MaybeGet(ImportCallKind kind,
                                            CanonicalTypeIndex type_index,
                                            int expected_arity,
                                            Suspend suspend) const {
+  recordreplay::AutoOrderedLock ordered(record_replay_ordered_lock_);
   base::MutexGuard lock(&mutex_);
 
   auto it = entry_map_.find({kind, type_index, expected_arity, suspend});
