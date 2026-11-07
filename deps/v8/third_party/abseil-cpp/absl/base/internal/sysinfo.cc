@@ -64,6 +64,20 @@
 #include <vector>
 
 #include "absl/base/call_once.h"
+
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
+
+static void* LookupRecordReplaySymbol(const char* name) {
+#ifndef _WIN32
+  void* fnptr = dlsym(RTLD_DEFAULT, name);
+#else
+  HMODULE module = GetModuleHandleA("windows-recordreplay.dll");
+  void* fnptr = module ? (void*)GetProcAddress(module, name) : nullptr;
+#endif
+  return fnptr ? fnptr : reinterpret_cast<void*>(1);
+}
 #include "absl/base/config.h"
 #include "absl/base/internal/raw_logging.h"
 #include "absl/base/internal/spinlock.h"
@@ -145,6 +159,12 @@ static int GetNumCPUs() {
   return hardware_concurrency ? hardware_concurrency : 1;
 #elif defined(_AIX)
   return sysconf(_SC_NPROCESSORS_ONLN);
+#elif defined(__linux__)
+  // One of the possibilities listed below, chosen for record/replay:
+  // libstdc++'s std::thread::hardware_concurrency() calls get_nprocs(), which
+  // a replay has no binding for, while sysconf() is recorded. The Chromium
+  // fork's builds reach sysconf anyway, through libc++.
+  return static_cast<int>(sysconf(_SC_NPROCESSORS_ONLN));
 #else
   // Other possibilities:
   //  - Read /sys/devices/system/cpu/online and use cpumask_parse()
@@ -316,6 +336,28 @@ static double MeasureTscFrequency() {
   return last_measurement;
 }
 
+// Passes events through for its lifetime. Both bindings are looked up before
+// events are passed through: dlsym is passed through as well then, and the real
+// dlsym doesn't find them.
+struct RecordReplayAutoPassThroughEvents {
+  void* begin;
+  void* end;
+
+  RecordReplayAutoPassThroughEvents() {
+    begin = LookupRecordReplaySymbol("RecordReplayBeginPassThroughEvents");
+    end = LookupRecordReplaySymbol("RecordReplayEndPassThroughEvents");
+    if (begin != reinterpret_cast<void*>(1)) {
+      reinterpret_cast<void (*)()>(begin)();
+    }
+  }
+
+  ~RecordReplayAutoPassThroughEvents() {
+    if (end != reinterpret_cast<void*>(1)) {
+      reinterpret_cast<void (*)()>(end)();
+    }
+  }
+};
+
 #endif  // ABSL_INTERNAL_UNSCALED_CYCLECLOCK_FREQUENCY_IS_CPU_FREQUENCY
 
 static double GetNominalCPUFrequency() {
@@ -344,6 +386,10 @@ static double GetNominalCPUFrequency() {
   // value with a higher frequency than that of the real TSC
   // rate. Because of this, we prefer to measure the TSC rate
   // ourselves on i386 and x86-64.
+  //
+  // How many clock reads and sleeps the measurement takes depends on the TSC,
+  // so it can't be replayed; it runs outside the recording.
+  RecordReplayAutoPassThroughEvents pass_through;
   return MeasureTscFrequency();
 #else
 
