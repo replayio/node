@@ -14,12 +14,30 @@
 #include "src/base/platform/mutex.h"
 #include "src/logging/counters.h"
 #include "src/wasm/module-instantiate.h"
+#include "include/v8.h"  // For replay.
 #include "src/wasm/wasm-code-manager.h"
 
 namespace v8::internal::wasm {
 
 class WasmCode;
 class WasmWrapperHandle;
+
+// Takes a cache's ordered lock, for the caches which asked for one. Ordering
+// the mutex itself would order every stack walk, including the walks Replay's
+// own CDP handling does with events disallowed, where there is no order to
+// record; see WasmImportWrapperCache's constructor.
+class V8_NODISCARD WasmWrapperCacheOrderedScope {
+ public:
+  explicit WasmWrapperCacheOrderedScope(int lock) : lock_(lock) {
+    if (lock_) v8::recordreplay::OrderedLock(lock_);
+  }
+  ~WasmWrapperCacheOrderedScope() {
+    if (lock_) v8::recordreplay::OrderedUnlock(lock_);
+  }
+
+ private:
+  const int lock_;
+};
 
 // Implements a cache for import wrappers.
 template <typename CacheKey>
@@ -29,7 +47,9 @@ class WasmWrapperCache {
   class V8_NODISCARD ModificationScope {
    public:
     explicit ModificationScope(WasmWrapperCache<CacheKey>* cache)
-        : cache_(cache), guard_(&cache->mutex_) {}
+        : cache_(cache),
+          ordered_(cache->record_replay_ordered_lock_),
+          guard_(&cache->mutex_) {}
 
     WasmCode* AddWrapper(
         WasmCompilationResult result, WasmCode::Kind kind,
@@ -38,6 +58,8 @@ class WasmWrapperCache {
 
    private:
     WasmWrapperCache* const cache_;
+    // Declared before guard_ so the recorded order is taken first.
+    WasmWrapperCacheOrderedScope ordered_;
     base::MutexGuard guard_;
   };
 
@@ -71,6 +93,11 @@ class WasmWrapperCache {
 
   WasmCodeAllocator code_allocator_;
   mutable base::Mutex mutex_;
+  // Orders the acquisitions that compile or publish a wrapper, for a cache
+  // whose constructor creates a lock. Zero leaves the cache unordered, which
+  // is what the export and stack wrapper caches are. Not taken by Lookup(),
+  // which every stack walk reaches.
+  int record_replay_ordered_lock_ = 0;
   std::unordered_map<CacheKey, std::weak_ptr<WasmWrapperHandle>,
                      typename CacheKey::Hash>
       entry_map_;

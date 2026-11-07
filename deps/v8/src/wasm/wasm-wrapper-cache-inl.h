@@ -116,6 +116,7 @@ WasmCode* WasmWrapperCache<CacheKey>::ModificationScope::AddWrapper(
 
 template <typename CacheKey>
 void WasmWrapperCache<CacheKey>::LogForIsolate(Isolate* isolate) {
+  WasmWrapperCacheOrderedScope ordered(record_replay_ordered_lock_);
   base::MutexGuard lock(&mutex_);
   for (const auto& entry : codes_) {
     entry.second->LogCode(isolate, "", -1);  // No source URL, no ScriptId.
@@ -124,6 +125,7 @@ void WasmWrapperCache<CacheKey>::LogForIsolate(Isolate* isolate) {
 
 template <typename CacheKey>
 void WasmWrapperCache<CacheKey>::Free(std::vector<WasmCode*>& wrappers) {
+  WasmWrapperCacheOrderedScope ordered(record_replay_ordered_lock_);
   base::MutexGuard lock(&mutex_);
   if (codes_.empty() || wrappers.empty()) return;
   // {WasmCodeAllocator::FreeCode()} wants code objects to be sorted.
@@ -154,6 +156,7 @@ void WasmWrapperCache<CacheKey>::Free(std::vector<WasmCode*>& wrappers) {
 template <typename CacheKey>
 V8_EXPORT_PRIVATE std::shared_ptr<WasmWrapperHandle>
 WasmWrapperCache<CacheKey>::GetCompiled(Isolate* isolate, CacheKey cache_key) {
+  WasmWrapperCacheOrderedScope ordered(record_replay_ordered_lock_);
   if constexpr (std::is_same_v<CacheKey, ImportWrapperCacheKey>) {
     CHECK_NE(cache_key.kind, ImportCallKind::kWasmToJSFastApi);
   }
