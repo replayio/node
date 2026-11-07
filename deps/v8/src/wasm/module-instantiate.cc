@@ -759,7 +759,15 @@ MaybeHandle<WasmInstanceObject> InstantiateToInstanceObject(
   if (!instance.is_null()) {
     // Post tasks for lazy compilation metrics before we call the start
     // function.
-    if (v8_flags.wasm_lazy_compilation &&
+    //
+    // Not when recording or replaying: posting to a worker thread takes the
+    // task queue's ordered lock, and which thread posts is a race. The reports
+    // are made once per module, by whichever thread instantiates it first, and
+    // the module can be shared between workers -- the recording and the replay
+    // then disagree about the thread that posts them. They only add samples to
+    // counters, so there is nothing to reproduce.
+    if (!recordreplay::IsRecordingOrReplaying() &&
+        v8_flags.wasm_lazy_compilation &&
         module_object->native_module()
             ->ShouldLazyCompilationMetricsBeReported()) {
       V8::GetCurrentPlatform()->CallDelayedOnWorkerThread(
