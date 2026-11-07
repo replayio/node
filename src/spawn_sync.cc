@@ -380,6 +380,10 @@ void SyncProcessRunner::Spawn(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   Local<Context> context = env->context();
 
+  if (recordreplay::ThrowIfEventsUnavailable(env, "child_process.spawnSync")) {
+    return;
+  }
+
   std::string resource = "";
   if (env->permission()->enabled() && args[0]->IsObject()) {
     Local<Object> js_options = args[0].As<Object>();
@@ -396,9 +400,6 @@ void SyncProcessRunner::Spawn(const FunctionCallbackInfo<Value>& args) {
 
   THROW_IF_INSUFFICIENT_PERMISSIONS(
       env, permission::PermissionScope::kChildProcess, resource);
-  if (recordreplay::ThrowIfEventsUnavailable(env, "child_process.spawnSync")) {
-    return;
-  }
   env->PrintSyncTrace();
   SyncProcessRunner p(env);
   Local<Value> result;

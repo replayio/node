@@ -911,7 +911,8 @@ class ApiCallbackExitFrame : public ExitFrame {
              int index) const override;
 
   // Summarize Frame
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames,
+                 bool allow_invalid = false) const override;
 
   static ApiCallbackExitFrame* cast(StackFrame* frame) {
     DCHECK(frame->is_api_callback_exit());
@@ -943,7 +944,8 @@ class StubFrame : public TypedFrame {
   // TurboFan stub frames are supported.
   int LookupExceptionHandlerInTable();
 
-  void Summarize(std::vector<FrameSummary>* frames) const override;
+  void Summarize(std::vector<FrameSummary>* frames,
+                 bool allow_invalid = false) const override;
 
  protected:
   inline explicit StubFrame(StackFrameIteratorBase* iterator);

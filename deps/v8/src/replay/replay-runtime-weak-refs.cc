@@ -30,7 +30,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayWeakRefDeref) {
   // while evaluating in a replay pause, warning on every call.
   if (!replayio::AreEventsAvailable()) return *target;
 
-  const bool had_target = !target->IsUndefined(isolate);
+  const bool had_target = !IsUndefined(*target, isolate);
   uintptr_t alive = had_target ? 1 : 0;
   uintptr_t recorded_alive =
       recordreplay::RecordReplayValue("JSWeakRef.deref", alive);

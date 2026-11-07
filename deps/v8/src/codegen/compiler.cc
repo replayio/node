@@ -94,7 +94,7 @@ static void SetRecordReplayFlags(UnoptimizedCompileFlags& flags,
 
   Handle<Object> script_name;
   if (script_details.name_obj.ToHandle(&script_name)) {
-    std::unique_ptr<char[]> name_cstr = String::cast(*script_name).ToCString();
+    std::unique_ptr<char[]> name_cstr = String::cast(*script_name)->ToCString();
     if (RecordReplayIgnoreScriptByURL(name_cstr.get())) {
       flags.set_record_replay_ignore(true);
     }

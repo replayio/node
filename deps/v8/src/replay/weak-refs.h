@@ -32,7 +32,7 @@ class ReplayWeakRefs {
 
   // Called by the GC after it cleared the target of |weak_ref|.
   static void OnTargetCleared(internal::Isolate* isolate,
-                              internal::JSWeakRef weak_ref);
+                              internal::Tagged<internal::JSWeakRef> weak_ref);
 
   // The pieces ReplayGCPoll::Poll records/replays. When recording: the ids of
   // the tracked WeakRefs whose target the GC cleared since the last poll.

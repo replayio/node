@@ -61,9 +61,10 @@ class ReplayFinalizationRegistries {
   // Called when unregister() removes |cell| from |registry|. Cannot GC. Crashes
   // for a tracked cell when the current point does not replay and the process
   // has not diverged.
-  static void OnUnregisterCell(internal::Isolate* isolate,
-                               internal::JSFinalizationRegistry registry,
-                               internal::WeakCell cell);
+  static void OnUnregisterCell(
+      internal::Isolate* isolate,
+      internal::Tagged<internal::JSFinalizationRegistry> registry,
+      internal::Tagged<internal::WeakCell> cell);
 
   // Called by the cleanup loop before it pops a cleared cell. Returns whether
   // the loop should continue. For a tracked registry this records/replays

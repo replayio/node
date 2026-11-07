@@ -2474,7 +2474,7 @@ V8DebuggerAgentImpl::wrapObject(int context_id, v8::Local<v8::Value> val) {
 
   std::unique_ptr<protocol::Runtime::RemoteObject> rv;
   injectedScript->wrapObject(val, kBacktraceObjectGroup,
-                             WrapMode::kNoPreview, &rv);
+                             WrapOptions({WrapMode::kIdOnly}), &rv);
   return rv;
 }
 

@@ -1069,9 +1069,6 @@ static void ExistsSync(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(err == 0);
 }
 
-  if (recordreplay::ThrowIfEventsUnavailable(env, "require")) {
-    return;
-  }
 // Used to speed up module loading.  Returns 0 if the path refers to
 // a file, 1 when it's a directory or < 0 on error (usually -ENOENT.)
 // The speedup comes from not creating thousands of Stat and Error objects.

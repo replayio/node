@@ -15,8 +15,9 @@
 #include <openssl/core_dispatch.h>
 #include <openssl/err.h>
 
-size_t ossl_rand_get_entropy(ossl_unused OSSL_LIB_CTX *ctx,
 extern void RecordReplayAssertFromC(const char* aFormat, ...);
+
+size_t ossl_rand_get_entropy(ossl_unused OSSL_LIB_CTX *ctx,
     unsigned char **pout, int entropy,
     size_t min_len, size_t max_len)
 {

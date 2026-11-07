@@ -344,7 +344,7 @@ void PerIsolatePlatformData::RunRecordReplayUnorderedTasks(
     uv_check_t* handle) {
   auto platform_data = static_cast<PerIsolatePlatformData*>(handle->data);
   std::queue<std::unique_ptr<Task>> tasks =
-      platform_data->record_replay_unordered_tasks_.PopAll();
+      platform_data->record_replay_unordered_tasks_.Lock().PopAll();
   if (tasks.empty()) return;
   v8::replayio::AutoDisallowEvents disallow(
       "PerIsolatePlatformData::RunRecordReplayUnorderedTasks");
@@ -370,7 +370,7 @@ void PerIsolatePlatformData::PostTask(std::unique_ptr<Task> task) {
 
   if (task->IsRecordReplayNonDeterministic() &&
       v8::recordreplay::IsRecordingOrReplaying()) {
-    record_replay_unordered_tasks_.Push(std::move(task));
+    record_replay_unordered_tasks_.Lock().Push(std::move(task));
     return;
   }
   v8::recordreplay::Assert("PerIsolatePlatformData::PostTask");
@@ -398,7 +398,7 @@ void PerIsolatePlatformData::PostDelayedTask(
   // keeps V8's tasks from running too often.
   if (task->IsRecordReplayNonDeterministic() &&
       v8::recordreplay::IsRecordingOrReplaying()) {
-    record_replay_unordered_tasks_.Push(std::move(task));
+    record_replay_unordered_tasks_.Lock().Push(std::move(task));
     return;
   }
   v8::recordreplay::Assert("PerIsolatePlatformData::PostDelayedTask");

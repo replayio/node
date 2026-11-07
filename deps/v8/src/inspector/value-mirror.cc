@@ -1802,15 +1802,6 @@ std::unique_ptr<ValueMirror> ValueMirror::create(v8::Local<v8::Context> context,
   if (value->IsSymbol()) {
     return std::make_unique<SymbolMirror>(isolate, value.As<v8::Symbol>());
   }
-  if (!v8::recordreplay::HasDivergedFromRecording()) {
-    auto clientSubtype = (value->IsUndefined() || value->IsObject())
-                            ? clientFor(context)->valueSubtype(value)
-                            : nullptr;
-    if (clientSubtype) {
-      String16 subtype = toString16(clientSubtype->string());
-      return clientMirror(context, value, subtype);
-    }
-  }
   if (value->IsUndefined()) {
     return std::make_unique<PrimitiveValueMirror>(
         isolate, value.As<v8::Primitive>(), RemoteObject::TypeEnum::Undefined);
@@ -1819,10 +1810,12 @@ std::unique_ptr<ValueMirror> ValueMirror::create(v8::Local<v8::Context> context,
     return nullptr;
   }
   v8::Local<v8::Object> object = value.As<v8::Object>();
-  auto clientSubtype = clientFor(context)->valueSubtype(object);
-  if (clientSubtype) {
-    String16 subtype = toString16(clientSubtype->string());
-    return clientMirror(context, object, subtype);
+  if (!v8::recordreplay::HasDivergedFromRecording()) {
+    auto clientSubtype = clientFor(context)->valueSubtype(object);
+    if (clientSubtype) {
+      String16 subtype = toString16(clientSubtype->string());
+      return clientMirror(context, object, subtype);
+    }
   }
   if (object->IsRegExp()) {
     v8::Local<v8::RegExp> regexp = object.As<v8::RegExp>();

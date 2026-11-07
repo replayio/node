@@ -108,9 +108,9 @@ Handle<JSMessageObject> MessageHandler::MakeMessageObject(
       AllowJavascriptExecution::IsAllowed(isolate) &&
       IsMainThread()) {
     Handle<Object> exception;
-    if (isolate->has_pending_exception()) {
-      exception = Handle<Object>(isolate->pending_exception(), isolate);
-      isolate->clear_pending_exception();
+    if (isolate->has_exception()) {
+      exception = Handle<Object>(isolate->exception(), isolate);
+      isolate->clear_exception();
       gCurrentException = &exception;
     }
     Handle<Object> message;
@@ -118,22 +118,14 @@ Handle<JSMessageObject> MessageHandler::MakeMessageObject(
       message = Handle<Object>(isolate->pending_message(), isolate);
       isolate->clear_pending_message();
     }
-    Handle<Object> scheduledException;
-    if (isolate->has_scheduled_exception()) {
-      scheduledException = Handle<Object>(isolate->scheduled_exception(), isolate);
-      isolate->clear_scheduled_exception();
-    }
     record_replay_bookmark = (int)V8RecordReplayNewBookmark();
     gCurrentException = nullptr;
-    CHECK(!isolate->has_pending_exception());
+    CHECK(!isolate->has_exception());
     if (!exception.is_null()) {
-      isolate->set_pending_exception(*exception);
+      isolate->set_exception(*exception);
     }
     if (!message.is_null()) {
       isolate->set_pending_message(*message);
-    }
-    if (!scheduledException.is_null()) {
-      isolate->set_scheduled_exception(*scheduledException);
     }
   }
 
@@ -389,7 +381,7 @@ MaybeHandle<Object> ErrorUtils::FormatStackTrace(Isolate* isolate,
 
   // [PRO-1150] Replay Error.stack
   Handle<Object> result;
-  bool is_string = maybe_result.ToHandle(&result) && result->IsString();
+  bool is_string = maybe_result.ToHandle(&result) && IsString(*result);
   bool recorded_string = recordreplay::RecordReplayValue(
       "ErrorUtils::FormatStackTrace IsString", is_string);
   if (!recorded_string) {
@@ -418,8 +410,8 @@ MaybeHandle<Object> FormatStackTraceImpl(Isolate* isolate,
   Handle<NativeContext> error_context;
   // Skip prepareStackTrace under DisallowEvents (may hit unbound syscalls).
   if (!in_recursion && !has_overflowed &&
-      error->GetCreationContext(isolate).ToHandle(&error_context)) {
       !recordreplay::AreEventsDisallowed() &&
+      error->GetCreationContext(isolate).ToHandle(&error_context)) {
     if (isolate->HasPrepareStackTraceCallback()) {
       PrepareStackTraceScope scope(isolate);
 
@@ -519,6 +511,8 @@ MaybeHandle<Object> FormatStackTraceImpl(Isolate* isolate,
   return builder.Finish();
 }
 
+}  // namespace
+
 Handle<String> MessageFormatter::Format(
     Isolate* isolate, MessageTemplate index,
     base::Vector<const Handle<Object>> args) {
@@ -528,7 +522,6 @@ Handle<String> MessageFormatter::Format(
   for (size_t i = 0; i < args.size(); ++i) {
     DCHECK(!args[i].is_null());
     arg_strings[i] = Object::NoSideEffectsToString(isolate, args[i]);
-}  // namespace
   }
   v8::TryCatch try_catch(reinterpret_cast<v8::Isolate*>(isolate));
   try_catch.SetVerbose(false);

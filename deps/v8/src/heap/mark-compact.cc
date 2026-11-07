@@ -2216,6 +2216,10 @@ std::pair<size_t, size_t> MarkCompactCollector::ProcessMarkingWorklist(
     }
     bytes_processed += visited_size;
     objects_processed++;
+    // Marking a large heap opens no further GC scopes.
+    if (V8_UNLIKELY(record_replay && objects_processed % 0x10000 == 0)) {
+      recordreplay::NotifyActivity();
+    }
     static_assert(base::bits::IsPowerOfTwo(kDeadlineCheckInterval),
                   "kDeadlineCheckInterval must be power of 2");
     if ((objects_processed & kDeadlineCheckInterval) == 0 &&
@@ -2223,10 +2227,6 @@ std::pair<size_t, size_t> MarkCompactCollector::ProcessMarkingWorklist(
       break;
     }
     if (bytes_processed >= max_bytes_to_process) {
-    // Marking a large heap opens no further GC scopes.
-    if (V8_UNLIKELY(record_replay && objects_processed % 0x10000 == 0)) {
-      recordreplay::NotifyActivity();
-    }
       break;
     }
   }
@@ -3514,7 +3514,7 @@ void MarkCompactCollector::ClearJSWeakRefs() {
     if (!InReadOnlySpace(target) &&
         !non_atomic_marking_state_->IsMarked(target)) {
       weak_ref->set_target(ReadOnlyRoots(isolate).undefined_value());
-      replayio::ReplayWeakRefs::OnTargetCleared(isolate(), weak_ref);
+      replayio::ReplayWeakRefs::OnTargetCleared(isolate, weak_ref);
     } else {
       // The value of the JSWeakRef is alive.
       ObjectSlot slot = weak_ref->RawField(JSWeakRef::kTargetOffset);

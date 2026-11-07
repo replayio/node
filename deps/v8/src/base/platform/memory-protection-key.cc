@@ -54,7 +54,7 @@ bool MemoryProtectionKey::InitializeMemoryProtectionKeySupport() {
   // pkey functions unset, the state upstream uses when the platform has no
   // support, so that the code space is protected with mprotect() instead.
   if (v8::recordreplay::IsRecordingOrReplaying()) {
-    return;
+    return false;
   }
 
   if (!pkey_mprotect) return false;

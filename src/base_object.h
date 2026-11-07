@@ -243,6 +243,8 @@ class BaseObject : public MemoryRetainer, public recordreplay::Finalizable {
   Realm* realm_;
   PointerData* pointer_data_ = nullptr;
   ListNode<BaseObject> base_object_list_node_;
+  // The id DeferredFinalization tracks this object by, or 0.
+  int record_replay_id_ = 0;
 
   friend class BaseObjectList;
 };
@@ -256,8 +258,6 @@ class BaseObjectList
   SET_MEMORY_INFO_NAME(BaseObjectList)
   SET_SELF_SIZE(BaseObjectList)
   void MemoryInfo(node::MemoryTracker* tracker) const override;
-  // The id DeferredFinalization tracks this object by, or 0.
-  int record_replay_id_ = 0;
 };
 
 // Global alias for FromJSObject() to avoid churn.

@@ -61,8 +61,8 @@ bool ReplayFinalizationRegistries::Adopt(
   if (!Enabled() || !AreEventsAvailable()) return false;
   // Cells registered before now have no ids, so the recording could not
   // describe when they are cleared.
-  if (!registry->active_cells().IsUndefined(isolate) ||
-      !registry->cleared_cells().IsUndefined(isolate)) {
+  if (!i::IsUndefined(registry->active_cells(), isolate) ||
+      !i::IsUndefined(registry->cleared_cells(), isolate)) {
     return false;
   }
 
@@ -115,7 +115,7 @@ void ReplayFinalizationRegistries::OnRegister(
   }
 
   i::Handle<i::SimpleNumberDictionary> cells;
-  if (registry->record_replay_cells().IsUndefined(isolate)) {
+  if (i::IsUndefined(registry->record_replay_cells(), isolate)) {
     cells = i::SimpleNumberDictionary::New(isolate, 1);
     // The recording can deliver callbacks of a registry which is no longer
     // reachable, as long as the recording's GC did not collect it.
@@ -131,8 +131,9 @@ void ReplayFinalizationRegistries::OnRegister(
 }
 
 void ReplayFinalizationRegistries::OnUnregisterCell(
-    i::Isolate* isolate, i::JSFinalizationRegistry registry, i::WeakCell cell) {
-  if (!cell.record_replay_id() || recordreplay::HasDivergedFromRecording())
+    i::Isolate* isolate, i::Tagged<i::JSFinalizationRegistry> registry,
+    i::Tagged<i::WeakCell> cell) {
+  if (!cell->record_replay_id() || recordreplay::HasDivergedFromRecording())
     return;
 
   // The other side would still have this cell registered, and deliver it or
@@ -142,13 +143,13 @@ void ReplayFinalizationRegistries::OnUnregisterCell(
       "FinalizationRegistry.prototype.unregister on a tracked registry at a "
       "non-deterministic point");
 
-  if (registry.record_replay_cells().IsUndefined(isolate)) return;
-  i::SimpleNumberDictionary cells =
-      i::SimpleNumberDictionary::cast(registry.record_replay_cells());
-  i::InternalIndex entry = cells.FindEntry(isolate, cell.record_replay_id());
+  if (i::IsUndefined(registry->record_replay_cells(), isolate)) return;
+  i::Tagged<i::SimpleNumberDictionary> cells =
+      i::SimpleNumberDictionary::cast(registry->record_replay_cells());
+  i::InternalIndex entry = cells->FindEntry(isolate, cell->record_replay_id());
   if (entry.is_found()) {
-    cells.ClearEntry(entry);
-    cells.ElementRemoved();
+    cells->ClearEntry(entry);
+    cells->ElementRemoved();
   }
 }
 
@@ -160,7 +161,7 @@ bool ReplayFinalizationRegistries::NextCell(
   uintptr_t id = 0;
   if (recordreplay::IsRecording() && registry->NeedsCleanup()) {
     int cell_id =
-        i::WeakCell::cast(registry->cleared_cells()).record_replay_id();
+        i::WeakCell::cast(registry->cleared_cells())->record_replay_id();
     CHECK_GT(cell_id, 0);
     id = cell_id;
   }
@@ -168,7 +169,7 @@ bool ReplayFinalizationRegistries::NextCell(
   if (!id) return false;
 
   if (recordreplay::IsReplaying()) {
-    CHECK_WITH_MSG(!registry->record_replay_cells().IsUndefined(isolate),
+    CHECK_WITH_MSG(!i::IsUndefined(registry->record_replay_cells(), isolate),
                    "Recorded FinalizationRegistry cleanup for unknown cell");
     i::Handle<i::SimpleNumberDictionary> cells = i::handle(
         i::SimpleNumberDictionary::cast(registry->record_replay_cells()),
@@ -177,14 +178,15 @@ bool ReplayFinalizationRegistries::NextCell(
         cells->FindEntry(isolate, static_cast<uint32_t>(id));
     CHECK_WITH_MSG(entry.is_found(),
                    "Recorded FinalizationRegistry cleanup for unknown cell");
-    i::WeakCell cell = i::WeakCell::cast(cells->ValueAt(entry));
+    i::Tagged<i::WeakCell> cell = i::WeakCell::cast(cells->ValueAt(entry));
     // Nullify assumes an active cell, and the replay's GC clearing a tracked
     // cell on its own would otherwise go unnoticed.
-    CHECK_WITH_MSG(!cell.target().IsUndefined(isolate),
+    CHECK_WITH_MSG(!i::IsUndefined(cell->target(), isolate),
                    "Tracked FinalizationRegistry cell cleared while replaying");
     // Do what the recording's GC did when it found the target dead: this moves
     // the cell to the head of the cleared list, where the cleanup loop pops it.
-    cell.Nullify(isolate, [](i::HeapObject, i::ObjectSlot, i::Object) {});
+    cell->Nullify(isolate, [](i::Tagged<i::HeapObject>, i::ObjectSlot,
+                              i::Tagged<i::Object>) {});
     cells = i::SimpleNumberDictionary::DeleteEntry(isolate, cells, entry);
     registry->set_record_replay_cells(*cells);
   }

@@ -6910,12 +6910,12 @@ void Heap::EnqueueDirtyJSFinalizationRegistry(
 bool Heap::RecordReplayHasDirtyJSFinalizationRegistries(
     RecordReplayTracking tracking) {
   const bool tracked = tracking == RecordReplayTracking::kTracked;
-  Object current = dirty_js_finalization_registries_list();
-  while (!current.IsUndefined(isolate())) {
-    JSFinalizationRegistry finalization_registry =
+  Tagged<Object> current = dirty_js_finalization_registries_list();
+  while (!IsUndefined(current, isolate())) {
+    Tagged<JSFinalizationRegistry> finalization_registry =
         JSFinalizationRegistry::cast(current);
-    if ((finalization_registry.record_replay_id() != 0) == tracked) return true;
-    current = finalization_registry.next_dirty();
+    if ((finalization_registry->record_replay_id() != 0) == tracked) return true;
+    current = finalization_registry->next_dirty();
   }
   return false;
 }
@@ -6925,27 +6925,27 @@ Heap::RecordReplayDequeueDirtyJSFinalizationRegistry(
     RecordReplayTracking tracking) {
   const bool tracked = tracking == RecordReplayTracking::kTracked;
   Isolate* isolate = this->isolate();
-  Object prev = ReadOnlyRoots(isolate).undefined_value();
-  Object current = dirty_js_finalization_registries_list();
-  while (!current.IsUndefined(isolate)) {
-    JSFinalizationRegistry finalization_registry =
+  Tagged<Object> prev = ReadOnlyRoots(isolate).undefined_value();
+  Tagged<Object> current = dirty_js_finalization_registries_list();
+  while (!IsUndefined(current, isolate)) {
+    Tagged<JSFinalizationRegistry> finalization_registry =
         JSFinalizationRegistry::cast(current);
-    if ((finalization_registry.record_replay_id() != 0) != tracked) {
+    if ((finalization_registry->record_replay_id() != 0) != tracked) {
       prev = current;
-      current = finalization_registry.next_dirty();
+      current = finalization_registry->next_dirty();
       continue;
     }
-    if (prev.IsUndefined(isolate)) {
+    if (IsUndefined(prev, isolate)) {
       set_dirty_js_finalization_registries_list(
-          finalization_registry.next_dirty());
+          finalization_registry->next_dirty());
     } else {
-      JSFinalizationRegistry::cast(prev).set_next_dirty(
-          finalization_registry.next_dirty());
+      JSFinalizationRegistry::cast(prev)->set_next_dirty(
+          finalization_registry->next_dirty());
     }
     if (finalization_registry == dirty_js_finalization_registries_list_tail()) {
       set_dirty_js_finalization_registries_list_tail(prev);
     }
-    finalization_registry.set_next_dirty(
+    finalization_registry->set_next_dirty(
         ReadOnlyRoots(isolate).undefined_value());
     return handle(finalization_registry, isolate);
   }

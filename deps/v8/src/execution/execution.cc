@@ -24,7 +24,7 @@ namespace v8 {
 namespace internal {
 
 extern bool RecordReplayIsDivergentUserJSWithoutPause(
-    const SharedFunctionInfo& shared);
+    Tagged<SharedFunctionInfo> shared);
 extern uint64_t* gProgressCounter;
 extern std::string GetStackContents(Isolate* isolate, size_t max_frames);
 
@@ -97,7 +97,7 @@ InvokeParams InvokeParams::SetUpForNew(Isolate* isolate,
   InvokeParams params;
   params.target = constructor;
   params.receiver = isolate->factory()->undefined_value();
-  DCHECK(!params.IsScript());
+  DCHECK(!IsScript(params));
   params.argc = argc;
   params.argv = argv;
   params.new_target = new_target;
@@ -118,8 +118,8 @@ InvokeParams InvokeParams::SetUpForCall(Isolate* isolate,
   params.target = callable;
   params.receiver = NormalizeReceiver(isolate, receiver);
   // Check for host-defined options argument for scripts.
-  DCHECK_IMPLIES(params.IsScript(), argc == 1);
-  DCHECK_IMPLIES(params.IsScript(), IsFixedArray(*argv[0]));
+  DCHECK_IMPLIES(IsScript(params), argc == 1);
+  DCHECK_IMPLIES(IsScript(params), IsFixedArray(*argv[0]));
   params.argc = argc;
   params.argv = argv;
   params.new_target = isolate->factory()->undefined_value();
@@ -140,8 +140,8 @@ InvokeParams InvokeParams::SetUpForTryCall(
   params.target = callable;
   params.receiver = NormalizeReceiver(isolate, receiver);
   // Check for host-defined options argument for scripts.
-  DCHECK_IMPLIES(params.IsScript(), argc == 1);
-  DCHECK_IMPLIES(params.IsScript(), IsFixedArray(*argv[0]));
+  DCHECK_IMPLIES(IsScript(params), argc == 1);
+  DCHECK_IMPLIES(IsScript(params), IsFixedArray(*argv[0]));
   params.argc = argc;
   params.argv = argv;
   params.new_target = isolate->factory()->undefined_value();
@@ -277,29 +277,31 @@ MaybeHandle<Context> NewScriptContext(Isolate* isolate,
 
 static std::string GetFunctionScriptName(Isolate* isolate,
                                          Handle<JSFunction> function) {
-  if (!function->shared().script().IsScript()) {
+  if (!IsScript(function->shared()->script())) {
     return "<not-script>";
   }
-  Handle<Script> script(Script::cast(function->shared().script()), isolate);
-  if (script->name().IsUndefined()) {
+  Handle<Script> script(Script::cast(function->shared()->script()),
+                        isolate);
+  if (IsUndefined(script->name())) {
     return "<none>";
   }
-  std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+  std::unique_ptr<char[]> name = String::cast(script->name())->ToCString();
   return std::string(name.get());
 }
 
 // Get a description of a function's location for logging etc.
 static std::string GetFunctionLocationInfo(Isolate* isolate,
                                            Handle<JSFunction> function) {
-  if (!function->shared().script().IsScript()) {
+  if (!IsScript(function->shared()->script())) {
     return "<not-script>";
   }
 
-  Handle<Script> script(Script::cast(function->shared().script()), isolate);
+  Handle<Script> script(Script::cast(function->shared()->script()),
+                        isolate);
 
   Script::PositionInfo info;
-  Script::GetPositionInfo(script, function->shared().StartPosition(), &info,
-                          Script::WITH_OFFSET);
+  Script::GetPositionInfo(script, function->shared()->StartPosition(), &info,
+                          Script::OffsetFlag::kWithOffset);
 
   std::ostringstream os;
   // Chromium ternary is inverted (always -1); emit real scriptId.
@@ -382,12 +384,12 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
     }
 #ifdef DEBUG
     if (function->shared()->is_script()) {
-      DCHECK(params.IsScript());
+      DCHECK(IsScript(params));
       DCHECK(IsJSGlobalProxy(*params.receiver));
       DCHECK_EQ(params.argc, 1);
       DCHECK(IsFixedArray(*params.argv[0]));
     } else {
-      DCHECK(!params.IsScript());
+      DCHECK(!IsScript(params));
     }
 #endif
     // Set up a ScriptContext when running scripts that need it.
@@ -427,7 +429,7 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
   isolate->IncrementJavascriptExecutionCounter();
 
   // User JS must not run on divergent paths unless paused.
-  if (params.target->IsJSFunction()) {
+  if (IsJSFunction(*params.target)) {
     Handle<JSFunction> function = Handle<JSFunction>::cast(params.target);
     if (RecordReplayIsDivergentUserJSWithoutPause(function->shared())) {
       return RecordReplayBlockNonDeterministicUserJs(

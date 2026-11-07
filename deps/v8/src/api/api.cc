@@ -4621,8 +4621,8 @@ v8::PropertyDescriptor::PropertyDescriptor(v8::Local<v8::Value> value,
 v8::PropertyDescriptor::PropertyDescriptor(v8::Local<v8::Value> get,
                                            v8::Local<v8::Value> set)
     : private_(new PrivateData()) {
-  DCHECK(get.IsEmpty() || get->IsUndefined() || get->IsFunction());
-  DCHECK(set.IsEmpty() || set->IsUndefined() || set->IsFunction());
+  DCHECK(get.IsEmpty() || IsUndefined(*get) || get->IsFunction());
+  DCHECK(set.IsEmpty() || IsUndefined(*set) || set->IsFunction());
   private_->desc.set_get(Utils::OpenHandle(*get, true));
   private_->desc.set_set(Utils::OpenHandle(*set, true));
 }
@@ -10778,13 +10778,13 @@ String::Value::~Value() { i::DeleteArray(str_); }
         options = Utils::OpenHandle(*raw_options);                            \
       }                                                                       \
       auto message = Utils::OpenHandle(*raw_message);                         \
+      std::unique_ptr<char[]> message_str = message->ToCString();             \
+      recordreplay::Assert("CreateException %s %s", #NAME,                    \
+                           message_str.get());                                \
       i::Handle<i::JSFunction> constructor = i_isolate->name##_function();    \
       error = *i_isolate->factory()->NewError(constructor, message, options); \
     }                                                                         \
     return Utils::ToLocal(i::direct_handle(error, i_isolate), i_isolate);     \
-      std::unique_ptr<char[]> message_str = message->ToCString();          \
-      recordreplay::Assert("CreateException %s %s", #NAME,                 \
-                           message_str.get());                             \
   }
 
 DEFINE_ERROR(RangeError, range_error)
@@ -11585,17 +11585,17 @@ void RecordReplayOnExceptionUnwind(Isolate* isolate) {
 
   HandleScope scope(isolate);
 
-  CHECK(isolate->has_pending_exception());
-  Handle<Object> exception(isolate->pending_exception(), isolate);
+  CHECK(isolate->has_exception());
+  Handle<Object> exception(isolate->exception(), isolate);
   if (isolate->is_catchable_by_javascript(*exception)) {
-    isolate->clear_pending_exception();
+    isolate->clear_exception();
     Handle<Object> message(isolate->pending_message(), isolate);
     isolate->clear_pending_message();
     gCurrentException = &exception;
     gRecordReplayOnExceptionUnwind();
     gCurrentException = nullptr;
-    CHECK(!isolate->has_pending_exception());
-    isolate->set_pending_exception(*exception);
+    CHECK(!isolate->has_exception());
+    isolate->set_exception(*exception);
     isolate->set_pending_message(*message);
   }
 }

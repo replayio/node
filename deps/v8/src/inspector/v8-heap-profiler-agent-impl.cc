@@ -263,8 +263,8 @@ V8HeapProfilerAgentImpl::V8HeapProfilerAgentImpl(
       m_frontend(frontendChannel),
       m_state(state),
       m_hasTimer(false),
-      m_asyncCallbacks(std::make_shared<AsyncCallbacks>()) {}
-      m_replay_owned(session->replayOwned()),
+      m_asyncCallbacks(std::make_shared<AsyncCallbacks>()),
+      m_replay_owned(session->replayOwned()) {}
 
 V8HeapProfilerAgentImpl::~V8HeapProfilerAgentImpl() {
   v8::base::MutexGuard lock(&m_asyncCallbacks->m_mutex);

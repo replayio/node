@@ -972,7 +972,7 @@ extern bool RecordReplayShouldAssertForSource(const char* source);
 
 #ifdef RECORD_REPLAY_CHECK_OPCODES
 
-extern bool RecordReplayIgnoreScript(Script script);
+extern bool RecordReplayIgnoreScript(Tagged<Script> script);
 
 extern "C" bool V8RecordReplayHasDivergedFromRecording();
 
@@ -983,7 +983,7 @@ static inline bool RecordReplayBytecodeAllowed() {
 
 #else // !RECORD_REPLAY_CHECK_OPCODES
 
-static inline bool RecordReplayIgnoreScript(Script script) {
+static inline bool RecordReplayIgnoreScript(Tagged<Script> script) {
   return false;
 }
 
@@ -999,10 +999,10 @@ extern void RecordReplayOnTargetProgressReached();
 
 static std::string ScriptNameToString(Handle<Script> script) {
   std::string name;
-  if (script->name().IsUndefined()) {
+  if (IsUndefined(script->name())) {
     return std::string("<none>");
   }
-  std::unique_ptr<char[]> name_raw = String::cast(script->name()).ToCString();
+  std::unique_ptr<char[]> name_raw = String::cast(script->name())->ToCString();
   return std::string(name_raw.get());
 }
 
@@ -1045,18 +1045,18 @@ RecordReplayScrubDivergentProgressScope::
 static std::vector<uint64_t>* gReportedProgressData;
 
 static inline uint64_t BuildScriptProgressEntry(Handle<JSFunction> fun) {
-  int script_id = Script::cast(fun->shared().script()).id();
-  int start_position = fun->shared().StartPosition();
+  int script_id = Script::cast(fun->shared()->script())->id();
+  int start_position = fun->shared()->StartPosition();
   return (static_cast<uint64_t>(script_id) << 32) | static_cast<uint64_t>(start_position);
 }
 
 extern Handle<Script> GetScript(Isolate* isolate, int script_id);
 
 std::string GetScriptName(Handle<Script> script) {
-  if (script.is_null() || !script->name().IsString()) {
+  if (script.is_null() || !IsString(script->name())) {
     return "(anonymous script)";
   }
-  std::unique_ptr<char[]> name = String::cast(script->name()).ToCString();
+  std::unique_ptr<char[]> name = String::cast(script->name())->ToCString();
   return std::string(name.get());
 }
 
@@ -1067,7 +1067,7 @@ std::string GetScriptLocationString(int script_id, int start_position) {
   std::string script_name = GetScriptName(script);
 
   Script::PositionInfo info;
-  Script::GetPositionInfo(script, start_position, &info, Script::WITH_OFFSET);
+  Script::GetPositionInfo(script, start_position, &info, Script::OffsetFlag::kWithOffset);
 
   std::ostringstream os;
   os << script_id << ":" << script_name << ":" << info.line + 1 << ":"
@@ -1212,7 +1212,7 @@ static std::string FrameSummaryToString(Isolate* isolate, const FrameSummary& su
 
   int source_position = js.SourcePosition();
   Script::PositionInfo info;
-  Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
+  Script::GetPositionInfo(script, source_position, &info, Script::OffsetFlag::kWithOffset);
 
   std::string name = ScriptNameToString(script);
 
@@ -1354,7 +1354,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
   int32_t index = args.smi_value_at(1);
   Handle<Object> value = args.at(2);
 
-  Handle<Script> script(Script::cast(function->shared().script()), isolate);
+  Handle<Script> script(Script::cast(function->shared()->script()), isolate);
   CHECK(!RecordReplayIgnoreScript(*script));
 
   index -= BytecodeSiteOffset;
@@ -1363,7 +1363,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertValue) {
 
   if (!site.location_.length()) {
     Script::PositionInfo info;
-    Script::GetPositionInfo(script, site.source_position_, &info, Script::WITH_OFFSET);
+    Script::GetPositionInfo(script, site.source_position_, &info, Script::OffsetFlag::kWithOffset);
 
     std::string name = ScriptNameToString(script);
 
@@ -1444,23 +1444,23 @@ extern void RecordReplayInstrument(const char* kind, const char* function, int f
 static bool gDumpFunctionLocations;
 
 std::string GetRecordReplayFunctionId(Handle<SharedFunctionInfo> shared) {
-  Script script = Script::cast(shared->script());
+  Tagged<Script> script = Script::cast(shared->script());
 
   std::ostringstream os;
 
   // When recording/replaying we use a function ID we can parse to a script
   // and source location later.
-  os << script.id() << ":" << shared->StartPosition();
+  os << script->id() << ":" << shared->StartPosition();
 
   if (gDumpFunctionLocations) {
     std::unique_ptr<char[]> url;
-    if (!script.name().IsUndefined()) {
-      url = String::cast(script.name()).ToCString();
+    if (!IsUndefined(script->name())) {
+      url = String::cast(script->name())->ToCString();
     }
 
     Script::PositionInfo info;
     Handle<Script> handleScript(script, Isolate::Current());
-    Script::GetPositionInfo(handleScript, shared->StartPosition(), &info, Script::WITH_OFFSET);
+    Script::GetPositionInfo(handleScript, shared->StartPosition(), &info, Script::OffsetFlag::kWithOffset);
     recordreplay::Print("FunctionId %s -> %s:%d:%d",
                         os.str().c_str(), url.get() ? url.get() : "<none>",
                         info.line + 1, info.column);
@@ -1480,7 +1480,7 @@ static inline void OnInstrumentation(Isolate* isolate,
                                      Handle<JSFunction> function, int32_t index) {
   CHECK(RecordReplayBytecodeAllowed());
 
-  Handle<Script> script(Script::cast(function->shared().script()), isolate);
+  Handle<Script> script(Script::cast(function->shared()->script()), isolate);
   CHECK(!RecordReplayIgnoreScript(*script));
 
   InstrumentationSite& site = GetInstrumentationSite("Callback", index);

@@ -53,6 +53,20 @@ static void ThrowNodeApiVersionError(node::Environment* node_env,
     return nullptr;
   }
 
+  if (module_api_version == NAPI_VERSION_EXPERIMENTAL &&
+      v8::recordreplay::IsRecordingOrReplaying()) {
+    // Experimental Node-API runs a module's finalizers synchronously from the
+    // GC's weak callback (napi_env__::InvokeFinalizerFromGC), at a point which
+    // differs between recording and replaying and where events are disallowed,
+    // and it gives the module every experimental API, which the recorder does
+    // not intercept. An addon opts in at compile time by defining
+    // NAPI_EXPERIMENTAL, so this is rare and cannot be worked around here.
+    std::string why = "Addon " + module_filename +
+                      " uses experimental Node-API, whose finalizers run from "
+                      "the garbage collector";
+    v8::recordreplay::InvalidateRecording(why.c_str());
+  }
+
   result = new node_napi_env__(context, module_filename, module_api_version);
   // TODO(addaleax): There was previously code that tried to delete the
   // napi_env when its v8::Context was garbage collected;
@@ -223,19 +237,6 @@ class BufferFinalizer : private Finalizer {
   ~BufferFinalizer() { env()->Unref(); }
 };
 
-  if (module_api_version == NAPI_VERSION_EXPERIMENTAL &&
-      v8::recordreplay::IsRecordingOrReplaying()) {
-    // Experimental Node-API runs a module's finalizers synchronously from the
-    // GC's weak callback (napi_env__::InvokeFinalizerFromGC), at a point which
-    // differs between recording and replaying and where events are disallowed,
-    // and it gives the module every experimental API, which the recorder does
-    // not intercept. An addon opts in at compile time by defining
-    // NAPI_EXPERIMENTAL, so this is rare and cannot be worked around here.
-    std::string why = "Addon " + module_filename +
-                      " uses experimental Node-API, whose finalizers run from "
-                      "the garbage collector";
-    v8::recordreplay::InvalidateRecording(why.c_str());
-  }
 class ThreadSafeFunction : public node::AsyncResource {
  public:
   ThreadSafeFunction(v8::Local<v8::Function> func,

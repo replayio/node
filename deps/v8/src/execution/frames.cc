@@ -1188,7 +1188,8 @@ bool ApiCallbackExitFrame::IsConstructor() const {
   return !IsUndefined(*new_target_slot(), isolate());
 }
 
-void ApiCallbackExitFrame::Summarize(std::vector<FrameSummary>* frames) const {
+void ApiCallbackExitFrame::Summarize(std::vector<FrameSummary>* frames,
+                                     bool allow_invalid) const {
   DCHECK(frames->empty());
   Handle<FixedArray> parameters = GetParameters();
   Handle<JSFunction> function = GetFunction();
@@ -2072,7 +2073,8 @@ int StubFrame::LookupExceptionHandlerInTable() {
   return table.LookupReturn(pc_offset);
 }
 
-void StubFrame::Summarize(std::vector<FrameSummary>* frames) const {
+void StubFrame::Summarize(std::vector<FrameSummary>* frames,
+                          bool allow_invalid) const {
 #if V8_ENABLE_WEBASSEMBLY
   Tagged<Code> code = LookupCode();
   if (code->kind() != CodeKind::BUILTIN) return;

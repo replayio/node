@@ -3306,7 +3306,7 @@ static ScriptIdMap* gRecordReplayScripts;
 
 static int GetSourceIdProperty(Isolate* isolate, Handle<Object> obj) {
   Handle<Object> sourceIdStr = GetProperty(isolate, obj, "sourceId");
-  std::unique_ptr<char[]> sourceIdText = String::cast(*sourceIdStr).ToCString();
+  std::unique_ptr<char[]> sourceIdText = String::cast(*sourceIdStr)->ToCString();
   return atoi(sourceIdText.get());
 }
 
@@ -3335,7 +3335,7 @@ Handle<Object> RecordReplayGetSourceContents(Isolate* isolate, Handle<Object> pa
   Handle<Script> script = GetScript(isolate, script_id);
 
   Script::PositionInfo info;
-  Script::GetPositionInfo(script, 0, &info, Script::WITH_OFFSET);
+  Script::GetPositionInfo(script, 0, &info, Script::OffsetFlag::kWithOffset);
 
   // Pad the start of the source with lines to adjust for its starting position.
   // Note that we don't pad the starting line with blank spaces so that columns
@@ -3357,15 +3357,15 @@ Handle<Object> RecordReplayGetSourceContents(Isolate* isolate, Handle<Object> pa
 static void DecodeLocationProperty(Isolate* isolate, Handle<Object> params,
                                    const char* property, int* line, int* column) {
   Handle<Object> location = GetProperty(isolate, params, property);
-  if (location->IsUndefined()) {
+  if (IsUndefined(*location)) {
     return;
   }
 
   Handle<Object> lineProperty = GetProperty(isolate, location, "line");
-  *line = lineProperty->Number();
+  *line = Object::Number(*lineProperty);
 
   Handle<Object> columnProperty = GetProperty(isolate, location, "column");
-  *column = columnProperty->Number();
+  *column = Object::Number(*columnProperty);
 }
 
 static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
@@ -3378,10 +3378,10 @@ static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
     std::vector<Handle<SharedFunctionInfo>> candidates;
     std::vector<IsCompiledScope> compiled_scopes;
     SharedFunctionInfo::ScriptIterator iterator(isolate, *script);
-    for (SharedFunctionInfo info = iterator.Next(); !info.is_null();
+    for (Tagged<SharedFunctionInfo> info = iterator.Next(); !info.is_null();
          info = iterator.Next()) {
-      if (!info.IsSubjectToDebugging()) continue;
-      if (!info.is_compiled() && !info.allows_lazy_compilation()) continue;
+      if (!info->IsSubjectToDebugging()) continue;
+      if (!info->is_compiled() && !info->allows_lazy_compilation()) continue;
       candidates.push_back(i::handle(info, isolate));
     }
 
@@ -3389,10 +3389,10 @@ static void ForEachInstrumentationOp(Isolate* isolate, Handle<Script> script,
     // with it the functions only its bytecode referenced. Recompiling it
     // recreates them, as Debug::FindSharedFunctionInfosIntersectingRange does.
     if (!tried_top_level_compile && script->shared_function_info_count() > 0) {
-      MaybeObject top_level = script->shared_function_infos().Get(0);
-      HeapObject heap_object;
-      if (!top_level->GetHeapObject(&heap_object) ||
-          heap_object.IsUndefined()) {
+      Tagged<MaybeObject> top_level = script->shared_function_infos()->get(0);
+      Tagged<HeapObject> heap_object;
+      if (!top_level.GetHeapObject(&heap_object) ||
+          IsUndefined(heap_object)) {
         tried_top_level_compile = true;
         if (CompileTopLevel(isolate, script)) continue;
         recordreplay::Warning("PossibleBreakpointsTopLevelCompileFailed",
@@ -3486,7 +3486,7 @@ static void GetInstrumentationSiteLocation(Handle<Script> script, int instrument
                                            int* pline, int* pcolumn) {
   int source_position = InstrumentationSiteSourcePosition(instrumentation_index);
   Script::PositionInfo info;
-  Script::GetPositionInfo(script, source_position, &info, Script::WITH_OFFSET);
+  Script::GetPositionInfo(script, source_position, &info, Script::OffsetFlag::kWithOffset);
 
   // Use 1-indexed lines instead of 0-indexed.
   *pline = info.line + 1;
@@ -3660,8 +3660,8 @@ Handle<Object> RecordReplayConvertLocationToFunctionOffset(Isolate* isolate,
                                                            Handle<Object> params) {
   Handle<Object> location = GetProperty(isolate, params, "location");
   int sourceId = GetSourceIdProperty(isolate, location);
-  int line = GetProperty(isolate, location, "line")->Number();
-  int column = GetProperty(isolate, location, "column")->Number();
+  int line = Object::Number(*GetProperty(isolate, location, "line"));
+  int column = Object::Number(*GetProperty(isolate, location, "column"));
 
   std::string key = BreakpointKey(sourceId, line, column);
   if (!gBreakpoints) {
@@ -3698,7 +3698,7 @@ static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isola
                                                                   Handle<Object> params) {
   Handle<Object> function_id_raw = GetProperty(isolate, params, "functionId");
 
-  std::unique_ptr<char[]> function_id_chars = String::cast(*function_id_raw).ToCString();
+  std::unique_ptr<char[]> function_id_chars = String::cast(*function_id_raw)->ToCString();
   std::string function_id(function_id_chars.get());
   int script_id;
   int function_source_position;
@@ -3712,8 +3712,8 @@ static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isola
   // The offset may or may not be present. If the offset is present, use it as the
   // instrumentation site to get the source position.
   int line = 0, column = 0;
-  if (offset_raw->IsNumber()) {
-    int bytecode_offset = offset_raw->Number();
+  if (IsNumber(*offset_raw)) {
+    int bytecode_offset = Object::Number(*offset_raw);
 
     std::string key = BreakpointPositionKey(function_id, bytecode_offset);
     if (!gBreakpointPositions) {
@@ -3740,7 +3740,7 @@ static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isola
   // see GetInstrumentationSiteLocation.
   if (!line) {
     Script::PositionInfo info;
-    Script::GetPositionInfo(script, function_source_position, &info, Script::WITH_OFFSET);
+    Script::GetPositionInfo(script, function_source_position, &info, Script::OffsetFlag::kWithOffset);
 
     // Use 1-indexed lines instead of 0-indexed.
     line = info.line + 1;
@@ -3757,7 +3757,7 @@ static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isola
   return rv;
 }
 
-bool RecordReplayIgnoreScript(Script script);
+bool RecordReplayIgnoreScript(Tagged<Script> script);
 
 static Handle<Object> RecordReplayCountStackFrames(Isolate* isolate,
                                                    Handle<Object> params) {
@@ -3923,22 +3923,22 @@ bool RecordReplayShouldEmitOpcodes(bool record_replay_ignore) {
          !record_replay_ignore;
 }
 
-bool RecordReplayHasRegisteredScript(Script script) {
+bool RecordReplayHasRegisteredScript(Tagged<Script> script) {
   return IsMainThread() && gRegisteredScripts &&
-         gRegisteredScripts->find(script.id()) != gRegisteredScripts->end();
+         gRegisteredScripts->find(script->id()) != gRegisteredScripts->end();
 }
 
 bool RecordReplayIsDivergentUserJSWithoutPause(
-    const SharedFunctionInfo& shared) {
-  return replayio::MustNotRunUserJS() && shared.script().IsScript() &&
-         RecordReplayHasRegisteredScript(Script::cast(shared.script()));
+    Tagged<SharedFunctionInfo> shared) {
+  return replayio::MustNotRunUserJS() && IsScript(shared->script()) &&
+         RecordReplayHasRegisteredScript(Script::cast(shared->script()));
 }
 
-static std::string RecordReplayScriptURL(Script script) {
-  if (script.name().IsUndefined()) {
+static std::string RecordReplayScriptURL(Tagged<Script> script) {
+  if (IsUndefined(script->name())) {
     return "";
   }
-  std::unique_ptr<char[]> name = String::cast(script.name()).ToCString();
+  std::unique_ptr<char[]> name = String::cast(script->name())->ToCString();
   std::string name_str(name.get());
   if (name_str.find("file://") == 0) {
     return name_str;
@@ -3960,7 +3960,7 @@ static void RecordReplayAnnounceScript(Isolate* isolate, Handle<Script> script) 
   }
 
   Handle<String> idStr = GetProtocolSourceId(isolate, script);
-  std::unique_ptr<char[]> id = String::cast(*idStr).ToCString();
+  std::unique_ptr<char[]> id = String::cast(*idStr)->ToCString();
 
   RecordReplayOnNewSource(isolate, id.get(), "scriptSource", url.length() ? url.c_str() : nullptr);
 }
@@ -4016,9 +4016,9 @@ static void RecordReplayRegisterScript(Handle<Script> script) {
     std::vector<Handle<Script>> scriptHandles;
     {
       Script::Iterator iterator(isolate);
-      for (Script script = iterator.Next(); !script.is_null();
+      for (Tagged<Script> script = iterator.Next(); !script.is_null();
            script = iterator.Next()) {
-        if (script.HasValidSource()) {
+        if (script->HasValidSource()) {
           Handle<Script> handle(script, isolate);
           scriptHandles.push_back(handle);
         }
@@ -4124,7 +4124,7 @@ char* CommandCallback(const char* command, const char* params) {
 
   Handle<Object> rvStr =
     JsonStringify(isolate, rv.ToHandleChecked(), undefined, undefined).ToHandleChecked();
-  std::unique_ptr<char[]> rvCStr = String::cast(*rvStr).ToCString();
+  std::unique_ptr<char[]> rvCStr = String::cast(*rvStr)->ToCString();
   return strdup(rvCStr.get());
 }
 
@@ -4155,20 +4155,20 @@ void ClearPauseDataCallback() {
 typedef std::unordered_map<int, bool> ScriptIdIgnoreMap;
 static ScriptIdIgnoreMap* gShouldIgnoreScripts;
 
-static bool RecordReplayIgnoreScriptRaw(Script script) {
-  if (script.type() == Script::TYPE_WASM) {
+static bool RecordReplayIgnoreScriptRaw(Tagged<Script> script) {
+  if (script->type() == Script::Type::kWasm) {
     return true;
   }
 
-  if (script.name().IsUndefined()) {
+  if (IsUndefined(script->name())) {
     return false;
   }
 
-  std::unique_ptr<char[]> name = String::cast(script.name()).ToCString();
+  std::unique_ptr<char[]> name = String::cast(script->name())->ToCString();
   return RecordReplayIgnoreScriptByURL(name.get());
 }
 
-bool RecordReplayIgnoreScript(Script script) {
+bool RecordReplayIgnoreScript(Tagged<Script> script) {
   if (!IsMainThread()) {
     return true;
   }
@@ -4176,13 +4176,13 @@ bool RecordReplayIgnoreScript(Script script) {
   if (!gShouldIgnoreScripts) {
     gShouldIgnoreScripts = new ScriptIdIgnoreMap();
   }
-  auto iter = gShouldIgnoreScripts->find(script.id());
+  auto iter = gShouldIgnoreScripts->find(script->id());
   if (iter != gShouldIgnoreScripts->end()) {
     return iter->second;
   }
 
   bool rv = RecordReplayIgnoreScriptRaw(script);
-  (*gShouldIgnoreScripts)[script.id()] = rv;
+  (*gShouldIgnoreScripts)[script->id()] = rv;
   return rv;
 }
 
@@ -4273,39 +4273,39 @@ inline int HashBytes(const void* aPtr, size_t aSize) {
 // Get a string describing a value which can be used in assertions.
 // Only basic information about the value is obtained, to keep things fast.
 std::string RecordReplayBasicValueContents(Handle<Object> value) {
-  if (value->IsNumber()) {
-    double num = value->Number();
+  if (IsNumber(*value)) {
+    double num = Object::Number(*value);
     if (std::isnan(num)) {
       return "NaN";
     }
     return StringPrintf("Number %d %llu", (int)num, *(uint64_t*)&num);
   }
 
-  if (value->IsBoolean()) {
-    return StringPrintf("Boolean %d", value->IsTrue());
+  if (IsBoolean(*value)) {
+    return StringPrintf("Boolean %d", IsTrue(*value));
   }
 
-  if (value->IsUndefined()) {
+  if (IsUndefined(*value)) {
     return "Undefined";
   }
 
-  if (value->IsNull()) {
+  if (IsNull(*value)) {
     return "Null";
   }
 
-  if (value->IsString()) {
-    String str = String::cast(*value);
-    if (str.length() <= 200) {
-      std::unique_ptr<char[]> name = str.ToCString();
+  if (IsString(*value)) {
+    Tagged<String> str = String::cast(*value);
+    if (str->length() <= 200) {
+      std::unique_ptr<char[]> name = str->ToCString();
       return StringPrintf("String %s", name.get());
     }
-    return StringPrintf("LongString %d", str.length());
+    return StringPrintf("LongString %d", str->length());
   }
 
-  if (value->IsJSObject()) {
+  if (IsJSObject(*value)) {
     int object_id = RecordReplayObjectId(value);
 
-    InstanceType type = JSObject::cast(*value).map().instance_type();
+    InstanceType type = JSObject::cast(*value)->map()->instance_type();
     const char* typeStr;
     switch (type) {
 #define STRINGIFY_TYPE(TYPE) case TYPE: typeStr = #TYPE; break;
@@ -4315,8 +4315,8 @@ std::string RecordReplayBasicValueContents(Handle<Object> value) {
       typeStr = "<unknown>";
     }
     if (!strcmp(typeStr, "JS_DATE_TYPE")) {
-      JSDate date = JSDate::cast(*value);
-      double time = date.value().Number();
+      Tagged<JSDate> date = JSDate::cast(*value);
+      double time = Object::Number(date->value());
       return StringPrintf("Date %d %.2f", object_id, time);
     }
     if (!strcmp(typeStr, "JS_TYPED_ARRAY_TYPE")) {
@@ -4330,7 +4330,7 @@ std::string RecordReplayBasicValueContents(Handle<Object> value) {
     return StringPrintf("Object %d %s", object_id, typeStr);
   }
 
-  if (value->IsJSProxy()) {
+  if (IsJSProxy(*value)) {
     return "Proxy";
   }
 
@@ -4412,7 +4412,7 @@ void FunctionCallbackRecordReplayIgnoreScript(const FunctionCallbackInfo<Value>&
   Isolate* isolate = callArgs.GetIsolate();
 
   i::Handle<i::Object> base = Utils::OpenHandle(*callArgs[0]);
-  std::unique_ptr<char[]> name = i::String::cast(*base).ToCString();
+  std::unique_ptr<char[]> name = i::String::cast(*base)->ToCString();
   int script_id = atoi(name.get());
 
   bool ignore = i::RecordReplayIgnoreScriptById((i::Isolate*)isolate, script_id);
@@ -4430,8 +4430,8 @@ void FunctionCallbackRecordReplayAssert(const FunctionCallbackInfo<Value>& callA
 
   // This is used when a script explicitly asserts the contents of a value, so we can do
   // more thorough checking.
-  if (value->IsString()) {
-    std::unique_ptr<char[]> contents = i::String::cast(*value).ToCString();
+  if (IsString(*value)) {
+    std::unique_ptr<char[]> contents = i::String::cast(*value)->ToCString();
     size_t len = strlen(contents.get());
     if (len < 2000) {
       recordreplay::Assert("AssertValue StringContents %s", contents.get());
@@ -4471,8 +4471,8 @@ void FunctionCallbackRecordReplayGetCurrentError(const FunctionCallbackInfo<Valu
   i::Handle<i::Script> script(msg->script(), isolate);
 
   std::string url;
-  if (!script->name().IsUndefined()) {
-    std::unique_ptr<char[]> name = i::String::cast(script->name()).ToCString();
+  if (!IsUndefined(script->name())) {
+    std::unique_ptr<char[]> name = i::String::cast(script->name())->ToCString();
     url = std::string("file://") + name.get();
   }
 
