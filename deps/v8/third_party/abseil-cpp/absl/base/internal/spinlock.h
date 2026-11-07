@@ -124,6 +124,9 @@ class ABSL_LOCKABLE ABSL_ATTRIBUTE_WARN_UNUSED SpinLock {
     return (lockword_.load(std::memory_order_relaxed) & kSpinLockHeld) != 0;
   }
 
+  // Runs SpinLoop()'s one-time initialization of the adaptive spin count.
+  static void RecordReplayInitializeSlowPath();
+
   // Return immediately if this thread holds the SpinLock exclusively.
   // Otherwise, report an error by crashing with a diagnostic.
   inline void AssertHeld() const ABSL_ASSERT_EXCLUSIVE_LOCK() {

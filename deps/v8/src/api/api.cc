@@ -34,6 +34,7 @@
 #include "src/api/api-arguments.h"
 #include "src/api/api-inl.h"
 #include "src/api/api-natives.h"
+#include "absl/synchronization/mutex.h"
 #include "src/base/hashing.h"
 #include "src/base/logging.h"
 #include "src/base/platform/memory.h"
@@ -12943,37 +12944,14 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
                            internal::RecordReplayCallbackAssertDescribeData);
   }
 
-  // src/base cannot call these directly; see mutex.h.
-  base::gRecordReplayCreateOrderedLock = [](const char* name) {
-    return recordreplay::CreateOrderedLock(name);
-  };
-  // What the driver's pthread_mutex_lock interception does for a mutex it was
-  // given (Op_pthread_mutex_lock): while recording, take the ordered lock
-  // after the acquisition, which writes where this one falls in the order;
-  // while replaying, take it around the acquisition, which reproduces that
-  // order. It is never held across the critical section.
-  //
-  // Where events are disallowed it is skipped, because there is nothing the
-  // recorder can order there -- OrderedLock() itself returns in that case, and
-  // warns, which a recording treats as a crash. node 24 reaches an ordered
-  // mutex that way: computing a stack frame's type consults the wasm code
-  // lookup cache, and Replay's own CDP handling captures stacks with events
-  // disallowed.
-  base::gRecordReplayOrderedMutexLock = [](int lock, void (*acquire)(void*),
-                                           void* data) {
-    if (recordreplay::AreEventsDisallowed() ||
-        recordreplay::AreEventsPassedThrough()) {
-      acquire(data);
-      return;
-    }
-    if (recordreplay::IsRecording()) {
-      acquire(data);
-      recordreplay::AutoOrderedLock ordered(lock);
-    } else {
-      recordreplay::AutoOrderedLock ordered(lock);
-      acquire(data);
-    }
-  };
+  // absl::Mutex contention isn't recorded, so which thread first takes the slow
+  // path, and when, differs between recording and replaying. That thread runs
+  // the slow path's one-time initializations, and some of them make recorded
+  // calls: in node 24 a concurrent marking worker ran NominalCPUFrequency's
+  // call_once inside AutoDisallowEvents, where the open64 it needs cannot be
+  // recorded. Run them here, on the main thread, as the Chromium fork does in
+  // ChromeMain (replayio/chromium#1555).
+  absl::RecordReplayInitializeMutexSlowPath();
 
   RecordReplayApplyFlagOverrides();
 
