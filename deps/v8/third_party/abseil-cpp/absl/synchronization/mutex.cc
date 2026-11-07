@@ -172,6 +172,31 @@ const MutexGlobals& GetMutexGlobals() {
 }
 }  // namespace
 
+void RecordReplayInitializeMutexSlowPath() {
+  // Spin and sleep limits (NumCPUs).
+  GetMutexGlobals();
+  // NominalCPUFrequency, which reads /sys/devices/system/cpu/cpu0/tsc_freq_khz
+  // (or measures the TSC) for the waiter priority refresh in Enqueue.
+  base_internal::CycleClock::Frequency();
+  // The adaptive spin count of the SpinLocks guarding the thread identity
+  // freelist and LowLevelAlloc's arenas.
+  base_internal::SpinLock::RecordReplayInitializeSlowPath();
+  // The thread identity key and LowLevelAlloc's global arenas, which the
+  // first thread to take the slow path or wait creates.
+  GetOrCreateCurrentThreadIdentity();
+
+  // node compiles abseil without NDEBUG, so deadlock detection is on in a
+  // release build and every contended Mutex walks the stack to update the
+  // waiter graph. That walk allocates its fixup buffer from LowLevelAlloc's
+  // async-signal-safe arena, which maps pages with a raw syscall(SYS_mmap)
+  // rather than through libc, and the replay linker binds no such syscall: the
+  // first contended lock in a replay dies with "unknown syscall". The detector
+  // is a debugging aid nothing here asks for, and its stack walk would be
+  // recorded work on every contended lock, so turn it off for the whole
+  // recording instead of teaching the linker to map memory for it.
+  SetMutexDeadlockDetectionMode(OnDeadlockCycle::kIgnore);
+}
+
 namespace synchronization_internal {
 // Returns the Mutex delay on iteration `c` depending on the given `mode`.
 // The returned value should be used as `c` for the next call to `MutexDelay`.
