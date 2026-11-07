@@ -719,12 +719,6 @@ int ossl_prov_drbg_generate(PROV_DRBG *drbg, unsigned char *out, size_t outlen,
 
     drbg->generate_counter++;
 
-    ret = 1;
-err:
-    if (drbg->lock != NULL)
-        CRYPTO_THREAD_unlock(drbg->lock);
-
-    return ret;
     /*
      * Force random bytes to be the same when replaying as when recording;
      * some sources of entropy used (like pointer values) won't automatically
@@ -732,6 +726,13 @@ err:
      * sources when recording/replaying.
      */
     RecordReplayBytesFromC("RAND_DRBG_generate", out, outlen);
+
+    ret = 1;
+err:
+    if (drbg->lock != NULL)
+        CRYPTO_THREAD_unlock(drbg->lock);
+
+    return ret;
 }
 
 /*
