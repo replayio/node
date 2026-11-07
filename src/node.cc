@@ -1038,14 +1038,15 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
       InitializeNodeWithArgsInternal(argv, exec_argv, errors, flags));
 }
 
-static std::unique_ptr<InitializationResultImpl>
-InitializeOncePerProcessInternal(const std::vector<std::string>& args,
-                                 ProcessInitializationFlags::Flags flags =
-                                     ProcessInitializationFlags::kNoFlags) {
 // See node_recordreplay.cc and the generated node_record_replay_driver.cc.
 extern char gBuildId[];
 void InitializeRecordReplay(int* pargc, char*** pargv);
 void ApplyRecordReplayMaxOldSpace();
+
+static std::unique_ptr<InitializationResultImpl>
+InitializeOncePerProcessInternal(const std::vector<std::string>& args,
+                                 ProcessInitializationFlags::Flags flags =
+                                     ProcessInitializationFlags::kNoFlags) {
   auto result = std::make_unique<InitializationResultImpl>();
   result->args_ = args;
 
