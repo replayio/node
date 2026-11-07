@@ -12580,10 +12580,6 @@ extern "C" void V8RecordReplayAddOrderedPthreadMutex(const char* name,
   }
 }
 
-void RecordReplayAddOrderedMutex(const char* name, base::Mutex* mutex) {
-  V8RecordReplayAddOrderedPthreadMutex(name, &mutex->native_handle());
-}
-
 bool recordreplay::IsReplaying() {
   if (IsRecordingOrReplaying()) {
     return gRecordReplayIsReplaying();
@@ -12946,6 +12942,38 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
                            internal::RecordReplayCallbackAssertOnDataMismatch,
                            internal::RecordReplayCallbackAssertDescribeData);
   }
+
+  // src/base cannot call these directly; see mutex.h.
+  base::gRecordReplayCreateOrderedLock = [](const char* name) {
+    return recordreplay::CreateOrderedLock(name);
+  };
+  // What the driver's pthread_mutex_lock interception does for a mutex it was
+  // given (Op_pthread_mutex_lock): while recording, take the ordered lock
+  // after the acquisition, which writes where this one falls in the order;
+  // while replaying, take it around the acquisition, which reproduces that
+  // order. It is never held across the critical section.
+  //
+  // Where events are disallowed it is skipped, because there is nothing the
+  // recorder can order there -- OrderedLock() itself returns in that case, and
+  // warns, which a recording treats as a crash. node 24 reaches an ordered
+  // mutex that way: computing a stack frame's type consults the wasm code
+  // lookup cache, and Replay's own CDP handling captures stacks with events
+  // disallowed.
+  base::gRecordReplayOrderedMutexLock = [](int lock, void (*acquire)(void*),
+                                           void* data) {
+    if (recordreplay::AreEventsDisallowed() ||
+        recordreplay::AreEventsPassedThrough()) {
+      acquire(data);
+      return;
+    }
+    if (recordreplay::IsRecording()) {
+      acquire(data);
+      recordreplay::AutoOrderedLock ordered(lock);
+    } else {
+      recordreplay::AutoOrderedLock ordered(lock);
+      acquire(data);
+    }
+  };
 
   RecordReplayApplyFlagOverrides();
 

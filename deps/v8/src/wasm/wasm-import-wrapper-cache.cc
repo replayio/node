@@ -17,9 +17,12 @@
 #include "src/wasm/wasm-code-pointer-table-inl.h"
 #include "src/wasm/wasm-engine.h"
 
-namespace v8::internal::wasm {
-
+namespace v8 {
+// Defined in api.cc, which is where the record/replay API lives.
 extern void RecordReplayAddOrderedMutex(const char* name, base::Mutex* mutex);
+}  // namespace v8
+
+namespace v8::internal::wasm {
 
 WasmCode* WasmImportWrapperCache::ModificationScope::operator[](
     const CacheKey& key) {
