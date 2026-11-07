@@ -60,17 +60,17 @@ Mutex::Mutex() {
 Mutex::~Mutex() { DCHECK_EQ(0, level_); }
 
 void Mutex::Lock() ABSL_NO_THREAD_SAFETY_ANALYSIS {
-  native_handle_.lock();
+  native_handle_.Lock();
   AssertUnheldAndMark();
 }
 
 void Mutex::Unlock() ABSL_NO_THREAD_SAFETY_ANALYSIS {
   AssertHeldAndUnmark();
-  native_handle_.unlock();
+  native_handle_.Unlock();
 }
 
 bool Mutex::TryLock() ABSL_NO_THREAD_SAFETY_ANALYSIS {
-  if (!native_handle_.try_lock()) return false;
+  if (!native_handle_.TryLock()) return false;
   AssertUnheldAndMark();
   return true;
 }
