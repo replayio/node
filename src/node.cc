@@ -1113,15 +1113,16 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
       InitializeNodeWithArgsInternal(argv, exec_argv, errors, flags));
 }
 
+// See node_recordreplay.cc and the generated node_record_replay_driver.cc.
+extern char gBuildId[];
+void InitializeRecordReplay(int* pargc, char*** pargv);
+void ApplyRecordReplayMaxOldSpace();
+
 static std::shared_ptr<InitializationResultImpl>
 InitializeOncePerProcessInternal(const std::vector<std::string>& args,
                                  ProcessInitializationFlags::Flags flags =
                                      ProcessInitializationFlags::kNoFlags) {
   auto result = std::make_shared<InitializationResultImpl>();
-// See node_recordreplay.cc and the generated node_record_replay_driver.cc.
-extern char gBuildId[];
-void InitializeRecordReplay(int* pargc, char*** pargv);
-void ApplyRecordReplayMaxOldSpace();
   result->args_ = args;
 
   // The driver records the command line and may drop its own arguments from

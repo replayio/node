@@ -1006,9 +1006,9 @@ ThreadId AllocateEnvironmentThreadId() {
   exit(static_cast<int>(exit_code));
 }
 
-void DefaultProcessExitHandlerInternal(Environment* env, ExitCode exit_code) {
 extern void RecordReplayFinishRecording();
 
+void DefaultProcessExitHandlerInternal(Environment* env, ExitCode exit_code) {
   RecordReplayFinishRecording();
   env->set_stopping(true);
   env->set_can_call_into_js(false);
