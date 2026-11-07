@@ -18,6 +18,11 @@
 #include "src/wasm/wasm-engine.h"
 #include "src/wasm/wasm-wrapper-cache-inl.h"
 
+namespace v8 {
+// Defined in api.cc, which is where the record/replay API lives.
+extern void RecordReplayAddOrderedMutex(const char* name, base::Mutex* mutex);
+}  // namespace v8
+
 namespace v8::internal::wasm {
 
 WasmWrapperHandle::WasmWrapperHandle(WasmCode* code, Address addr,
@@ -45,7 +50,6 @@ WasmWrapperHandle::~WasmWrapperHandle() {
 }
 
 std::optional<Builtin> WasmImportWrapperCache::BuiltinForWrapper(
-extern void RecordReplayAddOrderedMutex(const char* name, base::Mutex* mutex);
     const CacheKey& key) {
   if (key.kind != ImportCallKind::kJSFunction) return {};
 
@@ -189,9 +193,9 @@ WasmImportWrapperCache::CompileWasmJsFastCallWrapper(
 
 template class EXPORT_TEMPLATE_DEFINE(V8_EXPORT_PRIVATE)
     WasmWrapperCache<ImportWrapperCacheKey>;
-}
 
 WasmImportWrapperCache::WasmImportWrapperCache() {
   RecordReplayAddOrderedMutex("WasmImportWrapperCache::mutex_", &mutex_);
+}
 
 }  // namespace v8::internal::wasm

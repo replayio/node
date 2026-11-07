@@ -63,10 +63,11 @@ class WasmImportWrapperCache : public WasmWrapperCache<ImportWrapperCacheKey> {
   bool IsCompiledWrapper(WasmCodePointer code_pointer);
 #endif
 
+  WasmImportWrapperCache();
+
  protected:
   std::pair<WasmCompilationResult, WasmCode::Kind> CompileWrapper(
       Isolate* isolate, const CacheKey& cache_key) override;
-  WasmImportWrapperCache();
 
  private:
   std::optional<Builtin> BuiltinForWrapper(const CacheKey&);
