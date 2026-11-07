@@ -18,11 +18,6 @@
 #include "src/wasm/wasm-engine.h"
 #include "src/wasm/wasm-wrapper-cache-inl.h"
 
-namespace v8 {
-// Defined in api.cc, which is where the record/replay API lives.
-extern void RecordReplayAddOrderedMutex(const char* name, base::Mutex* mutex);
-}  // namespace v8
-
 namespace v8::internal::wasm {
 
 WasmWrapperHandle::WasmWrapperHandle(WasmCode* code, Address addr,
@@ -195,7 +190,20 @@ template class EXPORT_TEMPLATE_DEFINE(V8_EXPORT_PRIVATE)
     WasmWrapperCache<ImportWrapperCacheKey>;
 
 WasmImportWrapperCache::WasmImportWrapperCache() {
-  RecordReplayAddOrderedMutex("WasmImportWrapperCache::mutex_", &mutex_);
+  // Order the acquisitions that compile or publish a wrapper, rather than the
+  // mutex itself. V8 13.6 made this cache process wide and put it on the stack
+  // walk: WasmCodeManager::LookupCode(pc) falls through to Lookup() for every
+  // pc that is in no NativeModule, so an ordered mutex was taken by every
+  // stack walk in every program, wasm or not -- including the walks Replay's
+  // own CDP handling does with events disallowed, where there is no order to
+  // record. Recording and replaying then disagreed about whether the lock was
+  // taken at all, and 132 of the 151 node-recording cases died on it.
+  //
+  // Lookup() needs no order: it only reads codes_ for a pc, and the entries it
+  // finds were published under the order below. node 22's V8 returned nullptr
+  // here instead, which is why this is new.
+  record_replay_ordered_lock_ =
+      static_cast<int>(recordreplay::CreateOrderedLock("WasmImportWrapperCache"));
 }
 
 }  // namespace v8::internal::wasm
