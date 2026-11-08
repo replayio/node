@@ -12363,6 +12363,12 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   }
 
   RecordReplayApplyFlagOverrides();
+
+#if V8_ENABLE_WEBASSEMBLY
+  // After the flag overrides: the cache's mode depends on
+  // wasm_async_compilation, which they are what turns off.
+  internal::wasm::NativeModuleCache::RecordReplayInitialize();
+#endif  // V8_ENABLE_WEBASSEMBLY
 }
 
 bool IsMainThread() {
