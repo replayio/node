@@ -105,6 +105,9 @@ class V8_EXPORT_PRIVATE ScopeIterator {
   bool InInnerScope() const { return !function_.is_null(); }
   bool HasContext() const;
   bool NeedsContext() const;
+  // Whether the function we are paused in needs a context only because the
+  // replay forced one, and has not pushed it yet. See the definition.
+  bool RecordReplayClosureContextNotPushed() const;
   Handle<Context> CurrentContext() const {
     DCHECK(HasContext());
     return context_;
