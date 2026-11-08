@@ -980,6 +980,18 @@ static uv_thread_t system_cert_loading_thread;
 
 void StartLoadingCertificatesOffThread(
     const FunctionCallbackInfo<Value>& args) {
+  // Every isolate loading node:tls calls this, whichever gets here first
+  // creates the thread and the others return early, and nothing orders that
+  // race: another isolate wins it when replaying and creates the thread where
+  // the recording had it do something else. The loading is only a warm-up for
+  // the first TLS connection, which the Get*CACertificates() function-local
+  // statics do on demand anyway, so a recording does without the thread.
+  if (v8::recordreplay::IsRecordingOrReplaying(
+          "skip-certificate-loading-thread",
+          "StartLoadingCertificatesOffThread")) {
+    return;
+  }
+
   // Load the CA certificates eagerly off the main thread to avoid
   // blocking the main thread when the first TLS connection is made. We
   // don't need to wait for the thread to finish with code here, as
