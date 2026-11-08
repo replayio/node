@@ -107,6 +107,9 @@ class V8_EXPORT_PRIVATE ScopeIterator {
   bool HasContext() const;
   bool NeedsContext() const;
   bool NeedsAndHasContext() const { return NeedsContext() && HasContext(); }
+  // Whether the function we are paused in needs a context only because the
+  // replay forced one, and has not pushed it yet. See the definition.
+  bool RecordReplayClosureContextNotPushed() const;
   Handle<Context> CurrentContext() const {
     DCHECK(HasContext());
     return context_;
