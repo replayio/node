@@ -9,6 +9,7 @@
 #ifndef V8_WASM_WASM_IMPORT_WRAPPER_CACHE_H_
 #define V8_WASM_WASM_IMPORT_WRAPPER_CACHE_H_
 
+#include "include/v8.h"  // For replay.
 #include "src/base/platform/mutex.h"
 #include "src/wasm/module-instantiate.h"
 
@@ -59,12 +60,17 @@ class WasmImportWrapperCache {
   class V8_NODISCARD ModificationScope {
    public:
     explicit ModificationScope(WasmImportWrapperCache* cache)
-        : cache_(cache), guard_(&cache->mutex_) {}
+        : cache_(cache),
+          ordered_(record_replay_ordered_lock_),
+          guard_(&cache->mutex_) {}
 
     V8_EXPORT_PRIVATE WasmCode*& operator[](const CacheKey& key);
 
    private:
     WasmImportWrapperCache* const cache_;
+    // Declared before guard_ so the recorded order is taken first; see
+    // RecordReplayInitialize.
+    v8::recordreplay::AutoOrderedLock ordered_;
     base::MutexGuard guard_;
   };
 
@@ -88,7 +94,17 @@ class WasmImportWrapperCache {
   size_t EstimateCurrentMemoryConsumption() const;
   WasmImportWrapperCache();
 
+  // Creates the ordered lock below, on the main thread while the driver is
+  // attaching.
+  static void RecordReplayInitialize();
+
  private:
+  // Orders the acquisitions that compile or publish a wrapper. One lock for
+  // every cache: these caches belong to NativeModules, and ordering each
+  // cache's own mutex recorded a lock creation on whichever thread built the
+  // module, which is a race between isolates.
+  static int record_replay_ordered_lock_;
+
   mutable base::Mutex mutex_;
   std::unordered_map<CacheKey, WasmCode*, CacheKeyHash> entry_map_;
 };

@@ -10,9 +10,6 @@
 #include "src/wasm/wasm-code-manager.h"
 
 namespace v8 {
-
-extern void RecordReplayAddOrderedMutex(const char* name, base::Mutex* mutex);
-
 namespace internal {
 namespace wasm {
 
@@ -24,6 +21,10 @@ WasmCode*& WasmImportWrapperCache::ModificationScope::operator[](
 void WasmImportWrapperCache::clear() {
   std::vector<WasmCode*> ptrs;
   {
+    // No recorded order here: the cache is cleared from its destructor, which
+    // runs when the GC frees the NativeModule, and the replay frees at other
+    // points. Nothing else can reach a dead module's cache, so mutex_ alone
+    // is enough.
     base::MutexGuard lock(&mutex_);
     if (entry_map_.empty()) return;
     ptrs.reserve(entry_map_.size());
@@ -45,6 +46,7 @@ WasmCode* WasmImportWrapperCache::Get(ImportCallKind kind,
                                       uint32_t canonical_type_index,
                                       int expected_arity,
                                       Suspend suspend) const {
+  recordreplay::AutoOrderedLock ordered(record_replay_ordered_lock_);
   base::MutexGuard lock(&mutex_);
 
   auto it =
@@ -53,14 +55,20 @@ WasmCode* WasmImportWrapperCache::Get(ImportCallKind kind,
   return it->second;
 }
 
-WasmImportWrapperCache::WasmImportWrapperCache() {
-  RecordReplayAddOrderedMutex("WasmImportWrapperCache::mutex_", &mutex_);
+int WasmImportWrapperCache::record_replay_ordered_lock_ = 0;
+
+void WasmImportWrapperCache::RecordReplayInitialize() {
+  record_replay_ordered_lock_ =
+      (int)recordreplay::CreateOrderedLock("WasmImportWrapperCache");
 }
+
+WasmImportWrapperCache::WasmImportWrapperCache() = default;
 
 WasmCode* WasmImportWrapperCache::MaybeGet(ImportCallKind kind,
                                            uint32_t canonical_type_index,
                                            int expected_arity,
                                            Suspend suspend) const {
+  recordreplay::AutoOrderedLock ordered(record_replay_ordered_lock_);
   base::MutexGuard lock(&mutex_);
 
   auto it =
