@@ -2599,6 +2599,9 @@ void CondVar::EnableDebugLog(const char* name) {
 
 // Remove thread s from the list of waiters on this condition variable.
 void CondVar::Remove(PerThreadSynch* s) {
+  // Spins and sleeps like {CondVarEnqueue}; see {CondVar::Signal}.
+  RecordReplayAutoDisallowEvents disallow("absl::CondVar::Remove");
+
   SchedulingGuard::ScopedDisable disable_rescheduling;
   intptr_t v;
   int c = 0;
@@ -2646,6 +2649,11 @@ void CondVar::Remove(PerThreadSynch* s) {
 // importantly) after any call to an external routine that might re-enter the
 // mutex code.
 static void CondVarEnqueue(SynchWaitParams* waitp) {
+  // Queueing on a condition variable spins against the threads signalling it
+  // and the other threads queueing, and sleeps between attempts; see
+  // {CondVar::Signal} for why that sleep must not be recorded.
+  RecordReplayAutoDisallowEvents disallow("absl::CondVarEnqueue");
+
   // This thread might be transferred to the Mutex queue by Fer() when
   // we are woken.  To make sure that is what happens, Enqueue() doesn't
   // call CondVarEnqueue() again but instead uses its normal code.  We
@@ -2748,6 +2756,14 @@ bool CondVar::WaitCommon(Mutex* mutex, KernelTimeout t) {
 }
 
 void CondVar::Signal() {
+  // Signalling spins for the condition variable's lock and sleeps between
+  // attempts, so whether it sleeps at all, and how often, is contention. The
+  // sleep is a recorded call, and V8 13.6 made every {base::ConditionVariable}
+  // an absl one, so a replay saw nanosleep where the recording had moved on:
+  // a worker thread's own event stream then diverged. Note that currently
+  // absl mutexes don't support ordering.
+  RecordReplayAutoDisallowEvents disallow("absl::CondVar::Signal");
+
   SchedulingGuard::ScopedDisable disable_rescheduling;
   ABSL_TSAN_MUTEX_PRE_SIGNAL(nullptr, 0);
   intptr_t v;
@@ -2787,6 +2803,9 @@ void CondVar::Signal() {
 }
 
 void CondVar::SignalAll() {
+  // Spins and sleeps like {CondVar::Signal}.
+  RecordReplayAutoDisallowEvents disallow("absl::CondVar::SignalAll");
+
   ABSL_TSAN_MUTEX_PRE_SIGNAL(nullptr, 0);
   intptr_t v;
   int c = 0;
