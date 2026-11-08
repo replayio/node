@@ -430,7 +430,38 @@ bool ScopeIterator::DeclaresLocals(Mode mode) const {
   return declares_local;
 }
 
+// While replaying, force-variable-context-allocation (RUN-2604) gives a
+// context to functions which wouldn't have one otherwise, so a pause can read
+// variables an optimized frame would have dropped. Only the replay forces, to
+// leave a recording as the program runs without a debugger attached, so the
+// replay has to counter the difference wherever the program can observe it: a
+// session the program attached reports the scope chain of every pause it gets,
+// and that reply is a recorded socket write.
+//
+// The parse this iterator does to describe a frame forces as well, while the
+// code in the frame may not have been compiled with forcing: the startup
+// snapshot is built before any replay. The scope then needs a context the
+// function never pushed, which is what the CHECK in NeedsContext() rules out
+// upstream. Its variables are still in the frame, and the context the walk
+// would consume for the scope belongs to the closure scope, which would go
+// missing from the chain.
+bool ScopeIterator::RecordReplayClosureContextNotPushed() const {
+  if (!recordreplay::IsReplaying() ||
+      !recordreplay::FeatureEnabled("force-variable-context-allocation")) {
+    return false;
+  }
+  // An iterator over a function's closure scopes (its [[Scopes]]) parses
+  // nothing, so it has neither scope.
+  return current_scope_ != nullptr && current_scope_ == closure_scope_ &&
+         current_scope_->is_function_scope() && !function_.is_null() &&
+         current_scope_->NeedsContext() && function_->context() == *context_;
+}
+
 bool ScopeIterator::HasContext() const {
+  // The replay-forced case below is the one function scope which may not have
+  // pushed its context, which is why the check after it skips function scopes.
+  if (RecordReplayClosureContextNotPushed()) return false;
+
   // In rare cases we pause in a scope that doesn't have its context pushed yet.
   // E.g. when pausing in for-of loop headers (see https://crbug.com/399002824).
   //
@@ -458,7 +489,9 @@ bool ScopeIterator::NeedsContext() const {
   // context should the function need one. In that case the function has already
   // pushed the context and we are good.
   CHECK_IMPLIES(needs_context && current_scope_ == closure_scope_ &&
-                    current_scope_->is_function_scope() && !function_.is_null(),
+                    current_scope_->is_function_scope() &&
+                    !function_.is_null() &&
+                    !RecordReplayClosureContextNotPushed(),
                 function_->context() != *context_);
 
   return needs_context;
@@ -715,7 +748,7 @@ bool ScopeIterator::SetVariableValue(Handle<String> name,
         DCHECK_EQ(ScopeTypeLocal, Type());
         if (SetLocalVariableValue(name, value)) return true;
         // There may not be an associated context since we're InInnerScope().
-        if (!NeedsContext()) return false;
+        if (!NeedsAndHasContext()) return false;
       } else {
         DCHECK_EQ(ScopeTypeClosure, Type());
         if (SetContextVariableValue(name, value)) return true;
