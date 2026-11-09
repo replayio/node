@@ -17,6 +17,7 @@
 #include "src/objects/heap-number.h"
 #include "src/objects/js-promise.h"
 #include "src/objects/managed-inl.h"
+#include "src/objects/managed.h"
 #include "src/objects/objects-inl.h"
 #include "src/strings/string-hasher-inl.h"
 #include "src/utils/ostreams.h"
@@ -181,9 +182,68 @@ class WeakScriptHandle {
 
 }  // namespace
 
+int NativeModuleCache::record_replay_ordered_lock_ = 0;
+
+// static
+void NativeModuleCache::RecordReplayInitialize() {
+  // Called from the driver attach, with the flag overrides already applied and
+  // before any isolate exists, so the ordered lock is created at the same point
+  // when recording and when replaying. The mode relies on wasm compiling
+  // synchronously, so that no compile job holds a module the cache doesn't know
+  // about and the streaming entry points are never used, and on {Managed}
+  // destructors only running with events allowed, so that nothing frees a
+  // cached module at a GC's point.
+  if (FLAG_wasm_async_compilation) return;
+  if (!recordreplay::IsRecordingOrReplaying("wasm-native-module-sharing",
+                                            "NativeModuleCache")) {
+    return;
+  }
+  if (!ManagedFinalizersDeferredWhenEventsDisallowed()) return;
+  record_replay_ordered_lock_ =
+      static_cast<int>(recordreplay::CreateOrderedLock("NativeModuleCache"));
+  CHECK_NE(record_replay_ordered_lock_, 0);
+}
+
+void NativeModuleCache::RecordReplayTearDown() {
+  // Called with the engine, on the main thread, with no isolates left, so
+  // there is nothing to order against. The modules are released after the map,
+  // and outside the lock: freeing one reaches {Erase} through
+  // {WasmEngine::FreeNativeModule}, which takes this same non-recursive mutex.
+  std::vector<std::shared_ptr<NativeModule>> released;
+  {
+    base::MutexGuard lock(&mutex_);
+    if (!record_replay_mode()) return;
+    map_.clear();
+    released.swap(record_replay_kept_alive_);
+  }
+}
+
 std::shared_ptr<NativeModule> NativeModuleCache::MaybeGetNativeModule(
     ModuleOrigin origin, base::Vector<const uint8_t> wire_bytes) {
   if (origin != kWasmOrigin) return nullptr;
+  if (record_replay_mode()) {
+    // Compiling with events disallowed means Replay's own code is compiling,
+    // in a pause: the ordered lock is ignored there, so the cache must not be
+    // read or written, or it would hold a module the recording never cached.
+    if (recordreplay::AreEventsDisallowed()) return nullptr;
+    recordreplay::AutoOrderedLock ordered(record_replay_ordered_lock_);
+    base::MutexGuard lock(&mutex_);
+    Key key{PrefixHash(wire_bytes), wire_bytes};
+    auto it = map_.find(key);
+    if (it == map_.end()) {
+      map_.emplace(key, base::nullopt);
+      return nullptr;
+    }
+    // Another thread is compiling these bytes: compile them too rather than
+    // wait for it, and let {Update} keep whichever module comes first.
+    if (!it->second.has_value()) return nullptr;
+    // {record_replay_kept_alive_} holds every cached module, so this is set.
+    std::shared_ptr<NativeModule> shared_native_module =
+        it->second.value().lock();
+    DCHECK_NOT_NULL(shared_native_module);
+    DCHECK_EQ(shared_native_module->wire_bytes(), wire_bytes);
+    return shared_native_module;
+  }
   base::MutexGuard lock(&mutex_);
   size_t prefix_hash = PrefixHash(wire_bytes);
   NativeModuleCache::Key key{prefix_hash, wire_bytes};
@@ -245,6 +305,13 @@ std::shared_ptr<NativeModule> NativeModuleCache::Update(
   base::Vector<const uint8_t> wire_bytes = native_module->wire_bytes();
   DCHECK(!wire_bytes.empty());
   size_t prefix_hash = PrefixHash(native_module->wire_bytes());
+  // See {MaybeGetNativeModule} for why a compile in a pause leaves the cache
+  // alone; its lookup returned nothing, so this module is simply not shared.
+  if (record_replay_mode() && recordreplay::AreEventsDisallowed()) {
+    return native_module;
+  }
+  base::Optional<recordreplay::AutoOrderedLock> ordered;
+  if (record_replay_mode()) ordered.emplace(record_replay_ordered_lock_);
   base::MutexGuard lock(&mutex_);
   map_.erase(Key{prefix_hash, {}});
   const Key key{prefix_hash, wire_bytes};
@@ -267,6 +334,12 @@ std::shared_ptr<NativeModule> NativeModuleCache::Update(
         key, base::Optional<std::weak_ptr<NativeModule>>(native_module));
     USE(p);
     DCHECK(p.second);
+    // Keeping the module alive is what makes a cached entry stay valid: the
+    // weak pointer above would otherwise expire on whichever thread drops the
+    // last reference, which the recording doesn't order.
+    if (record_replay_mode()) {
+      record_replay_kept_alive_.push_back(native_module);
+    }
   }
   cache_cv_.NotifyAll();
   return native_module;
@@ -276,6 +349,13 @@ void NativeModuleCache::Erase(NativeModule* native_module) {
   if (native_module->module()->origin != kWasmOrigin) return;
   // Happens in some tests where bytes are set directly.
   if (native_module->wire_bytes().empty()) return;
+  // A cached module is only freed once {RecordReplayTearDown} has dropped it,
+  // so there is nothing left to erase, and erasing by content-equal key at a
+  // point that depends on which thread drops the last reference could drop a
+  // newer module for the same bytes. This must also stay ahead of the ordered
+  // lock: the caller, {WasmEngine::FreeNativeModule}, holds the engine's mutex,
+  // and waiting for a recorded turn while holding it would deadlock a replay.
+  if (record_replay_mode()) return;
   base::MutexGuard lock(&mutex_);
   size_t prefix_hash = PrefixHash(native_module->wire_bytes());
   map_.erase(Key{prefix_hash, native_module->wire_bytes()});
@@ -448,6 +528,11 @@ WasmEngine::~WasmEngine() {
   // Synchronize on the GDB-remote thread, if running.
   gdb_server_.reset();
 #endif  // V8_ENABLE_WASM_GDB_REMOTE_DEBUGGING
+
+  // Drop the modules the cache kept alive before the barrier below: each of
+  // them holds a token on it, and CancelAndWait() waits for every token to go
+  // away.
+  native_module_cache_.RecordReplayTearDown();
 
   operations_barrier_->CancelAndWait();
 

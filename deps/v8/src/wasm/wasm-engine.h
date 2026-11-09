@@ -107,6 +107,24 @@ class NativeModuleCache {
       std::shared_ptr<NativeModule> native_module, bool error);
   void Erase(NativeModule* native_module);
 
+  // When recording or replaying, whether the cache finds a module for some
+  // bytes, and which of several threads compiling them creates it, must not
+  // depend on timing the recording doesn't order: the cache's condition
+  // variable, and whether a cached {weak_ptr} has expired, which happens on
+  // whichever thread drops the last reference. In this mode, which
+  // {RecordReplayInitialize} decides once for the process:
+  // - every operation the cache still performs takes one ordered lock;
+  // - a lookup that finds another thread compiling the same bytes compiles
+  //   them too rather than waiting, and {Update} keeps whichever module comes
+  //   first;
+  // - the cache holds a strong reference to every module it caches, so an
+  //   entry never disappears on its own and a lookup never waits;
+  // - {Erase} does nothing, and {RecordReplayTearDown} drops the whole cache
+  //   with the engine.
+  // Otherwise the cache keeps its upstream behavior.
+  static void RecordReplayInitialize();
+  void RecordReplayTearDown();
+
   bool empty() { return map_.empty(); }
 
   static size_t WireBytesHash(base::Vector<const uint8_t> bytes);
@@ -137,6 +155,13 @@ class NativeModuleCache {
   // module. Only one thread will create the {NativeModule}. Other threads
   // will wait on this variable until the first thread wakes them up.
   base::ConditionVariable cache_cv_;
+
+  bool record_replay_mode() const { return record_replay_ordered_lock_ != 0; }
+
+  // The cache's ordered lock in that mode, and the modules it keeps alive.
+  // There is one cache, owned by the engine, so the lock is created once.
+  static int record_replay_ordered_lock_;
+  std::vector<std::shared_ptr<NativeModule>> record_replay_kept_alive_;
 };
 
 // The central data structure that represents an engine instance capable of
