@@ -2145,6 +2145,7 @@ void BytecodeGenerator::VisitFunctionDeclaration(FunctionDeclaration* decl) {
       DCHECK_EQ(0, execution_context()->ContextChainDepth(variable->scope()));
       VisitFunctionLiteral(decl->fun());
       builder()->StoreContextSlot(execution_context()->reg(), variable, 0);
+      RecordReplayStoreMovedParameter(variable);
       break;
     }
     case VariableLocation::LOOKUP: {
@@ -4762,6 +4763,29 @@ void BytecodeGenerator::AddDisposableValue(VariableMode mode) {
   }
 }
 
+// A parameter the replay moved from the stack into the context (see
+// Variable::RecordReplayIsForced) is stored in the parameter's register as
+// well, which is where a recording stores it (an assignment, or a function
+// declaration with the parameter's name), and where the parameters of
+// fn.arguments and the debugger's arguments object come from. Something
+// capturing the parameter would make a recording allocate it in the context
+// too, so only its own function assigns it. The debugger's writes do the same
+// (see ScopeIterator::SetLocalVariableValue).
+void BytecodeGenerator::RecordReplayStoreMovedParameter(Variable* variable) {
+  if (!variable->RecordReplayIsMovedFromStack() ||
+      variable->scope() != closure_scope()) {
+    return;
+  }
+  // With duplicate parameters, the last one is the variable's, as in
+  // DeclarationScope::AllocateParameterLocals.
+  for (int i = closure_scope()->num_parameters() - 1; i >= 0; --i) {
+    if (closure_scope()->parameter(i) == variable) {
+      builder()->StoreAccumulatorInRegister(builder()->Parameter(i));
+      return;
+    }
+  }
+}
+
 void BytecodeGenerator::BuildVariableAssignment(
     Variable* variable, Token::Value op, HoleCheckMode hole_check_mode,
     LookupHoistingMode lookup_hoisting_mode) {
@@ -4854,6 +4878,7 @@ void BytecodeGenerator::BuildVariableAssignment(
           AddDisposableValue(mode);
         }
         builder()->StoreContextSlot(context_reg, variable, depth);
+        RecordReplayStoreMovedParameter(variable);
       } else if (variable->throw_on_const_assignment(language_mode())) {
         builder()->CallRuntime(Runtime::kThrowConstAssignError);
       }

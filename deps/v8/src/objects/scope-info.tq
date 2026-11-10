@@ -104,6 +104,9 @@ bitfield struct VariableProperties extends uint31 {
   maybe_assigned_flag: MaybeAssignedFlag: 1 bit;
   parameter_number: uint32: 16 bit;
   is_static_flag: IsStaticFlag: 1 bit;
+  // See Variable::RecordReplayIsForced.
+  record_replay_unreferenced: bool: 1 bit;
+  record_replay_moved_from_stack: bool: 1 bit;
 }
 
 struct ModuleVariable {

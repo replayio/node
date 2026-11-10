@@ -349,10 +349,9 @@ Response buildScopes(v8::Isolate* isolate, v8::debug::ScopeIterator* iterator,
   // getStackFrames in lib/internal/recordreplay/main.js), so their scopes are
   // never described and building them is wasted work. It is also unsound: a
   // function the startup snapshot carries was compiled without the context
-  // allocation a replay forces (see the Scope::ForceContextAllocation callers
-  // in scopes.cc), so iterating its scopes walks off the end of its context
-  // chain. A session a user or the program attached still gets them, as
-  // upstream does.
+  // allocation a replay forces (see Variable::RecordReplayIsForced), so
+  // iterating its scopes walks off the end of its context chain. A session a
+  // user or the program attached still gets them, as upstream does.
   if (v8::replayio::CheckReplayOwned() &&
       v8::debug::RecordReplayIgnoreScript(isolate, iterator->GetScriptId())) {
     return Response::Success();

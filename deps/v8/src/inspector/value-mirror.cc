@@ -1571,6 +1571,19 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
         enumerable = !(attributes & v8::PropertyAttribute::DontEnum);
         configurable = !(attributes & v8::PropertyAttribute::DontDelete);
         isAccessorProperty = getterMirror || setterMirror;
+      } else if (v8::recordreplay::AreEventsDisallowed() &&
+                 iterator->RecordReplayIsUnloadedLazyDataProperty()) {
+        // is_native_accessor() misses a lazy data property on a global proxy,
+        // and reading its descriptor runs its getter, which for node's lazy
+        // globals loads a module. Replay's own session describes values with
+        // events disallowed, where that would change the program's state
+        // unrecorded (see MustNotRunUserJS) or, in a pause that diverged, make
+        // system calls the recording doesn't have. It stays an accessor for
+        // the viewer to call.
+        getterMirror = createNativeGetter(context, object, v8Name);
+        enumerable = !(attributes & v8::PropertyAttribute::DontEnum);
+        configurable = !(attributes & v8::PropertyAttribute::DontDelete);
+        isAccessorProperty = true;
       } else {
         v8::TryCatch tryCatchDescriptor(isolate);
         v8::debug::PropertyDescriptor descriptor;

@@ -1046,7 +1046,7 @@ Variable* DeclarationScope::DeclareParameter(const AstRawString* name,
   // (RUN-2604)
   if (recordreplay::IsReplaying() &&
       recordreplay::FeatureEnabled("force-variable-context-allocation")) {
-    var->ForceContextAllocation();
+    var->RecordReplaySetForced();
   }
   return var;
 }
@@ -1187,8 +1187,11 @@ Variable* Scope::DeclareVariable(
   if (recordreplay::IsReplaying() &&
       recordreplay::FeatureEnabled("force-variable-context-allocation") &&
       (kind == VariableKind::NORMAL_VARIABLE ||
-       kind == VariableKind::SLOPPY_BLOCK_FUNCTION_VARIABLE)) {
-    var->ForceContextAllocation();
+       kind == VariableKind::SLOPPY_BLOCK_FUNCTION_VARIABLE) &&
+      // `var arguments;` declares the function's own arguments variable, and
+      // allocating it would also put mapped parameters in the context.
+      !name->IsOneByteEqualTo("arguments")) {
+    var->RecordReplaySetForced();
   }
   return var;
 }
@@ -2420,6 +2423,18 @@ bool Scope::MustAllocate(Variable* var) {
     var->set_is_used();
     if (inner_scope_calls_eval_ && !var->is_this()) var->SetMaybeAssigned();
   }
+  // A variable the replay forced (see DeclareVariable) which nothing
+  // references (`var unused;`). A recording leaves it unallocated. The replay
+  // allocates it, for Replay's own session to describe, and marks it so other
+  // sessions don't see it (see Variable::RecordReplayIsForced).
+  //
+  // Known limitation: allocating it also runs code the recording doesn't,
+  // such as creating the closure of an unreferenced function declaration.
+  // Nothing recorded depends on that as far as we know.
+  if (var->RecordReplayIsForced() && !var->is_used()) {
+    var->set_is_used();
+    var->RecordReplaySetUnreferenced();
+  }
   CHECK(!var->has_forced_context_allocation() || var->is_used());
   // Global variables do not need to be allocated.
   return !var->IsGlobalObjectProperty() && var->is_used();
@@ -2442,7 +2457,16 @@ bool Scope::MustAllocateInContext(Variable* var) {
       return true;
     }
   }
-  return var->has_forced_context_allocation() || inner_scope_calls_eval_;
+  if (var->has_forced_context_allocation() || inner_scope_calls_eval_) {
+    return true;
+  }
+  // A variable the replay forced which a recording keeps on the stack. Other
+  // sessions see it as on the stack (see Variable::RecordReplayIsForced).
+  if (var->RecordReplayIsForced()) {
+    if (!var->RecordReplayIsUnreferenced()) var->RecordReplaySetMovedFromStack();
+    return true;
+  }
+  return false;
 }
 
 void Scope::AllocateStackSlot(Variable* var) {
