@@ -105,6 +105,9 @@ class V8_EXPORT_PRIVATE ScopeIterator {
   bool InInnerScope() const { return !function_.is_null(); }
   bool HasContext() const;
   bool NeedsContext() const;
+  // See the definition.
+  bool RecordReplaySetMovedParameter(Variable* var,
+                                     Handle<Object> new_value);
   Handle<Context> CurrentContext() const {
     DCHECK(HasContext());
     return context_;
