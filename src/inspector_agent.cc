@@ -854,7 +854,8 @@ bool Agent::StartIoThread() {
                                     permission::PermissionScope::kInspector,
                                     "StartIoThread",
                                     false);
-  if (!parent_env_->should_create_inspector() && !client_) {
+  if (!parent_env_->should_create_inspector() &&
+      (!client_ || record_replay_owns_client_)) {
     ThrowUninitializedInspectorError(parent_env_);
     return false;
   }
@@ -883,7 +884,8 @@ std::unique_ptr<InspectorSession> Agent::Connect(
                                     permission::PermissionScope::kInspector,
                                     "Connect",
                                     std::unique_ptr<InspectorSession>{});
-  if (!parent_env_->should_create_inspector() && !client_) {
+  if (!parent_env_->should_create_inspector() &&
+      (!client_ || record_replay_owns_client_)) {
     ThrowUninitializedInspectorError(parent_env_);
     return std::unique_ptr<InspectorSession>{};
   }
@@ -896,6 +898,30 @@ std::unique_ptr<InspectorSession> Agent::Connect(
       new SameThreadInspectorSession(session_id, client_));
 }
 
+std::unique_ptr<InspectorSession> Agent::RecordReplayConnect(
+    std::unique_ptr<InspectorSessionDelegate> delegate) {
+  CHECK(v8::recordreplay::IsRecordingOrReplaying());
+  CHECK(parent_env_->is_main_thread());
+  // Created with events allowed, like Start() does: the client's thread handle
+  // has ordered locks (see NodeInspectorClient). Unlike Start(), this installs
+  // no SIGUSR1 handler or at-exit wait for frontends, and the user's inspector
+  // entry points keep refusing (see record_replay_owns_client_). Contexts
+  // created before this, e.g. by a vm call in a --require preload, aren't
+  // reported to the client.
+  if (!client_) {
+    client_ = std::make_shared<NodeInspectorClient>(parent_env_,
+                                                    /* is_main */ true);
+    record_replay_owns_client_ = true;
+  }
+
+  v8::replayio::AutoMarkReplayCode mark;
+  v8::replayio::AutoDisallowEvents disallow("Agent::RecordReplayConnect");
+  int session_id = client_->connectFrontend(std::move(delegate),
+                                            /* prevent_shutdown */ false);
+  return std::unique_ptr<InspectorSession>(
+      new SameThreadInspectorSession(session_id, client_));
+}
+
 std::unique_ptr<InspectorSession> Agent::ConnectToMainThread(
     std::unique_ptr<InspectorSessionDelegate> delegate,
     bool prevent_shutdown) {
@@ -903,7 +929,8 @@ std::unique_ptr<InspectorSession> Agent::ConnectToMainThread(
                                     permission::PermissionScope::kInspector,
                                     "ConnectToMainThread",
                                     std::unique_ptr<InspectorSession>{});
-  if (!parent_env_->should_create_inspector() && !client_) {
+  if (!parent_env_->should_create_inspector() &&
+      (!client_ || record_replay_owns_client_)) {
     ThrowUninitializedInspectorError(parent_env_);
     return std::unique_ptr<InspectorSession>{};
   }
@@ -980,7 +1007,8 @@ void Agent::WaitForDisconnect() {
   THROW_IF_INSUFFICIENT_PERMISSIONS(parent_env_,
                                     permission::PermissionScope::kInspector,
                                     "WaitForDisconnect");
-  if (!parent_env_->should_create_inspector() && !client_) {
+  if (!parent_env_->should_create_inspector() &&
+      (!client_ || record_replay_owns_client_)) {
     ThrowUninitializedInspectorError(parent_env_);
     return;
   }
@@ -1136,7 +1164,8 @@ std::unique_ptr<ParentInspectorHandle> Agent::GetParentHandle(
                                     permission::PermissionScope::kInspector,
                                     "GetParentHandle",
                                     std::unique_ptr<ParentInspectorHandle>{});
-  if (!parent_env_->should_create_inspector() && !client_) {
+  if (!parent_env_->should_create_inspector() &&
+      (!client_ || record_replay_owns_client_)) {
     ThrowUninitializedInspectorError(parent_env_);
     return std::unique_ptr<ParentInspectorHandle>{};
   }
@@ -1152,7 +1181,8 @@ std::unique_ptr<ParentInspectorHandle> Agent::GetParentHandle(
 void Agent::WaitForConnect() {
   THROW_IF_INSUFFICIENT_PERMISSIONS(
       parent_env_, permission::PermissionScope::kInspector, "WaitForConnect");
-  if (!parent_env_->should_create_inspector() && !client_) {
+  if (!parent_env_->should_create_inspector() &&
+      (!client_ || record_replay_owns_client_)) {
     ThrowUninitializedInspectorError(parent_env_);
     return;
   }
@@ -1200,7 +1230,8 @@ std::shared_ptr<WorkerManager> Agent::GetWorkerManager() {
                                     permission::PermissionScope::kInspector,
                                     "GetWorkerManager",
                                     std::unique_ptr<WorkerManager>{});
-  if (!parent_env_->should_create_inspector() && !client_) {
+  if (!parent_env_->should_create_inspector() &&
+      (!client_ || record_replay_owns_client_)) {
     ThrowUninitializedInspectorError(parent_env_);
     return std::unique_ptr<WorkerManager>{};
   }
