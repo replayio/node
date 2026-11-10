@@ -8,6 +8,7 @@
 
 #include "src/ast/ast.h"
 #include "src/ast/scopes.h"
+#include "src/base/replayio.h"
 #include "src/common/globals.h"
 #include "src/debug/debug.h"
 #include "src/execution/frames-inl.h"
@@ -457,6 +458,19 @@ bool ScopeIterator::RecordReplayClosureContextNotPushed() const {
          current_scope_->NeedsContext() && function_->context() == *context_;
 }
 
+namespace {
+// A session other than Replay's own doesn't see the variables only the replay
+// allocates, which don't exist when recording, and sees those the replay moves
+// from the stack into a context as it does when recording, where they are
+// stack locals (see Variable::RecordReplayIsForced).
+bool RecordReplayHidesVariable(Variable* var) {
+  return var->RecordReplayIsUnreferenced() && !replayio::CheckReplayOwned();
+}
+bool RecordReplayMaterializesVariable(Variable* var) {
+  return var->RecordReplayIsMovedFromStack() && !replayio::CheckReplayOwned();
+}
+}  // namespace
+
 bool ScopeIterator::HasContext() const {
   // The replay-forced case below is the one function scope which may not have
   // pushed its context, which is why the check after it skips function scopes.
@@ -905,6 +919,7 @@ bool ScopeIterator::VisitContextLocals(const Visitor& visitor,
   for (auto it : ScopeInfo::IterateLocalNames(scope_info)) {
     Handle<String> name(it->name(), isolate_);
     if (ScopeInfo::VariableIsSynthetic(*name)) continue;
+    if (scope_info->RecordReplayHidesContextLocal(it->index())) continue;
     int context_index = scope_info->ContextHeaderLength() + it->index();
     Handle<Object> value(context->get(context_index), isolate_);
     if (v8_flags.script_context_mutable_heap_number &&
@@ -948,6 +963,7 @@ bool ScopeIterator::VisitLocals(const Visitor& visitor, Mode mode,
   }
 
   for (Variable* var : *current_scope_->locals()) {
+    if (RecordReplayHidesVariable(var)) continue;
     if (ScopeInfo::VariableIsSynthetic(*var->name())) {
       // We want to materialize "new.target" for debug-evaluate.
       if (mode != Mode::STACK ||
@@ -1016,7 +1032,9 @@ bool ScopeIterator::VisitLocals(const Visitor& visitor, Mode mode,
         break;
 
       case VariableLocation::CONTEXT:
-        if (mode == Mode::STACK) continue;
+        if (mode == Mode::STACK && !RecordReplayMaterializesVariable(var)) {
+          continue;
+        }
         if (!HasContext()) {
           // If the context was not yet pushed we report the variable as
           // unavailable.
@@ -1129,12 +1147,41 @@ void ScopeIterator::VisitLocalScope(const Visitor& visitor, Mode mode,
   }
 }
 
+// A recording keeps a parameter the replay moved into the context (see
+// Variable::RecordReplayIsForced) in the frame, so set it there as a
+// recording does, as the replay's own stores to it do (see
+// BytecodeGenerator::RecordReplayStoreMovedParameter), and fail where a
+// recording fails. Returns whether to go on to set the context slot.
+bool ScopeIterator::RecordReplaySetMovedParameter(
+    Variable* var, DirectHandle<Object> new_value) {
+  if (!var->RecordReplayIsMovedFromStack() || var->scope() != closure_scope_) {
+    return true;
+  }
+  for (int i = closure_scope_->num_parameters() - 1; i >= 0; --i) {
+    if (closure_scope_->parameter(i) != var) continue;
+    if (frame_inspector_ == nullptr) {
+      DCHECK(!generator_.is_null());
+      DirectHandle<FixedArray> parameters_and_registers(
+          generator_->parameters_and_registers(), isolate_);
+      DCHECK_LT(i, parameters_and_registers->length());
+      parameters_and_registers->set(i, *new_value);
+    } else {
+      JavaScriptFrame* frame = GetFrame();
+      if (!frame->is_unoptimized()) return false;
+      frame->SetParameterValue(i, *new_value);
+    }
+    return true;
+  }
+  return true;
+}
+
 bool ScopeIterator::SetLocalVariableValue(DirectHandle<String> variable_name,
                                           DirectHandle<Object> new_value) {
   // TODO(verwaest): Walk parameters backwards, not forwards.
   // TODO(verwaest): Use VariableMap rather than locals() list for lookup.
   for (Variable* var : *current_scope_->locals()) {
     if (String::Equals(isolate_, var->name(), variable_name)) {
+      if (RecordReplayHidesVariable(var)) return false;
       int index = var->index();
       switch (var->location()) {
         case VariableLocation::LOOKUP:
@@ -1189,6 +1236,8 @@ bool ScopeIterator::SetLocalVariableValue(DirectHandle<String> variable_name,
         case VariableLocation::CONTEXT:
           DCHECK(var->IsContextSlot());
 
+          if (!RecordReplaySetMovedParameter(var, new_value)) return false;
+
           // We know of at least one open bug where the context and scope chain
           // don't match (https://crbug.com/753338).
           // Skip the write if the context's ScopeInfo doesn't know anything
@@ -1240,6 +1289,10 @@ bool ScopeIterator::SetContextVariableValue(DirectHandle<String> variable_name,
                                             DirectHandle<Object> new_value) {
   int slot_index = context_->scope_info()->ContextSlotIndex(variable_name);
   if (slot_index < 0) return false;
+  if (context_->scope_info()->RecordReplayHidesContextLocal(
+          slot_index - context_->scope_info()->ContextHeaderLength())) {
+    return false;
+  }
   context_->set(slot_index, *new_value);
   return true;
 }

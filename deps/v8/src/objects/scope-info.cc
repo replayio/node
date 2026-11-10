@@ -8,6 +8,7 @@
 
 #include "src/ast/scopes.h"
 #include "src/ast/variables.h"
+#include "src/base/replayio.h"
 #include "src/init/bootstrapper.h"
 #include "src/objects/module-inl.h"
 #include "src/objects/objects-inl.h"
@@ -962,6 +963,17 @@ uint32_t ScopeInfo::ContextLocalParameterNumber(int var) const {
 MaybeAssignedFlag ScopeInfo::ContextLocalMaybeAssignedFlag(int var) const {
   int value = context_local_infos(var);
   return MaybeAssignedFlagBit::decode(value);
+}
+
+bool ScopeInfo::RecordReplayHidesContextLocal(int var) const {
+  int value = context_local_infos(var);
+  return (RecordReplayUnreferencedBit::decode(value) ||
+          RecordReplayMovedFromStackBit::decode(value)) &&
+         !replayio::CheckReplayOwned();
+}
+
+bool ScopeInfo::RecordReplayContextLocalIsMovedFromStack(int var) const {
+  return RecordReplayMovedFromStackBit::decode(context_local_infos(var));
 }
 
 // static
