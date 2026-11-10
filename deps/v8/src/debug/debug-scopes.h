@@ -110,6 +110,9 @@ class V8_EXPORT_PRIVATE ScopeIterator {
   // Whether the function we are paused in needs a context only because the
   // replay forced one, and has not pushed it yet. See the definition.
   bool RecordReplayClosureContextNotPushed() const;
+  // See the definition.
+  bool RecordReplaySetMovedParameter(Variable* var,
+                                     DirectHandle<Object> new_value);
   Handle<Context> CurrentContext() const {
     DCHECK(HasContext());
     return context_;
