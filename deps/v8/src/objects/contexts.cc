@@ -347,6 +347,24 @@ Handle<Object> Context::Lookup(Handle<Context> context, Handle<String> name,
       VariableLookupResult lookup_result;
       int slot_index = scope_info->ContextSlotIndex(name, &lookup_result);
       DCHECK(slot_index < 0 || slot_index >= MIN_CONTEXT_SLOTS);
+      // Debug-evaluate looks up a frame's variables here. Only debuggers can
+      // look up one only the replay has in a context: code referencing it
+      // would make a recording allocate it in the context too.
+      if (slot_index >= 0) {
+        int local_index = slot_index - scope_info->ContextHeaderLength();
+        if (scope_info->RecordReplayHidesContextLocal(local_index)) {
+          // A recording has it on the stack, where debug-evaluate's
+          // blocklists stop the lookup instead of finding a shadowed outer
+          // variable. Its own frame finds it in the materialized locals, and
+          // in the lookup of that frame's own context (DONT_FOLLOW_CHAINS)
+          // this only means it isn't found there.
+          if (scope_info->RecordReplayContextLocalIsMovedFromStack(
+                  local_index)) {
+            break;
+          }
+          slot_index = -1;
+        }
+      }
       if (slot_index >= 0) {
         // Re-direct lookup to the ScriptContextTable in case we find a hole in
         // a REPL script context. REPL scripts allow re-declaration of
