@@ -422,6 +422,10 @@ SigintWatchdogHelper::~SigintWatchdogHelper() {
 SigintWatchdogHelper SigintWatchdogHelper::instance;
 Mutex SigintWatchdogHelper::instance_action_mutex_;
 
+void SigintWatchdogHelper::InitializeOncePerProcess() {
+  instance_action_mutex_.MarkOrdered();
+}
+
 namespace watchdog {
 static void Initialize(Local<Object> target,
                        Local<Value> unused,

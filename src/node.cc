@@ -44,6 +44,7 @@
 #include "node_snapshot_builder.h"
 #include "node_v8_platform-inl.h"
 #include "node_version.h"
+#include "node_watchdog.h"
 
 #if HAVE_OPENSSL
 #include "node_crypto.h"
@@ -960,6 +961,7 @@ std::unique_ptr<InitializationResult> InitializeOncePerProcess(
   }
 
   worker::SiblingGroup::InitializeOncePerProcess();
+  SigintWatchdogHelper::InitializeOncePerProcess();
 
   if (!(flags & ProcessInitializationFlags::kNoParseGlobalDebugVariables)) {
     // Initialized the enabled list for Debug() calls with system

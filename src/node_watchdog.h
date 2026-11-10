@@ -118,12 +118,23 @@ class SigintWatchdogHelper {
   int Start();
   bool Stop();
 
+  // Orders instance_action_mutex_ when recording/replaying. Called on the main
+  // thread once record/replay is initialized, before any other thread exists.
+  static void InitializeOncePerProcess();
+
  private:
   SigintWatchdogHelper();
   ~SigintWatchdogHelper();
 
   static bool InformWatchdogsAboutSignal();
   static SigintWatchdogHelper instance;
+  // Ordered when recording/replaying (see InitializeOncePerProcess()):
+  // SigintWatchdog and TraceSigintWatchdog start and stop the helper under it
+  // on any thread, and only the Start() that finds start_stop_count_ at 0
+  // starts the helper thread, so the replay has to take it in the recording's
+  // order. The REPL's StartSigintWatchdog/StopSigintWatchdog bindings call
+  // Start()/Stop() without it, so a REPL evaluating with breakEvalOnSigint
+  // while another thread runs a breakOnSigint script can still diverge.
   static Mutex instance_action_mutex_;
 
   int start_stop_count_;
