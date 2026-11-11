@@ -6,6 +6,7 @@
 #include "src/execution/isolate.h"
 #include "src/heap/finalization-registry-cleanup-task.h"
 #include "src/heap/heap-inl.h"
+#include "src/heap/heap-write-barrier-inl.h"
 #include "src/init/v8.h"
 #include "src/objects/dictionary-inl.h"
 #include "src/objects/js-weak-refs-inl.h"
@@ -185,8 +186,17 @@ bool ReplayFinalizationRegistries::NextCell(
                    "Tracked FinalizationRegistry cell cleared while replaying");
     // Do what the recording's GC did when it found the target dead: this moves
     // the cell to the head of the cleared list, where the cleanup loop pops it.
-    cell->Nullify(isolate, [](i::Tagged<i::HeapObject>, i::ObjectSlot,
-                              i::Tagged<i::Object>) {});
+    // Nullify skips the write barriers, as the GC it normally runs in records
+    // the slots itself. Outside the GC, every slot it writes needs the barrier:
+    // the cells next to this one can be in a different generation, and an
+    // old-to-new slot missing from the remembered set goes stale on the next
+    // scavenge. Nullify's DCHECKs that it runs in a GC fail here in debug
+    // builds; release builds don't have them.
+    cell->Nullify(isolate, [](i::Tagged<i::HeapObject> host, i::ObjectSlot slot,
+                              i::Tagged<i::HeapObject> value) {
+      i::WriteBarrier::ForValue(host, i::MaybeObjectSlot(slot.address()),
+                                value, i::UPDATE_WRITE_BARRIER);
+    });
     cells = i::SimpleNumberDictionary::DeleteEntry(isolate, cells, entry);
     registry->set_record_replay_cells(*cells);
   }
