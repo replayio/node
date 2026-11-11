@@ -430,7 +430,8 @@ void StartProfilers(Environment* env) {
   }
   if (env->options()->cpu_prof &&
       v8::recordreplay::IsRecordingOrReplaying("no-cpu-profiler")) {
-    // V8 refuses Profiler.start here, so no profile would be written.
+    // V8 refuses Profiler.start here, so no profile would be written. Printed
+    // per Environment: the main thread and each Worker skip their own profile.
     fprintf(stderr,
             "--cpu-prof is not supported in Replay-recorded processes\n");
   } else if (env->options()->cpu_prof) {
