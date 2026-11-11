@@ -14,6 +14,7 @@
 
 namespace v8 {
 class CpuProfiler;
+enum class CpuProfilingStatus;
 class Isolate;
 }  // namespace v8
 
@@ -68,9 +69,10 @@ class V8ProfilerAgentImpl : public protocol::Profiler::Backend {
  private:
   String16 nextProfileId();
 
-  void startProfiling(const String16& title);
+  v8::CpuProfilingStatus startProfiling(const String16& title);
   std::unique_ptr<protocol::Profiler::Profile> stopProfiling(
       const String16& title, bool serialize);
+  void disposeProfilerIfUnused();
 
   V8InspectorSessionImpl* m_session;
   v8::Isolate* m_isolate;

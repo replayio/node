@@ -428,7 +428,12 @@ void StartProfilers(Environment* env) {
     env->set_coverage_connection(std::make_unique<V8CoverageConnection>(env));
     env->coverage_connection()->Start();
   }
-  if (env->options()->cpu_prof) {
+  if (env->options()->cpu_prof &&
+      v8::recordreplay::IsRecordingOrReplaying("no-cpu-profiler")) {
+    // V8 refuses Profiler.start here, so no profile would be written.
+    fprintf(stderr,
+            "--cpu-prof is not supported in Replay-recorded processes\n");
+  } else if (env->options()->cpu_prof) {
     const std::string& dir = env->options()->cpu_prof_dir;
     env->set_cpu_prof_interval(env->options()->cpu_prof_interval);
     env->set_cpu_prof_dir(dir.empty() ? env->GetCwd() : dir);

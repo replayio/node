@@ -599,6 +599,16 @@ size_t CpuProfiler::GetEstimatedMemoryUsage() const {
   return code_observer_->GetEstimatedMemoryUsage();
 }
 
+namespace {
+
+// Refused before any profile or sampler exists, so the recording stays usable;
+// see StartProcessorIfNotStarted.
+bool IsCpuProfilingUnsupported() {
+  return recordreplay::IsRecordingOrReplaying("no-cpu-profiler");
+}
+
+}  // namespace
+
 CpuProfilingResult CpuProfiler::StartProfiling(
     CpuProfilingOptions options,
     std::unique_ptr<DiscardedSamplesDelegate> delegate) {
@@ -608,13 +618,16 @@ CpuProfilingResult CpuProfiler::StartProfiling(
 CpuProfilingResult CpuProfiler::StartProfiling(
     const char* title, CpuProfilingOptions options,
     std::unique_ptr<DiscardedSamplesDelegate> delegate) {
+  if (IsCpuProfilingUnsupported()) {
+    return {0, CpuProfilingStatus::kErrorNotSupported};
+  }
+
   CpuProfilingResult result =
       profiles_->StartProfiling(title, options, std::move(delegate));
 
   // TODO(nicodubus): Revisit logic for if we want to do anything different for
   // kAlreadyStarted
-  if (result.status == CpuProfilingStatus::kStarted ||
-      result.status == CpuProfilingStatus::kAlreadyStarted) {
+  if (IsCpuProfilingStarted(result.status)) {
     TRACE_EVENT0("v8", "CpuProfiler::StartProfiling");
     AdjustSamplingInterval();
     StartProcessorIfNotStarted();
@@ -626,6 +639,9 @@ CpuProfilingResult CpuProfiler::StartProfiling(
 CpuProfilingResult CpuProfiler::StartProfiling(
     String title, CpuProfilingOptions options,
     std::unique_ptr<DiscardedSamplesDelegate> delegate) {
+  if (IsCpuProfilingUnsupported()) {
+    return {0, CpuProfilingStatus::kErrorNotSupported};
+  }
   return StartProfiling(profiles_->GetName(title), options,
                         std::move(delegate));
 }

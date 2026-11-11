@@ -271,7 +271,10 @@ enum CpuProfilingLoggingMode {
 enum class CpuProfilingStatus {
   kStarted,
   kAlreadyStarted,
-  kErrorTooManyProfilers
+  kErrorTooManyProfilers,
+  // Profiling is unavailable while recording or replaying (Replay feature
+  // "no-cpu-profiler").
+  kErrorNotSupported
 };
 
 /**
@@ -282,6 +285,14 @@ struct CpuProfilingResult {
   const ProfilerId id;
   const CpuProfilingStatus status;
 };
+
+/**
+ * Whether a profile is being collected after StartProfiling returned |status|.
+ */
+constexpr bool IsCpuProfilingStarted(CpuProfilingStatus status) {
+  return status == CpuProfilingStatus::kStarted ||
+         status == CpuProfilingStatus::kAlreadyStarted;
+}
 
 /**
  * Delegate for when max samples reached and samples are discarded.
