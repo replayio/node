@@ -287,14 +287,6 @@ struct CpuProfilingResult {
 };
 
 /**
- * Whether a profile is being collected after StartProfiling returned |status|.
- */
-constexpr bool IsCpuProfilingStarted(CpuProfilingStatus status) {
-  return status == CpuProfilingStatus::kStarted ||
-         status == CpuProfilingStatus::kAlreadyStarted;
-}
-
-/**
  * Delegate for when max samples reached and samples are discarded.
  */
 class V8_EXPORT DiscardedSamplesDelegate {

@@ -54,8 +54,8 @@ void TracingCpuProfilerImpl::StartProfiling() {
   profiler_.reset(new CpuProfiler(isolate_, kDebugNaming));
   profiler_->set_sampling_interval(
       base::TimeDelta::FromMicroseconds(sampling_interval_us));
-  if (!IsCpuProfilingStarted(
-          profiler_->StartProfiling("", {kLeafNodeLineNumbers}).status)) {
+  if (profiler_->StartProfiling("", {kLeafNodeLineNumbers}).status ==
+      CpuProfilingStatus::kErrorNotSupported) {
     profiler_.reset();
   }
 }
