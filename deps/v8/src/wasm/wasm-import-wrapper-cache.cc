@@ -44,6 +44,24 @@ WasmWrapperHandle::~WasmWrapperHandle() {
   GetProcessWideWasmCodePointerTable()->FreeEntry(code_pointer_);
 }
 
+// Every handle Get created, when recording or replaying. An entry otherwise
+// expires when its last instance goes away, which is when another isolate is
+// torn down or collects it, so whether a Get finds a wrapper or compiles one
+// would depend on that thread's timing. Guarded by the cache's mutex_; never
+// freed, like the cache.
+static std::vector<std::shared_ptr<WasmWrapperHandle>>*
+    gRecordReplayKeptWrapperHandles;
+
+static void RecordReplayKeepWrapperHandle(
+    std::shared_ptr<WasmWrapperHandle> handle) {
+  if (!recordreplay::IsRecordingOrReplaying()) return;
+  if (!gRecordReplayKeptWrapperHandles) {
+    gRecordReplayKeptWrapperHandles =
+        new std::vector<std::shared_ptr<WasmWrapperHandle>>();
+  }
+  gRecordReplayKeptWrapperHandles->push_back(std::move(handle));
+}
+
 std::optional<Builtin> WasmImportWrapperCache::BuiltinForWrapper(
     const CacheKey& key) {
   if (key.kind != ImportCallKind::kJSFunction) return {};
@@ -92,14 +110,20 @@ std::shared_ptr<WasmWrapperHandle> WasmImportWrapperCache::Get(
           std::make_shared<WasmWrapperHandle>(call_target,
                                               cache_key.sig->signature_hash());
       entry_map_[cache_key] = wrapper_handle;
+      RecordReplayKeepWrapperHandle(wrapper_handle);
       return wrapper_handle;
     }
   }
 
   // Fall back to compile a new wrapper.
   auto [result, code_kind] = CompileWrapper(isolate, cache_key);
-  return CacheCompiledWrapper(isolate, std::move(result), code_kind, cache_key,
-                              nullptr);
+  std::shared_ptr<WasmWrapperHandle> wrapper_handle = CacheCompiledWrapper(
+      isolate, std::move(result), code_kind, cache_key, nullptr);
+  if (recordreplay::IsRecordingOrReplaying()) {
+    base::MutexGuard lock(&mutex_);
+    RecordReplayKeepWrapperHandle(wrapper_handle);
+  }
+  return wrapper_handle;
 }
 
 #ifdef DEBUG
