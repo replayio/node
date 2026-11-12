@@ -44,6 +44,28 @@ WasmWrapperHandle::~WasmWrapperHandle() {
   GetProcessWideWasmCodePointerTable()->FreeEntry(code_pointer_);
 }
 
+// The handles of the entries Get adds, when recording or replaying. An entry
+// otherwise expires when its last instance goes away, which is when another
+// isolate is torn down or collects it, so whether a Get finds a wrapper or
+// compiles one would depend on that thread's timing. Guarded by the cache's
+// mutex_, and released by RecordReplayTearDown with the engine.
+//
+// This keeps one wrapper per distinct CacheKey for the process's life, and
+// a handle twice when two threads compiled the same wrapper. Entries that
+// GetCompiled adds without a Get (wasm-to-C-API table entries) aren't kept.
+static std::vector<std::shared_ptr<WasmWrapperHandle>>*
+    gRecordReplayKeptWrapperHandles;
+
+static void RecordReplayKeepWrapperHandle(
+    std::shared_ptr<WasmWrapperHandle> handle) {
+  if (!recordreplay::IsRecordingOrReplaying()) return;
+  if (!gRecordReplayKeptWrapperHandles) {
+    gRecordReplayKeptWrapperHandles =
+        new std::vector<std::shared_ptr<WasmWrapperHandle>>();
+  }
+  gRecordReplayKeptWrapperHandles->push_back(std::move(handle));
+}
+
 std::optional<Builtin> WasmImportWrapperCache::BuiltinForWrapper(
     const CacheKey& key) {
   if (key.kind != ImportCallKind::kJSFunction) return {};
@@ -51,6 +73,13 @@ std::optional<Builtin> WasmImportWrapperCache::BuiltinForWrapper(
   if (!IsJSCompatibleSignature(key.sig)) {
     return Builtin::kWasmToJsWrapperInvalidSig;
   }
+
+  // The generic wrapper tiers up after enough calls, and the compiled wrapper
+  // replaces it through the handle's code pointer, which every isolate with
+  // this key calls through. Whether an isolate used up its own budget first,
+  // and so calls Runtime_TierUpWasmToJSWrapper, then depends on when another
+  // thread published the wrapper. Have Get compile the wrapper instead.
+  if (recordreplay::IsRecordingOrReplaying()) return {};
 
   if (UseGenericWasmToJSWrapper(key.kind, key.sig, key.suspend)) {
     return Builtin::kWasmToJsWrapperAsm;
@@ -62,6 +91,9 @@ std::optional<Builtin> WasmImportWrapperCache::BuiltinForWrapper(
 std::shared_ptr<WasmWrapperHandle> WasmImportWrapperCache::Get(
     Isolate* isolate, const CacheKey& cache_key) {
   {
+    // Whether this finds another isolate's wrapper decides whether it
+    // compiles one.
+    WasmWrapperCacheOrderedScope ordered(record_replay_ordered_lock_);
     base::MutexGuard lock(&mutex_);
 
     // If we have an entry already, just return that.
@@ -82,14 +114,31 @@ std::shared_ptr<WasmWrapperHandle> WasmImportWrapperCache::Get(
           std::make_shared<WasmWrapperHandle>(call_target,
                                               cache_key.sig->signature_hash());
       entry_map_[cache_key] = wrapper_handle;
+      RecordReplayKeepWrapperHandle(wrapper_handle);
       return wrapper_handle;
     }
   }
 
   // Fall back to compile a new wrapper.
   auto [result, code_kind] = CompileWrapper(isolate, cache_key);
-  return CacheCompiledWrapper(isolate, std::move(result), code_kind, cache_key,
-                              nullptr);
+  std::shared_ptr<WasmWrapperHandle> wrapper_handle = CacheCompiledWrapper(
+      isolate, std::move(result), code_kind, cache_key, nullptr);
+  if (recordreplay::IsRecordingOrReplaying()) {
+    base::MutexGuard lock(&mutex_);
+    RecordReplayKeepWrapperHandle(wrapper_handle);
+  }
+  return wrapper_handle;
+}
+
+void WasmImportWrapperCache::RecordReplayTearDown() {
+  std::unique_ptr<std::vector<std::shared_ptr<WasmWrapperHandle>>> kept;
+  {
+    base::MutexGuard lock(&mutex_);
+    kept.reset(gRecordReplayKeptWrapperHandles);
+    gRecordReplayKeptWrapperHandles = nullptr;
+  }
+  // Released without mutex_: the last reference to a wrapper hands its code
+  // to the engine, whose code GC can free it right away.
 }
 
 #ifdef DEBUG

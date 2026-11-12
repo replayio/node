@@ -65,6 +65,10 @@ class WasmImportWrapperCache : public WasmWrapperCache<ImportWrapperCacheKey> {
 
   WasmImportWrapperCache();
 
+  // Releases the wrappers Get keeps alive when recording or replaying. Called
+  // by the engine's destructor, while it can still take their code.
+  void RecordReplayTearDown();
+
  protected:
   std::pair<WasmCompilationResult, WasmCode::Kind> CompileWrapper(
       Isolate* isolate, const CacheKey& cache_key) override;

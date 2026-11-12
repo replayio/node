@@ -651,6 +651,7 @@ WasmEngine::~WasmEngine() {
   // before the barrier below: each of them holds a token on it, and
   // CancelAndWait() waits for every token to go away.
   native_module_cache_.RecordReplayTearDown();
+  GetWasmImportWrapperCache()->RecordReplayTearDown();
 
   operations_barrier_->CancelAndWait();
 
