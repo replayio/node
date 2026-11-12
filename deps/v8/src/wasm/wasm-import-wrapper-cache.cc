@@ -52,6 +52,13 @@ std::optional<Builtin> WasmImportWrapperCache::BuiltinForWrapper(
     return Builtin::kWasmToJsWrapperInvalidSig;
   }
 
+  // The generic wrapper tiers up after enough calls, and the compiled wrapper
+  // replaces it through the handle's code pointer, which every isolate with
+  // this key calls through. Whether an isolate used up its own budget first,
+  // and so calls Runtime_TierUpWasmToJSWrapper, then depends on when another
+  // thread published the wrapper. Compile the wrapper here instead.
+  if (recordreplay::IsRecordingOrReplaying()) return {};
+
   if (UseGenericWasmToJSWrapper(key.kind, key.sig, key.suspend)) {
     return Builtin::kWasmToJsWrapperAsm;
   }
@@ -62,6 +69,9 @@ std::optional<Builtin> WasmImportWrapperCache::BuiltinForWrapper(
 std::shared_ptr<WasmWrapperHandle> WasmImportWrapperCache::Get(
     Isolate* isolate, const CacheKey& cache_key) {
   {
+    // Whether this finds another isolate's wrapper decides whether it
+    // compiles one.
+    WasmWrapperCacheOrderedScope ordered(record_replay_ordered_lock_);
     base::MutexGuard lock(&mutex_);
 
     // If we have an entry already, just return that.
