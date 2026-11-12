@@ -95,7 +95,10 @@ void TracingCpuProfilerImpl::StartProfiling() {
       v8::kLeafNodeLineNumbers, v8::CpuProfilingOptions::kNoSampleLimit,
       /* sampling_interval_us */ 0, v8::MaybeLocal<v8::Context>(),
       v8::CpuProfileSource::kInternal);
-  profiler_->StartProfiling("", std::move(options));
+  if (profiler_->StartProfiling("", std::move(options)).status ==
+      CpuProfilingStatus::kErrorNotSupported) {
+    profiler_.reset();
+  }
 }
 
 void TracingCpuProfilerImpl::StopProfiling() {

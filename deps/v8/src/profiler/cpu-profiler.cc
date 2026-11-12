@@ -637,6 +637,16 @@ size_t CpuProfiler::GetEstimatedMemoryUsage() const {
   return code_observer_->GetEstimatedMemoryUsage();
 }
 
+namespace {
+
+// Refused before any profile or sampler exists, so the recording stays usable;
+// see StartProcessorIfNotStarted.
+bool IsCpuProfilingUnsupported() {
+  return recordreplay::IsRecordingOrReplaying("no-cpu-profiler");
+}
+
+}  // namespace
+
 CpuProfilingResult CpuProfiler::StartProfiling(
     CpuProfilingOptions options,
     std::unique_ptr<DiscardedSamplesDelegate> delegate) {
@@ -646,6 +656,10 @@ CpuProfilingResult CpuProfiler::StartProfiling(
 CpuProfilingResult CpuProfiler::StartProfiling(
     const char* title, CpuProfilingOptions options,
     std::unique_ptr<DiscardedSamplesDelegate> delegate) {
+  if (IsCpuProfilingUnsupported()) {
+    return {0, CpuProfilingStatus::kErrorNotSupported};
+  }
+
   CpuProfilingResult result =
       profiles_->StartProfiling(title, std::move(options), std::move(delegate));
 
@@ -689,6 +703,9 @@ CpuProfilingResult CpuProfiler::StartProfiling(
 CpuProfilingResult CpuProfiler::StartProfiling(
     Tagged<String> title, CpuProfilingOptions options,
     std::unique_ptr<DiscardedSamplesDelegate> delegate) {
+  if (IsCpuProfilingUnsupported()) {
+    return {0, CpuProfilingStatus::kErrorNotSupported};
+  }
   return StartProfiling(profiles_->GetName(title), std::move(options),
                         std::move(delegate));
 }
