@@ -44,11 +44,15 @@ WasmWrapperHandle::~WasmWrapperHandle() {
   GetProcessWideWasmCodePointerTable()->FreeEntry(code_pointer_);
 }
 
-// Every handle Get created, when recording or replaying. An entry otherwise
-// expires when its last instance goes away, which is when another isolate is
-// torn down or collects it, so whether a Get finds a wrapper or compiles one
-// would depend on that thread's timing. Guarded by the cache's mutex_; never
-// freed, like the cache.
+// The handles of the entries Get adds, when recording or replaying. An entry
+// otherwise expires when its last instance goes away, which is when another
+// isolate is torn down or collects it, so whether a Get finds a wrapper or
+// compiles one would depend on that thread's timing. Guarded by the cache's
+// mutex_, and released by RecordReplayTearDown with the engine.
+//
+// This keeps one wrapper per distinct CacheKey for the process's life, and
+// a handle twice when two threads compiled the same wrapper. Entries that
+// GetCompiled adds without a Get (wasm-to-C-API table entries) aren't kept.
 static std::vector<std::shared_ptr<WasmWrapperHandle>>*
     gRecordReplayKeptWrapperHandles;
 
@@ -74,7 +78,7 @@ std::optional<Builtin> WasmImportWrapperCache::BuiltinForWrapper(
   // replaces it through the handle's code pointer, which every isolate with
   // this key calls through. Whether an isolate used up its own budget first,
   // and so calls Runtime_TierUpWasmToJSWrapper, then depends on when another
-  // thread published the wrapper. Compile the wrapper here instead.
+  // thread published the wrapper. Have Get compile the wrapper instead.
   if (recordreplay::IsRecordingOrReplaying()) return {};
 
   if (UseGenericWasmToJSWrapper(key.kind, key.sig, key.suspend)) {
@@ -124,6 +128,17 @@ std::shared_ptr<WasmWrapperHandle> WasmImportWrapperCache::Get(
     RecordReplayKeepWrapperHandle(wrapper_handle);
   }
   return wrapper_handle;
+}
+
+void WasmImportWrapperCache::RecordReplayTearDown() {
+  std::unique_ptr<std::vector<std::shared_ptr<WasmWrapperHandle>>> kept;
+  {
+    base::MutexGuard lock(&mutex_);
+    kept.reset(gRecordReplayKeptWrapperHandles);
+    gRecordReplayKeptWrapperHandles = nullptr;
+  }
+  // Released without mutex_: the last reference to a wrapper hands its code
+  // to the engine, whose code GC can free it right away.
 }
 
 #ifdef DEBUG
