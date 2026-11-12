@@ -496,8 +496,30 @@ class ThreadSafeFunction {
             v8::Local<v8::Function>::New(env->isolate, ref);
         js_callback = v8impl::JsValueFromV8LocalValue(js_cb);
       }
-      env->CallbackIntoModule<false>(
-          [&](napi_env env) { call_js_cb(env, js_callback, context, data); });
+      // Delivering a call runs the module's own call_js callback, which node
+      // does not wrap in a callback region the way it wraps a finalizer (see
+      // CallFinalizer). Without one, the N-API calls that callback makes are
+      // outside a region and the recording is rejected with "Callback <name>
+      // outside a callback region". Replaying opens the region without calling
+      // the module, as CallFinalizer does, so the calls recorded inside it are
+      // replayed instead. node's own CallJs stands in when the module gave no
+      // callback; that is node's code calling JS, not a module callback, and
+      // is left alone.
+      auto deliver = [&] {
+        env->CallbackIntoModule<false>(
+            [&](napi_env env) { call_js_cb(env, js_callback, context, data); });
+      };
+      const bool module_callback = call_js_cb != CallJs;
+      if (module_callback && v8::recordreplay::IsRecordingOrReplaying() &&
+          node::recordreplay::AreEventsRecorded() &&
+          !node::recordreplay::IsRecordingFinished()) {
+        node::recordreplay::AutoCallbackRegion region;
+        if (!v8::recordreplay::IsReplaying()) {
+          deliver();
+        }
+      } else {
+        deliver();
+      }
     }
 
     return has_more;
