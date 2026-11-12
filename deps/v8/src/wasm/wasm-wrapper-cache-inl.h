@@ -156,7 +156,6 @@ void WasmWrapperCache<CacheKey>::Free(std::vector<WasmCode*>& wrappers) {
 template <typename CacheKey>
 V8_EXPORT_PRIVATE std::shared_ptr<WasmWrapperHandle>
 WasmWrapperCache<CacheKey>::GetCompiled(Isolate* isolate, CacheKey cache_key) {
-  WasmWrapperCacheOrderedScope ordered(record_replay_ordered_lock_);
   if constexpr (std::is_same_v<CacheKey, ImportWrapperCacheKey>) {
     CHECK_NE(cache_key.kind, ImportCallKind::kWasmToJSFastApi);
   }
@@ -164,6 +163,9 @@ WasmWrapperCache<CacheKey>::GetCompiled(Isolate* isolate, CacheKey cache_key) {
 
   std::shared_ptr<wasm::WasmWrapperHandle> wrapper_handle;
   {
+    // Only the lookup is ordered: the ordered lock isn't recursive when
+    // replaying, and CacheCompiledWrapper takes it again to publish.
+    WasmWrapperCacheOrderedScope ordered(record_replay_ordered_lock_);
     base::MutexGuard lock(&mutex_);
 
     auto it = entry_map_.find(cache_key);
