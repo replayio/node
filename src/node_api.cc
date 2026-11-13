@@ -603,21 +603,28 @@ class ThreadSafeFunction {
       // replayed instead. node's own CallJs stands in when the module gave no
       // callback; that is node's code calling JS, not a module callback, and
       // is left alone.
-      // No check of the recording's state here, unlike the drain above: a
-      // delivery runs from the loop, and the loop has drained before the
-      // recording is finished.
+      // The same two checks as the drain above, for the same reason: a
+      // delivery also runs after the recording has finished, from the
+      // uv_run in CleanupHandles while the environment is being freed.
       //
       // The region goes inside CallbackIntoModule, the way CallFinalizer
       // nests it: what CallbackIntoModule does afterwards with an exception
       // the module left pending has to happen on both sides, and it does not
       // when the replay skips the whole scope.
       env->CallbackIntoModule<false>([&](napi_env env) {
-        if (module_call_js && v8::recordreplay::IsRecordingOrReplaying()) {
-          node::recordreplay::AutoCallbackRegion region;
+        if (!module_call_js || !v8::recordreplay::IsRecordingOrReplaying()) {
+          call_js_cb(env, js_callback, context, data);
+          return;
+        }
+        if (!node::recordreplay::AreEventsRecorded() ||
+            node::recordreplay::IsRecordingFinished()) {
           if (!v8::recordreplay::IsReplaying()) {
             call_js_cb(env, js_callback, context, data);
           }
-        } else {
+          return;
+        }
+        node::recordreplay::AutoCallbackRegion region;
+        if (!v8::recordreplay::IsReplaying()) {
           call_js_cb(env, js_callback, context, data);
         }
       });
