@@ -971,6 +971,11 @@ void uv_free_cpu_info(uv_cpu_info_t* cpu_infos, int count) {
 #if defined(__GNUC__) && !defined(_WIN32)
 __attribute__((destructor))
 #endif
+void uv_async_set_record_pending(uv_async_t* handle) {
+  handle->flags |= UV_HANDLE_RECORD_PENDING;
+}
+
+
 void uv_library_shutdown(void) {
   static int was_shutdown;
 

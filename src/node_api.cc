@@ -408,30 +408,25 @@ class ThreadSafeFunction {
         cond = std::make_unique<node::ConditionVariable>();
       }
       if (max_queue_size == 0 || cond) {
-        // Push() cannot make the loop deliver anything when replaying: the
-        // thread that calls it is the module's own, and module code does not
-        // run there, so neither its uv_async_send nor the `pending` flag that
-        // send sets is reproduced. Keeping the send makes the two sides enter
-        // uv__async_io a different number of times (measured: recorded
-        // uv__async_io #4 against replayed #3), so Send() stops sending and
-        // the loop polls for work instead -- the same answer as
-        // Environment::CheckImmediate, which stopped taking its queue-empty
-        // shortcut rather than depend on what another thread had pushed.
+        // A module pushes from a thread it created itself. That thread is
+        // not in the recording and does not exist at all when replaying, so
+        // neither its uv_async_send nor the `pending` flag the send sets is
+        // reproduced, and the loop would take the other branch of
+        // uv__async_io's `pending` test than it took while recording.
         //
-        // A short repeating timer rather than an idle handle: an active idle
-        // handle makes uv_backend_timeout 0, so the loop never sleeps and the
-        // recording grows with the spin, measured at 337 MB against 35 MB on
-        // a recorded `next dev`. The interval bounds how long a push waits,
-        // and a module's pushes are what every awaited napi-rs async function
-        // is made of, so it is kept short.
+        // Marking the handle makes libuv record what the loop found in that
+        // flag rather than order the send against it (see uv_async_send).
+        // The loop then wakes and delivers where it did while recording,
+        // without the sending thread, and nothing is polled for: an idle
+        // function costs the recording nothing at all, and a push is
+        // delivered as promptly as it is without the recorder, which matters
+        // because a module's pushes are what every awaited napi-rs async
+        // function is made of.
         //
-        // Started only on this success path: the failure paths below delete
+        // Marked only on this success path: the failure paths below delete
         // `this`.
         if (v8::recordreplay::IsRecordingOrReplaying()) {
-          CHECK_EQ(0, uv_timer_init(loop, &dispatch_timer));
-          uv_unref(reinterpret_cast<uv_handle_t*>(&dispatch_timer));
-          CHECK_EQ(0, uv_timer_start(&dispatch_timer, DispatchTimerCb, 1, 1));
-          dispatch_timer_active = true;
+          uv_async_set_record_pending(&async);
         }
         return napi_ok;
       }
@@ -491,13 +486,15 @@ class ThreadSafeFunction {
       has_more = DispatchOne();
 
       // Send() was called while we were executing the JS function
-      const bool pending = dispatch_state.exchange(kDispatchIdle) !=
-                           kDispatchRunning;
-      // Whether another thread pushed while we ran is not reproduced when
-      // replaying, so it must not decide the iteration count. DispatchOne's
-      // recorded has_more already says whether the queue had more; anything
-      // pushed since is picked up on the next loop iteration.
-      if (pending && !v8::recordreplay::IsRecordingOrReplaying()) {
+      bool pending = dispatch_state.exchange(kDispatchIdle) != kDispatchRunning;
+      // Whether another thread pushed while we ran is decided on the module's
+      // thread, which is not in the recording, so it is recorded here the way
+      // the queue's own state is in DispatchOne.
+      if (v8::recordreplay::IsRecordingOrReplaying()) {
+        pending = v8::recordreplay::RecordReplayValue("napi_tsfn_pending",
+                                                      pending);
+      }
+      if (pending) {
         has_more = true;
       }
     }
@@ -537,20 +534,17 @@ class ThreadSafeFunction {
               cond->Signal(lock);
             }
             closed = true;
-            CloseHandlesAndMaybeDelete();
           }
         } else {
           has_more = true;
         }
       } else {
         closed = true;
-        CloseHandlesAndMaybeDelete();
       }
 
       if (record_dispatch) {
-        // One value per tick rather than three: the timer above calls this on
-        // every loop iteration for as long as the thread-safe function lives,
-        // and nearly all of those ticks have nothing to deliver.
+        // One value rather than three: the replay has no queue of its own, so
+        // everything this decided about it comes from here.
         size_t decision = (popped_value ? 1 : 0) | (has_more ? 2 : 0) |
                           (closed ? 4 : 0);
         decision = v8::recordreplay::RecordReplayValue("napi_tsfn_dispatch",
@@ -559,20 +553,17 @@ class ThreadSafeFunction {
         has_more = decision & 2;
         closed = decision & 4;
 
-        // A function that is live but idle would otherwise record a decision
-        // every millisecond for as long as it exists, measured at about
-        // 250 KB/s. Back off while nothing is arriving and return to 1 ms as
-        // soon as something does. Both sides decide this from the recorded
-        // value above, so they back off together.
-        if (popped_value) {
-          idle_ticks = 0;
-        } else if (idle_ticks < kMaxIdleTicks) {
-          idle_ticks++;
-        }
         if (v8::recordreplay::IsReplaying() && closed) {
           state = kClosing;
-          CloseHandlesAndMaybeDelete();
         }
+      }
+
+      // After the decision above on both sides: closing the async handle
+      // waits for the sending threads under its ordered lock (uv__async_spin),
+      // which otherwise came before the recorded value while recording and
+      // after it while replaying.
+      if (closed) {
+        CloseHandlesAndMaybeDelete();
       }
     }
 
@@ -619,14 +610,6 @@ class ThreadSafeFunction {
       });
     }
 
-    if (dispatch_timer_active) {
-      uint64_t repeat = idle_ticks < kMaxIdleTicks ? 1 : kIdleIntervalMs;
-      if (uv_timer_get_repeat(&dispatch_timer) != repeat) {
-        uv_timer_set_repeat(&dispatch_timer, repeat);
-        uv_timer_again(&dispatch_timer);
-      }
-    }
-
     return has_more;
   }
 
@@ -654,25 +637,6 @@ class ThreadSafeFunction {
       return;
     }
     handles_closing = true;
-    // Close the dispatch timer first and chain the async handle's close onto
-    // it, so Finalize still runs from the last handle to close.
-    if (dispatch_timer_active) {
-      dispatch_timer_active = false;
-      uv_timer_stop(&dispatch_timer);
-      env->node_env()->CloseHandle(
-          reinterpret_cast<uv_handle_t*>(&dispatch_timer),
-          [](uv_handle_t* handle) -> void {
-            ThreadSafeFunction* ts_fn =
-                node::ContainerOf(&ThreadSafeFunction::dispatch_timer,
-                                  reinterpret_cast<uv_timer_t*>(handle));
-            ts_fn->CloseAsyncHandle();
-          });
-      return;
-    }
-    CloseAsyncHandle();
-  }
-
-  void CloseAsyncHandle() {
     env->node_env()->CloseHandle(
         reinterpret_cast<uv_handle_t*>(&async),
         [](uv_handle_t* handle) -> void {
@@ -687,12 +651,6 @@ class ThreadSafeFunction {
     // Ask currently running Dispatch() to make one more iteration
     unsigned char current_state = dispatch_state.fetch_or(kDispatchPending);
     if ((current_state & kDispatchRunning) == kDispatchRunning) {
-      return;
-    }
-
-    // See Init(): the loop polls instead, because a replay cannot reproduce
-    // this send.
-    if (v8::recordreplay::IsRecordingOrReplaying()) {
       return;
     }
 
@@ -728,14 +686,6 @@ class ThreadSafeFunction {
   // delivering a call both go through call_js_cb.
   static void ReplayCallJs(napi_env, napi_value, void*, void*) {}
 
-  // Only there to stop the loop blocking in poll for ever; the timer
-  // does the dispatching.
-  static void DispatchTimerCb(uv_timer_t* handle) {
-    ThreadSafeFunction* ts_fn =
-        node::ContainerOf(&ThreadSafeFunction::dispatch_timer, handle);
-    ts_fn->Dispatch();
-  }
-
   static void AsyncCb(uv_async_t* async) {
     ThreadSafeFunction* ts_fn =
         node::ContainerOf(&ThreadSafeFunction::async, async);
@@ -770,14 +720,6 @@ class ThreadSafeFunction {
   std::unique_ptr<node::ConditionVariable> cond;
   std::queue<void*> queue;
   uv_async_t async;
-  // Ticks in a row with nothing to deliver, and what the timer slows to once
-  // there have been that many. Both are decided from recorded values.
-  static constexpr size_t kMaxIdleTicks = 50;
-  static constexpr uint64_t kIdleIntervalMs = 50;
-  size_t idle_ticks = 0;
-
-  uv_timer_t dispatch_timer;
-  bool dispatch_timer_active = false;
   size_t thread_count;
   State state;
   std::atomic_uchar dispatch_state;

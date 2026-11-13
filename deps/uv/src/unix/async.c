@@ -74,6 +74,22 @@ extern void V8RecordReplayAssert(const char* format, ...);
 extern size_t V8RecordReplayCreateOrderedLock(const char* name);
 extern void V8RecordReplayOrderedLock(int lock);
 extern void V8RecordReplayOrderedUnlock(int lock);
+extern int V8RecordReplayIsReplaying(void);
+extern uintptr_t V8RecordReplayValue(const char* why, uintptr_t value);
+extern void V8RecordReplayBeginPassThroughEvents(void);
+extern void V8RecordReplayEndPassThroughEvents(void);
+
+/* Whatever the fork adds to uv_async_t has to fit in what was already tail
+ * padding. An addon reserves the size node's headers gave when the addon was
+ * built, and uv_async_init writes the handle's fields, so a field past that
+ * size is a write into the addon's own memory -- which is why the
+ * record/replay mark is a handle flag (UV_HANDLE_RECORD_PENDING) and not a
+ * field. If this fires after a libuv rebase, check whether the struct grew
+ * upstream before changing the number. */
+#if defined(__LP64__) || defined(_LP64)
+_Static_assert(sizeof(uv_async_t) == 128,
+               "uv_async_t must keep the size addons were built against");
+#endif
 
 
 int uv_async_init(uv_loop_t* loop, uv_async_t* handle, uv_async_cb async_cb) {
@@ -102,6 +118,33 @@ int uv_async_send(uv_async_t* handle) {
 
   pending = (_Atomic int*) &handle->pending;
   busy = (_Atomic int*) &handle->u.fd;
+
+  /* A handle node marked (see uv_async_set_record_pending, called from
+   * ThreadSafeFunction::Init). Some of its sends come from a thread the
+   * module created, which the recorder never sees and which does not exist
+   * at all when replaying, so ordering a send against the loop's read of
+   * `pending` is no use: there is no recorded order for a thread that is not
+   * in the recording. uv__async_io records what it found in `pending`
+   * instead. That covers every sender the handle has -- the module's own
+   * threads, the loop itself, and a recorded thread inside a module callback
+   * -- because the loop then takes the branch it took while recording,
+   * whoever set the flag. The send stays out of the recording either way:
+   * passed through while recording, and while replaying it does not happen,
+   * since the wake it would cause is already in the recording. */
+  if (handle->flags & UV_HANDLE_RECORD_PENDING) {
+    if (V8RecordReplayIsReplaying())
+      return 0;
+
+    V8RecordReplayBeginPassThroughEvents();
+    if (atomic_load_explicit(pending, memory_order_relaxed) == 0) {
+      atomic_fetch_add(busy, 1);
+      if (atomic_exchange(pending, 1) == 0)
+        uv__async_send(handle->loop);
+      atomic_fetch_add(busy, -1);
+    }
+    V8RecordReplayEndPassThroughEvents();
+    return 0;
+  }
 
   V8RecordReplayOrderedLock(handle->ordered_lock_id);
   /* Do a cheap read first. */
@@ -141,6 +184,13 @@ static void uv__async_spin(uv_async_t* handle) {
    * threads after this function returns. */
   atomic_store(pending, 1);
 
+  /* A marked handle may be sent to from a thread the module created, and
+   * that thread only runs while recording: the yields this makes when it
+   * does find the handle busy would have nothing to match them in the
+   * replay. */
+  if (handle->flags & UV_HANDLE_RECORD_PENDING)
+    V8RecordReplayBeginPassThroughEvents();
+
   for (;;) {
     /* 997 is not completely chosen at random. It's a prime number, acyclic by
      * nature, and should therefore hopefully dampen sympathetic resonance.
@@ -161,6 +211,9 @@ static void uv__async_spin(uv_async_t* handle) {
   }
 
 done:
+  if (handle->flags & UV_HANDLE_RECORD_PENDING)
+    V8RecordReplayEndPassThroughEvents();
+
   V8RecordReplayOrderedUnlock(handle->ordered_lock_id);
 
   V8RecordReplayAssert("uv__async_spin");
@@ -226,9 +279,19 @@ void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
      * under the lock too: which of the two got there first then follows the
      * recorded order of the lock rather than the threads' timing. The callback
      * runs outside the lock, since it may send to this handle itself. */
-    V8RecordReplayOrderedLock(h->ordered_lock_id);
-    was_pending = atomic_exchange(pending, 0);
-    V8RecordReplayOrderedUnlock(h->ordered_lock_id);
+    if (h->flags & UV_HANDLE_RECORD_PENDING) {
+      /* No ordered lock: the thread which set this flag is not in the
+       * recording, so there is no order to follow. Record what was found
+       * instead, which is what makes the replay take the recorded branch
+       * without that thread. */
+      was_pending = atomic_exchange(pending, 0);
+      was_pending = (int) V8RecordReplayValue("uv__async_io was_pending",
+                                              (uintptr_t) was_pending);
+    } else {
+      V8RecordReplayOrderedLock(h->ordered_lock_id);
+      was_pending = atomic_exchange(pending, 0);
+      V8RecordReplayOrderedUnlock(h->ordered_lock_id);
+    }
     if (was_pending == 0) {
       V8RecordReplayAssert("uv__async_io #3");
       continue;  /* Not pending. */
