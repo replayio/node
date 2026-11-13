@@ -470,6 +470,14 @@ JSNativeContextSpecialization::ReduceJSFindNonDefaultConstructorOrConstruct(
     return NoChange();
   }
 
+  // The builtin doesn't skip default constructors while the debugger is
+  // active, which it always is when recording or replaying, so unoptimized
+  // code runs them and advances the progress counter in each. Skipping them
+  // here would make the counter depend on when this code got optimized.
+  if (recordreplay::IsRecordingOrReplaying()) {
+    return NoChange();
+  }
+
   // TODO(v8:13091): Don't produce incomplete stack traces when debug is active.
   // We already deopt when a breakpoint is set. But it would be even nicer to
   // avoid producting incomplete stack traces when when debug is active, even if

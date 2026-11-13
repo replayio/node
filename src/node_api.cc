@@ -261,7 +261,17 @@ class ThreadSafeFunction {
         env(env_),
         finalize_data(finalize_data_),
         finalize_cb(finalize_cb_),
-        call_js_cb(call_js_cb_ == nullptr ? CallJs : call_js_cb_),
+        module_call_js(call_js_cb_ != nullptr),
+        // The module's callback is reproduced when replaying (see
+        // napi_create_threadsafe_function in recording/FunctionNAPI.cpp), so
+        // node takes the same branches on both sides -- but module code does
+        // not run when replaying and its text is not even mapped, so calling
+        // the pointer would jump into nothing. Every caller below gets a stub
+        // instead, and module_call_js remembers that there was one.
+        call_js_cb(call_js_cb_ == nullptr
+                       ? CallJs
+                       : (v8::recordreplay::IsReplaying() ? ReplayCallJs
+                                                          : call_js_cb_)),
         handles_closing(false) {
     ref.Reset(env->isolate, func);
     node::AddEnvironmentCleanupHook(env->isolate, Cleanup, this);
@@ -383,6 +393,44 @@ class ThreadSafeFunction {
         cond = std::make_unique<node::ConditionVariable>();
       }
       if (max_queue_size == 0 || cond) {
+        // Push() cannot make the loop deliver anything when replaying: the
+        // thread that calls it is the module's own, and module code does not
+        // run there, so neither its uv_async_send nor the `pending` flag that
+        // send sets is reproduced. Keeping the send makes the two sides enter
+        // uv__async_io a different number of times (measured: recorded
+        // uv__async_io #4 against replayed #3), so Send() stops sending and
+        // the loop polls for work instead -- the same answer as
+        // Environment::CheckImmediate, which stopped taking its queue-empty
+        // shortcut rather than depend on what another thread had pushed.
+        //
+        // A check handle rather than an idle or a timer. An active idle
+        // handle makes uv_backend_timeout 0, so the loop never sleeps and the
+        // recording grows with the spin: a `next dev` recording measured
+        // 337 MB against 30 MB. A repeating timer does not spin, but it sets
+        // the loop's poll timeout, so it decides how many iterations the loop
+        // makes -- and the replay then emits a progress checkpoint where the
+        // recording was still working. A check handle runs once per iteration
+        // and changes neither, so the iteration count stays whatever the
+        // recording's own work made it: measured on a recorded `next dev`,
+        // the checkpoint count fell from about 100 to about 72.
+        //
+        // The check handle alone would never run if the loop had nothing else
+        // to wake it, and a thread-safe function's async handle is referenced,
+        // so a program whose only remaining work was a delivery would block in
+        // poll for ever. A long unreferenced timer gives that a floor without
+        // deciding the iteration count the way a 1 ms one did.
+        //
+        // Started only on this success path: the failure paths below delete
+        // `this`.
+        if (v8::recordreplay::IsRecordingOrReplaying()) {
+          uv_check_init(loop, &dispatch_check);
+          uv_unref(reinterpret_cast<uv_handle_t*>(&dispatch_check));
+          uv_check_start(&dispatch_check, DispatchCheckCb);
+          uv_timer_init(loop, &wakeup_timer);
+          uv_unref(reinterpret_cast<uv_handle_t*>(&wakeup_timer));
+          uv_timer_start(&wakeup_timer, WakeupTimerCb, 50, 50);
+          dispatch_check_active = true;
+        }
         return napi_ok;
       }
 
@@ -441,7 +489,13 @@ class ThreadSafeFunction {
       has_more = DispatchOne();
 
       // Send() was called while we were executing the JS function
-      if (dispatch_state.exchange(kDispatchIdle) != kDispatchRunning) {
+      const bool pending = dispatch_state.exchange(kDispatchIdle) !=
+                           kDispatchRunning;
+      // Whether another thread pushed while we ran is not reproduced when
+      // replaying, so it must not decide the iteration count. DispatchOne's
+      // recorded has_more already says whether the queue had more; anything
+      // pushed since is picked up on the next loop iteration.
+      if (pending && !v8::recordreplay::IsRecordingOrReplaying()) {
         has_more = true;
       }
     }
@@ -455,10 +509,14 @@ class ThreadSafeFunction {
     void* data = nullptr;
     bool popped_value = false;
     bool has_more = false;
+    bool closed = false;
+    const bool record_dispatch = v8::recordreplay::IsRecordingOrReplaying();
 
     {
       node::Mutex::ScopedLock lock(this->mutex);
-      if (state == kOpen) {
+      if (v8::recordreplay::IsReplaying()) {
+        // decisions come from the recording below
+      } else if (state == kOpen) {
         size_t size = queue.size();
         if (size > 0) {
           data = queue.front();
@@ -476,13 +534,32 @@ class ThreadSafeFunction {
             if (max_queue_size > 0) {
               cond->Signal(lock);
             }
+            closed = true;
             CloseHandlesAndMaybeDelete();
           }
         } else {
           has_more = true;
         }
       } else {
+        closed = true;
         CloseHandlesAndMaybeDelete();
+      }
+
+      if (record_dispatch) {
+        // One value per tick rather than three: the timer above calls this on
+        // every loop iteration for as long as the thread-safe function lives,
+        // and nearly all of those ticks have nothing to deliver.
+        size_t decision = (popped_value ? 1 : 0) | (has_more ? 2 : 0) |
+                          (closed ? 4 : 0);
+        decision = v8::recordreplay::RecordReplayValue("napi_tsfn_dispatch",
+                                                       decision);
+        popped_value = decision & 1;
+        has_more = decision & 2;
+        closed = decision & 4;
+        if (v8::recordreplay::IsReplaying() && closed) {
+          state = kClosing;
+          CloseHandlesAndMaybeDelete();
+        }
       }
     }
 
@@ -495,9 +572,38 @@ class ThreadSafeFunction {
         v8::Local<v8::Function> js_cb =
             v8::Local<v8::Function>::New(env->isolate, ref);
         js_callback = v8impl::JsValueFromV8LocalValue(js_cb);
+        // This value is made here and handed to the module, so the recorder
+        // has no id for it until it is registered -- and a module which calls
+        // it, as napi-rs does, then dies on "Unknown pointer passed to
+        // callback napi_call_function". Same as the exports object in
+        // napi_module_register_by_symbol.
+        if (v8::recordreplay::IsRecordingOrReplaying()) {
+          v8::recordreplay::RegisterPointer(js_callback);
+        }
       }
-      env->CallbackIntoModule<false>(
-          [&](napi_env env) { call_js_cb(env, js_callback, context, data); });
+      // Delivering a call runs the module's own call_js callback, which node
+      // does not wrap in a callback region the way it wraps a finalizer (see
+      // CallFinalizer). Without one, the N-API calls that callback makes are
+      // outside a region and the recording is rejected with "Callback <name>
+      // outside a callback region". Replaying opens the region without calling
+      // the module, as CallFinalizer does, so the calls recorded inside it are
+      // replayed instead. node's own CallJs stands in when the module gave no
+      // callback; that is node's code calling JS, not a module callback, and
+      // is left alone.
+      auto deliver = [&] {
+        env->CallbackIntoModule<false>(
+            [&](napi_env env) { call_js_cb(env, js_callback, context, data); });
+      };
+      // node's own CallJs stands in when the module gave no callback; that is
+      // node calling JS rather than a module callback, and is left alone.
+      if (module_call_js && v8::recordreplay::IsRecordingOrReplaying()) {
+        node::recordreplay::AutoCallbackRegion region;
+        if (!v8::recordreplay::IsReplaying()) {
+          deliver();
+        }
+      } else {
+        deliver();
+      }
     }
 
     return has_more;
@@ -527,6 +633,29 @@ class ThreadSafeFunction {
       return;
     }
     handles_closing = true;
+    // Close the dispatch timer first and chain the async handle's close onto
+    // it, so Finalize still runs from the last handle to close.
+    if (dispatch_check_active) {
+      dispatch_check_active = false;
+      uv_check_stop(&dispatch_check);
+      uv_timer_stop(&wakeup_timer);
+      env->node_env()->CloseHandle(
+          reinterpret_cast<uv_handle_t*>(&wakeup_timer),
+          [](uv_handle_t*) -> void {});
+      env->node_env()->CloseHandle(
+          reinterpret_cast<uv_handle_t*>(&dispatch_check),
+          [](uv_handle_t* handle) -> void {
+            ThreadSafeFunction* ts_fn =
+                node::ContainerOf(&ThreadSafeFunction::dispatch_check,
+                                  reinterpret_cast<uv_check_t*>(handle));
+            ts_fn->CloseAsyncHandle();
+          });
+      return;
+    }
+    CloseAsyncHandle();
+  }
+
+  void CloseAsyncHandle() {
     env->node_env()->CloseHandle(
         reinterpret_cast<uv_handle_t*>(&async),
         [](uv_handle_t* handle) -> void {
@@ -544,11 +673,22 @@ class ThreadSafeFunction {
       return;
     }
 
+    // See Init(): the loop polls instead, because a replay cannot reproduce
+    // this send.
+    if (v8::recordreplay::IsRecordingOrReplaying()) {
+      return;
+    }
+
     CHECK_EQ(0, uv_async_send(&async));
   }
 
   // Default way of calling into JavaScript. Used when ThreadSafeFunction is
   //  without a call_js_cb_.
+  // Stands in for a module's call_js callback when replaying, where the
+  // module's own code never runs. Draining the queue (EmptyQueue) and
+  // delivering a call both go through call_js_cb.
+  static void ReplayCallJs(napi_env, napi_value, void*, void*) {}
+
   static void CallJs(napi_env env, napi_value cb, void* context, void* data) {
     if (!(env == nullptr || cb == nullptr)) {
       napi_value recv;
@@ -569,6 +709,16 @@ class ThreadSafeFunction {
         return;
       }
     }
+  }
+
+  // Only there to stop the loop blocking in poll for ever; the check handle
+  // does the dispatching.
+  static void WakeupTimerCb(uv_timer_t*) {}
+
+  static void DispatchCheckCb(uv_check_t* handle) {
+    ThreadSafeFunction* ts_fn =
+        node::ContainerOf(&ThreadSafeFunction::dispatch_check, handle);
+    ts_fn->Dispatch();
   }
 
   static void AsyncCb(uv_async_t* async) {
@@ -605,6 +755,9 @@ class ThreadSafeFunction {
   std::unique_ptr<node::ConditionVariable> cond;
   std::queue<void*> queue;
   uv_async_t async;
+  uv_check_t dispatch_check;
+  uv_timer_t wakeup_timer;
+  bool dispatch_check_active = false;
   size_t thread_count;
   State state;
   std::atomic_uchar dispatch_state;
@@ -619,6 +772,9 @@ class ThreadSafeFunction {
   node_napi_env env;
   void* finalize_data;
   napi_finalize finalize_cb;
+  // Whether the module gave a call_js callback of its own, which the stub
+  // above hides from call_js_cb when replaying.
+  bool module_call_js;
   napi_threadsafe_function_call_js call_js_cb;
   bool handles_closing;
 };
