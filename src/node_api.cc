@@ -403,23 +403,33 @@ class ThreadSafeFunction {
         // Environment::CheckImmediate, which stopped taking its queue-empty
         // shortcut rather than depend on what another thread had pushed.
         //
-        // A timer rather than an idle or check handle. An active idle handle
-        // makes uv_backend_timeout 0, so the loop never sleeps and the
+        // A check handle rather than an idle or a timer. An active idle
+        // handle makes uv_backend_timeout 0, so the loop never sleeps and the
         // recording grows with the spin: a `next dev` recording measured
-        // 337 MB against 18 MB. A check handle does not spin but only runs
-        // when something else wakes the loop, and a thread-safe function's
-        // async handle is referenced, so a loop with nothing else to do would
-        // block in poll for ever and never deliver. A short repeating timer
-        // sleeps between ticks and still bounds the delay, and a replay
-        // reproduces its firings the way it reproduces any other timer's.
+        // 337 MB against 30 MB. A repeating timer does not spin, but it sets
+        // the loop's poll timeout, so it decides how many iterations the loop
+        // makes -- and the replay then emits a progress checkpoint where the
+        // recording was still working. A check handle runs once per iteration
+        // and changes neither, so the iteration count stays whatever the
+        // recording's own work made it: measured on a recorded `next dev`,
+        // the checkpoint count fell from about 100 to about 72.
+        //
+        // The check handle alone would never run if the loop had nothing else
+        // to wake it, and a thread-safe function's async handle is referenced,
+        // so a program whose only remaining work was a delivery would block in
+        // poll for ever. A long unreferenced timer gives that a floor without
+        // deciding the iteration count the way a 1 ms one did.
         //
         // Started only on this success path: the failure paths below delete
         // `this`.
         if (v8::recordreplay::IsRecordingOrReplaying()) {
-          uv_timer_init(loop, &dispatch_timer);
-          uv_unref(reinterpret_cast<uv_handle_t*>(&dispatch_timer));
-          uv_timer_start(&dispatch_timer, DispatchTimerCb, 1, 1);
-          dispatch_timer_active = true;
+          uv_check_init(loop, &dispatch_check);
+          uv_unref(reinterpret_cast<uv_handle_t*>(&dispatch_check));
+          uv_check_start(&dispatch_check, DispatchCheckCb);
+          uv_timer_init(loop, &wakeup_timer);
+          uv_unref(reinterpret_cast<uv_handle_t*>(&wakeup_timer));
+          uv_timer_start(&wakeup_timer, WakeupTimerCb, 50, 50);
+          dispatch_check_active = true;
         }
         return napi_ok;
       }
@@ -625,15 +635,19 @@ class ThreadSafeFunction {
     handles_closing = true;
     // Close the dispatch timer first and chain the async handle's close onto
     // it, so Finalize still runs from the last handle to close.
-    if (dispatch_timer_active) {
-      dispatch_timer_active = false;
-      uv_timer_stop(&dispatch_timer);
+    if (dispatch_check_active) {
+      dispatch_check_active = false;
+      uv_check_stop(&dispatch_check);
+      uv_timer_stop(&wakeup_timer);
       env->node_env()->CloseHandle(
-          reinterpret_cast<uv_handle_t*>(&dispatch_timer),
+          reinterpret_cast<uv_handle_t*>(&wakeup_timer),
+          [](uv_handle_t*) -> void {});
+      env->node_env()->CloseHandle(
+          reinterpret_cast<uv_handle_t*>(&dispatch_check),
           [](uv_handle_t* handle) -> void {
             ThreadSafeFunction* ts_fn =
-                node::ContainerOf(&ThreadSafeFunction::dispatch_timer,
-                                  reinterpret_cast<uv_timer_t*>(handle));
+                node::ContainerOf(&ThreadSafeFunction::dispatch_check,
+                                  reinterpret_cast<uv_check_t*>(handle));
             ts_fn->CloseAsyncHandle();
           });
       return;
@@ -697,9 +711,13 @@ class ThreadSafeFunction {
     }
   }
 
-  static void DispatchTimerCb(uv_timer_t* handle) {
+  // Only there to stop the loop blocking in poll for ever; the check handle
+  // does the dispatching.
+  static void WakeupTimerCb(uv_timer_t*) {}
+
+  static void DispatchCheckCb(uv_check_t* handle) {
     ThreadSafeFunction* ts_fn =
-        node::ContainerOf(&ThreadSafeFunction::dispatch_timer, handle);
+        node::ContainerOf(&ThreadSafeFunction::dispatch_check, handle);
     ts_fn->Dispatch();
   }
 
@@ -737,8 +755,9 @@ class ThreadSafeFunction {
   std::unique_ptr<node::ConditionVariable> cond;
   std::queue<void*> queue;
   uv_async_t async;
-  uv_timer_t dispatch_timer;
-  bool dispatch_timer_active = false;
+  uv_check_t dispatch_check;
+  uv_timer_t wakeup_timer;
+  bool dispatch_check_active = false;
   size_t thread_count;
   State state;
   std::atomic_uchar dispatch_state;
