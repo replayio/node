@@ -8174,6 +8174,10 @@ MaglevGraphBuilder::TryBuildFindNonDefaultConstructorOrConstruct(
   // See also:
   // JSNativeContextSpecialization::ReduceJSFindNonDefaultConstructorOrConstruct
 
+  // As there: unoptimized code runs default constructors when recording or
+  // replaying, and the progress counter must not depend on the tier.
+  if (recordreplay::IsRecordingOrReplaying()) return {};
+
   compiler::OptionalHeapObjectRef maybe_constant =
       TryGetConstant<HeapObject>(this_function);
   if (!maybe_constant) return {};
