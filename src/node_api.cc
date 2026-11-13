@@ -369,7 +369,16 @@ class ThreadSafeFunction {
     // replay's queue is always empty (see napi_call_threadsafe_function), so
     // opening it only for a non-empty queue would open it while recording and
     // not while replaying, which is itself a divergence.
-    if (module_call_js && v8::recordreplay::IsRecordingOrReplaying()) {
+    //
+    // A function still alive when the loop drains is finalized from an
+    // environment cleanup hook, and those run after NodeMainInstance::Run
+    // has called RecordReplayFinishRecording -- measured there, with
+    // AreEventsRecorded() still true, so that check alone would not catch
+    // it. There is no recording left to open a region in by then.
+    // CallModuleFinalizer makes the same two checks for the same reason.
+    if (module_call_js && v8::recordreplay::IsRecordingOrReplaying() &&
+        node::recordreplay::AreEventsRecorded() &&
+        !node::recordreplay::IsRecordingFinished()) {
       node::recordreplay::AutoCallbackRegion region;
       for (; !drain_queue.empty(); drain_queue.pop()) {
         call_js_cb(nullptr, nullptr, context, drain_queue.front());
@@ -594,6 +603,10 @@ class ThreadSafeFunction {
       // replayed instead. node's own CallJs stands in when the module gave no
       // callback; that is node's code calling JS, not a module callback, and
       // is left alone.
+      // No check of the recording's state here, unlike the drain above: a
+      // delivery runs from the loop, and the loop has drained before the
+      // recording is finished.
+      //
       // The region goes inside CallbackIntoModule, the way CallFinalizer
       // nests it: what CallbackIntoModule does afterwards with an exception
       // the module left pending has to happen on both sides, and it does not
