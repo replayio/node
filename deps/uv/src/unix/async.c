@@ -184,13 +184,6 @@ static void uv__async_spin(uv_async_t* handle) {
    * threads after this function returns. */
   atomic_store(pending, 1);
 
-  /* A marked handle may be sent to from a thread the module created, and
-   * that thread only runs while recording: the yields this makes when it
-   * does find the handle busy would have nothing to match them in the
-   * replay. */
-  if (handle->flags & UV_HANDLE_RECORD_PENDING)
-    V8RecordReplayBeginPassThroughEvents();
-
   for (;;) {
     /* 997 is not completely chosen at random. It's a prime number, acyclic by
      * nature, and should therefore hopefully dampen sympathetic resonance.
@@ -211,9 +204,6 @@ static void uv__async_spin(uv_async_t* handle) {
   }
 
 done:
-  if (handle->flags & UV_HANDLE_RECORD_PENDING)
-    V8RecordReplayEndPassThroughEvents();
-
   V8RecordReplayOrderedUnlock(handle->ordered_lock_id);
 
   V8RecordReplayAssert("uv__async_spin");
