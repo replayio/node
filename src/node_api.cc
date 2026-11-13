@@ -418,33 +418,20 @@ class ThreadSafeFunction {
         // Environment::CheckImmediate, which stopped taking its queue-empty
         // shortcut rather than depend on what another thread had pushed.
         //
-        // A check handle rather than an idle or a timer. An active idle
+        // A short repeating timer rather than an idle handle: an active idle
         // handle makes uv_backend_timeout 0, so the loop never sleeps and the
-        // recording grows with the spin: a `next dev` recording measured
-        // 337 MB against 30 MB. A repeating timer does not spin, but it sets
-        // the loop's poll timeout, so it decides how many iterations the loop
-        // makes -- and the replay then emits a progress checkpoint where the
-        // recording was still working. A check handle runs once per iteration
-        // and changes neither, so the iteration count stays whatever the
-        // recording's own work made it: measured on a recorded `next dev`,
-        // the checkpoint count fell from about 100 to about 72.
-        //
-        // The check handle alone would never run if the loop had nothing else
-        // to wake it, and a thread-safe function's async handle is referenced,
-        // so a program whose only remaining work was a delivery would block in
-        // poll for ever. A long unreferenced timer gives that a floor without
-        // deciding the iteration count the way a 1 ms one did.
+        // recording grows with the spin, measured at 337 MB against 35 MB on
+        // a recorded `next dev`. The interval bounds how long a push waits,
+        // and a module's pushes are what every awaited napi-rs async function
+        // is made of, so it is kept short.
         //
         // Started only on this success path: the failure paths below delete
         // `this`.
         if (v8::recordreplay::IsRecordingOrReplaying()) {
-          uv_check_init(loop, &dispatch_check);
-          uv_unref(reinterpret_cast<uv_handle_t*>(&dispatch_check));
-          uv_check_start(&dispatch_check, DispatchCheckCb);
-          uv_timer_init(loop, &wakeup_timer);
-          uv_unref(reinterpret_cast<uv_handle_t*>(&wakeup_timer));
-          uv_timer_start(&wakeup_timer, WakeupTimerCb, 50, 50);
-          dispatch_check_active = true;
+          CHECK_EQ(0, uv_timer_init(loop, &dispatch_timer));
+          uv_unref(reinterpret_cast<uv_handle_t*>(&dispatch_timer));
+          CHECK_EQ(0, uv_timer_start(&dispatch_timer, DispatchTimerCb, 1, 1));
+          dispatch_timer_active = true;
         }
         return napi_ok;
       }
@@ -592,7 +579,7 @@ class ThreadSafeFunction {
         // it, as napi-rs does, then dies on "Unknown pointer passed to
         // callback napi_call_function". Same as the exports object in
         // napi_module_register_by_symbol.
-        if (v8::recordreplay::IsRecordingOrReplaying()) {
+        if (module_call_js && v8::recordreplay::IsRecordingOrReplaying()) {
           v8::recordreplay::RegisterPointer(js_callback);
         }
       }
@@ -605,9 +592,6 @@ class ThreadSafeFunction {
       // replayed instead. node's own CallJs stands in when the module gave no
       // callback; that is node's code calling JS, not a module callback, and
       // is left alone.
-      // node's own CallJs stands in when the module gave no callback; that is
-      // node calling JS rather than a module callback, and is left alone.
-      //
       // The region goes inside CallbackIntoModule, the way CallFinalizer
       // nests it: what CallbackIntoModule does afterwards with an exception
       // the module left pending has to happen on both sides, and it does not
@@ -653,19 +637,15 @@ class ThreadSafeFunction {
     handles_closing = true;
     // Close the dispatch timer first and chain the async handle's close onto
     // it, so Finalize still runs from the last handle to close.
-    if (dispatch_check_active) {
-      dispatch_check_active = false;
-      uv_check_stop(&dispatch_check);
-      uv_timer_stop(&wakeup_timer);
+    if (dispatch_timer_active) {
+      dispatch_timer_active = false;
+      uv_timer_stop(&dispatch_timer);
       env->node_env()->CloseHandle(
-          reinterpret_cast<uv_handle_t*>(&wakeup_timer),
-          [](uv_handle_t*) -> void {});
-      env->node_env()->CloseHandle(
-          reinterpret_cast<uv_handle_t*>(&dispatch_check),
+          reinterpret_cast<uv_handle_t*>(&dispatch_timer),
           [](uv_handle_t* handle) -> void {
             ThreadSafeFunction* ts_fn =
-                node::ContainerOf(&ThreadSafeFunction::dispatch_check,
-                                  reinterpret_cast<uv_check_t*>(handle));
+                node::ContainerOf(&ThreadSafeFunction::dispatch_timer,
+                                  reinterpret_cast<uv_timer_t*>(handle));
             ts_fn->CloseAsyncHandle();
           });
       return;
@@ -702,11 +682,6 @@ class ThreadSafeFunction {
 
   // Default way of calling into JavaScript. Used when ThreadSafeFunction is
   //  without a call_js_cb_.
-  // Stands in for a module's call_js callback when replaying, where the
-  // module's own code never runs. Draining the queue (EmptyQueue) and
-  // delivering a call both go through call_js_cb.
-  static void ReplayCallJs(napi_env, napi_value, void*, void*) {}
-
   static void CallJs(napi_env env, napi_value cb, void* context, void* data) {
     if (!(env == nullptr || cb == nullptr)) {
       napi_value recv;
@@ -729,13 +704,16 @@ class ThreadSafeFunction {
     }
   }
 
+  // Stands in for a module's call_js callback when replaying, where the
+  // module's own code never runs. Draining the queue (EmptyQueue) and
+  // delivering a call both go through call_js_cb.
+  static void ReplayCallJs(napi_env, napi_value, void*, void*) {}
+
   // Only there to stop the loop blocking in poll for ever; the check handle
   // does the dispatching.
-  static void WakeupTimerCb(uv_timer_t*) {}
-
-  static void DispatchCheckCb(uv_check_t* handle) {
+  static void DispatchTimerCb(uv_timer_t* handle) {
     ThreadSafeFunction* ts_fn =
-        node::ContainerOf(&ThreadSafeFunction::dispatch_check, handle);
+        node::ContainerOf(&ThreadSafeFunction::dispatch_timer, handle);
     ts_fn->Dispatch();
   }
 
@@ -773,9 +751,8 @@ class ThreadSafeFunction {
   std::unique_ptr<node::ConditionVariable> cond;
   std::queue<void*> queue;
   uv_async_t async;
-  uv_check_t dispatch_check;
-  uv_timer_t wakeup_timer;
-  bool dispatch_check_active = false;
+  uv_timer_t dispatch_timer;
+  bool dispatch_timer_active = false;
   size_t thread_count;
   State state;
   std::atomic_uchar dispatch_state;
