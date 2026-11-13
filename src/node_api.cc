@@ -370,11 +370,20 @@ class ThreadSafeFunction {
     // opening it only for a non-empty queue would open it while recording and
     // not while replaying, which is itself a divergence.
     //
-    // Both of these also run after RecordReplayFinishRecording, from the
-    // environment cleanup hooks, and nothing checks for that: the driver
-    // drops everything written past that point centrally, where
-    // RecordingData.cpp refuses to queue a chunk once RecordingFinished().
-    if (module_call_js && v8::recordreplay::IsRecordingOrReplaying()) {
+    // Not after the recording has finished, though. A function still alive
+    // when the loop drains is finalized from the async handle's close
+    // callback in CleanupHandles, which runs after NodeMainInstance::Run
+    // called RecordReplayFinishRecording. What the region changes there is
+    // not what is written -- the driver discards that anyway -- but which
+    // path the module's calls take: outside one they pass through
+    // DoInterceptCallback, and inside one they go through the operators,
+    // where a pointer made by code that was itself region-less is fatal
+    // ("Unknown pointer passed to callback"). The finalize callback run just
+    // below makes exactly such a pointer. CallModuleFinalizer makes the same
+    // two checks.
+    if (module_call_js && v8::recordreplay::IsRecordingOrReplaying() &&
+        node::recordreplay::AreEventsRecorded() &&
+        !node::recordreplay::IsRecordingFinished()) {
       node::recordreplay::AutoCallbackRegion region;
       for (; !drain_queue.empty(); drain_queue.pop()) {
         call_js_cb(nullptr, nullptr, context, drain_queue.front());
@@ -599,17 +608,31 @@ class ThreadSafeFunction {
       // replayed instead. node's own CallJs stands in when the module gave no
       // callback; that is node's code calling JS, not a module callback, and
       // is left alone.
+      // The same two checks as the drain above, and for the same reason: a
+      // delivery also runs after the recording has finished, from the
+      // uv_run in CleanupHandles.
+      //
       // The region goes inside CallbackIntoModule, the way CallFinalizer
       // nests it: what CallbackIntoModule does afterwards with an exception
       // the module left pending has to happen on both sides, and it does not
       // when the replay skips the whole scope.
       env->CallbackIntoModule<false>([&](napi_env env) {
-        if (module_call_js && v8::recordreplay::IsRecordingOrReplaying()) {
-          node::recordreplay::AutoCallbackRegion region;
+        // node's own CallJs is not module code and runs on both sides.
+        if (!module_call_js || !v8::recordreplay::IsRecordingOrReplaying()) {
+          call_js_cb(env, js_callback, context, data);
+          return;
+        }
+        // Module code with no recording left to put its calls in: run it
+        // without a region, as CallModuleFinalizer does.
+        if (!node::recordreplay::AreEventsRecorded() ||
+            node::recordreplay::IsRecordingFinished()) {
           if (!v8::recordreplay::IsReplaying()) {
             call_js_cb(env, js_callback, context, data);
           }
-        } else {
+          return;
+        }
+        node::recordreplay::AutoCallbackRegion region;
+        if (!v8::recordreplay::IsReplaying()) {
           call_js_cb(env, js_callback, context, data);
         }
       });
