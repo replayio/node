@@ -261,23 +261,21 @@ class ThreadSafeFunction {
         env(env_),
         finalize_data(finalize_data_),
         finalize_cb(finalize_cb_),
-        call_js_cb(call_js_cb_ == nullptr ? CallJs : call_js_cb_),
+        module_call_js(call_js_cb_ != nullptr),
+        // The module's callback is reproduced when replaying (see
+        // napi_create_threadsafe_function in recording/FunctionNAPI.cpp), so
+        // node takes the same branches on both sides -- but module code does
+        // not run when replaying and its text is not even mapped, so calling
+        // the pointer would jump into nothing. Every caller below gets a stub
+        // instead, and module_call_js remembers that there was one.
+        call_js_cb(call_js_cb_ == nullptr
+                       ? CallJs
+                       : (v8::recordreplay::IsReplaying() ? ReplayCallJs
+                                                          : call_js_cb_)),
         handles_closing(false) {
     ref.Reset(env->isolate, func);
     node::AddEnvironmentCleanupHook(env->isolate, Cleanup, this);
     env->Ref();
-
-    // Whether the module supplied its own call_js callback has to be a
-    // recorded fact. A module's function pointer is not reproduced when
-    // replaying, so call_js_cb_ arrives null and node substitutes its own
-    // CallJs; comparing call_js_cb against CallJs therefore answers
-    // differently on the two sides, and the delivery below would open a
-    // callback region only while recording.
-    module_call_js = call_js_cb_ != nullptr;
-    if (v8::recordreplay::IsRecordingOrReplaying()) {
-      module_call_js = v8::recordreplay::RecordReplayValue(
-          "napi_tsfn_module_call_js", module_call_js);
-    }
   }
 
   ~ThreadSafeFunction() { ReleaseResources(); }
@@ -578,6 +576,8 @@ class ThreadSafeFunction {
         env->CallbackIntoModule<false>(
             [&](napi_env env) { call_js_cb(env, js_callback, context, data); });
       };
+      // node's own CallJs stands in when the module gave no callback; that is
+      // node calling JS rather than a module callback, and is left alone.
       if (module_call_js && v8::recordreplay::IsRecordingOrReplaying()) {
         node::recordreplay::AutoCallbackRegion region;
         if (!v8::recordreplay::IsReplaying()) {
@@ -662,6 +662,11 @@ class ThreadSafeFunction {
 
   // Default way of calling into JavaScript. Used when ThreadSafeFunction is
   //  without a call_js_cb_.
+  // Stands in for a module's call_js callback when replaying, where the
+  // module's own code never runs. Draining the queue (EmptyQueue) and
+  // delivering a call both go through call_js_cb.
+  static void ReplayCallJs(napi_env, napi_value, void*, void*) {}
+
   static void CallJs(napi_env env, napi_value cb, void* context, void* data) {
     if (!(env == nullptr || cb == nullptr)) {
       napi_value recv;
@@ -726,7 +731,6 @@ class ThreadSafeFunction {
   uv_async_t async;
   uv_timer_t dispatch_timer;
   bool dispatch_timer_active = false;
-  bool module_call_js = false;
   size_t thread_count;
   State state;
   std::atomic_uchar dispatch_state;
@@ -741,6 +745,9 @@ class ThreadSafeFunction {
   node_napi_env env;
   void* finalize_data;
   napi_finalize finalize_cb;
+  // Whether the module gave a call_js callback of its own, which the stub
+  // above hides from call_js_cb when replaying.
+  bool module_call_js;
   napi_threadsafe_function_call_js call_js_cb;
   bool handles_closing;
 };
