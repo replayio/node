@@ -265,10 +265,6 @@ void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
 
     /* Atomically fetch and clear pending flag */
     pending = (_Atomic int*) &h->pending;
-    /* uv_async_send sets this flag under the handle's ordered lock, so clear it
-     * under the lock too: which of the two got there first then follows the
-     * recorded order of the lock rather than the threads' timing. The callback
-     * runs outside the lock, since it may send to this handle itself. */
     if (h->flags & UV_HANDLE_RECORD_PENDING) {
       /* No ordered lock: the thread which set this flag is not in the
        * recording, so there is no order to follow. Record what was found
@@ -278,6 +274,11 @@ void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
       was_pending = (int) V8RecordReplayValue("uv__async_io was_pending",
                                               (uintptr_t) was_pending);
     } else {
+      /* uv_async_send sets this flag under the handle's ordered lock, so
+       * clear it under the lock too: which of the two got there first then
+       * follows the recorded order of the lock rather than the threads'
+       * timing. The callback runs outside the lock, since it may send to
+       * this handle itself. */
       V8RecordReplayOrderedLock(h->ordered_lock_id);
       was_pending = atomic_exchange(pending, 0);
       V8RecordReplayOrderedUnlock(h->ordered_lock_id);
