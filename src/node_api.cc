@@ -562,6 +562,14 @@ class ThreadSafeFunction {
         v8::Local<v8::Function> js_cb =
             v8::Local<v8::Function>::New(env->isolate, ref);
         js_callback = v8impl::JsValueFromV8LocalValue(js_cb);
+        // This value is made here and handed to the module, so the recorder
+        // has no id for it until it is registered -- and a module which calls
+        // it, as napi-rs does, then dies on "Unknown pointer passed to
+        // callback napi_call_function". Same as the exports object in
+        // napi_module_register_by_symbol.
+        if (v8::recordreplay::IsRecordingOrReplaying()) {
+          v8::recordreplay::RegisterPointer(js_callback);
+        }
       }
       // Delivering a call runs the module's own call_js callback, which node
       // does not wrap in a callback region the way it wraps a finalizer (see
