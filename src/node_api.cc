@@ -558,6 +558,17 @@ class ThreadSafeFunction {
         popped_value = decision & 1;
         has_more = decision & 2;
         closed = decision & 4;
+
+        // A function that is live but idle would otherwise record a decision
+        // every millisecond for as long as it exists, measured at about
+        // 250 KB/s. Back off while nothing is arriving and return to 1 ms as
+        // soon as something does. Both sides decide this from the recorded
+        // value above, so they back off together.
+        if (popped_value) {
+          idle_ticks = 0;
+        } else if (idle_ticks < kMaxIdleTicks) {
+          idle_ticks++;
+        }
         if (v8::recordreplay::IsReplaying() && closed) {
           state = kClosing;
           CloseHandlesAndMaybeDelete();
@@ -606,6 +617,14 @@ class ThreadSafeFunction {
           call_js_cb(env, js_callback, context, data);
         }
       });
+    }
+
+    if (dispatch_timer_active) {
+      uint64_t repeat = idle_ticks < kMaxIdleTicks ? 1 : kIdleIntervalMs;
+      if (uv_timer_get_repeat(&dispatch_timer) != repeat) {
+        uv_timer_set_repeat(&dispatch_timer, repeat);
+        uv_timer_again(&dispatch_timer);
+      }
     }
 
     return has_more;
@@ -751,6 +770,12 @@ class ThreadSafeFunction {
   std::unique_ptr<node::ConditionVariable> cond;
   std::queue<void*> queue;
   uv_async_t async;
+  // Ticks in a row with nothing to deliver, and what the timer slows to once
+  // there have been that many. Both are decided from recorded values.
+  static constexpr size_t kMaxIdleTicks = 50;
+  static constexpr uint64_t kIdleIntervalMs = 50;
+  size_t idle_ticks = 0;
+
   uv_timer_t dispatch_timer;
   bool dispatch_timer_active = false;
   size_t thread_count;
