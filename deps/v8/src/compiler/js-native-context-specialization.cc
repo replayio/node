@@ -474,7 +474,7 @@ JSNativeContextSpecialization::ReduceJSFindNonDefaultConstructorOrConstruct(
   // active, which it always is when recording or replaying, so unoptimized
   // code runs them and advances the progress counter in each. Skipping them
   // here would make the counter depend on when this code got optimized.
-  if (recordreplay::IsRecordingOrReplaying()) {
+  if (recordreplay::IsRecordingOrReplaying("default-constructor-progress")) {
     return NoChange();
   }
 

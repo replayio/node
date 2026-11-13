@@ -728,7 +728,7 @@ class ThreadSafeFunction {
   // delivering a call both go through call_js_cb.
   static void ReplayCallJs(napi_env, napi_value, void*, void*) {}
 
-  // Only there to stop the loop blocking in poll for ever; the check handle
+  // Only there to stop the loop blocking in poll for ever; the timer
   // does the dispatching.
   static void DispatchTimerCb(uv_timer_t* handle) {
     ThreadSafeFunction* ts_fn =
