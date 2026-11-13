@@ -422,6 +422,95 @@ static void RecordReplayAnnotationHook(
   v8::recordreplay::OnAnnotation(*kind, *contents);
 }
 
+// Network capture for the recording's Network panel
+// (lib/internal/recordreplay/network.js). It runs on the main thread only, as
+// in Chromium: worker threads aren't debuggable in Replay, so their requests
+// aren't reported.
+static void RecordReplayNetworkEnabled(const FunctionCallbackInfo<Value>& args) {
+  args.GetReturnValue().Set(
+      v8::recordreplay::IsRecordingOrReplaying("notify-network") &&
+      v8::IsMainThread());
+}
+
+// Registers a request at the current execution point, which becomes the point
+// the request was made at.
+static void RecordReplayNetworkRequest(const FunctionCallbackInfo<Value>& args) {
+  CHECK(args[0]->IsString());
+  Utf8Value id(args.GetIsolate(), args[0]);
+  uint64_t bookmark = v8::recordreplay::NewBookmark();
+  v8::recordreplay::OnNetworkRequest(*id, "http", bookmark);
+}
+
+// While replaying, the driver asks for the event's contents from inside this
+// call, with Target.getCurrentNetworkRequestEvent.
+static void RecordReplayNetworkRequestEvent(
+    const FunctionCallbackInfo<Value>& args) {
+  CHECK(args[0]->IsString());
+  Utf8Value id(args.GetIsolate(), args[0]);
+  v8::recordreplay::OnNetworkRequestEvent(*id);
+}
+
+static void RecordReplayNetworkStreamStart(
+    const FunctionCallbackInfo<Value>& args) {
+  CHECK(args[0]->IsString() && args[1]->IsString() && args[2]->IsString());
+  Isolate* isolate = args.GetIsolate();
+  Utf8Value id(isolate, args[0]);
+  Utf8Value kind(isolate, args[1]);
+  Utf8Value parent_id(isolate, args[2]);
+  v8::recordreplay::OnNetworkStreamStart(*id, *kind, *parent_id);
+}
+
+// While replaying, the driver asks for the chunk's bytes from inside this
+// call, with Target.getCurrentNetworkStreamData.
+static void RecordReplayNetworkStreamData(
+    const FunctionCallbackInfo<Value>& args) {
+  CHECK(args[0]->IsString() && args[1]->IsNumber() && args[2]->IsNumber());
+  Utf8Value id(args.GetIsolate(), args[0]);
+  size_t offset = args[1].As<v8::Number>()->Value();
+  size_t length = args[2].As<v8::Number>()->Value();
+  v8::recordreplay::OnNetworkStreamData(*id, offset, length, 0);
+}
+
+// The innermost frame of the program's own code on the current stack, as a
+// protocol RequestInitiator ({ url, line, column }), or undefined. Node's
+// scripts ("node:..." URLs) are skipped, so the frame is the call that made
+// the request. It walks V8's stack itself, so the program's
+// Error.prepareStackTrace and Error.stackTraceLimit aren't involved.
+static void RecordReplayNetworkInitiator(
+    const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+  // Enough for the frames of Replay's command handling, undici's dispatch and
+  // node's own wrappers above the program's.
+  constexpr int kMaxFrames = 200;
+  Local<v8::StackTrace> trace = v8::StackTrace::CurrentStackTrace(
+      isolate, kMaxFrames, v8::StackTrace::kDetailed);
+  for (int i = 0; i < trace->GetFrameCount(); i++) {
+    Local<v8::StackFrame> frame = trace->GetFrame(isolate, i);
+    Local<v8::String> name = frame->GetScriptNameOrSourceURL();
+    if (name.IsEmpty() || name->Length() == 0) {
+      continue;
+    }
+    Utf8Value url(isolate, name);
+    if (strncmp(*url, "node:", 5) == 0) {
+      continue;
+    }
+    Local<Object> initiator = Object::New(isolate);
+    initiator->Set(context, FIXED_ONE_BYTE_STRING(isolate, "url"), name).Check();
+    // The protocol's line is 1-based and its column 0-based.
+    initiator
+        ->Set(context, FIXED_ONE_BYTE_STRING(isolate, "line"),
+              v8::Integer::New(isolate, frame->GetLineNumber()))
+        .Check();
+    initiator
+        ->Set(context, FIXED_ONE_BYTE_STRING(isolate, "column"),
+              v8::Integer::New(isolate, frame->GetColumn() - 1))
+        .Check();
+    args.GetReturnValue().Set(initiator);
+    return;
+  }
+}
+
 void InitializeRecordReplayMethods(Environment* env, Local<Object> target) {
   Local<Context> context = env->context();
   SetMethod(context, target, "isRecordingOrReplaying",
@@ -453,6 +542,18 @@ void InitializeRecordReplayMethods(Environment* env, Local<Object> target) {
             v8::FunctionCallbackRecordReplayElapsedTimeMs);
   SetMethod(context, target, "recordReplayAnnotationHook",
             RecordReplayAnnotationHook);
+  SetMethod(context, target, "recordReplayNetworkEnabled",
+            RecordReplayNetworkEnabled);
+  SetMethod(context, target, "recordReplayNetworkRequest",
+            RecordReplayNetworkRequest);
+  SetMethod(context, target, "recordReplayNetworkRequestEvent",
+            RecordReplayNetworkRequestEvent);
+  SetMethod(context, target, "recordReplayNetworkStreamStart",
+            RecordReplayNetworkStreamStart);
+  SetMethod(context, target, "recordReplayNetworkStreamData",
+            RecordReplayNetworkStreamData);
+  SetMethod(context, target, "recordReplayNetworkInitiator",
+            RecordReplayNetworkInitiator);
 }
 
 void RegisterRecordReplayExternalReferences(
@@ -472,6 +573,12 @@ void RegisterRecordReplayExternalReferences(
   registry->Register(v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
   registry->Register(v8::FunctionCallbackRecordReplayElapsedTimeMs);
   registry->Register(RecordReplayAnnotationHook);
+  registry->Register(RecordReplayNetworkEnabled);
+  registry->Register(RecordReplayNetworkRequest);
+  registry->Register(RecordReplayNetworkRequestEvent);
+  registry->Register(RecordReplayNetworkStreamStart);
+  registry->Register(RecordReplayNetworkStreamData);
+  registry->Register(RecordReplayNetworkInitiator);
 }
 
 }  // namespace process

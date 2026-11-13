@@ -5267,6 +5267,8 @@ var require_request = __commonJS({
       getProtocolFromUrlString
     } = require_util();
     var { channels } = require_diagnostics();
+    // Replay: report the request to the recording (lib/internal/recordreplay/network.js).
+    var recordReplayNetwork = require("internal/recordreplay/network");
     var { headerNameLowerCasedRecord } = require_constants();
     var invalidPathRegex = /[^\u0021-\u00ff]/;
     function isValidContentLengthHeaderValue(val) {
@@ -5472,11 +5474,13 @@ var require_request = __commonJS({
         if (channels.create.hasSubscribers) {
           channels.create.publish({ request: this });
         }
+        recordReplayNetwork.undiciRequestCreated(this);
       }
       onBodySent(chunk) {
         if (channels.bodyChunkSent.hasSubscribers) {
           channels.bodyChunkSent.publish({ request: this, chunk });
         }
+        recordReplayNetwork.undiciRequestBodySent(this, chunk);
         if (this[kHandler].onBodySent) {
           try {
             return this[kHandler].onBodySent(chunk);
@@ -5517,6 +5521,7 @@ var require_request = __commonJS({
         if (channels.headers.hasSubscribers) {
           channels.headers.publish({ request: this, response: { statusCode, headers, statusText } });
         }
+        recordReplayNetwork.undiciResponseStarted(this, statusCode, headers, statusText);
         const controller = this[kController];
         if (controller) {
           controller[kResume] = resume;
@@ -5537,6 +5542,7 @@ var require_request = __commonJS({
         if (channels.bodyChunkReceived.hasSubscribers) {
           channels.bodyChunkReceived.publish({ request: this, chunk });
         }
+        recordReplayNetwork.undiciResponseData(this, chunk);
         const controller = this[kController];
         try {
           this[kHandler].onResponseData?.(controller, chunk);
@@ -5581,6 +5587,7 @@ var require_request = __commonJS({
         if (channels.trailers.hasSubscribers) {
           channels.trailers.publish({ request: this, trailers });
         }
+        recordReplayNetwork.undiciResponseEnd(this);
         const controller = this[kController];
         if (controller) {
           controller.rawTrailers = trailers;
@@ -5597,6 +5604,7 @@ var require_request = __commonJS({
         if (channels.error.hasSubscribers) {
           channels.error.publish({ request: this, error });
         }
+        recordReplayNetwork.undiciResponseError(this, error);
         if (this.aborted) {
           return;
         }
@@ -14217,6 +14225,8 @@ var require_subresource_integrity = __commonJS({
 var require_fetch = __commonJS({
   "lib/web/fetch/index.js"(exports2, module2) {
     "use strict";
+    // Replay: report the request to the recording (lib/internal/recordreplay/network.js).
+    var recordReplayNetwork = require("internal/recordreplay/network");
     var {
       makeNetworkError,
       makeAppropriateNetworkError,
@@ -15227,7 +15237,7 @@ var require_fetch = __commonJS({
         const hasTrailingQuestionMark = url.search.length === 0 && url.href[url.href.length - url.hash.length - 1] === "?";
         return dispatchWithProtocolPreference(body);
         function dispatchWithProtocolPreference(body2, allowH2) {
-          return new Promise((resolve, reject) => agent.dispatch(
+          return new Promise((resolve, reject) => recordReplayNetwork.undiciFetchDispatch(fetchParams, () => agent.dispatch(
             {
               path: hasTrailingQuestionMark ? `${path}?` : path,
               origin: url.origin,
@@ -15375,7 +15385,7 @@ var require_fetch = __commonJS({
                 return true;
               }
             }
-          ));
+          )));
         }
         __name(dispatchWithProtocolPreference, "dispatchWithProtocolPreference");
       }

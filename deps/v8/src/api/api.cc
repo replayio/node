@@ -12084,6 +12084,12 @@ static void (*gRecordReplayFree)(void*);
 static size_t (*gRecordReplayElapsedTimeMs)();
 static void (*gRecordReplayOnAnnotation)(const char*, const char*);
 static void (*gRecordReplayNotifyActivity)();
+static void (*gRecordReplayOnNetworkRequest)(const char*, const char*, uint64_t);
+static void (*gRecordReplayOnNetworkRequestEvent)(const char*);
+static void (*gRecordReplayOnNetworkStreamStart)(const char*, const char*,
+                                                 const char*);
+static void (*gRecordReplayOnNetworkStreamData)(const char*, size_t, size_t,
+                                                uint64_t);
 
 namespace internal {
 
@@ -12713,6 +12719,44 @@ void recordreplay::NotifyActivity() {
   }
 }
 
+uint64_t recordreplay::NewBookmark() {
+  if (IsRecordingOrReplaying()) {
+    return gRecordReplayNewBookmark();
+  }
+  return 0;
+}
+
+void recordreplay::OnNetworkRequest(const char* id, const char* kind,
+                                    uint64_t bookmark) {
+  CHECK(IsRecordingOrReplaying());
+  if (internal::gRecordReplayHasCheckpoint) {
+    gRecordReplayOnNetworkRequest(id, kind, bookmark);
+  }
+}
+
+void recordreplay::OnNetworkRequestEvent(const char* id) {
+  CHECK(IsRecordingOrReplaying());
+  if (internal::gRecordReplayHasCheckpoint) {
+    gRecordReplayOnNetworkRequestEvent(id);
+  }
+}
+
+void recordreplay::OnNetworkStreamStart(const char* id, const char* kind,
+                                        const char* parentId) {
+  CHECK(IsRecordingOrReplaying());
+  if (internal::gRecordReplayHasCheckpoint) {
+    gRecordReplayOnNetworkStreamStart(id, kind, parentId);
+  }
+}
+
+void recordreplay::OnNetworkStreamData(const char* id, size_t offset,
+                                       size_t length, uint64_t bookmark) {
+  CHECK(IsRecordingOrReplaying());
+  if (internal::gRecordReplayHasCheckpoint) {
+    gRecordReplayOnNetworkStreamData(id, offset, length, bookmark);
+  }
+}
+
 extern "C" size_t V8RecordReplayNewBookmark() {
   if (recordreplay::IsRecordingOrReplaying()) {
     return gRecordReplayNewBookmark();
@@ -12956,6 +13000,14 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
                          gRecordReplayOnAnnotation);
   RecordReplayLoadSymbol(handle, "RecordReplayNotifyActivity",
                          gRecordReplayNotifyActivity);
+  RecordReplayLoadSymbol(handle, "RecordReplayOnNetworkRequest",
+                         gRecordReplayOnNetworkRequest);
+  RecordReplayLoadSymbol(handle, "RecordReplayOnNetworkRequestEvent",
+                         gRecordReplayOnNetworkRequestEvent);
+  RecordReplayLoadSymbol(handle, "RecordReplayOnNetworkStreamStart",
+                         gRecordReplayOnNetworkStreamStart);
+  RecordReplayLoadSymbol(handle, "RecordReplayOnNetworkStreamData",
+                         gRecordReplayOnNetworkStreamData);
 
   void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
   RecordReplayLoadSymbol(handle, "RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);
