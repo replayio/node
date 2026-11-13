@@ -361,6 +361,21 @@ class ThreadSafeFunction {
       node::Mutex::ScopedLock lock(this->mutex);
       queue.swap(drain_queue);
     }
+    // Draining hands each queued value back to the module so it can release
+    // it, which is a module call like the delivery and needs a region of its
+    // own, or the calls it makes are rejected as being outside one.
+    //
+    // The region is opened whether or not there is anything to drain: the
+    // replay's queue is always empty (see napi_call_threadsafe_function), so
+    // opening it only for a non-empty queue would open it while recording and
+    // not while replaying, which is itself a divergence.
+    if (module_call_js && v8::recordreplay::IsRecordingOrReplaying()) {
+      node::recordreplay::AutoCallbackRegion region;
+      for (; !drain_queue.empty(); drain_queue.pop()) {
+        call_js_cb(nullptr, nullptr, context, drain_queue.front());
+      }
+      return;
+    }
     for (; !drain_queue.empty(); drain_queue.pop()) {
       call_js_cb(nullptr, nullptr, context, drain_queue.front());
     }
@@ -590,20 +605,23 @@ class ThreadSafeFunction {
       // replayed instead. node's own CallJs stands in when the module gave no
       // callback; that is node's code calling JS, not a module callback, and
       // is left alone.
-      auto deliver = [&] {
-        env->CallbackIntoModule<false>(
-            [&](napi_env env) { call_js_cb(env, js_callback, context, data); });
-      };
       // node's own CallJs stands in when the module gave no callback; that is
       // node calling JS rather than a module callback, and is left alone.
-      if (module_call_js && v8::recordreplay::IsRecordingOrReplaying()) {
-        node::recordreplay::AutoCallbackRegion region;
-        if (!v8::recordreplay::IsReplaying()) {
-          deliver();
+      //
+      // The region goes inside CallbackIntoModule, the way CallFinalizer
+      // nests it: what CallbackIntoModule does afterwards with an exception
+      // the module left pending has to happen on both sides, and it does not
+      // when the replay skips the whole scope.
+      env->CallbackIntoModule<false>([&](napi_env env) {
+        if (module_call_js && v8::recordreplay::IsRecordingOrReplaying()) {
+          node::recordreplay::AutoCallbackRegion region;
+          if (!v8::recordreplay::IsReplaying()) {
+            call_js_cb(env, js_callback, context, data);
+          }
+        } else {
+          call_js_cb(env, js_callback, context, data);
         }
-      } else {
-        deliver();
-      }
+      });
     }
 
     return has_more;
@@ -1675,8 +1693,21 @@ napi_call_threadsafe_function(napi_threadsafe_function func,
                               void* data,
                               napi_threadsafe_function_call_mode is_blocking) {
   CHECK_NOT_NULL(func);
-  return reinterpret_cast<v8impl::ThreadSafeFunction*>(func)->Push(data,
-                                                                   is_blocking);
+  auto* ts_fn = reinterpret_cast<v8impl::ThreadSafeFunction*>(func);
+  // The queue belongs to the recording: DispatchOne takes what it delivers
+  // from there and never pops, so a replayed push would grow a queue nothing
+  // drains and answer differently once it filled. Record what the push
+  // returned and leave the queue alone when replaying. A blocking push would
+  // otherwise wait on a condition no replayed dispatch ever signals.
+  if (v8impl::RecordReplayInModuleCallback()) {
+    napi_status status = napi_ok;
+    if (!v8::recordreplay::IsReplaying()) {
+      status = ts_fn->Push(data, is_blocking);
+    }
+    return static_cast<napi_status>(v8::recordreplay::RecordReplayValue(
+        "napi_call_threadsafe_function status", status));
+  }
+  return ts_fn->Push(data, is_blocking);
 }
 
 napi_status NAPI_CDECL
@@ -1688,7 +1719,19 @@ napi_acquire_threadsafe_function(napi_threadsafe_function func) {
 napi_status NAPI_CDECL napi_release_threadsafe_function(
     napi_threadsafe_function func, napi_threadsafe_function_release_mode mode) {
   CHECK_NOT_NULL(func);
-  return reinterpret_cast<v8impl::ThreadSafeFunction*>(func)->Release(mode);
+  auto* ts_fn = reinterpret_cast<v8impl::ThreadSafeFunction*>(func);
+  // As in napi_call_threadsafe_function: the thread count the module changes
+  // is the recording's, and whether the function closed is already taken from
+  // the recording in DispatchOne.
+  if (v8impl::RecordReplayInModuleCallback()) {
+    napi_status status = napi_ok;
+    if (!v8::recordreplay::IsReplaying()) {
+      status = ts_fn->Release(mode);
+    }
+    return static_cast<napi_status>(v8::recordreplay::RecordReplayValue(
+        "napi_release_threadsafe_function status", status));
+  }
+  return ts_fn->Release(mode);
 }
 
 napi_status NAPI_CDECL napi_unref_threadsafe_function(
