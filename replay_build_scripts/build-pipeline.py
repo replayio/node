@@ -4,6 +4,9 @@
 Bakes REPLAY_BACKEND_REV into .buildkite/runtime-node-build-and-test.yml and
 prints the graph for `buildkite-agent pipeline upload`.
 
+REPLAY_BACKEND_REV is "<commit> [<branch>]". The branch (default: master) is the
+backend branch the commit is on: build-driver-linker's agents verify that.
+
 DriverBuildCheck: if linux-recordreplay-<rev12>.tgz is already on S3, replace the
 build-driver-linker trigger with a noop (same key) so depends_on stays valid.
 
@@ -16,14 +19,23 @@ Do not curl private replayio/backend for pipeline YAML.
 import os
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 PIN_TOKEN = "__REPLAY_BACKEND_REV__"
+PIN_BRANCH_TOKEN = "__REPLAY_BACKEND_BRANCH__"
 REPO = "replayio/node"
 
 
-def read_commit_hash(text: str) -> str:
-    return text.strip().split()[0]
+@dataclass(frozen=True)
+class BackendPin:
+    commit: str
+    branch: str
+
+
+def read_pin(text: str) -> BackendPin:
+    fields = text.split()
+    return BackendPin(commit=fields[0], branch=fields[1] if len(fields) > 1 else "master")
 
 
 def fetch_raw(path: str) -> str:
@@ -51,16 +63,17 @@ def driver_archive_present(driver_revision: str) -> bool:
         return False
 
 
-def apply_driver_build_check(yaml_text: str, pin: str) -> str:
+def apply_driver_build_check(yaml_text: str, pin: BackendPin) -> str:
     """Replace build-driver-linker trigger with noop when archive already on S3."""
-    driver_revision = pin[:12]
+    driver_revision = pin.commit[:12]
     if not driver_archive_present(driver_revision):
         return yaml_text
 
     trigger = f"""  - trigger: "build-driver-linker"
     key: "build-driver-linker"
     build:
-      commit: "{pin}"
+      commit: "{pin.commit}"
+      branch: "{pin.branch}"
       message: "Triggered from node: ${{BUILDKITE_MESSAGE}}"
 """
     noop = f"""  - label: "DriverBuildCheck (archive present)"
@@ -77,11 +90,11 @@ def apply_driver_build_check(yaml_text: str, pin: str) -> str:
 
 
 def main() -> None:
-    pin = read_commit_hash(read_text("REPLAY_BACKEND_REV"))
+    pin = read_pin(read_text("REPLAY_BACKEND_REV"))
     yaml_text = read_text(".buildkite/runtime-node-build-and-test.yml")
     # Bake pin so upload does not depend on REPLAY_BACKEND_REV in the agent env.
     # Leave ${BUILDKITE_*} for Buildkite interpolation at upload time.
-    yaml_text = yaml_text.replace(PIN_TOKEN, pin)
+    yaml_text = yaml_text.replace(PIN_TOKEN, pin.commit).replace(PIN_BRANCH_TOKEN, pin.branch)
     print(apply_driver_build_check(yaml_text, pin))
 
 
