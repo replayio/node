@@ -20,6 +20,7 @@ steps:
     key: "build-driver-linker"
     build:
       commit: "__REPLAY_BACKEND_REV__"
+      branch: "__REPLAY_BACKEND_BRANCH__"
       message: "Triggered from node: ${BUILDKITE_MESSAGE}"
 
   # Toolchain image for the node build: EngFlow's worker image, and the base of
