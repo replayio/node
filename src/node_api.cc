@@ -261,7 +261,17 @@ class ThreadSafeFunction {
         env(env_),
         finalize_data(finalize_data_),
         finalize_cb(finalize_cb_),
-        call_js_cb(call_js_cb_ == nullptr ? CallJs : call_js_cb_),
+        module_call_js(call_js_cb_ != nullptr),
+        // The module's callback is reproduced when replaying (see
+        // napi_create_threadsafe_function in recording/FunctionNAPI.cpp), so
+        // node takes the same branches on both sides -- but module code does
+        // not run when replaying and its text is not even mapped, so calling
+        // the pointer would jump into nothing. Every caller below gets a stub
+        // instead, and module_call_js remembers that there was one.
+        call_js_cb(call_js_cb_ == nullptr
+                       ? CallJs
+                       : (v8::recordreplay::IsReplaying() ? ReplayCallJs
+                                                          : call_js_cb_)),
         handles_closing(false) {
     ref.Reset(env->isolate, func);
     node::AddEnvironmentCleanupHook(env->isolate, Cleanup, this);
@@ -351,6 +361,35 @@ class ThreadSafeFunction {
       node::Mutex::ScopedLock lock(this->mutex);
       queue.swap(drain_queue);
     }
+    // Draining hands each queued value back to the module so it can release
+    // it, which is a module call like the delivery and needs a region of its
+    // own, or the calls it makes are rejected as being outside one.
+    //
+    // The region is opened whether or not there is anything to drain: the
+    // replay's queue is always empty (see napi_call_threadsafe_function), so
+    // opening it only for a non-empty queue would open it while recording and
+    // not while replaying, which is itself a divergence.
+    //
+    // Not after the recording has finished, though. A function still alive
+    // when the loop drains is finalized from the async handle's close
+    // callback in CleanupHandles, which runs after NodeMainInstance::Run
+    // called RecordReplayFinishRecording. What the region changes there is
+    // not what is written -- the driver discards that anyway -- but which
+    // path the module's calls take: outside one they pass through
+    // DoInterceptCallback, and inside one they go through the operators,
+    // where a pointer made by code that was itself region-less is fatal
+    // ("Unknown pointer passed to callback"). The finalize callback run just
+    // below makes exactly such a pointer. CallModuleFinalizer makes the same
+    // two checks.
+    if (module_call_js && v8::recordreplay::IsRecordingOrReplaying() &&
+        node::recordreplay::AreEventsRecorded() &&
+        !node::recordreplay::IsRecordingFinished()) {
+      node::recordreplay::AutoCallbackRegion region;
+      for (; !drain_queue.empty(); drain_queue.pop()) {
+        call_js_cb(nullptr, nullptr, context, drain_queue.front());
+      }
+      return;
+    }
     for (; !drain_queue.empty(); drain_queue.pop()) {
       call_js_cb(nullptr, nullptr, context, drain_queue.front());
     }
@@ -383,6 +422,26 @@ class ThreadSafeFunction {
         cond = std::make_unique<node::ConditionVariable>();
       }
       if (max_queue_size == 0 || cond) {
+        // A module pushes from a thread it created itself. That thread is
+        // not in the recording and does not exist at all when replaying, so
+        // neither its uv_async_send nor the `pending` flag the send sets is
+        // reproduced, and the loop would take the other branch of
+        // uv__async_io's `pending` test than it took while recording.
+        //
+        // Marking the handle makes libuv record what the loop found in that
+        // flag rather than order the send against it (see uv_async_send).
+        // The loop then wakes and delivers where it did while recording,
+        // without the sending thread, and nothing is polled for: an idle
+        // function costs the recording nothing at all, and a push is
+        // delivered as promptly as it is without the recorder, which matters
+        // because a module's pushes are what every awaited napi-rs async
+        // function is made of.
+        //
+        // Marked only on this success path: the failure paths below delete
+        // `this`.
+        if (v8::recordreplay::IsRecordingOrReplaying()) {
+          uv_async_set_record_pending(&async);
+        }
         return napi_ok;
       }
 
@@ -441,7 +500,15 @@ class ThreadSafeFunction {
       has_more = DispatchOne();
 
       // Send() was called while we were executing the JS function
-      if (dispatch_state.exchange(kDispatchIdle) != kDispatchRunning) {
+      bool pending = dispatch_state.exchange(kDispatchIdle) != kDispatchRunning;
+      // Whether another thread pushed while we ran is decided on the module's
+      // thread, which is not in the recording, so it is recorded here the way
+      // the queue's own state is in DispatchOne.
+      if (v8::recordreplay::IsRecordingOrReplaying()) {
+        pending = v8::recordreplay::RecordReplayValue("napi_tsfn_pending",
+                                                      pending);
+      }
+      if (pending) {
         has_more = true;
       }
     }
@@ -455,10 +522,14 @@ class ThreadSafeFunction {
     void* data = nullptr;
     bool popped_value = false;
     bool has_more = false;
+    bool closed = false;
+    const bool record_dispatch = v8::recordreplay::IsRecordingOrReplaying();
 
     {
       node::Mutex::ScopedLock lock(this->mutex);
-      if (state == kOpen) {
+      if (v8::recordreplay::IsReplaying()) {
+        // decisions come from the recording below
+      } else if (state == kOpen) {
         size_t size = queue.size();
         if (size > 0) {
           data = queue.front();
@@ -476,12 +547,36 @@ class ThreadSafeFunction {
             if (max_queue_size > 0) {
               cond->Signal(lock);
             }
-            CloseHandlesAndMaybeDelete();
+            closed = true;
           }
         } else {
           has_more = true;
         }
       } else {
+        closed = true;
+      }
+
+      if (record_dispatch) {
+        // One value rather than three: the replay has no queue of its own, so
+        // everything this decided about it comes from here.
+        size_t decision = (popped_value ? 1 : 0) | (has_more ? 2 : 0) |
+                          (closed ? 4 : 0);
+        decision = v8::recordreplay::RecordReplayValue("napi_tsfn_dispatch",
+                                                       decision);
+        popped_value = decision & 1;
+        has_more = decision & 2;
+        closed = decision & 4;
+
+        if (v8::recordreplay::IsReplaying() && closed) {
+          state = kClosing;
+        }
+      }
+
+      // After the decision above on both sides: closing the async handle
+      // waits for the sending threads under its ordered lock (uv__async_spin),
+      // which otherwise came before the recorded value while recording and
+      // after it while replaying.
+      if (closed) {
         CloseHandlesAndMaybeDelete();
       }
     }
@@ -495,9 +590,52 @@ class ThreadSafeFunction {
         v8::Local<v8::Function> js_cb =
             v8::Local<v8::Function>::New(env->isolate, ref);
         js_callback = v8impl::JsValueFromV8LocalValue(js_cb);
+        // This value is made here and handed to the module, so the recorder
+        // has no id for it until it is registered -- and a module which calls
+        // it, as napi-rs does, then dies on "Unknown pointer passed to
+        // callback napi_call_function". Same as the exports object in
+        // napi_module_register_by_symbol.
+        if (module_call_js && v8::recordreplay::IsRecordingOrReplaying()) {
+          v8::recordreplay::RegisterPointer(js_callback);
+        }
       }
-      env->CallbackIntoModule<false>(
-          [&](napi_env env) { call_js_cb(env, js_callback, context, data); });
+      // Delivering a call runs the module's own call_js callback, which node
+      // does not wrap in a callback region the way it wraps a finalizer (see
+      // CallFinalizer). Without one, the N-API calls that callback makes are
+      // outside a region and the recording is rejected with "Callback <name>
+      // outside a callback region". Replaying opens the region without calling
+      // the module, as CallFinalizer does, so the calls recorded inside it are
+      // replayed instead. node's own CallJs stands in when the module gave no
+      // callback; that is node's code calling JS, not a module callback, and
+      // is left alone.
+      // The same two checks as the drain above, and for the same reason: a
+      // delivery also runs after the recording has finished, from the
+      // uv_run in CleanupHandles.
+      //
+      // The region goes inside CallbackIntoModule, the way CallFinalizer
+      // nests it: what CallbackIntoModule does afterwards with an exception
+      // the module left pending has to happen on both sides, and it does not
+      // when the replay skips the whole scope.
+      env->CallbackIntoModule<false>([&](napi_env env) {
+        // node's own CallJs is not module code and runs on both sides.
+        if (!module_call_js || !v8::recordreplay::IsRecordingOrReplaying()) {
+          call_js_cb(env, js_callback, context, data);
+          return;
+        }
+        // Module code with no recording left to put its calls in: run it
+        // without a region, as CallModuleFinalizer does.
+        if (!node::recordreplay::AreEventsRecorded() ||
+            node::recordreplay::IsRecordingFinished()) {
+          if (!v8::recordreplay::IsReplaying()) {
+            call_js_cb(env, js_callback, context, data);
+          }
+          return;
+        }
+        node::recordreplay::AutoCallbackRegion region;
+        if (!v8::recordreplay::IsReplaying()) {
+          call_js_cb(env, js_callback, context, data);
+        }
+      });
     }
 
     return has_more;
@@ -571,6 +709,11 @@ class ThreadSafeFunction {
     }
   }
 
+  // Stands in for a module's call_js callback when replaying, where the
+  // module's own code never runs. Draining the queue (EmptyQueue) and
+  // delivering a call both go through call_js_cb.
+  static void ReplayCallJs(napi_env, napi_value, void*, void*) {}
+
   static void AsyncCb(uv_async_t* async) {
     ThreadSafeFunction* ts_fn =
         node::ContainerOf(&ThreadSafeFunction::async, async);
@@ -619,6 +762,9 @@ class ThreadSafeFunction {
   node_napi_env env;
   void* finalize_data;
   napi_finalize finalize_cb;
+  // Whether the module gave a call_js callback of its own, which the stub
+  // above hides from call_js_cb when replaying.
+  bool module_call_js;
   napi_threadsafe_function_call_js call_js_cb;
   bool handles_closing;
 };
@@ -1519,8 +1665,21 @@ napi_call_threadsafe_function(napi_threadsafe_function func,
                               void* data,
                               napi_threadsafe_function_call_mode is_blocking) {
   CHECK_NOT_NULL(func);
-  return reinterpret_cast<v8impl::ThreadSafeFunction*>(func)->Push(data,
-                                                                   is_blocking);
+  auto* ts_fn = reinterpret_cast<v8impl::ThreadSafeFunction*>(func);
+  // The queue belongs to the recording: DispatchOne takes what it delivers
+  // from there and never pops, so a replayed push would grow a queue nothing
+  // drains and answer differently once it filled. Record what the push
+  // returned and leave the queue alone when replaying. A blocking push would
+  // otherwise wait on a condition no replayed dispatch ever signals.
+  if (v8impl::RecordReplayInModuleCallback()) {
+    napi_status status = napi_ok;
+    if (!v8::recordreplay::IsReplaying()) {
+      status = ts_fn->Push(data, is_blocking);
+    }
+    return static_cast<napi_status>(v8::recordreplay::RecordReplayValue(
+        "napi_call_threadsafe_function status", status));
+  }
+  return ts_fn->Push(data, is_blocking);
 }
 
 napi_status NAPI_CDECL
@@ -1532,7 +1691,19 @@ napi_acquire_threadsafe_function(napi_threadsafe_function func) {
 napi_status NAPI_CDECL napi_release_threadsafe_function(
     napi_threadsafe_function func, napi_threadsafe_function_release_mode mode) {
   CHECK_NOT_NULL(func);
-  return reinterpret_cast<v8impl::ThreadSafeFunction*>(func)->Release(mode);
+  auto* ts_fn = reinterpret_cast<v8impl::ThreadSafeFunction*>(func);
+  // As in napi_call_threadsafe_function: the thread count the module changes
+  // is the recording's, and whether the function closed is already taken from
+  // the recording in DispatchOne.
+  if (v8impl::RecordReplayInModuleCallback()) {
+    napi_status status = napi_ok;
+    if (!v8::recordreplay::IsReplaying()) {
+      status = ts_fn->Release(mode);
+    }
+    return static_cast<napi_status>(v8::recordreplay::RecordReplayValue(
+        "napi_release_threadsafe_function status", status));
+  }
+  return ts_fn->Release(mode);
 }
 
 napi_status NAPI_CDECL napi_unref_threadsafe_function(

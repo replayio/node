@@ -85,6 +85,11 @@ enum {
   UV_HANDLE_REF                         = 0x00000008,
   UV_HANDLE_INTERNAL                    = 0x00000010,
   UV_HANDLE_ENDGAME_QUEUED              = 0x00000020,
+  /* A flag rather than a field of uv_async_t: an addon compiled against
+   * these headers before the fork added it still allocates the handle, and
+   * a field past the end of what the addon reserved is a write into its own
+   * memory. See uv_async_set_record_pending. */
+  UV_HANDLE_RECORD_PENDING              = 0x20000000,
 
   /* Used by streams. */
   UV_HANDLE_LISTENING                   = 0x00000040,

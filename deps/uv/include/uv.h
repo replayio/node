@@ -961,6 +961,11 @@ UV_EXTERN int uv_async_init(uv_loop_t*,
                             uv_async_t* async,
                             uv_async_cb async_cb);
 UV_EXTERN int uv_async_send(uv_async_t* async);
+/* Record/replay: marks a handle whose sends come from a thread the recorder
+ * does not see, so that the loop records what it finds in the handle's
+ * pending flag rather than ordering the send against reading it. See
+ * uv_async_send. */
+UV_EXTERN void uv_async_set_record_pending(uv_async_t* async);
 
 
 /*
