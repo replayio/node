@@ -34,6 +34,7 @@
 #include "node_url.h"
 #include "path.h"
 #include "permission/permission.h"
+#include "replayio.h"
 #include "util-inl.h"
 
 #include "tracing/trace_event.h"
@@ -49,6 +50,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <filesystem>
+#include <optional>
 
 #if defined(__MINGW32__) || defined(_MSC_VER)
 #include <io.h>
@@ -1870,75 +1872,48 @@ static void ClearReadOnlyAttributeW(const std::filesystem::path& path,
 }
 #endif
 
-// fs.rmSync does its filesystem work in the C++ standard library, and those
-// calls are not the same when recording and when replaying: the libstdc++
-// linked into node resolves std::filesystem::symlink_status to lstat64, while
-// the libstdc++ the replay substitutes for it resolves to __lxstat, and only
-// __lxstat is a recorded call. The replay therefore records a call the
-// recording never made and the two diverge. Do the work with libuv when
-// recording or replaying, as the rest of fs does, for the same reason
-// node_report.cc writes reports with plain system calls rather than C++
-// streams.
+// fs.rmSync does its filesystem work in the C++ standard library, and that
+// work is not the same when recording and when replaying: the libstdc++ linked
+// into node resolves std::filesystem::symlink_status to lstat64, while the
+// libstdc++ the replay substitutes for it resolves to __lxstat, and only
+// __lxstat is a recorded call. A replay which ran these again would look for
+// calls the recording never made.
 //
-// Note that fs.cpSync and recursive fs.rmdirSync reach std::filesystem the
-// same way and are not covered here, because no recording case exercises them
-// and an untested replacement would be worse than a known gap.
-static std::error_code UvError(int rv) {
-  // libuv reports failures as negative errno values, which generic_category
-  // maps onto the std::errc values RmSync's retry loop tests for.
-  return std::error_code(rv < 0 ? -rv : 0, std::generic_category());
-}
-
-static std::filesystem::file_type RecordedSymlinkType(const char* path,
-                                                      std::error_code* error) {
-  uv_fs_t req;
-  int rv = uv_fs_lstat(nullptr, &req, path, nullptr);
-  uint64_t mode = rv == 0 ? req.statbuf.st_mode : 0;
-  uv_fs_req_cleanup(&req);
-  if (rv == UV_ENOENT) return std::filesystem::file_type::not_found;
-  if (rv < 0) {
-    *error = UvError(rv);
-    return std::filesystem::file_type::none;
-  }
-  return S_ISDIR(mode) ? std::filesystem::file_type::directory
-                       : std::filesystem::file_type::regular;
-}
-
-static int RecordedRemoveOne(const std::string& path) {
-  uv_fs_t stat_req;
-  int rv = uv_fs_lstat(nullptr, &stat_req, path.c_str(), nullptr);
-  uint64_t mode = rv == 0 ? stat_req.statbuf.st_mode : 0;
-  uv_fs_req_cleanup(&stat_req);
-  if (rv < 0) return rv;
-  uv_fs_t remove_req;
-  rv = S_ISDIR(mode)
-           ? uv_fs_rmdir(nullptr, &remove_req, path.c_str(), nullptr)
-           : uv_fs_unlink(nullptr, &remove_req, path.c_str(), nullptr);
-  uv_fs_req_cleanup(&remove_req);
-  return rv;
-}
-
-static int RecordedRemoveAll(const std::string& path) {
-  uv_fs_t req;
-  // uv_fs_scandir reads the whole directory, so recursing while stepping
-  // through it doesn't keep a handle open.
-  int rv = uv_fs_scandir(nullptr, &req, path.c_str(), 0, nullptr);
-  if (rv >= 0) {
-    uv_dirent_t ent;
-    while (uv_fs_scandir_next(&req, &ent) != UV_EOF) {
-      int child = RecordedRemoveAll(path + node::kPathSeparator + ent.name);
-      if (child < 0 && child != UV_ENOENT) {
-        rv = child;
-        break;
-      }
+// So run them only where the recording's own libstdc++ runs them, under
+// pass-through so they leave nothing in the call stream, and record what the
+// caller can observe of the result. The replay takes that without running
+// anything, which keeps the standard library's behaviour -- including every
+// corner of remove_all that a reimplementation would have to match -- instead
+// of standing in for it.
+//
+// fs.cpSync, recursive fs.rmdirSync and the Windows read-only retry below
+// reach std::filesystem the same way and are not covered, because no recording
+// case exercises them.
+//
+// Pass a null error for an operation whose only result is the state of the
+// filesystem, which a replay does not have and does not touch. An error's
+// category travels with its value, because RmSync's branches compare against
+// std::errc and the comparison needs both.
+template <typename Op>
+static void RecordedFilesystemOp(const char* why,
+                                 std::error_code* error,
+                                 Op op) {
+  if (!v8::recordreplay::IsReplaying()) {
+    std::optional<v8::replayio::AutoPassThroughEvents> pass_through;
+    if (v8::recordreplay::IsRecording()) {
+      pass_through.emplace();
     }
-  } else if (rv == UV_ENOTDIR) {
-    // Not a directory, so there is nothing to walk; it is removed below.
-    rv = 0;
+    op();
   }
-  uv_fs_req_cleanup(&req);
-  if (rv < 0) return rv;
-  return RecordedRemoveOne(path);
+  if (!error || !v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+  const bool generic = v8::recordreplay::RecordReplayValue(
+      why, error->category() == std::generic_category());
+  const uintptr_t value =
+      v8::recordreplay::RecordReplayValue(why, error->value());
+  *error = std::error_code(
+      value, generic ? std::generic_category() : std::system_category());
 }
 
 static void RmSync(const FunctionCallbackInfo<Value>& args) {
@@ -1955,9 +1930,15 @@ static void RmSync(const FunctionCallbackInfo<Value>& args) {
   auto file_path = path.ToPath();
   std::error_code error;
   const bool recorded = v8::recordreplay::IsRecordingOrReplaying();
-  const auto file_type =
-      recorded ? RecordedSymlinkType(*path, &error)
-               : std::filesystem::symlink_status(file_path, error).type();
+  auto file_type = std::filesystem::file_type::none;
+  RecordedFilesystemOp("RmSync symlink_status", &error, [&] {
+    file_type = std::filesystem::symlink_status(file_path, error).type();
+  });
+  if (recorded) {
+    file_type = static_cast<std::filesystem::file_type>(
+        v8::recordreplay::RecordReplayValue(
+            "RmSync file type", static_cast<uintptr_t>(file_type)));
+  }
 
   if (file_type == std::filesystem::file_type::not_found) {
     return;
@@ -1995,14 +1976,13 @@ static void RmSync(const FunctionCallbackInfo<Value>& args) {
 #endif
 
   while (maxRetries >= 0) {
-    if (recorded) {
-      error = UvError(recursive ? RecordedRemoveAll(*path)
-                                : RecordedRemoveOne(*path));
-    } else if (recursive) {
-      std::filesystem::remove_all(file_path, error);
-    } else {
-      std::filesystem::remove(file_path, error);
-    }
+    RecordedFilesystemOp("RmSync remove", &error, [&] {
+      if (recursive) {
+        std::filesystem::remove_all(file_path, error);
+      } else {
+        std::filesystem::remove(file_path, error);
+      }
+    });
 
 #ifdef _WIN32
     // On Windows, libc++ does not clear the read-only attribute before
@@ -2072,7 +2052,21 @@ static void RmSync(const FunctionCallbackInfo<Value>& args) {
         permission_denied_error, "rm", message.c_str(), path_c_str);
   }
 
-  std::string message = "Unknown error: " + error.message();
+  // message() formats the errno inside libstdc++ too, so it is taken from the
+  // recording the same way, as the text itself is what the caller observes.
+  std::string detail;
+  RecordedFilesystemOp("RmSync message", nullptr, [&] {
+    detail = error.message();
+  });
+  if (recorded) {
+    const size_t length = v8::recordreplay::RecordReplayValue(
+        "RmSync message length", detail.length());
+    detail.resize(length);
+    if (length) {
+      v8::recordreplay::RecordReplayBytes("RmSync message", &detail[0], length);
+    }
+  }
+  std::string message = "Unknown error: " + detail;
   return env->ThrowErrnoException(
       UV_UNKNOWN, "rm", message.c_str(), path_c_str);
 }
