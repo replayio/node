@@ -165,6 +165,17 @@ static bool HasDivergedFromRecording();
 static bool AllowSideEffects();
 static void OnAnnotation(const char* kind, const char* contents);
 
+// Network data for the recording's Network panel, as Chromium reports it
+// (see its record_replay_network.cc). Calls before the first checkpoint are
+// dropped. NewBookmark() returns the bookmark of the current execution point.
+static uint64_t NewBookmark();
+static void OnNetworkRequest(const char* id, const char* kind, uint64_t bookmark);
+static void OnNetworkRequestEvent(const char* id);
+static void OnNetworkStreamStart(const char* id, const char* kind,
+                                 const char* parentId);
+static void OnNetworkStreamData(const char* id, size_t offset, size_t length,
+                                uint64_t bookmark);
+
 // Long running work that doesn't advance the progress counter calls this
 // regularly, so replay hang detection sees the process is busy.
 static void NotifyActivity();
