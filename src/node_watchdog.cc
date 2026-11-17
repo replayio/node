@@ -906,6 +906,12 @@ SigintWatchdogHelper::~SigintWatchdogHelper() {
 #endif
 }
 
+void SigintWatchdogHelper::InitializeOncePerProcess() {
+  instance_action_mutex_.MarkOrdered();
+  instance.mutex_.MarkOrdered();
+  instance.list_mutex_.MarkOrdered();
+}
+
 SigintWatchdogHelper SigintWatchdogHelper::instance;
 Mutex SigintWatchdogHelper::instance_action_mutex_;
 
