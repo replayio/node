@@ -859,8 +859,10 @@
       'sources': [
         '<@(node_sources)',
         'src/node_deferred_finalization.cc',
+        'src/node_dependency_graph.cc',
         'src/node_recordreplay.cc',
         'src/node_deferred_finalization.h',
+        'src/node_dependency_graph.h',
         # Dependency headers
         'deps/v8/include/v8.h',
         'deps/postject/postject-api.h',

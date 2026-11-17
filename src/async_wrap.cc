@@ -405,6 +405,7 @@ void AsyncWrap::CreatePerIsolateProperties(IsolateData* isolate_data,
   SetMethod(isolate, target, "setPromiseHooks", SetPromiseHooks);
   SetMethod(isolate, target, "getPromiseHooks", GetPromiseHooks);
   SetMethod(isolate, target, "registerDestroyHook", RegisterDestroyHook);
+  AsyncDependencyGraph::CreatePerIsolateProperties(isolate_data, target);
   AsyncWrap::GetConstructorTemplate(isolate_data);
 }
 
@@ -511,6 +512,7 @@ void AsyncWrap::RegisterExternalReferences(
   registry->Register(SetPromiseHooks);
   registry->Register(GetPromiseHooks);
   registry->Register(RegisterDestroyHook);
+  AsyncDependencyGraph::RegisterExternalReferences(registry);
   registry->Register(AsyncWrap::GetAsyncId);
   registry->Register(AsyncWrap::AsyncReset);
   registry->Register(AsyncWrap::GetAsyncContextFrame);
@@ -581,6 +583,8 @@ void AsyncWrap::EmitTraceEventDestroy() {
 }
 
 void AsyncWrap::EmitDestroy(Environment* env, double async_id) {
+  env->async_hooks()->dependency_graph().OnDestroy(async_id);
+
   if (env->async_hooks()->fields()[AsyncHooks::kDestroy] == 0 ||
       !env->can_call_into_js()) {
     return;
@@ -668,6 +672,7 @@ void AsyncWrap::EmitAsyncInit(Environment* env,
   CHECK(!object.IsEmpty());
   CHECK(!type.IsEmpty());
   AsyncHooks* async_hooks = env->async_hooks();
+  async_hooks->dependency_graph().OnInit(env->isolate(), async_id, type);
 
   // Nothing to execute, so can continue normally.
   if (async_hooks->fields()[AsyncHooks::kInit] == 0) {
