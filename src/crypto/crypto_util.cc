@@ -289,14 +289,12 @@ class FipsIndicatorState final {
  private:
   void SetActive(bool active) {
     subscription_generation_++;
+    Mutex::ScopedLock lock(mutex_);
     active_.store(active, std::memory_order_release);
     if (active) return;
 
-    {
-      Mutex::ScopedLock lock(mutex_);
-      events_.clear();
-      dropped_events_ = 0;
-    }
+    events_.clear();
+    dropped_events_ = 0;
   }
 
   static int OnOpenSSLIndicator(const char* operation,
@@ -319,7 +317,12 @@ class FipsIndicatorState final {
     const int result = reject_unapproved_.load(std::memory_order_acquire)
                            ? 0
                            : previous_result;
-    if (!active_.load(std::memory_order_acquire)) return result;
+    // While recording/replaying, active_ is only read under mutex_, so that
+    // whether a thread takes the ordered lock follows the recording.
+    if (!v8::recordreplay::IsRecordingOrReplaying() &&
+        !active_.load(std::memory_order_acquire)) {
+      return result;
+    }
 
     const bool blocked = result == 0;
     {
@@ -396,9 +399,9 @@ class FipsIndicatorState final {
 
   void CleanupEnvironment() {
     subscription_generation_++;
-    active_.store(false, std::memory_order_release);
     {
       Mutex::ScopedLock lock(mutex_);
+      active_.store(false, std::memory_order_release);
       env_ = nullptr;
       channel_.reset();
       events_.clear();
