@@ -241,6 +241,30 @@ void AsyncDependencyGraph::DropEndedDispatches() {
   }
 }
 
+int NewLockRequestDependencyNode(Isolate* isolate, Local<String> name) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return 0;
+  Utf8Value name_utf8(isolate, name);
+  return v8::recordreplay::NewDependencyGraphNode(
+      NodeJson("lockManagerRequest",
+               std::pair{"name", name_utf8.ToStringView()})
+          .c_str());
+}
+
+LockGrantedDependencyScope::LockGrantedDependencyScope(int request_node) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  int node = v8::recordreplay::NewDependencyGraphNode(
+      R"({"kind":"lockRequestGranted"})");
+  if (!node) return;
+  v8::recordreplay::AddDependencyGraphEdge(
+      request_node, node, R"({"kind":"creator"})");
+  depth_ = v8::recordreplay::DependencyExecutionDepth();
+  v8::recordreplay::BeginDependencyExecution(node);
+}
+
+LockGrantedDependencyScope::~LockGrantedDependencyScope() {
+  if (depth_) v8::recordreplay::UnwindDependencyExecutions(*depth_);
+}
+
 void AsyncDependencyGraph::CreatePerIsolateProperties(
     IsolateData* isolate_data, Local<ObjectTemplate> target) {
   Isolate* isolate = isolate_data->isolate();

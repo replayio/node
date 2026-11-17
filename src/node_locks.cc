@@ -3,6 +3,7 @@
 #include "base_object-inl.h"
 #include "env-inl.h"
 #include "node_debug.h"
+#include "node_dependency_graph.h"
 #include "node_errors.h"
 #include "node_external_reference.h"
 #include "node_internals.h"
@@ -65,13 +66,15 @@ LockRequest::LockRequest(Environment* env,
                          Lock::Mode mode,
                          std::string client_id,
                          bool steal,
-                         bool if_available)
+                         bool if_available,
+                         int dependency_node)
     : env_(env),
       name_(name),
       mode_(mode),
       client_id_(std::move(client_id)),
       steal_(steal),
-      if_available_(if_available) {
+      if_available_(if_available),
+      dependency_node_(dependency_node) {
   waiting_promise_.Reset(env_->isolate(), waiting);
   released_promise_.Reset(env_->isolate(), released);
   callback_.Reset(env_->isolate(), callback);
@@ -474,6 +477,8 @@ void LockManager::ProcessQueue(Environment* env) {
     Local<Value> callback_arg = lock_info;
     Local<Value> callback_result;
     {
+      LockGrantedDependencyScope dependency_scope(
+          grantable_request->dependency_node());
       TryCatchScope try_catch_scope(env);
       if (!grantable_request->callback()
                ->Call(context, Undefined(isolate), 1, &callback_arg)
@@ -604,6 +609,9 @@ void LockManager::Request(const FunctionCallbackInfo<Value>& args) {
   waiting_promise->GetPromise()->MarkAsHandled();
   released_promise->GetPromise()->MarkAsHandled();
 
+  int dependency_node =
+      NewLockRequestDependencyNode(isolate, args[0].As<v8::String>());
+
   LockManager* manager = GetCurrent();
   {
     Mutex::ScopedLock scoped_lock(manager->mutex_);
@@ -623,7 +631,8 @@ void LockManager::Request(const FunctionCallbackInfo<Value>& args) {
                                         : Lock::Mode::Exclusive,
         client_id.ToString(),
         steal,
-        if_available);
+        if_available,
+        dependency_node);
     // Steal requests get priority by going to front of queue
     if (steal) {
       manager->pending_queue_.emplace_front(std::move(lock_request));

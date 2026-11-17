@@ -107,6 +107,27 @@ class AsyncDependencyGraph {
   std::vector<std::optional<DependencyExecution>> dispatches_;
 };
 
+// Web Locks (navigator.locks) in the Replay dependency graph, with the kinds of
+// Blink's LockManager: a request adds a lockManagerRequest{name} node, and the
+// callback of its grant runs in a dependency execution of a lockRequestGranted
+// node, with a creator edge from the request. No-ops unless
+// v8::recordreplay::DependencyGraphEnabled().
+int NewLockRequestDependencyNode(v8::Isolate* isolate,
+                                 v8::Local<v8::String> name);
+
+class LockGrantedDependencyScope {
+ public:
+  explicit LockGrantedDependencyScope(int request_node);
+  ~LockGrantedDependencyScope();
+  LockGrantedDependencyScope(const LockGrantedDependencyScope&) = delete;
+  LockGrantedDependencyScope& operator=(const LockGrantedDependencyScope&) =
+      delete;
+
+ private:
+  // The dependency execution depth before the execution began, if it did.
+  std::optional<size_t> depth_;
+};
+
 }  // namespace node
 
 #endif  // defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
