@@ -411,7 +411,9 @@ class FipsIndicatorState final {
   std::atomic<bool> active_{false};
   std::atomic<bool> reject_unapproved_{false};
   OSSL_INDICATOR_CALLBACK* previous_callback_ = nullptr;
-  Mutex mutex_;
+  // Ordered when recording/replaying: thread pool crypto jobs queue events_
+  // under it, and the first of them schedules the dispatch.
+  Mutex mutex_{/* ordered */ true};
   Environment* env_ = nullptr;
   BaseObjectPtr<diagnostics_channel::Channel> channel_;
   std::deque<FipsIndicatorEvent> events_;

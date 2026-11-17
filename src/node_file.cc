@@ -2610,7 +2610,9 @@ class RecursiveReadDir {
 
   const std::string root_;
 
-  Mutex mutex_;
+  // Ordered when recording/replaying: which thread scans which directory, and
+  // which thread runs out of work first, is decided under it.
+  Mutex mutex_{/* ordered */ true};
   ConditionVariable cv_;
   // Directories in the order they were found; the first next_ have been or
   // are being scanned by one of the active_ threads.
