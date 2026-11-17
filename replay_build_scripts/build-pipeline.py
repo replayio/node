@@ -79,7 +79,7 @@ def apply_driver_build_check(yaml_text: str, pin: BackendPin) -> str:
     noop = f"""  - label: "DriverBuildCheck (archive present)"
     key: "build-driver-linker"
     agents:
-      - "deploy=true"
+      - "queue=light"
     plugins:
       - thedyrt/skip-checkout#v0.1.1: ~
     command: "echo DriverBuildCheck linux-recordreplay-{driver_revision}.tgz already on S3"

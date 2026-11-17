@@ -32,7 +32,7 @@ steps:
   - label: ":docker: RBE toolchain image"
     key: "build-rbe-toolchain-image"
     agents:
-      - "build-runtime=true"
+      - "queue=other-runtimes"
     command: "replay_build_scripts/rbe/toolchain-image.sh ensure"
 
   # Plain command — do not use replay-deploy-buildkite-plugin (that emits
@@ -52,7 +52,7 @@ steps:
       - "build-driver-linker"
       - "build-rbe-toolchain-image"
     agents:
-      - "build-runtime=true"
+      - "queue=other-runtimes"
     plugins:
       - seek-oss/aws-sm#v2.3.1:
           region: us-east-2
@@ -131,9 +131,8 @@ steps:
       # build-rbe.py rebuilds out/Release from scratch when the toolchain image
       # changes (and removes a leftover make build).
       # Match build-node.yml: do not inject prod/deploy-access-keys (github-backend)
-      # into the container — that IAM user cannot s3:PutObject builds/. build-runtime
-      # EC2s (beefiermaster / runner-*) docker uses the agent identity (same as the
-      # manual build-node pipeline).
+      # into the container — that IAM user cannot s3:PutObject builds/. Docker on
+      # the queue=other-runtimes machine uses the agent identity.
       # safe.directory is set inside the image (run_node_build.sh / buildNodeDirectly).
       # Logs from an earlier job in the persistent out/Release must not be
       # collected as this job's if the build fails before build-rbe.py clears them.
