@@ -181,6 +181,7 @@ class SigintWatchdogHelper {
   // Orders the helper's mutexes when recording/replaying. Called on the main
   // thread once record/replay is initialized, before any other thread exists.
   static void InitializeOncePerProcess();
+
   void Register(SigintWatchdogBase* watchdog);
   void Unregister(SigintWatchdogBase* watchdog);
   bool HasPendingSignal();
@@ -198,10 +199,11 @@ class SigintWatchdogHelper {
 
   int start_stop_count_;
 
-  // All ordered (see InitializeOncePerProcess()): every thread that runs
-  // breakOnSigint code shares this helper, and whichever thread moves
-  // start_stop_count_ off 0 starts the helper thread, so the replay has to
-  // take these in the recorded thread order.
+  // These and instance_action_mutex_ are ordered when recording/replaying (see
+  // InitializeOncePerProcess()): every thread that runs breakOnSigint code
+  // shares this helper, and whichever thread moves start_stop_count_ off 0
+  // starts the helper thread, so the replay has to take them in the recorded
+  // thread order.
   Mutex mutex_;
   Mutex list_mutex_;
   std::vector<SigintWatchdogBase*> watchdogs_;
