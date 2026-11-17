@@ -38,6 +38,7 @@
 #include "node.h"
 #include "node_binding.h"
 #include "node_builtins.h"
+#include "node_dependency_graph.h"
 #include "node_exit_code.h"
 #include "node_main_instance.h"
 #include "node_options.h"
@@ -441,6 +442,9 @@ class AsyncHooks : public MemoryRetainer {
   bool pop_async_context(double async_id);
   void clear_async_id_stack();  // Used in fatal exceptions.
 
+  // The async ops in the Replay dependency graph, mirroring this stack.
+  AsyncDependencyGraph& dependency_graph() { return dependency_graph_; }
+
   AsyncHooks(const AsyncHooks&) = delete;
   AsyncHooks& operator=(const AsyncHooks&) = delete;
   AsyncHooks(AsyncHooks&&) = delete;
@@ -512,6 +516,8 @@ class AsyncHooks : public MemoryRetainer {
   const SerializeInfo* info_ = nullptr;
 
   std::array<v8::Global<v8::Function>, 4> js_promise_hooks_;
+
+  AsyncDependencyGraph dependency_graph_;
 };
 
 class ImmediateInfo : public MemoryRetainer {

@@ -149,6 +149,7 @@ void AsyncHooks::push_async_context(
   fields_[kStackLength] += 1;
   async_id_fields_[kExecutionAsyncId] = async_id;
   async_id_fields_[kTriggerAsyncId] = trigger_async_id;
+  dependency_graph_.OnPush(async_id, offset);
 
 #ifdef DEBUG
   for (uint32_t i = offset; i < native_execution_async_resources_.size(); i++)
@@ -185,6 +186,7 @@ bool AsyncHooks::pop_async_context(double async_id) {
   async_id_fields_[kExecutionAsyncId] = async_ids_stack_[2 * offset];
   async_id_fields_[kTriggerAsyncId] = async_ids_stack_[2 * offset + 1];
   fields_[kStackLength] = offset;
+  dependency_graph_.OnPop(offset);
 
   if (offset < native_execution_async_resources_.size() &&
       std::visit([](auto* ptr) { return ptr != nullptr; },
@@ -227,6 +229,7 @@ void AsyncHooks::clear_async_id_stack() {
   async_id_fields_[kExecutionAsyncId] = 0;
   async_id_fields_[kTriggerAsyncId] = 0;
   fields_[kStackLength] = 0;
+  dependency_graph_.OnPop(0);
 }
 
 void AsyncHooks::InstallPromiseHooks(Local<Context> ctx) {
