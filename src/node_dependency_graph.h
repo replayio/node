@@ -27,27 +27,43 @@ enum class AsyncOp {
   kScript,     // marker{ExecuteScript}; the callback runs in it
 };
 
+// A dependency execution of a node (v8::recordreplay::BeginDependencyExecution).
+// It saves the dependency execution depth when it begins, and ends by
+// unwinding to it: that also ends executions begun in it whose own end was
+// skipped, such as those of promise reaction jobs a termination escaped from.
+class DependencyExecution {
+ public:
+  // nullopt for node 0: no node, e.g. before the first checkpoint.
+  static std::optional<DependencyExecution> Begin(int node);
+  size_t depth() const { return depth_; }
+  // Whether an unwind past its depth already ended it.
+  bool ended() const;
+  void End() const;
+
+ private:
+  explicit DependencyExecution(size_t depth) : depth_(depth) {}
+  size_t depth_;
+};
+
 // Async ops (async_hooks) in the Replay dependency graph
 // (v8::recordreplay::NewDependencyGraphNode etc.). An op's init adds a node.
 // Each callback of the op runs in a window, push_async_context ...
-// pop_async_context, which is a dependency execution of the op's run node.
+// pop_async_context, which is a DependencyExecution of the op's run node.
 //
-// Windows mirror AsyncHooks' async id stack by slot. A window saves the
-// dependency execution depth when it begins, and shrinking the stack unwinds
-// to it: that also ends executions whose own end was skipped, such as those of
-// promise reaction jobs a termination escaped from, or of windows a clear of
-// the stack dropped.
+// Windows mirror AsyncHooks' async id stack by slot. Shrinking the stack ends
+// the outermost window it drops, and with it the windows and dispatches above
+// it, also those a clear of the stack dropped without a pop.
 //
 // Ids without an init (0, PROMISE ids) and ids whose init came before the first
 // checkpoint get no window.
 //
-// Event dispatches (EventEmitter#emit, EventTarget#dispatchEvent) call their
-// listeners in a dependency execution of a dispatchEvent{type} node. A
-// dispatch saves the depth the same way and its end unwinds to it.
+// Event dispatches (EventEmitter#emit, EventTarget[kHybridDispatch]) call their
+// listeners in a DependencyExecution of an emitEvent{type} node. Dispatches
+// nest. Not dispatchEvent: the backend reads that kind as DOM input.
 //
 // Every method returns at once unless
-// v8::recordreplay::DependencyGraphEnabled(): the map and the depths are only
-// kept when replaying.
+// v8::recordreplay::DependencyGraphEnabled(): the map, the windows and the
+// dispatches are only kept while it holds.
 class AsyncDependencyGraph {
  public:
   // The last init of an id wins.
@@ -65,7 +81,7 @@ class AsyncDependencyGraph {
   // type: the event type. Reported: a string, or a Symbol's description.
   // Other values are not converted, which could run JS.
   void OnBeginDispatch(v8::Isolate* isolate, v8::Local<v8::Value> type);
-  // Ends the innermost dispatch whose execution was not unwound yet.
+  // Ends the innermost dispatch not ended yet.
   void OnEndDispatch();
 
   // The JS bindings, on internalBinding('async_wrap').
@@ -80,14 +96,15 @@ class AsyncDependencyGraph {
   };
 
   void AddOp(double async_id, AsyncOp op, const std::string& json);
+  // Drops the innermost dispatches an unwind already ended.
+  void DropEndedDispatches();
 
   std::unordered_map<double, Op> ops_;
-  // Per stack slot: the dependency execution depth before the window began,
-  // or nullopt if it didn't.
-  std::vector<std::optional<size_t>> windows_;
-  // Per dispatch not ended, innermost last: the dependency execution depth
-  // before it began.
-  std::vector<size_t> dispatches_;
+  // Per stack slot: the window's execution, or nullopt if it didn't begin.
+  std::vector<std::optional<DependencyExecution>> windows_;
+  // Per dispatch not ended, innermost last: its execution, or nullopt if it
+  // didn't begin.
+  std::vector<std::optional<DependencyExecution>> dispatches_;
 };
 
 }  // namespace node
