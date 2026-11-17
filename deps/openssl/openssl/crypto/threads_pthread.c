@@ -14,6 +14,7 @@
 #include <crypto/cryptlib.h>
 #include "internal/cryptlib.h"
 #include "internal/rcu.h"
+#include "internal/record_replay.h"
 #include "rcu_internal.h"
 
 #if defined(__clang__) && defined(__has_feature)
@@ -75,6 +76,39 @@
 extern void V8RecordReplayAddOrderedPthreadMutex(const char *name,
                                                  pthread_mutex_t *mutex)
     __attribute__((weak));
+
+static void record_replay_order_mutex(const char *name, pthread_mutex_t *mutex)
+{
+    /* Absent from binaries without V8, e.g. the openssl CLI. */
+    if (V8RecordReplayAddOrderedPthreadMutex != NULL)
+        V8RecordReplayAddOrderedPthreadMutex(name, mutex);
+}
+
+#ifdef OSSL_RECORD_REPLAY
+static int record_replay_tsan_lock;
+
+void ossl_record_replay_tsan_init(void)
+{
+    if (V8RecordReplayCreateOrderedLock != NULL)
+        record_replay_tsan_lock =
+            (int)V8RecordReplayCreateOrderedLock("tsan_assist");
+}
+
+int ossl_record_replay_tsan_lock(void)
+{
+    int lock = record_replay_tsan_lock;
+
+    if (lock != 0)
+        V8RecordReplayOrderedLock(lock);
+    return lock;
+}
+
+void ossl_record_replay_tsan_unlock(int lock)
+{
+    if (lock != 0)
+        V8RecordReplayOrderedUnlock(lock);
+}
+#endif
 
 /*
  * For all GNU/clang atomic builtins, we also need fallbacks, to cover all
@@ -583,6 +617,9 @@ CRYPTO_RCU_LOCK *ossl_rcu_lock_new(int num_writers, OSSL_LIB_CTX *ctx)
     if (new->qp_group == NULL)
         goto err;
 
+    for (i = 0; i < 3; i++)
+        record_replay_order_mutex("CRYPTO_RCU_LOCK", mutexes[i]);
+
     return new;
 
 err:
@@ -663,10 +700,7 @@ CRYPTO_RWLOCK *CRYPTO_THREAD_lock_new(void)
     }
 
     pthread_mutexattr_destroy(&attr);
-
-    /* Absent from binaries without V8, e.g. the openssl CLI. */
-    if (V8RecordReplayAddOrderedPthreadMutex != NULL)
-        V8RecordReplayAddOrderedPthreadMutex("CRYPTO_RWLOCK", lock);
+    record_replay_order_mutex("CRYPTO_RWLOCK", lock);
 #endif
 
     return lock;
@@ -780,10 +814,16 @@ int CRYPTO_THREAD_compare_id(CRYPTO_THREAD_ID a, CRYPTO_THREAD_ID b)
     return pthread_equal(a, b);
 }
 
+/*
+ * Record/Replay: the CRYPTO_atomic_* functions take the caller's lock, which
+ * is ordered (see CRYPTO_THREAD_lock_new). Without a lock they fail, which
+ * callers passing NULL tolerate.
+ */
 int CRYPTO_atomic_add(int *val, int amount, int *ret, CRYPTO_RWLOCK *lock)
 {
 #if defined(__GNUC__) && defined(__ATOMIC_ACQ_REL) && !defined(BROKEN_CLANG_ATOMICS)
-    if (__atomic_is_lock_free(sizeof(*val), val)) {
+    if (__atomic_is_lock_free(sizeof(*val), val)
+        && !ossl_record_replay_active()) {
         *ret = __atomic_add_fetch(val, amount, __ATOMIC_ACQ_REL);
         return 1;
     }
@@ -810,7 +850,8 @@ int CRYPTO_atomic_add64(uint64_t *val, uint64_t op, uint64_t *ret,
     CRYPTO_RWLOCK *lock)
 {
 #if defined(__GNUC__) && defined(__ATOMIC_ACQ_REL) && !defined(BROKEN_CLANG_ATOMICS)
-    if (__atomic_is_lock_free(sizeof(*val), val)) {
+    if (__atomic_is_lock_free(sizeof(*val), val)
+        && !ossl_record_replay_active()) {
         *ret = __atomic_add_fetch(val, op, __ATOMIC_ACQ_REL);
         return 1;
     }
@@ -836,7 +877,8 @@ int CRYPTO_atomic_and(uint64_t *val, uint64_t op, uint64_t *ret,
     CRYPTO_RWLOCK *lock)
 {
 #if defined(__GNUC__) && defined(__ATOMIC_ACQ_REL) && !defined(BROKEN_CLANG_ATOMICS)
-    if (__atomic_is_lock_free(sizeof(*val), val)) {
+    if (__atomic_is_lock_free(sizeof(*val), val)
+        && !ossl_record_replay_active()) {
         *ret = __atomic_and_fetch(val, op, __ATOMIC_ACQ_REL);
         return 1;
     }
@@ -862,7 +904,8 @@ int CRYPTO_atomic_or(uint64_t *val, uint64_t op, uint64_t *ret,
     CRYPTO_RWLOCK *lock)
 {
 #if defined(__GNUC__) && defined(__ATOMIC_ACQ_REL) && !defined(BROKEN_CLANG_ATOMICS)
-    if (__atomic_is_lock_free(sizeof(*val), val)) {
+    if (__atomic_is_lock_free(sizeof(*val), val)
+        && !ossl_record_replay_active()) {
         *ret = __atomic_or_fetch(val, op, __ATOMIC_ACQ_REL);
         return 1;
     }
@@ -887,7 +930,8 @@ int CRYPTO_atomic_or(uint64_t *val, uint64_t op, uint64_t *ret,
 int CRYPTO_atomic_load(uint64_t *val, uint64_t *ret, CRYPTO_RWLOCK *lock)
 {
 #if defined(__GNUC__) && defined(__ATOMIC_ACQ_REL) && !defined(BROKEN_CLANG_ATOMICS)
-    if (__atomic_is_lock_free(sizeof(*val), val)) {
+    if (__atomic_is_lock_free(sizeof(*val), val)
+        && !ossl_record_replay_active()) {
         __atomic_load(val, ret, __ATOMIC_ACQUIRE);
         return 1;
     }
@@ -910,7 +954,8 @@ int CRYPTO_atomic_load(uint64_t *val, uint64_t *ret, CRYPTO_RWLOCK *lock)
 int CRYPTO_atomic_store(uint64_t *dst, uint64_t val, CRYPTO_RWLOCK *lock)
 {
 #if defined(__GNUC__) && defined(__ATOMIC_ACQ_REL) && !defined(BROKEN_CLANG_ATOMICS)
-    if (__atomic_is_lock_free(sizeof(*dst), dst)) {
+    if (__atomic_is_lock_free(sizeof(*dst), dst)
+        && !ossl_record_replay_active()) {
         __atomic_store(dst, &val, __ATOMIC_RELEASE);
         return 1;
     }
@@ -933,7 +978,8 @@ int CRYPTO_atomic_store(uint64_t *dst, uint64_t val, CRYPTO_RWLOCK *lock)
 int CRYPTO_atomic_load_int(int *val, int *ret, CRYPTO_RWLOCK *lock)
 {
 #if defined(__GNUC__) && defined(__ATOMIC_ACQ_REL) && !defined(BROKEN_CLANG_ATOMICS)
-    if (__atomic_is_lock_free(sizeof(*val), val)) {
+    if (__atomic_is_lock_free(sizeof(*val), val)
+        && !ossl_record_replay_active()) {
         __atomic_load(val, ret, __ATOMIC_ACQUIRE);
         return 1;
     }

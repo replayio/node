@@ -51,6 +51,8 @@
 #define OSSL_INTERNAL_TSAN_ASSIST_H
 #pragma once
 
+#include "internal/record_replay.h"
+
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L \
     && !defined(__STDC_NO_ATOMICS__)
 #include <stdatomic.h>
@@ -58,11 +60,11 @@
 #if defined(ATOMIC_POINTER_LOCK_FREE) \
     && ATOMIC_POINTER_LOCK_FREE >= 2
 #define TSAN_QUALIFIER _Atomic
-#define tsan_load(ptr) atomic_load_explicit((ptr), memory_order_relaxed)
-#define tsan_store(ptr, val) atomic_store_explicit((ptr), (val), memory_order_relaxed)
-#define tsan_add(ptr, n) atomic_fetch_add_explicit((ptr), (n), memory_order_relaxed)
-#define tsan_ld_acq(ptr) atomic_load_explicit((ptr), memory_order_acquire)
-#define tsan_st_rel(ptr, val) atomic_store_explicit((ptr), (val), memory_order_release)
+#define tsan_load_raw(ptr) atomic_load_explicit((ptr), memory_order_relaxed)
+#define tsan_store_raw(ptr, val) atomic_store_explicit((ptr), (val), memory_order_relaxed)
+#define tsan_add_raw(ptr, n) atomic_fetch_add_explicit((ptr), (n), memory_order_relaxed)
+#define tsan_ld_acq_raw(ptr) atomic_load_explicit((ptr), memory_order_acquire)
+#define tsan_st_rel_raw(ptr, val) atomic_store_explicit((ptr), (val), memory_order_release)
 #endif
 
 #elif defined(__GNUC__) && defined(__ATOMIC_RELAXED)
@@ -70,11 +72,11 @@
 #if defined(__GCC_ATOMIC_POINTER_LOCK_FREE) \
     && __GCC_ATOMIC_POINTER_LOCK_FREE >= 2
 #define TSAN_QUALIFIER volatile
-#define tsan_load(ptr) __atomic_load_n((ptr), __ATOMIC_RELAXED)
-#define tsan_store(ptr, val) __atomic_store_n((ptr), (val), __ATOMIC_RELAXED)
-#define tsan_add(ptr, n) __atomic_fetch_add((ptr), (n), __ATOMIC_RELAXED)
-#define tsan_ld_acq(ptr) __atomic_load_n((ptr), __ATOMIC_ACQUIRE)
-#define tsan_st_rel(ptr, val) __atomic_store_n((ptr), (val), __ATOMIC_RELEASE)
+#define tsan_load_raw(ptr) __atomic_load_n((ptr), __ATOMIC_RELAXED)
+#define tsan_store_raw(ptr, val) __atomic_store_n((ptr), (val), __ATOMIC_RELAXED)
+#define tsan_add_raw(ptr, n) __atomic_fetch_add((ptr), (n), __ATOMIC_RELAXED)
+#define tsan_ld_acq_raw(ptr) __atomic_load_n((ptr), __ATOMIC_ACQUIRE)
+#define tsan_st_rel_raw(ptr, val) __atomic_store_n((ptr), (val), __ATOMIC_RELEASE)
 #endif
 
 #elif defined(_MSC_VER) && _MSC_VER >= 1200 \
@@ -124,6 +126,22 @@
 #define tsan_st_rel(ptr, val) (*(ptr) = (val))
 #endif
 
+#endif
+
+#ifdef tsan_load_raw
+#ifdef OSSL_RECORD_REPLAY
+#define tsan_load(ptr) OSSL_RECORD_REPLAY_TSAN(tsan_load_raw(ptr))
+#define tsan_store(ptr, val) OSSL_RECORD_REPLAY_TSAN_VOID(tsan_store_raw((ptr), (val)))
+#define tsan_add(ptr, n) OSSL_RECORD_REPLAY_TSAN(tsan_add_raw((ptr), (n)))
+#define tsan_ld_acq(ptr) OSSL_RECORD_REPLAY_TSAN(tsan_ld_acq_raw(ptr))
+#define tsan_st_rel(ptr, val) OSSL_RECORD_REPLAY_TSAN_VOID(tsan_st_rel_raw((ptr), (val)))
+#else
+#define tsan_load(ptr) tsan_load_raw(ptr)
+#define tsan_store(ptr, val) tsan_store_raw((ptr), (val))
+#define tsan_add(ptr, n) tsan_add_raw((ptr), (n))
+#define tsan_ld_acq(ptr) tsan_ld_acq_raw(ptr)
+#define tsan_st_rel(ptr, val) tsan_st_rel_raw((ptr), (val))
+#endif
 #endif
 
 #ifndef TSAN_QUALIFIER
