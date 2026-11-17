@@ -65,11 +65,16 @@
  * The Non-Stop KLT thread model currently seems broken in its rwlock
  * implementation
  * Likewise is there a problem with the glibc implementation on riscv.
+ *
+ * Record/Replay: USE_RWLOCK stays undefined. CRYPTO_RWLOCKs are mutexes,
+ * which the recorder can order (see CRYPTO_THREAD_lock_new). It cannot order
+ * rwlocks, and the order in which threads take a lock decides e.g. which
+ * thread sets up an RSA key's blinding.
  */
-#if defined(PTHREAD_RWLOCK_INITIALIZER) && !defined(_KLT_MODEL_) \
-    && !defined(__riscv)
-#define USE_RWLOCK
-#endif
+
+extern void V8RecordReplayAddOrderedPthreadMutex(const char *name,
+                                                 pthread_mutex_t *mutex)
+    __attribute__((weak));
 
 /*
  * For all GNU/clang atomic builtins, we also need fallbacks, to cover all
@@ -658,6 +663,10 @@ CRYPTO_RWLOCK *CRYPTO_THREAD_lock_new(void)
     }
 
     pthread_mutexattr_destroy(&attr);
+
+    /* Absent from binaries without V8, e.g. the openssl CLI. */
+    if (V8RecordReplayAddOrderedPthreadMutex != NULL)
+        V8RecordReplayAddOrderedPthreadMutex("CRYPTO_RWLOCK", lock);
 #endif
 
     return lock;
