@@ -110,6 +110,30 @@ void EndDispatch(const FunctionCallbackInfo<Value>& args) {
   GetCurrent(args).OnEndDispatch();
 }
 
+// A server response (http.ServerResponse): responseStart{status} at its head,
+// responseData{length} per body write and responseEnd at its end. Each is made
+// in the JS that writes it, which is its cause.
+void ResponseStart(const FunctionCallbackInfo<Value>& args) {
+  CHECK(args[0]->IsInt32());
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  v8::recordreplay::NewDependencyGraphNode(
+      NodeJson("responseStart",
+               std::pair{"status", args[0].As<v8::Int32>()->Value()})
+          .c_str());
+}
+
+void ResponseData(const FunctionCallbackInfo<Value>& args) {
+  double length = NumberArg(args, 0);
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  v8::recordreplay::NewDependencyGraphNode(
+      NodeJson("responseData", std::pair{"length", length}).c_str());
+}
+
+void ResponseEnd(const FunctionCallbackInfo<Value>& args) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  v8::recordreplay::NewDependencyGraphNode(R"({"kind":"responseEnd"})");
+}
+
 }  // namespace
 
 std::optional<DependencyExecution> DependencyExecution::Begin(int node) {
@@ -271,6 +295,9 @@ void AsyncDependencyGraph::CreatePerIsolateProperties(
   SetMethod(isolate, target, "dependencyGraphPop", Pop);
   SetMethod(isolate, target, "dependencyGraphBeginDispatch", BeginDispatch);
   SetMethod(isolate, target, "dependencyGraphEndDispatch", EndDispatch);
+  SetMethod(isolate, target, "dependencyGraphResponseStart", ResponseStart);
+  SetMethod(isolate, target, "dependencyGraphResponseData", ResponseData);
+  SetMethod(isolate, target, "dependencyGraphResponseEnd", ResponseEnd);
 }
 
 void AsyncDependencyGraph::RegisterExternalReferences(
@@ -284,6 +311,9 @@ void AsyncDependencyGraph::RegisterExternalReferences(
   registry->Register(Pop);
   registry->Register(BeginDispatch);
   registry->Register(EndDispatch);
+  registry->Register(ResponseStart);
+  registry->Register(ResponseData);
+  registry->Register(ResponseEnd);
 }
 
 }  // namespace node
