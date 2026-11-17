@@ -110,6 +110,20 @@ void EndDispatch(const FunctionCallbackInfo<Value>& args) {
   GetCurrent(args).OnEndDispatch();
 }
 
+void ResponseStart(const FunctionCallbackInfo<Value>& args) {
+  CHECK(args[1]->IsInt32());
+  GetCurrent(args).OnResponseStart(NumberArg(args, 0),
+                                   args[1].As<v8::Int32>()->Value());
+}
+
+void ResponseData(const FunctionCallbackInfo<Value>& args) {
+  GetCurrent(args).OnResponseData(NumberArg(args, 0), NumberArg(args, 1));
+}
+
+void ResponseEnd(const FunctionCallbackInfo<Value>& args) {
+  GetCurrent(args).OnResponseEnd(NumberArg(args, 0));
+}
+
 }  // namespace
 
 std::optional<DependencyExecution> DependencyExecution::Begin(int node) {
@@ -241,6 +255,35 @@ void AsyncDependencyGraph::DropEndedDispatches() {
   }
 }
 
+void AsyncDependencyGraph::OnResponseStart(double response, int32_t status) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  int node = v8::recordreplay::NewDependencyGraphNode(
+      NodeJson("responseStart", std::pair{"status", status}).c_str());
+  if (node) responses_.insert_or_assign(response, node);
+}
+
+void AsyncDependencyGraph::OnResponseData(double response, double length) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  AddResponseNode(response,
+                  NodeJson("responseData", std::pair{"length", length}));
+}
+
+void AsyncDependencyGraph::OnResponseEnd(double response) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  AddResponseNode(response, NodeJson("responseEnd"));
+  responses_.erase(response);
+}
+
+void AsyncDependencyGraph::AddResponseNode(double response,
+                                           const std::string& json) {
+  int node = v8::recordreplay::NewDependencyGraphNode(json.c_str());
+  auto it = responses_.find(response);
+  // No start node: its head came before the first checkpoint.
+  if (it == responses_.end()) return;
+  v8::recordreplay::AddDependencyGraphEdge(
+      it->second, node, R"({"kind":"creator"})");
+}
+
 int NewLockRequestDependencyNode(Isolate* isolate, Local<String> name) {
   if (!v8::recordreplay::DependencyGraphEnabled()) return 0;
   Utf8Value name_utf8(isolate, name);
@@ -271,6 +314,9 @@ void AsyncDependencyGraph::CreatePerIsolateProperties(
   SetMethod(isolate, target, "dependencyGraphPop", Pop);
   SetMethod(isolate, target, "dependencyGraphBeginDispatch", BeginDispatch);
   SetMethod(isolate, target, "dependencyGraphEndDispatch", EndDispatch);
+  SetMethod(isolate, target, "dependencyGraphResponseStart", ResponseStart);
+  SetMethod(isolate, target, "dependencyGraphResponseData", ResponseData);
+  SetMethod(isolate, target, "dependencyGraphResponseEnd", ResponseEnd);
 }
 
 void AsyncDependencyGraph::RegisterExternalReferences(
@@ -284,6 +330,9 @@ void AsyncDependencyGraph::RegisterExternalReferences(
   registry->Register(Pop);
   registry->Register(BeginDispatch);
   registry->Register(EndDispatch);
+  registry->Register(ResponseStart);
+  registry->Register(ResponseData);
+  registry->Register(ResponseEnd);
 }
 
 }  // namespace node
