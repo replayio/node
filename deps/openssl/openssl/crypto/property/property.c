@@ -16,6 +16,7 @@
 #include "internal/property.h"
 #include "internal/provider.h"
 #include "internal/tsan_assist.h"
+#include "internal/record_replay.h"
 #include "crypto/ctype.h"
 #include <openssl/lhash.h>
 #include <openssl/rand.h>
@@ -843,7 +844,10 @@ static void ossl_method_cache_flush_some(OSSL_METHOD_STORE *store)
 
     state.nelem = 0;
     state.using_global_seed = 0;
-    if ((state.seed = OPENSSL_rdtsc()) == 0) {
+    /* Record/Replay: the seed decides which cached methods are flushed. */
+    state.seed = (uint32_t)ossl_record_replay_value(
+        "ossl_method_cache_flush_some", OPENSSL_rdtsc());
+    if (state.seed == 0) {
         /* If there is no timer available, seed another way */
         state.using_global_seed = 1;
         state.seed = tsan_load(&global_seed);

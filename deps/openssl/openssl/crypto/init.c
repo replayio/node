@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include "internal/thread_once.h"
+#include "internal/record_replay.h"
 #include "crypto/dso_conf.h"
 #include "internal/dso.h"
 #include "crypto/store.h"
@@ -57,6 +58,8 @@ static int base_inited = 0;
 DEFINE_RUN_ONCE_STATIC(ossl_init_base)
 {
     /* no need to init trace */
+
+    ossl_record_replay_tsan_init();
 
     OSSL_TRACE(INIT, "ossl_init_base: setting up stop handlers\n");
 #ifndef OPENSSL_NO_CRYPTO_MDEBUG
