@@ -19,6 +19,7 @@ using v8::Local;
 using v8::Number;
 using v8::ObjectTemplate;
 using v8::String;
+using v8::Symbol;
 using v8::Value;
 
 namespace {
@@ -101,7 +102,30 @@ void Pop(const FunctionCallbackInfo<Value>& args) {
   GetCurrent(args).OnPop(args[0].As<v8::Uint32>()->Value());
 }
 
+void BeginDispatch(const FunctionCallbackInfo<Value>& args) {
+  GetCurrent(args).OnBeginDispatch(args.GetIsolate(), args[0]);
+}
+
+void EndDispatch(const FunctionCallbackInfo<Value>& args) {
+  GetCurrent(args).OnEndDispatch();
+}
+
 }  // namespace
+
+std::optional<DependencyExecution> DependencyExecution::Begin(int node) {
+  if (!node) return std::nullopt;
+  DependencyExecution execution(v8::recordreplay::DependencyExecutionDepth());
+  v8::recordreplay::BeginDependencyExecution(node);
+  return execution;
+}
+
+bool DependencyExecution::ended() const {
+  return depth_ >= v8::recordreplay::DependencyExecutionDepth();
+}
+
+void DependencyExecution::End() const {
+  v8::recordreplay::UnwindDependencyExecutions(depth_);
+}
 
 void AsyncDependencyGraph::AddOp(double async_id,
                                  AsyncOp op,
@@ -164,10 +188,8 @@ void AsyncDependencyGraph::OnPush(double async_id, uint32_t offset) {
     windows_.push_back(std::nullopt);
     return;
   }
-  size_t depth = v8::recordreplay::DependencyExecutionDepth();
-  v8::recordreplay::BeginDependencyExecution(
-      RunNode(it->second.node, it->second.op));
-  windows_.push_back(depth);
+  windows_.push_back(
+      DependencyExecution::Begin(RunNode(it->second.node, it->second.op)));
 }
 
 void AsyncDependencyGraph::OnPop(uint32_t length) {
@@ -175,14 +197,48 @@ void AsyncDependencyGraph::OnPop(uint32_t length) {
       windows_.size() <= length) {
     return;
   }
-  // The lowest depth: a window's depth is below its inner windows' unless
+  // The outermost: a window's depth is below its inner windows' unless
   // something unwound in between.
-  std::optional<size_t> depth;
+  std::optional<DependencyExecution> outermost;
   for (size_t i = length; i < windows_.size(); i++) {
-    if (windows_[i] && (!depth || *windows_[i] < *depth)) depth = windows_[i];
+    const std::optional<DependencyExecution>& window = windows_[i];
+    if (window && (!outermost || window->depth() < outermost->depth())) {
+      outermost = window;
+    }
   }
   windows_.resize(length);
-  if (depth) v8::recordreplay::UnwindDependencyExecutions(*depth);
+  if (outermost) outermost->End();
+  DropEndedDispatches();
+}
+
+void AsyncDependencyGraph::OnBeginDispatch(Isolate* isolate,
+                                           Local<Value> type) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  Local<Value> name =
+      type->IsSymbol() ? type.As<Symbol>()->Description(isolate) : type;
+  Utf8Value name_utf8(isolate,
+                      name->IsString() ? name : String::Empty(isolate));
+  dispatches_.push_back(DependencyExecution::Begin(
+      v8::recordreplay::NewDependencyGraphNode(
+          NodeJson("emitEvent", std::pair{"type", name_utf8.ToStringView()})
+              .c_str())));
+}
+
+void AsyncDependencyGraph::OnEndDispatch() {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  // Dispatches whose own end a termination skipped, if an unwind ended them.
+  DropEndedDispatches();
+  if (dispatches_.empty()) return;
+  std::optional<DependencyExecution> execution = dispatches_.back();
+  dispatches_.pop_back();
+  if (execution) execution->End();
+}
+
+void AsyncDependencyGraph::DropEndedDispatches() {
+  while (!dispatches_.empty() && dispatches_.back() &&
+         dispatches_.back()->ended()) {
+    dispatches_.pop_back();
+  }
 }
 
 void AsyncDependencyGraph::CreatePerIsolateProperties(
@@ -195,6 +251,8 @@ void AsyncDependencyGraph::CreatePerIsolateProperties(
   SetMethod(isolate, target, "dependencyGraphDestroy", Destroy);
   SetMethod(isolate, target, "dependencyGraphPush", Push);
   SetMethod(isolate, target, "dependencyGraphPop", Pop);
+  SetMethod(isolate, target, "dependencyGraphBeginDispatch", BeginDispatch);
+  SetMethod(isolate, target, "dependencyGraphEndDispatch", EndDispatch);
 }
 
 void AsyncDependencyGraph::RegisterExternalReferences(
@@ -206,6 +264,8 @@ void AsyncDependencyGraph::RegisterExternalReferences(
   registry->Register(Destroy);
   registry->Register(Push);
   registry->Register(Pop);
+  registry->Register(BeginDispatch);
+  registry->Register(EndDispatch);
 }
 
 }  // namespace node
