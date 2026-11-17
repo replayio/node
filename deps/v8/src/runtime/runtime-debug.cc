@@ -1622,9 +1622,12 @@ static void OnGeneratorInstrumentationSite(Isolate* isolate,
   Handle<JSGeneratorObject> generator_object =
       args.at<JSGeneratorObject>(2);
 
-  // Note: RecordReplayObjectId calls have to occur in the same places when
-  // replaying as when recording (regardless of whether instrumentation is
-  // enabled) so that objects will be assigned consistent IDs.
+  // Note: RecordReplayObjectId calls have to occur in the same places whether
+  // or not instrumentation is enabled, so that objects are assigned consistent
+  // IDs in every replaying process. IDs only have to match the recording's
+  // while JS value asserts are on, as those include them: the dependency graph
+  // assigns IDs to promises when replaying only, unless those asserts are on
+  // (RecordReplayDependencyGraph::ReportsPromises).
   CHECK(!gCurrentGeneratorId);
   gCurrentGeneratorId = RecordReplayObjectId(generator_object);
 

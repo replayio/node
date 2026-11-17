@@ -131,6 +131,7 @@
 #include "src/profiler/profile-generator-inl.h"
 #include "src/profiler/tick-sample.h"
 #include "src/regexp/regexp-utils.h"
+#include "src/replay/dependency-graph.h"
 #include "src/roots/static-roots.h"
 #include "src/runtime/runtime.h"
 #include "src/sandbox/external-pointer.h"
@@ -12090,6 +12091,11 @@ static void (*gRecordReplayOnNetworkStreamStart)(const char*, const char*,
                                                  const char*);
 static void (*gRecordReplayOnNetworkStreamData)(const char*, size_t, size_t,
                                                 uint64_t);
+static int (*gRecordReplayNewDependencyGraphNode)(const char* json);
+static void (*gRecordReplayAddDependencyGraphEdge)(int source, int target,
+                                                   const char* json);
+static void (*gRecordReplayBeginDependencyExecution)(int node);
+static void (*gRecordReplayEndDependencyExecution)();
 
 namespace internal {
 
@@ -12757,6 +12763,114 @@ void recordreplay::OnNetworkStreamData(const char* id, size_t offset,
   }
 }
 
+// Whether dependency graph instrumentation runs, recorded, whether the graph
+// is updated, and whether promises are reported: see
+// DependencyGraphInstrumented, DependencyGraphEnabled and
+// RecordReplayDependencyGraph::ReportsPromises.
+static bool gDependencyGraphInstrumented;
+static bool gDependencyGraphEnabled;
+static bool gDependencyGraphReportsPromises;
+
+// RECORD_REPLAY_DEPENDENCY_GRAPH_ASSERTS: assert on every dependency graph
+// update, which also makes the updates happen while recording.
+static bool gRecordReplayAssertDependencyGraph;
+
+// static
+void internal::RecordReplayDependencyGraph::Initialize() {
+  gDependencyGraphInstrumented = recordreplay::RecordReplayValue(
+      "DependencyGraphInstrumented",
+      recordreplay::IsRecordingOrReplaying("dependency-graph"));
+  gRecordReplayAssertDependencyGraph =
+      !!getenv("RECORD_REPLAY_DEPENDENCY_GRAPH_ASSERTS");
+  gDependencyGraphEnabled =
+      gDependencyGraphInstrumented &&
+      recordreplay::FeatureEnabled("dependency-graph") &&
+      (recordreplay::IsReplaying() || gRecordReplayAssertDependencyGraph);
+  gDependencyGraphReportsPromises =
+      gDependencyGraphEnabled ||
+      (gDependencyGraphInstrumented && internal::gRecordReplayAssertValues);
+}
+
+// static
+bool internal::RecordReplayDependencyGraph::ReportsPromises() {
+  return gDependencyGraphReportsPromises && IsMainThread();
+}
+
+bool recordreplay::DependencyGraphEnabled() {
+  return gDependencyGraphEnabled && IsMainThread();
+}
+
+bool recordreplay::DependencyGraphInstrumented() {
+  return gDependencyGraphInstrumented && IsMainThread();
+}
+
+int recordreplay::NewDependencyGraphNode(const char* json) {
+  if (!DependencyGraphEnabled() || !internal::gRecordReplayHasCheckpoint) {
+    return 0;
+  }
+  int id = gRecordReplayNewDependencyGraphNode(json);
+  if (gRecordReplayAssertDependencyGraph) {
+    Assert("NewDependencyGraphNode id=%d %s", id, json ? json : "");
+  }
+  return id;
+}
+
+void recordreplay::AddDependencyGraphEdge(int source, int target,
+                                          const char* json) {
+  if (!DependencyGraphEnabled() || !source || !target) {
+    return;
+  }
+  gRecordReplayAddDependencyGraphEdge(source, target, json);
+  if (gRecordReplayAssertDependencyGraph) {
+    Assert("NewDependencyGraphEdge source=%d target=%d %s", source, target,
+           json ? json : "");
+  }
+}
+
+// Nodes of the dependency executions in progress, innermost last.
+static std::vector<int>* gDependencyGraphExecutionStack;
+
+void recordreplay::BeginDependencyExecution(int node) {
+  if (!DependencyGraphEnabled()) {
+    return;
+  }
+  if (!gDependencyGraphExecutionStack) {
+    gDependencyGraphExecutionStack = new std::vector<int>();
+  }
+  gDependencyGraphExecutionStack->push_back(node);
+  gRecordReplayBeginDependencyExecution(node);
+  if (gRecordReplayAssertDependencyGraph) {
+    Assert("BeginDependencyExecution id=%d", node);
+  }
+}
+
+void recordreplay::EndDependencyExecution() {
+  if (!DependencyGraphEnabled()) {
+    return;
+  }
+  CHECK(gDependencyGraphExecutionStack &&
+        !gDependencyGraphExecutionStack->empty());
+  gDependencyGraphExecutionStack->pop_back();
+  gRecordReplayEndDependencyExecution();
+  if (gRecordReplayAssertDependencyGraph) {
+    Assert("EndDependencyExecution");
+  }
+}
+
+size_t recordreplay::DependencyExecutionDepth() {
+  if (!DependencyGraphEnabled() || !gDependencyGraphExecutionStack) {
+    return 0;
+  }
+  return gDependencyGraphExecutionStack->size();
+}
+
+void recordreplay::UnwindDependencyExecutions(size_t depth) {
+  for (size_t current = DependencyExecutionDepth(); current > depth;
+       current--) {
+    EndDependencyExecution();
+  }
+}
+
 extern "C" size_t V8RecordReplayNewBookmark() {
   if (recordreplay::IsRecordingOrReplaying()) {
     return gRecordReplayNewBookmark();
@@ -13008,6 +13122,14 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
                          gRecordReplayOnNetworkStreamStart);
   RecordReplayLoadSymbol(handle, "RecordReplayOnNetworkStreamData",
                          gRecordReplayOnNetworkStreamData);
+  RecordReplayLoadSymbol(handle, "RecordReplayNewDependencyGraphNode",
+                         gRecordReplayNewDependencyGraphNode);
+  RecordReplayLoadSymbol(handle, "RecordReplayAddDependencyGraphEdge",
+                         gRecordReplayAddDependencyGraphEdge);
+  RecordReplayLoadSymbol(handle, "RecordReplayBeginDependencyExecution",
+                         gRecordReplayBeginDependencyExecution);
+  RecordReplayLoadSymbol(handle, "RecordReplayEndDependencyExecution",
+                         gRecordReplayEndDependencyExecution);
 
   void (*setDefaultCommandCallback)(char* (*callback)(const char* command, const char* params));
   RecordReplayLoadSymbol(handle, "RecordReplaySetDefaultCommandCallback", setDefaultCommandCallback);
@@ -13050,6 +13172,9 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   internal::gRecordReplayInstrumentNodeInternals = !!getenv("RECORD_REPLAY_INSTRUMENT_NODE");
   internal::InitializeRecordReplayAsserts();
   internal::FutexEmulation::RecordReplayInitialize();
+
+  // After the asserts, and before any isolate is created.
+  internal::RecordReplayDependencyGraph::Initialize();
 
   if (internal::gRecordReplayAssertProgress) {
     void (*setAssertDataCallbacks)(

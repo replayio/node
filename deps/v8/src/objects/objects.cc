@@ -84,6 +84,7 @@
 #include "src/objects/transitions-inl.h"
 #include "src/parsing/preparse-data.h"
 #include "src/regexp/regexp.h"
+#include "src/replay/dependency-graph.h"
 #include "src/roots/roots.h"
 #include "src/snapshot/deserializer.h"
 #include "src/strings/string-builder-inl.h"
@@ -4809,6 +4810,11 @@ MaybeHandle<Object> JSPromise::Resolve(DirectHandle<JSPromise> promise,
   if (!IsCallable(*then_action)) {
     // a. Return FulfillPromise(promise, resolution).
     return Fulfill(promise, resolution_recv);
+  }
+
+  if (RecordReplayDependencyGraph::ReportsPromises()) {
+    RecordReplayDependencyGraph::OnPromiseAdoption(isolate, promise,
+                                                   resolution_recv);
   }
 
   // 13. Let job be NewPromiseResolveThenableJob(promise, resolution,

@@ -165,6 +165,42 @@ static bool HasDivergedFromRecording();
 static bool AllowSideEffects();
 static void OnAnnotation(const char* kind, const char* contents);
 
+// Dependency graph: nodes and edges are described by JSON, and the JS that
+// runs between BeginDependencyExecution and EndDependencyExecution executes on
+// behalf of the node. These calls only have an effect on the main thread while
+// the graph is updated (DependencyGraphEnabled). Otherwise, and before the
+// first checkpoint, NewDependencyGraphNode returns 0. Edges with a 0 endpoint
+// are dropped.
+static int NewDependencyGraphNode(const char* json);
+static void AddDependencyGraphEdge(int source, int target, const char* json);
+static void BeginDependencyExecution(int node);
+static void EndDependencyExecution();
+// The number of dependency executions in progress, and ending the innermost
+// ones until depth remain: for exits that skip EndDependencyExecution, such as
+// an exception escaping a promise reaction job, which skips its kAfter hook.
+// Unwinding to a depth at or above the current one does nothing, as when an
+// outer exit already unwound further. A depth saved before such an unwind
+// then also ends the executions begun after it.
+static size_t DependencyExecutionDepth();
+static void UnwindDependencyExecutions(size_t depth);
+
+// Whether the dependency graph is updated, on this thread: the main thread,
+// while replaying with the dependency-graph feature enabled, or with
+// RECORD_REPLAY_DEPENDENCY_GRAPH_ASSERTS.
+static bool DependencyGraphEnabled();
+// Whether dependency graph instrumentation runs, on this thread: the main
+// thread, when the recording was made with the dependency-graph feature. This
+// is recorded, so it is the same when recording and replaying, and code
+// may change its behavior on it. It holds whenever DependencyGraphEnabled does.
+static bool DependencyGraphInstrumented();
+
+struct AutoDependencyExecution {
+  explicit AutoDependencyExecution(int node) { BeginDependencyExecution(node); }
+  ~AutoDependencyExecution() { EndDependencyExecution(); }
+  AutoDependencyExecution(const AutoDependencyExecution&) = delete;
+  AutoDependencyExecution& operator=(const AutoDependencyExecution&) = delete;
+};
+
 // Network data for the recording's Network panel, as Chromium reports it
 // (see its record_replay_network.cc). Calls before the first checkpoint are
 // dropped. NewBookmark() returns the bookmark of the current execution point.

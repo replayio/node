@@ -45,6 +45,7 @@
 #include "src/objects/js-generator-inl.h"
 #include "src/objects/js-promise-inl.h"
 #include "src/objects/slots.h"
+#include "src/replay/dependency-graph.h"
 #include "src/snapshot/embedded/embedded-data.h"
 #include "src/tasks/task-utils.h"
 
@@ -4406,16 +4407,24 @@ int RecordReplayObjectId(Handle<Object> internal_object) {
 
   v8::Local<v8::Value> object = v8::Utils::ToLocal(internal_object);
 
+  // Look through the tables of all contexts: the object might have been given
+  // its id in another context than the current one.
+  if (gRecordReplayObjectIds) {
+    for (const ContextObjectIdMap& entry : *gRecordReplayObjectIds) {
+      v8::Local<v8::Value> idValue;
+      if (entry.object_ids_.Get(isolate)
+              ->Get(isolate, object)
+              .ToLocal(&idValue) &&
+          idValue->IsInt32()) {
+        return idValue.As<v8::Int32>()->Value();
+      }
+    }
+  }
+
   Local<v8::Context> cx = isolate->GetCurrentContext();
   size_t index = GetObjectIdMapIndexForContext(isolate, cx);
   ContextObjectIdMap& entry = (*gRecordReplayObjectIds)[index];
   Local<v8::debug::EphemeronTable> object_ids = entry.object_ids_.Get(isolate);
-
-  v8::Local<v8::Value> idValue;
-  if (object_ids->Get(isolate, object).ToLocal(&idValue) &&
-      idValue->IsInt32()) {
-    return idValue.As<v8::Int32>()->Value();
-  }
 
   int id = gNextObjectId++;
   Local<Value> id_value = v8::Integer::New(isolate, id);
@@ -4423,6 +4432,100 @@ int RecordReplayObjectId(Handle<Object> internal_object) {
   // back rather than the one the id was looked up in.
   entry.object_ids_.Reset(isolate, object_ids->Set(isolate, object, id_value));
   return id;
+}
+
+// Information in the dependency graph for a JS promise.
+struct PromiseDependencyGraphData {
+  // RecordReplayObjectId of the promise.
+  int persistent_id = 0;
+
+  // Graph node ID for the point the promise was created.
+  int new_node_id = 0;
+
+  // Graph node ID for the point the promise was settled.
+  int settled_node_id = 0;
+};
+
+using PromiseDependencyGraphDataMap =
+    std::unordered_map<int, PromiseDependencyGraphData>;
+static PromiseDependencyGraphDataMap* gPromiseDependencyGraphDataMap;
+
+static PromiseDependencyGraphData& GetOrCreatePromiseDependencyGraphData(
+    Isolate* isolate, DirectHandle<Object> promise) {
+  int persistent_id = RecordReplayObjectId(indirect_handle(promise, isolate));
+  if (!gPromiseDependencyGraphDataMap) {
+    gPromiseDependencyGraphDataMap = new PromiseDependencyGraphDataMap();
+  }
+  return gPromiseDependencyGraphDataMap
+      ->try_emplace(persistent_id, PromiseDependencyGraphData{persistent_id})
+      .first->second;
+}
+
+// static
+void RecordReplayDependencyGraph::OnPromiseAdoption(
+    Isolate* isolate, DirectHandle<JSPromise> promise,
+    DirectHandle<JSReceiver> adopted) {
+  DCHECK(ReportsPromises());
+  PromiseDependencyGraphData& data =
+      GetOrCreatePromiseDependencyGraphData(isolate, promise);
+  PromiseDependencyGraphData& adopted_data =
+      GetOrCreatePromiseDependencyGraphData(isolate, adopted);
+
+  if (adopted_data.new_node_id) {
+    recordreplay::AddDependencyGraphEdge(data.settled_node_id,
+                                         adopted_data.new_node_id,
+                                         "{\"kind\":\"adoptedPromise\"}");
+  }
+}
+
+// static
+void RecordReplayDependencyGraph::OnPromiseHook(Isolate* isolate,
+                                                PromiseHookType type,
+                                                DirectHandle<JSPromise> promise,
+                                                DirectHandle<Object> parent) {
+  DCHECK(ReportsPromises());
+  PromiseDependencyGraphData& data =
+      GetOrCreatePromiseDependencyGraphData(isolate, promise);
+
+  switch (type) {
+    case PromiseHookType::kInit: {
+      CHECK(!data.new_node_id);
+      std::string new_node_str = StringPrintf(
+          "{\"kind\":\"newPromise\",\"persistentId\":%d}", data.persistent_id);
+      data.new_node_id =
+          recordreplay::NewDependencyGraphNode(new_node_str.c_str());
+      if (!IsUndefined(*parent)) {
+        PromiseDependencyGraphData& parent_data =
+            GetOrCreatePromiseDependencyGraphData(isolate, parent);
+        if (parent_data.new_node_id) {
+          recordreplay::AddDependencyGraphEdge(parent_data.new_node_id,
+                                               data.new_node_id,
+                                               "{\"kind\":\"parentPromise\"}");
+        }
+      }
+      break;
+    }
+    case PromiseHookType::kResolve: {
+      if (!data.new_node_id || data.settled_node_id) {
+        break;
+      }
+      data.settled_node_id =
+          recordreplay::NewDependencyGraphNode("{\"kind\":\"promiseSettled\"}");
+      recordreplay::AddDependencyGraphEdge(
+          data.new_node_id, data.settled_node_id, "{\"kind\":\"basePromise\"}");
+      break;
+    }
+    case PromiseHookType::kBefore: {
+      int node_id =
+          data.settled_node_id ? data.settled_node_id : data.new_node_id;
+      recordreplay::BeginDependencyExecution(node_id);
+      break;
+    }
+    case PromiseHookType::kAfter: {
+      recordreplay::EndDependencyExecution();
+      break;
+    }
+  }
 }
 
 inline int HashBytes(const void* aPtr, size_t aSize) {

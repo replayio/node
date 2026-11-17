@@ -10,6 +10,7 @@
 
 #include "src/api/api-inl.h"
 #include "src/base/logging.h"
+#include "src/base/replayio.h"
 #include "src/execution/isolate.h"
 #include "src/handles/handles-inl.h"
 #include "src/objects/microtask-inl.h"
@@ -182,7 +183,12 @@ int MicrotaskQueue::RunMicrotasks(Isolate* isolate) {
     TRACE_EVENT_BEGIN0("v8.execute", "RunMicrotasks");
     {
       TRACE_EVENT_CALL_STATS_SCOPED(isolate, "v8", "V8.RunMicrotasks");
+      size_t dependency_execution_depth =
+          recordreplay::DependencyExecutionDepth();
       maybe_result = Execution::TryRunMicrotasks(isolate, this);
+      // An exception escaping a job (termination) skips the kAfter promise
+      // hook that ends the job's dependency execution.
+      recordreplay::UnwindDependencyExecutions(dependency_execution_depth);
       processed_microtask_count =
           static_cast<int>(finished_microtask_count_ - base_count);
     }

@@ -119,6 +119,7 @@
 #include "src/roots/roots.h"
 #include "src/roots/static-roots.h"
 #include "src/sandbox/js-dispatch-table-inl.h"
+#include "src/replay/dependency-graph.h"
 #include "src/replay/replay-isolate-data.h"
 #include "src/snapshot/embedded/embedded-data-inl.h"
 #include "src/snapshot/embedded/embedded-file-writer-interface.h"
@@ -6412,6 +6413,13 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
   PerfettoLogger::RegisterIsolate(this);
 #endif  // defined(V8_USE_PERFETTO)
 
+  // Once the roots exist, so that the flag and the promise hook protector are
+  // updated together: optimized code must not inline promise operations that
+  // would skip the hook.
+  if (recordreplay::DependencyGraphInstrumented()) {
+    PromiseHookStateUpdated();
+  }
+
   initialized_ = true;
 
   return true;
@@ -6999,9 +7007,15 @@ void Isolate::UpdatePromiseHookProtector() {
 }
 
 void Isolate::PromiseHookStateUpdated() {
+  // Main thread isolates force the isolate promise hook while
+  // recordreplay::DependencyGraphInstrumented(), so that promise builtins take
+  // the runtime paths that call it. That changes which paths they take, so the
+  // value is the one the recording was made with, even where the driver
+  // disables the dependency-graph feature only when replaying.
   promise_hook_flags_ =
       (promise_hook_flags_ & PromiseHookFields::HasContextPromiseHook::kMask) |
-      PromiseHookFields::HasIsolatePromiseHook::encode(promise_hook_) |
+      PromiseHookFields::HasIsolatePromiseHook::encode(
+          promise_hook_ || recordreplay::DependencyGraphInstrumented()) |
       PromiseHookFields::HasAsyncEventDelegate::encode(async_event_delegate_) |
       PromiseHookFields::IsDebugActive::encode(debug()->is_active());
 
@@ -7464,7 +7478,12 @@ void Isolate::RunPromiseHook(PromiseHookType type,
                              DirectHandle<JSPromise> promise,
                              DirectHandle<Object> parent) {
   if (!HasIsolatePromiseHooks()) return;
-  DCHECK(promise_hook_ != nullptr);
+  if (RecordReplayDependencyGraph::ReportsPromises()) {
+    RecordReplayDependencyGraph::OnPromiseHook(this, type, promise, parent);
+  }
+  // Without an embedder hook, the flag is set by
+  // recordreplay::DependencyGraphInstrumented().
+  if (!promise_hook_) return;
   promise_hook_(type, v8::Utils::ToLocal(promise), v8::Utils::ToLocal(parent));
 }
 
