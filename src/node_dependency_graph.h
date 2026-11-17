@@ -39,9 +39,15 @@ enum class AsyncOp {
 // the stack dropped.
 //
 // Ids without an init (0, PROMISE ids) and ids whose init came before the first
-// checkpoint get no window. Every method returns at once unless
-// v8::recordreplay::DependencyGraphEnabled(): the map is only kept when
-// replaying.
+// checkpoint get no window.
+//
+// Event dispatches (EventEmitter#emit, EventTarget#dispatchEvent) call their
+// listeners in a dependency execution of a dispatchEvent{type} node. A
+// dispatch saves the depth the same way and its end unwinds to it.
+//
+// Every method returns at once unless
+// v8::recordreplay::DependencyGraphEnabled(): the map and the depths are only
+// kept when replaying.
 class AsyncDependencyGraph {
  public:
   // The last init of an id wins.
@@ -56,6 +62,11 @@ class AsyncDependencyGraph {
   void OnPush(double async_id, uint32_t offset);
   // length: the stack length after a pop or a clear.
   void OnPop(uint32_t length);
+  // type: the event type. Reported: a string, or a Symbol's description.
+  // Other values are not converted, which could run JS.
+  void OnBeginDispatch(v8::Isolate* isolate, v8::Local<v8::Value> type);
+  // Ends the innermost dispatch whose execution was not unwound yet.
+  void OnEndDispatch();
 
   // The JS bindings, on internalBinding('async_wrap').
   static void CreatePerIsolateProperties(IsolateData* isolate_data,
@@ -74,6 +85,9 @@ class AsyncDependencyGraph {
   // Per stack slot: the dependency execution depth before the window began,
   // or nullopt if it didn't.
   std::vector<std::optional<size_t>> windows_;
+  // Per dispatch not ended, innermost last: the dependency execution depth
+  // before it began.
+  std::vector<size_t> dispatches_;
 };
 
 }  // namespace node

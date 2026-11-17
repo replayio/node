@@ -19,6 +19,7 @@ using v8::Local;
 using v8::Number;
 using v8::ObjectTemplate;
 using v8::String;
+using v8::Symbol;
 using v8::Value;
 
 namespace {
@@ -99,6 +100,14 @@ void Push(const FunctionCallbackInfo<Value>& args) {
 void Pop(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsUint32());
   GetCurrent(args).OnPop(args[0].As<v8::Uint32>()->Value());
+}
+
+void BeginDispatch(const FunctionCallbackInfo<Value>& args) {
+  GetCurrent(args).OnBeginDispatch(args.GetIsolate(), args[0]);
+}
+
+void EndDispatch(const FunctionCallbackInfo<Value>& args) {
+  GetCurrent(args).OnEndDispatch();
 }
 
 }  // namespace
@@ -185,6 +194,34 @@ void AsyncDependencyGraph::OnPop(uint32_t length) {
   if (depth) v8::recordreplay::UnwindDependencyExecutions(*depth);
 }
 
+void AsyncDependencyGraph::OnBeginDispatch(Isolate* isolate,
+                                           Local<Value> type) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  Local<Value> name =
+      type->IsSymbol() ? type.As<Symbol>()->Description(isolate) : type;
+  Utf8Value name_utf8(isolate,
+                      name->IsString() ? name : String::Empty(isolate));
+  int node = v8::recordreplay::NewDependencyGraphNode(
+      NodeJson("dispatchEvent", std::pair{"type", name_utf8.ToStringView()})
+          .c_str());
+  dispatches_.push_back(v8::recordreplay::DependencyExecutionDepth());
+  if (node) v8::recordreplay::BeginDependencyExecution(node);
+}
+
+void AsyncDependencyGraph::OnEndDispatch() {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  // Drop dispatches an outer unwind already ended, such as those whose own end
+  // a termination skipped.
+  size_t depth = v8::recordreplay::DependencyExecutionDepth();
+  while (!dispatches_.empty() && dispatches_.back() >= depth) {
+    dispatches_.pop_back();
+  }
+  if (dispatches_.empty()) return;
+  size_t token = dispatches_.back();
+  dispatches_.pop_back();
+  v8::recordreplay::UnwindDependencyExecutions(token);
+}
+
 void AsyncDependencyGraph::CreatePerIsolateProperties(
     IsolateData* isolate_data, Local<ObjectTemplate> target) {
   Isolate* isolate = isolate_data->isolate();
@@ -195,6 +232,8 @@ void AsyncDependencyGraph::CreatePerIsolateProperties(
   SetMethod(isolate, target, "dependencyGraphDestroy", Destroy);
   SetMethod(isolate, target, "dependencyGraphPush", Push);
   SetMethod(isolate, target, "dependencyGraphPop", Pop);
+  SetMethod(isolate, target, "dependencyGraphBeginDispatch", BeginDispatch);
+  SetMethod(isolate, target, "dependencyGraphEndDispatch", EndDispatch);
 }
 
 void AsyncDependencyGraph::RegisterExternalReferences(
@@ -206,6 +245,8 @@ void AsyncDependencyGraph::RegisterExternalReferences(
   registry->Register(Destroy);
   registry->Register(Push);
   registry->Register(Pop);
+  registry->Register(BeginDispatch);
+  registry->Register(EndDispatch);
 }
 
 }  // namespace node
