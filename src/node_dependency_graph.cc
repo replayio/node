@@ -110,18 +110,28 @@ void EndDispatch(const FunctionCallbackInfo<Value>& args) {
   GetCurrent(args).OnEndDispatch();
 }
 
+// A server response (http.ServerResponse): responseStart{status} at its head,
+// responseData{length} per body write and responseEnd at its end. Each is made
+// in the JS that writes it, which is its cause.
 void ResponseStart(const FunctionCallbackInfo<Value>& args) {
-  CHECK(args[1]->IsInt32());
-  GetCurrent(args).OnResponseStart(NumberArg(args, 0),
-                                   args[1].As<v8::Int32>()->Value());
+  CHECK(args[0]->IsInt32());
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  v8::recordreplay::NewDependencyGraphNode(
+      NodeJson("responseStart",
+               std::pair{"status", args[0].As<v8::Int32>()->Value()})
+          .c_str());
 }
 
 void ResponseData(const FunctionCallbackInfo<Value>& args) {
-  GetCurrent(args).OnResponseData(NumberArg(args, 0), NumberArg(args, 1));
+  double length = NumberArg(args, 0);
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  v8::recordreplay::NewDependencyGraphNode(
+      NodeJson("responseData", std::pair{"length", length}).c_str());
 }
 
 void ResponseEnd(const FunctionCallbackInfo<Value>& args) {
-  GetCurrent(args).OnResponseEnd(NumberArg(args, 0));
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  v8::recordreplay::NewDependencyGraphNode(R"({"kind":"responseEnd"})");
 }
 
 }  // namespace
@@ -253,35 +263,6 @@ void AsyncDependencyGraph::DropEndedDispatches() {
          dispatches_.back()->ended()) {
     dispatches_.pop_back();
   }
-}
-
-void AsyncDependencyGraph::OnResponseStart(double response, int32_t status) {
-  if (!v8::recordreplay::DependencyGraphEnabled()) return;
-  int node = v8::recordreplay::NewDependencyGraphNode(
-      NodeJson("responseStart", std::pair{"status", status}).c_str());
-  if (node) responses_.insert_or_assign(response, node);
-}
-
-void AsyncDependencyGraph::OnResponseData(double response, double length) {
-  if (!v8::recordreplay::DependencyGraphEnabled()) return;
-  AddResponseNode(response,
-                  NodeJson("responseData", std::pair{"length", length}));
-}
-
-void AsyncDependencyGraph::OnResponseEnd(double response) {
-  if (!v8::recordreplay::DependencyGraphEnabled()) return;
-  AddResponseNode(response, NodeJson("responseEnd"));
-  responses_.erase(response);
-}
-
-void AsyncDependencyGraph::AddResponseNode(double response,
-                                           const std::string& json) {
-  int node = v8::recordreplay::NewDependencyGraphNode(json.c_str());
-  auto it = responses_.find(response);
-  // No start node: its head came before the first checkpoint.
-  if (it == responses_.end()) return;
-  v8::recordreplay::AddDependencyGraphEdge(
-      it->second, node, R"({"kind":"creator"})");
 }
 
 int NewLockRequestDependencyNode(Isolate* isolate, Local<String> name) {

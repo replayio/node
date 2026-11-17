@@ -61,13 +61,8 @@ class DependencyExecution {
 // listeners in a DependencyExecution of an emitEvent{type} node. Dispatches
 // nest. Not dispatchEvent: the backend reads that kind as DOM input.
 //
-// Server responses (http.ServerResponse), by an id JS assigns at the head: a
-// responseStart{status} node at the head, then a responseData{length} node per
-// body write and a responseEnd node at the end, each with a creator edge from
-// the responseStart. All are made in the JS that writes, their cause.
-//
 // Every method returns at once unless
-// v8::recordreplay::DependencyGraphEnabled(): the maps, the windows and the
+// v8::recordreplay::DependencyGraphEnabled(): the map, the windows and the
 // dispatches are only kept while it holds.
 class AsyncDependencyGraph {
  public:
@@ -88,10 +83,6 @@ class AsyncDependencyGraph {
   void OnBeginDispatch(v8::Isolate* isolate, v8::Local<v8::Value> type);
   // Ends the innermost dispatch not ended yet.
   void OnEndDispatch();
-  void OnResponseStart(double response, int32_t status);
-  void OnResponseData(double response, double length);
-  // The response's last node: its id is dropped.
-  void OnResponseEnd(double response);
 
   // The JS bindings, on internalBinding('async_wrap').
   static void CreatePerIsolateProperties(IsolateData* isolate_data,
@@ -107,8 +98,6 @@ class AsyncDependencyGraph {
   void AddOp(double async_id, AsyncOp op, const std::string& json);
   // Drops the innermost dispatches an unwind already ended.
   void DropEndedDispatches();
-  // A node of a started response, with the creator edge from its start.
-  void AddResponseNode(double response, const std::string& json);
 
   std::unordered_map<double, Op> ops_;
   // Per stack slot: the window's execution, or nullopt if it didn't begin.
@@ -116,9 +105,6 @@ class AsyncDependencyGraph {
   // Per dispatch not ended, innermost last: its execution, or nullopt if it
   // didn't begin.
   std::vector<std::optional<DependencyExecution>> dispatches_;
-  // Per response not ended: its responseStart node. Responses destroyed
-  // without an end stay until exit.
-  std::unordered_map<double, int> responses_;
 };
 
 // A DependencyExecution for the lifetime of a C++ scope.
