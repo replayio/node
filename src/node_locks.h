@@ -120,6 +120,9 @@ class LockRequest final {
   // Returns true if this is an ifAvailable request.
   bool if_available() const { return if_available_; }
   Environment* env() const { return env_; }
+  // The request's node in the Replay dependency graph, or 0.
+  int dependency_node() const { return dependency_node_; }
+  void set_dependency_node(int node) { dependency_node_ = node; }
 
   v8::Local<v8::Promise::Resolver> waiting_promise() {
     return waiting_promise_.Get(env_->isolate());
@@ -136,6 +139,7 @@ class LockRequest final {
   std::string client_id_;
   bool steal_;
   bool if_available_;
+  int dependency_node_ = 0;
   v8::Global<v8::Promise::Resolver> waiting_promise_;
   v8::Global<v8::Promise::Resolver> released_promise_;
   v8::Global<v8::Function> callback_;

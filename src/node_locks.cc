@@ -3,6 +3,7 @@
 #include "base_object-inl.h"
 #include "env-inl.h"
 #include "node_debug.h"
+#include "node_dependency_graph.h"
 #include "node_errors.h"
 #include "node_external_reference.h"
 #include "node_internals.h"
@@ -470,6 +471,11 @@ void LockManager::ProcessQueue(Environment* env) {
       return;
     }
 
+    // The grant, from the callback call through the settlement of the waiting
+    // promise and an immediate release.
+    DependencyExecutionScope dependency_scope(
+        NewLockGrantedDependencyNode(grantable_request->dependency_node()));
+
     // Call user callback
     Local<Value> callback_arg = lock_info;
     Local<Value> callback_result;
@@ -604,6 +610,9 @@ void LockManager::Request(const FunctionCallbackInfo<Value>& args) {
   waiting_promise->GetPromise()->MarkAsHandled();
   released_promise->GetPromise()->MarkAsHandled();
 
+  int dependency_node =
+      NewLockRequestDependencyNode(isolate, args[0].As<v8::String>());
+
   LockManager* manager = GetCurrent();
   {
     Mutex::ScopedLock scoped_lock(manager->mutex_);
@@ -624,6 +633,7 @@ void LockManager::Request(const FunctionCallbackInfo<Value>& args) {
         client_id.ToString(),
         steal,
         if_available);
+    lock_request->set_dependency_node(dependency_node);
     // Steal requests get priority by going to front of queue
     if (steal) {
       manager->pending_queue_.emplace_front(std::move(lock_request));
