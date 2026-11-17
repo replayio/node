@@ -107,26 +107,29 @@ class AsyncDependencyGraph {
   std::vector<std::optional<DependencyExecution>> dispatches_;
 };
 
+// A DependencyExecution for the lifetime of a C++ scope.
+class DependencyExecutionScope {
+ public:
+  explicit DependencyExecutionScope(int node)
+      : execution_(DependencyExecution::Begin(node)) {}
+  ~DependencyExecutionScope() {
+    if (execution_) execution_->End();
+  }
+  DependencyExecutionScope(const DependencyExecutionScope&) = delete;
+  DependencyExecutionScope& operator=(const DependencyExecutionScope&) = delete;
+
+ private:
+  std::optional<DependencyExecution> execution_;
+};
+
 // Web Locks (navigator.locks) in the Replay dependency graph, with the kinds of
-// Blink's LockManager: a request adds a lockManagerRequest{name} node, and the
-// callback of its grant runs in a dependency execution of a lockRequestGranted
-// node, with a creator edge from the request. No-ops unless
+// Blink's LockManager: a request adds a lockManagerRequest{name} node, and its
+// grant runs in a DependencyExecutionScope of a lockRequestGranted node, with a
+// creator edge from the request. Both return 0 unless
 // v8::recordreplay::DependencyGraphEnabled().
 int NewLockRequestDependencyNode(v8::Isolate* isolate,
                                  v8::Local<v8::String> name);
-
-class LockGrantedDependencyScope {
- public:
-  explicit LockGrantedDependencyScope(int request_node);
-  ~LockGrantedDependencyScope();
-  LockGrantedDependencyScope(const LockGrantedDependencyScope&) = delete;
-  LockGrantedDependencyScope& operator=(const LockGrantedDependencyScope&) =
-      delete;
-
- private:
-  // The dependency execution depth before the execution began, if it did.
-  std::optional<size_t> depth_;
-};
+int NewLockGrantedDependencyNode(int request_node);
 
 }  // namespace node
 

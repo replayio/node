@@ -66,15 +66,13 @@ LockRequest::LockRequest(Environment* env,
                          Lock::Mode mode,
                          std::string client_id,
                          bool steal,
-                         bool if_available,
-                         int dependency_node)
+                         bool if_available)
     : env_(env),
       name_(name),
       mode_(mode),
       client_id_(std::move(client_id)),
       steal_(steal),
-      if_available_(if_available),
-      dependency_node_(dependency_node) {
+      if_available_(if_available) {
   waiting_promise_.Reset(env_->isolate(), waiting);
   released_promise_.Reset(env_->isolate(), released);
   callback_.Reset(env_->isolate(), callback);
@@ -473,12 +471,15 @@ void LockManager::ProcessQueue(Environment* env) {
       return;
     }
 
+    // The grant, from the callback call through the settlement of the waiting
+    // promise and an immediate release.
+    DependencyExecutionScope dependency_scope(
+        NewLockGrantedDependencyNode(grantable_request->dependency_node()));
+
     // Call user callback
     Local<Value> callback_arg = lock_info;
     Local<Value> callback_result;
     {
-      LockGrantedDependencyScope dependency_scope(
-          grantable_request->dependency_node());
       TryCatchScope try_catch_scope(env);
       if (!grantable_request->callback()
                ->Call(context, Undefined(isolate), 1, &callback_arg)
@@ -631,8 +632,8 @@ void LockManager::Request(const FunctionCallbackInfo<Value>& args) {
                                         : Lock::Mode::Exclusive,
         client_id.ToString(),
         steal,
-        if_available,
-        dependency_node);
+        if_available);
+    lock_request->set_dependency_node(dependency_node);
     // Steal requests get priority by going to front of queue
     if (steal) {
       manager->pending_queue_.emplace_front(std::move(lock_request));

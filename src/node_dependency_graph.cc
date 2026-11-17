@@ -250,19 +250,13 @@ int NewLockRequestDependencyNode(Isolate* isolate, Local<String> name) {
           .c_str());
 }
 
-LockGrantedDependencyScope::LockGrantedDependencyScope(int request_node) {
-  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+int NewLockGrantedDependencyNode(int request_node) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return 0;
   int node = v8::recordreplay::NewDependencyGraphNode(
       R"({"kind":"lockRequestGranted"})");
-  if (!node) return;
   v8::recordreplay::AddDependencyGraphEdge(
       request_node, node, R"({"kind":"creator"})");
-  depth_ = v8::recordreplay::DependencyExecutionDepth();
-  v8::recordreplay::BeginDependencyExecution(node);
-}
-
-LockGrantedDependencyScope::~LockGrantedDependencyScope() {
-  if (depth_) v8::recordreplay::UnwindDependencyExecutions(*depth_);
+  return node;
 }
 
 void AsyncDependencyGraph::CreatePerIsolateProperties(
