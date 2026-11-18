@@ -887,6 +887,16 @@ added:
 
 The CPU profile with the given name is not started.
 
+<a id="ERR_CPU_PROFILE_NOT_SUPPORTED"></a>
+
+### `ERR_CPU_PROFILE_NOT_SUPPORTED`
+
+<!-- YAML
+added: REPLACEME
+-->
+
+CPU profiling is not supported in Replay-recorded processes.
+
 <a id="ERR_CPU_PROFILE_TOO_MANY"></a>
 
 ### `ERR_CPU_PROFILE_TOO_MANY`

@@ -28,7 +28,6 @@ using v8::Boolean;
 using v8::Context;
 using v8::CpuProfile;
 using v8::CpuProfilingResult;
-using v8::CpuProfilingStatus;
 using v8::DictionaryTemplate;
 using v8::Float64Array;
 using v8::FunctionCallbackInfo;
@@ -1059,10 +1058,11 @@ void Worker::StartCpuProfile(const FunctionCallbackInfo<Value>& args) {
               Null(isolate),       // error
               Undefined(isolate),  // profile id
           };
-          if (result.status == CpuProfilingStatus::kErrorTooManyProfilers) {
-            argv[0] = ERR_CPU_PROFILE_TOO_MANY(
-                isolate, "There are too many CPU profiles");
-          } else if (result.status == CpuProfilingStatus::kStarted) {
+          Local<Value> error =
+              Environment::CpuProfileStartError(isolate, result.status);
+          if (!error.IsEmpty()) {
+            argv[0] = error;
+          } else {
             argv[1] = Number::New(isolate, result.id);
           }
           taker->MakeCallback(env->ondone_string(), arraysize(argv), argv);
