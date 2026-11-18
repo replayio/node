@@ -895,7 +895,7 @@ The CPU profile with the given name is not started.
 added: REPLACEME
 -->
 
-CPU profiling is not available while the process is recorded or replayed.
+CPU profiling is not supported in Replay-recorded processes.
 
 <a id="ERR_CPU_PROFILE_TOO_MANY"></a>
 

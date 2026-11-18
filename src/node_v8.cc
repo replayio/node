@@ -299,8 +299,12 @@ void StartCpuProfile(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = env->isolate();
   CpuProfileOptions options = ParseCpuProfileOptions(args);
   CpuProfilingResult result = env->StartCpuProfile(options);
-  Local<Value> error = Environment::CpuProfileStartError(isolate, result.status);
+  Local<Value> error =
+      Environment::CpuProfileStartError(isolate, result.status);
   if (!error.IsEmpty()) {
+    // As THROW_* does.
+    v8::recordreplay::Assert("ThrowException CpuProfileStartError %d",
+                             static_cast<int>(result.status));
     isolate->ThrowException(error);
     return;
   }

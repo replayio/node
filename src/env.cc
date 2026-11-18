@@ -2686,6 +2686,7 @@ Local<Value> Environment::CpuProfileStartError(
     Isolate* isolate, v8::CpuProfilingStatus status) {
   switch (status) {
     case v8::CpuProfilingStatus::kStarted:
+    // Not for untitled starts, which never repeat a profile's id.
     case v8::CpuProfilingStatus::kAlreadyStarted:
       return Local<Value>();
     case v8::CpuProfilingStatus::kErrorTooManyProfilers:
@@ -2694,7 +2695,7 @@ Local<Value> Environment::CpuProfileStartError(
     case v8::CpuProfilingStatus::kErrorNotSupported:
       return ERR_CPU_PROFILE_NOT_SUPPORTED(
           isolate,
-          "CPU profiling is not supported while recording or replaying");
+          "CPU profiling is not supported in Replay-recorded processes");
   }
   UNREACHABLE();
 }
