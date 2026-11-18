@@ -41,7 +41,6 @@ using v8::CFunction;
 using v8::Context;
 using v8::CpuProfile;
 using v8::CpuProfilingResult;
-using v8::CpuProfilingStatus;
 using v8::DictionaryTemplate;
 using v8::FunctionCallbackInfo;
 using v8::FunctionTemplate;
@@ -300,12 +299,12 @@ void StartCpuProfile(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = env->isolate();
   CpuProfileOptions options = ParseCpuProfileOptions(args);
   CpuProfilingResult result = env->StartCpuProfile(options);
-  if (result.status == CpuProfilingStatus::kErrorTooManyProfilers) {
-    return THROW_ERR_CPU_PROFILE_TOO_MANY(isolate,
-                                          "There are too many CPU profiles");
-  } else if (result.status == CpuProfilingStatus::kStarted) {
-    args.GetReturnValue().Set(Number::New(isolate, result.id));
+  Local<Value> error = Environment::CpuProfileStartError(isolate, result.status);
+  if (!error.IsEmpty()) {
+    isolate->ThrowException(error);
+    return;
   }
+  args.GetReturnValue().Set(Number::New(isolate, result.id));
 }
 
 void StopCpuProfile(const FunctionCallbackInfo<Value>& args) {

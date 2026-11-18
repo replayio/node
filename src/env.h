@@ -1221,6 +1221,10 @@ class Environment final : public MemoryRetainer {
   inline void RemoveHeapProfileNearHeapLimitCallback(size_t heap_limit);
 
   v8::CpuProfilingResult StartCpuProfile(const CpuProfileOptions& options);
+  // The error for a StartCpuProfile() status without a profile to stop, or an
+  // empty handle if there is one.
+  static v8::Local<v8::Value> CpuProfileStartError(
+      v8::Isolate* isolate, v8::CpuProfilingStatus status);
   v8::CpuProfile* StopCpuProfile(v8::ProfilerId profile_id);
 
   // Field identifiers for exit_info_
