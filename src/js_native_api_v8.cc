@@ -777,13 +777,14 @@ void Reference::RecordReplayFinalize() {
   if (_record_replay_has_finalizer && !RecordReplayHasUserFinalizer()) {
     RecordReplaySetFinalizerStub();
   }
-  // A user finalizer is module code, which node does not run from the GC: it
-  // hands it to the environment's second pass, an immediate (see
-  // napi_env__::InvokeFinalizerFromGC). Running it here would run it inside
-  // whatever the module was doing when the poll was reached, e.g. nested in a
-  // napi_make_callback of the module's own, which never happens without the
-  // recorder. The poll is reached at the same point on both sides, so the
-  // immediate it schedules is too.
+  // A user finalizer is module code, which the GC's weak callback does not run
+  // itself: it hands it to napi_env__::InvokeFinalizerFromGC, which is the
+  // environment's second pass, an immediate, or a synchronous call for a module
+  // at the experimental api version. Doing the same here keeps the finalizer on
+  // node's own path. The poll is reached at the same point on both sides, and
+  // never while the module's own code runs (see
+  // v8::replayio::AutoSuspendReplayGCPoll), so the immediate it schedules and
+  // the callback region a synchronous call opens are points the replay has too.
   InvokeFinalizerFromGC();
 }
 
