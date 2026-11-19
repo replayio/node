@@ -544,6 +544,12 @@ inline napi_status Wrap(napi_env env,
       !obj->HasPrivate(context, NAPI_PRIVATE_KEY(context, wrapper)).FromJust(),
       napi_invalid_arg);
 
+  // A replayed N-API call gets a null finalizer where the module passed one,
+  // which napi_create_external and napi_create_external_buffer compensate for
+  // by recording a "has finalizer" value. This call needs none: the driver's
+  // own napi_wrap callback records that bit and substitutes a non-null
+  // finalizer when replaying, so the branch below picks the same Reference
+  // subclass on both sides.
   v8impl::Reference* reference = nullptr;
   if (result != nullptr) {
     // The returned reference should be deleted via napi_delete_reference()
