@@ -651,6 +651,11 @@ void ConcurrentMarking::TryScheduleJob(GarbageCollector garbage_collector,
   DCHECK(!heap_->IsTearingDown());
   DCHECK(IsStopped());
 
+  // The job has to be posted from inside this scope: DefaultJobState records
+  // at construction whether events were disallowed, and the platform uses that
+  // to send the job's worker tasks to the threads which record nothing.
+  replayio::AutoDisallowEvents disallow("ConcurrentMarking::TryScheduleJob");
+
   DCHECK_NE(garbage_collector, GarbageCollector::SCAVENGER);
   if (garbage_collector == GarbageCollector::MARK_COMPACTOR &&
       !heap_->mark_compact_collector()->UseBackgroundThreadsInCycle()) {
@@ -724,7 +729,6 @@ void ConcurrentMarking::TryScheduleJob(GarbageCollector garbage_collector,
                             TRACE_EVENT_FLAG_FLOW_OUT);
     job_handle_ = V8::GetCurrentPlatform()->PostJob(priority, std::move(job));
   }
-  replayio::AutoDisallowEvents disallow("ConcurrentMarking::ScheduleJob");
   DCHECK(job_handle_->IsValid());
 }
 
