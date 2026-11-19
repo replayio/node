@@ -1685,7 +1685,20 @@ napi_call_threadsafe_function(napi_threadsafe_function func,
 napi_status NAPI_CDECL
 napi_acquire_threadsafe_function(napi_threadsafe_function func) {
   CHECK_NOT_NULL(func);
-  return reinterpret_cast<v8impl::ThreadSafeFunction*>(func)->Acquire();
+  auto* ts_fn = reinterpret_cast<v8impl::ThreadSafeFunction*>(func);
+  // As in napi_release_threadsafe_function. The state Acquire answers from is
+  // the recording's as well: a replay skips the releases which closed the
+  // function there, so deciding here would hand the module napi_ok after an
+  // abort the recording answered napi_closing.
+  if (v8impl::RecordReplayInModuleCallback()) {
+    napi_status status = napi_ok;
+    if (!v8::recordreplay::IsReplaying()) {
+      status = ts_fn->Acquire();
+    }
+    return static_cast<napi_status>(v8::recordreplay::RecordReplayValue(
+        "napi_acquire_threadsafe_function status", status));
+  }
+  return ts_fn->Acquire();
 }
 
 napi_status NAPI_CDECL napi_release_threadsafe_function(
