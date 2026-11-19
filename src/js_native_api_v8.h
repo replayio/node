@@ -475,7 +475,6 @@ class Reference : public RefTracker, public node::recordreplay::Finalizable {
   node::recordreplay::DeferredFinalization* _record_replay_finalization =
       nullptr;
   int _record_replay_finalize_id = 0;
-  bool _record_replay_has_finalizer = false;
 };
 
 // Reference that can store additional data.
