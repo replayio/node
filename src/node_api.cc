@@ -1685,6 +1685,15 @@ napi_call_threadsafe_function(napi_threadsafe_function func,
 napi_status NAPI_CDECL
 napi_acquire_threadsafe_function(napi_threadsafe_function func) {
   CHECK_NOT_NULL(func);
+  // Left untreated, unlike the siblings above and below, because the driver
+  // has no callback specifier for this entry point: a module which calls it
+  // reaches the recorder's unimplemented-callback path, which rejects the
+  // recording before the call is forwarded here (UnimplementedCallback in
+  // replayio/backend's src/cpp/recording/RecordedCallback.cpp). Adding that
+  // specifier means gating Acquire the way Release is gated below, because
+  // Acquire reads the state Release writes: a replay which skipped an
+  // aborting release would answer napi_ok where the recording answered
+  // napi_closing.
   return reinterpret_cast<v8impl::ThreadSafeFunction*>(func)->Acquire();
 }
 
