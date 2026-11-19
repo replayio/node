@@ -466,7 +466,10 @@ class Reference : public RefTracker, public node::recordreplay::Finalizable {
   node::recordreplay::DeferredFinalization* _record_replay_finalization =
       nullptr;
   int _record_replay_finalize_id = 0;
-  bool _record_replay_has_finalizer = false;
+  // Whether the call which created this reference lacked the finalizer the
+  // recording's did, so that finalization needs a stand-in, see
+  // RecordReplayFinalizerStub.
+  bool _record_replay_needs_finalizer_stub = false;
 };
 
 // Reference that can store additional data.
