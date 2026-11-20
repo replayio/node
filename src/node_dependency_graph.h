@@ -61,6 +61,10 @@ class DependencyExecution {
 // listeners in a DependencyExecution of an emitEvent{type} node. Dispatches
 // nest. Not dispatchEvent: the backend reads that kind as DOM input.
 //
+// An HTTP server request (lib/_http_server.js) is dispatched in a
+// DependencyExecution of a requestStart{method,url} node, ended as other
+// dispatches.
+//
 // Every method returns at once unless
 // v8::recordreplay::DependencyGraphEnabled(): the map, the windows and the
 // dispatches are only kept while it holds.
@@ -81,6 +85,11 @@ class AsyncDependencyGraph {
   // type: the event type. Reported: a string, or a Symbol's description.
   // Other values are not converted, which could run JS.
   void OnBeginDispatch(v8::Isolate* isolate, v8::Local<v8::Value> type);
+  // Returns the request's node, 0 if none. method and url other than strings
+  // are reported empty.
+  int OnBeginRequest(v8::Isolate* isolate,
+                     v8::Local<v8::Value> method,
+                     v8::Local<v8::Value> url);
   // Ends the innermost dispatch not ended yet.
   void OnEndDispatch();
 
@@ -96,6 +105,7 @@ class AsyncDependencyGraph {
   };
 
   void AddOp(double async_id, AsyncOp op, const std::string& json);
+  void PushDispatch(int node);
   // Drops the innermost dispatches an unwind already ended.
   void DropEndedDispatches();
 
