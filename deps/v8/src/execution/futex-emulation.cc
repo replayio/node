@@ -527,8 +527,6 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
     timeout_time = current_time + rel_timeout;
   }
 
-  static constexpr char kTerminationLabel[] = "Futex wait took termination";
-
   // The following is not really a loop; the do-while construct makes it easier
   // to break out early.
   // Keep the code in the loop as minimal as possible, because this is all in
@@ -572,7 +570,7 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
       if (replay_termination) {
         // Reproduce whether an interrupt reached the waiter before it left.
         // The exit lock distinguishes notification from timeout below.
-        if (recordreplay::RecordReplayValue(kTerminationLabel, false)) {
+        if (recordreplay::RecordReplayValue("Futex wait took termination", false)) {
           node->interrupted_ = true;
         } else {
           result = direct_handle(Smi::FromInt(WaitReturnValue::kTimedOut), isolate);
@@ -619,7 +617,7 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
           isolate->stack_guard()->ClearTerminateExecution();
           recordreplay::EndDisallowEvents();
           if (pending_termination && !replay_termination) {
-            recordreplay::RecordReplayValue(kTerminationLabel, true);
+            recordreplay::RecordReplayValue("Futex wait took termination", true);
           }
           interrupt_object = isolate->TerminateExecution();
           recordreplay::BeginDisallowEventsWithLabel(
@@ -692,7 +690,7 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
       recordreplay::EndDisallowEvents();
       if (pending_termination && !replay_termination &&
           !IsExceptionHole(*result, isolate)) {
-        recordreplay::RecordReplayValue(kTerminationLabel, false);
+        recordreplay::RecordReplayValue("Futex wait took termination", false);
       }
       ordered_lock.emplace(gRecordReplayOrderedLockId);
       recordreplay::BeginDisallowEventsWithLabel("FutexEmulation::WaitSync");
