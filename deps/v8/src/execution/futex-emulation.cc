@@ -626,6 +626,22 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
 
       // No interrupts, now wait.
       if (use_timeout) {
+        // A replay does not wait here. Which way the wait went is settled under
+        // the ordered lock below, where a notify that reached this waiter in the
+        // recording has already run and cleared node->waiting_. Waiting would
+        // compare the deadline above, which the recording's clock fixed, against
+        // the replaying host's clock, and the two have no common origin: the
+        // wait lasts however far apart they happen to be, without a bound when
+        // the replaying host booted more recently than the recording's did.
+        // After diverging the loop runs as it does when recording, where the
+        // deadline and the reads below are both on the continued timeline.
+        if (recordreplay::IsReplaying() &&
+            !recordreplay::HasDivergedFromRecording()) {
+          result =
+              direct_handle(Smi::FromInt(WaitReturnValue::kTimedOut), isolate);
+          break;
+        }
+
         base::TimeTicks current_time = base::TimeTicks::Now();
         if (current_time >= timeout_time) {
           result =
