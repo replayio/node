@@ -22,6 +22,7 @@
 #include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/js-promise-inl.h"
 #include "src/objects/objects-inl.h"
+#include "src/replay/replayio.h"
 #include "src/tasks/cancelable-task.h"
 
 namespace v8::internal {
@@ -532,11 +533,12 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
   // Keep the code in the loop as minimal as possible, because this is all in
   // the critical section.
   do {
+    const bool events_available = ordered_lock && replayio::AreEventsAvailable();
     replayio::AutoDisallowEvents disallow("FutexEmulation::WaitSync");
     // An inspector resume can leave termination pending without waking the
     // isolate. Whether this wait takes it depends on an unrelated interrupt.
     // Check before locking the wait list, as RequestInterrupt locks it second.
-    bool pending_termination = recordreplay::IsRecordingOrReplaying() &&
+    bool pending_termination = events_available &&
                                isolate->stack_guard()->CheckTerminateExecution();
     NoGarbageCollectionMutexGuard lock_guard(wait_list->mutex());
 
@@ -560,23 +562,33 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
     node->waiting_ = true;
     wait_list->AddNode(node);
 
-    bool replay_termination = pending_termination && recordreplay::IsReplaying() &&
-                              !recordreplay::HasDivergedFromRecording();
+    const bool replay_termination =
+        pending_termination && recordreplay::IsReplaying();
     // The ordered lock taken for entering the list is released with events
     // allowed, as OrderedUnlock does nothing otherwise.
     if (ordered_lock) {
+      // The decision may be in a later recording chunk. Other waiters and
+      // notifiers need the list mutex while replay waits for that chunk.
+      if (replay_termination) lock_guard.Unlock();
       recordreplay::EndDisallowEvents();
       ordered_lock.reset();
+      constexpr uintptr_t kNoDecision = 2;
+      uintptr_t took_termination = kNoDecision;
       if (replay_termination) {
-        // Reproduce whether an interrupt reached the waiter before it left.
-        // The exit lock distinguishes notification from timeout below.
-        if (recordreplay::RecordReplayValue("Futex wait took termination", false)) {
+        took_termination = recordreplay::RecordReplayValue(
+            "Futex wait took termination", kNoDecision);
+      }
+      recordreplay::BeginDisallowEventsWithLabel("FutexEmulation::WaitSync");
+      if (replay_termination) {
+        lock_guard.Lock();
+        // Divergence during the read returns kNoDecision and leaves the loop
+        // to inspect the actual interrupt and deadline.
+        if (took_termination == 1) {
           node->interrupted_ = true;
-        } else {
+        } else if (took_termination == 0) {
           result = direct_handle(Smi::FromInt(WaitReturnValue::kTimedOut), isolate);
         }
       }
-      recordreplay::BeginDisallowEventsWithLabel("FutexEmulation::WaitSync");
     }
 
     while (result.is_null()) {
