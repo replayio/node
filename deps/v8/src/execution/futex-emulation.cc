@@ -527,9 +527,7 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
     timeout_time = current_time + rel_timeout;
   }
 
-  auto record_termination = [](bool taken) {
-    return recordreplay::RecordReplayValue("Futex wait took termination", taken);
-  };
+  static constexpr char kTerminationLabel[] = "Futex wait took termination";
 
   // The following is not really a loop; the do-while construct makes it easier
   // to break out early.
@@ -574,7 +572,7 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
       if (replay_termination) {
         // Reproduce whether an interrupt reached the waiter before it left.
         // The exit lock distinguishes notification from timeout below.
-        if (record_termination(false)) {
+        if (recordreplay::RecordReplayValue(kTerminationLabel, false)) {
           node->interrupted_ = true;
         } else {
           result = direct_handle(Smi::FromInt(WaitReturnValue::kTimedOut), isolate);
@@ -620,7 +618,9 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
             isolate->stack_guard()->CheckTerminateExecution()) {
           isolate->stack_guard()->ClearTerminateExecution();
           recordreplay::EndDisallowEvents();
-          if (pending_termination && !replay_termination) record_termination(true);
+          if (pending_termination && !replay_termination) {
+            recordreplay::RecordReplayValue(kTerminationLabel, true);
+          }
           interrupt_object = isolate->TerminateExecution();
           recordreplay::BeginDisallowEventsWithLabel(
               "FutexEmulation::WaitSync");
@@ -692,7 +692,7 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
       recordreplay::EndDisallowEvents();
       if (pending_termination && !replay_termination &&
           !IsExceptionHole(*result, isolate)) {
-        record_termination(false);
+        recordreplay::RecordReplayValue(kTerminationLabel, false);
       }
       ordered_lock.emplace(gRecordReplayOrderedLockId);
       recordreplay::BeginDisallowEventsWithLabel("FutexEmulation::WaitSync");
