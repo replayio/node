@@ -160,6 +160,18 @@ void ResponseEnd(const FunctionCallbackInfo<Value>& args) {
   NewResponseNode(request, R"({"kind":"responseEnd"})");
 }
 
+// An outbound request of the recording's network data
+// (lib/internal/recordreplay/network.js): networkRequest{requestId} with its
+// Network request id, made in the JS that issues it.
+void NetworkRequest(const FunctionCallbackInfo<Value>& args) {
+  CHECK(args[0]->IsString());
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  Utf8Value id(args.GetIsolate(), args[0]);
+  v8::recordreplay::NewDependencyGraphNode(
+      NodeJson("networkRequest", std::pair{"requestId", id.ToStringView()})
+          .c_str());
+}
+
 }  // namespace
 
 std::optional<DependencyExecution> DependencyExecution::Begin(int node) {
@@ -342,6 +354,7 @@ void AsyncDependencyGraph::CreatePerIsolateProperties(
   SetMethod(isolate, target, "dependencyGraphResponseStart", ResponseStart);
   SetMethod(isolate, target, "dependencyGraphResponseData", ResponseData);
   SetMethod(isolate, target, "dependencyGraphResponseEnd", ResponseEnd);
+  SetMethod(isolate, target, "dependencyGraphNetworkRequest", NetworkRequest);
 }
 
 void AsyncDependencyGraph::RegisterExternalReferences(
@@ -359,6 +372,7 @@ void AsyncDependencyGraph::RegisterExternalReferences(
   registry->Register(ResponseStart);
   registry->Register(ResponseData);
   registry->Register(ResponseEnd);
+  registry->Register(NetworkRequest);
 }
 
 }  // namespace node
