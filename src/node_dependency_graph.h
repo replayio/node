@@ -61,9 +61,9 @@ class DependencyExecution {
 // listeners in a DependencyExecution of an emitEvent{type} node. Dispatches
 // nest. Not dispatchEvent: the backend reads that kind as DOM input.
 //
-// An HTTP server request (lib/_http_server.js) is dispatched in a
-// DependencyExecution of a requestStart{method,url} node, ended as other
-// dispatches.
+// An HTTP server request (lib/internal/recordreplay/dependency_graph_http.js)
+// is dispatched in a DependencyExecution of a requestStart{method,url} node,
+// ended as other dispatches.
 //
 // Every method returns at once unless
 // v8::recordreplay::DependencyGraphEnabled(): the map, the windows and the

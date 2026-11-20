@@ -120,10 +120,6 @@ void BeginRequest(const FunctionCallbackInfo<Value>& args) {
       args.GetIsolate(), args[0], args[1]));
 }
 
-// A server response (http.ServerResponse): responseStart{status} at its head,
-// responseData{length} per body write and responseEnd at its end. Each is made
-// in the JS that writes it, which is its cause, with a request edge from its
-// request's node (0: none).
 int RequestArg(const FunctionCallbackInfo<Value>& args, int index) {
   CHECK(args[index]->IsInt32());
   return args[index].As<v8::Int32>()->Value();
@@ -136,6 +132,10 @@ void NewResponseNode(int request, const std::string& json) {
       R"({"kind":"request"})");
 }
 
+// A server response (http.ServerResponse): responseStart{status} at its head,
+// responseData{length} per body write and responseEnd at its end. Each is made
+// in the JS that writes it, which is its cause, with a request edge from its
+// request's node (0: none).
 void ResponseStart(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsInt32());
   int request = RequestArg(args, 1);
