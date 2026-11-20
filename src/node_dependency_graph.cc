@@ -58,6 +58,11 @@ int RunNode(int init_node, AsyncOp op) {
   UNREACHABLE();
 }
 
+// Other values are not converted, which could run JS.
+Local<Value> StringOrEmpty(Isolate* isolate, Local<Value> value) {
+  return value->IsString() ? value : String::Empty(isolate).As<Value>();
+}
+
 AsyncDependencyGraph& GetCurrent(const FunctionCallbackInfo<Value>& args) {
   return Environment::GetCurrent(args)->async_hooks()->dependency_graph();
 }
@@ -110,28 +115,49 @@ void EndDispatch(const FunctionCallbackInfo<Value>& args) {
   GetCurrent(args).OnEndDispatch();
 }
 
+void BeginRequest(const FunctionCallbackInfo<Value>& args) {
+  args.GetReturnValue().Set(GetCurrent(args).OnBeginRequest(
+      args.GetIsolate(), args[0], args[1]));
+}
+
+int RequestArg(const FunctionCallbackInfo<Value>& args, int index) {
+  CHECK(args[index]->IsInt32());
+  return args[index].As<v8::Int32>()->Value();
+}
+
+void NewResponseNode(int request, const std::string& json) {
+  v8::recordreplay::AddDependencyGraphEdge(
+      request,
+      v8::recordreplay::NewDependencyGraphNode(json.c_str()),
+      R"({"kind":"request"})");
+}
+
 // A server response (http.ServerResponse): responseStart{status} at its head,
 // responseData{length} per body write and responseEnd at its end. Each is made
-// in the JS that writes it, which is its cause.
+// in the JS that writes it, which is its cause, with a request edge from its
+// request's node (0: none).
 void ResponseStart(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsInt32());
+  int request = RequestArg(args, 1);
   if (!v8::recordreplay::DependencyGraphEnabled()) return;
-  v8::recordreplay::NewDependencyGraphNode(
+  NewResponseNode(
+      request,
       NodeJson("responseStart",
-               std::pair{"status", args[0].As<v8::Int32>()->Value()})
-          .c_str());
+               std::pair{"status", args[0].As<v8::Int32>()->Value()}));
 }
 
 void ResponseData(const FunctionCallbackInfo<Value>& args) {
   double length = NumberArg(args, 0);
+  int request = RequestArg(args, 1);
   if (!v8::recordreplay::DependencyGraphEnabled()) return;
-  v8::recordreplay::NewDependencyGraphNode(
-      NodeJson("responseData", std::pair{"length", length}).c_str());
+  NewResponseNode(request,
+                  NodeJson("responseData", std::pair{"length", length}));
 }
 
 void ResponseEnd(const FunctionCallbackInfo<Value>& args) {
+  int request = RequestArg(args, 0);
   if (!v8::recordreplay::DependencyGraphEnabled()) return;
-  v8::recordreplay::NewDependencyGraphNode(R"({"kind":"responseEnd"})");
+  NewResponseNode(request, R"({"kind":"responseEnd"})");
 }
 
 }  // namespace
@@ -240,12 +266,29 @@ void AsyncDependencyGraph::OnBeginDispatch(Isolate* isolate,
   if (!v8::recordreplay::DependencyGraphEnabled()) return;
   Local<Value> name =
       type->IsSymbol() ? type.As<Symbol>()->Description(isolate) : type;
-  Utf8Value name_utf8(isolate,
-                      name->IsString() ? name : String::Empty(isolate));
-  dispatches_.push_back(DependencyExecution::Begin(
-      v8::recordreplay::NewDependencyGraphNode(
-          NodeJson("emitEvent", std::pair{"type", name_utf8.ToStringView()})
-              .c_str())));
+  Utf8Value name_utf8(isolate, StringOrEmpty(isolate, name));
+  PushDispatch(v8::recordreplay::NewDependencyGraphNode(
+      NodeJson("emitEvent", std::pair{"type", name_utf8.ToStringView()})
+          .c_str()));
+}
+
+int AsyncDependencyGraph::OnBeginRequest(Isolate* isolate,
+                                         Local<Value> method,
+                                         Local<Value> url) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return 0;
+  Utf8Value method_utf8(isolate, StringOrEmpty(isolate, method));
+  Utf8Value url_utf8(isolate, StringOrEmpty(isolate, url));
+  int node = v8::recordreplay::NewDependencyGraphNode(
+      NodeJson("requestStart",
+               std::pair{"method", method_utf8.ToStringView()},
+               std::pair{"url", url_utf8.ToStringView()})
+          .c_str());
+  PushDispatch(node);
+  return node;
+}
+
+void AsyncDependencyGraph::PushDispatch(int node) {
+  dispatches_.push_back(DependencyExecution::Begin(node));
 }
 
 void AsyncDependencyGraph::OnEndDispatch() {
@@ -295,6 +338,7 @@ void AsyncDependencyGraph::CreatePerIsolateProperties(
   SetMethod(isolate, target, "dependencyGraphPop", Pop);
   SetMethod(isolate, target, "dependencyGraphBeginDispatch", BeginDispatch);
   SetMethod(isolate, target, "dependencyGraphEndDispatch", EndDispatch);
+  SetMethod(isolate, target, "dependencyGraphBeginRequest", BeginRequest);
   SetMethod(isolate, target, "dependencyGraphResponseStart", ResponseStart);
   SetMethod(isolate, target, "dependencyGraphResponseData", ResponseData);
   SetMethod(isolate, target, "dependencyGraphResponseEnd", ResponseEnd);
@@ -311,6 +355,7 @@ void AsyncDependencyGraph::RegisterExternalReferences(
   registry->Register(Pop);
   registry->Register(BeginDispatch);
   registry->Register(EndDispatch);
+  registry->Register(BeginRequest);
   registry->Register(ResponseStart);
   registry->Register(ResponseData);
   registry->Register(ResponseEnd);
