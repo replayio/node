@@ -32,8 +32,9 @@ void RecordReplayIds(const char* why, std::vector<int>* ids) {
 void ReplayGCPoll::Poll(i::Isolate* isolate) {
   ReplayIsolateData* data = isolate->replay_data();
   // A participant's cleanup can run embedder code which reaches another poll.
-  // That poll does nothing, on both sides.
-  if (!data || data->is_gc_polling()) return;
+  // That poll does nothing, on both sides. So does one the embedder suspended,
+  // see AutoSuspendReplayGCPoll.
+  if (!data || data->is_gc_polling() || data->gc_poll_suspended_depth()) return;
   bool v8_active =
       data->has_registered_weak_cells() || data->has_tracked_weak_refs();
   std::vector<ReplayGCPollParticipant*>& participants =
@@ -94,6 +95,31 @@ void ReplayGCPoll::Poll(i::Isolate* isolate) {
     }
   }
   data->set_is_gc_polling(false);
+}
+
+AutoSuspendReplayGCPoll::AutoSuspendReplayGCPoll(Isolate* isolate)
+    : isolate_(isolate), suspended_(false) {
+  if (!recordreplay::IsRecordingOrReplaying()) return;
+  // Without the data there is no poll to suspend: Poll() returns before it
+  // records anything. The embedder has it from the point it added its first
+  // participant, which node does for every isolate it runs an Environment on,
+  // and this is not the place to make it: the module code which runs in these
+  // scopes includes the finalizers the heap's tear down calls, after the data
+  // was destroyed along with the Globals it holds.
+  ReplayIsolateData* data =
+      reinterpret_cast<i::Isolate*>(isolate_)->replay_data();
+  if (!data) return;
+  suspended_ = true;
+  data->set_gc_poll_suspended_depth(data->gc_poll_suspended_depth() + 1);
+}
+
+AutoSuspendReplayGCPoll::~AutoSuspendReplayGCPoll() {
+  if (!suspended_) return;
+  ReplayIsolateData* data =
+      reinterpret_cast<i::Isolate*>(isolate_)->replay_data();
+  // Gone once the heap's tear down has started, as for a participant.
+  if (!data) return;
+  data->set_gc_poll_suspended_depth(data->gc_poll_suspended_depth() - 1);
 }
 
 void AddReplayGCPollParticipant(Isolate* isolate,

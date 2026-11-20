@@ -70,6 +70,29 @@ class ReplayGCPollParticipant {
   virtual void Poll() = 0;
 };
 
+// Suspends the isolate's GC poll while the embedder runs code the replay does
+// not run, such as a binary module's own code in node (see
+// napi_env__::CallIntoModule). The recording describes such code's effects as
+// the calls it made into the embedder, which the replay performs at the same
+// points instead of running the code: a poll reached from there records values
+// the replay reads where it expects those calls, which leaves the recording
+// unreplayable, and the cleanup it runs would run embedder code nested in
+// whatever the module was doing. What the GC collected stays noted, and the
+// next poll outside the scope describes it, the way a poll which a
+// participant's own cleanup reaches is left to the next one.
+class V8_EXPORT AutoSuspendReplayGCPoll {
+ public:
+  explicit AutoSuspendReplayGCPoll(Isolate* isolate);
+  ~AutoSuspendReplayGCPoll();
+
+  AutoSuspendReplayGCPoll(const AutoSuspendReplayGCPoll&) = delete;
+  AutoSuspendReplayGCPoll& operator=(const AutoSuspendReplayGCPoll&) = delete;
+
+ private:
+  Isolate* isolate_;
+  bool suspended_;
+};
+
 // Must be called at deterministic points, on the isolate's thread.
 V8_EXPORT void AddReplayGCPollParticipant(Isolate* isolate,
                                           ReplayGCPollParticipant* participant);

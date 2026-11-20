@@ -43,6 +43,11 @@ class ReplayIsolateData {
   }
   bool is_gc_polling() const { return is_gc_polling_; }
   void set_is_gc_polling(bool polling) { is_gc_polling_ = polling; }
+  // How many AutoSuspendReplayGCPoll scopes the embedder has open.
+  int gc_poll_suspended_depth() const { return gc_poll_suspended_depth_; }
+  void set_gc_poll_suspended_depth(int depth) {
+    gc_poll_suspended_depth_ = depth;
+  }
 
   // FinalizationRegistry state, see src/replay/finalization-registry.h.
 
@@ -104,6 +109,7 @@ class ReplayIsolateData {
   std::vector<ReplayGCPollParticipant*> gc_poll_participants_;
   std::vector<ReplayGCPollParticipant*> active_gc_poll_participants_;
   bool is_gc_polling_ = false;
+  int gc_poll_suspended_depth_ = 0;
 
   int next_finalization_registry_id_ = 1;
   int next_weak_cell_id_ = 1;

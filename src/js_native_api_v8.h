@@ -7,6 +7,7 @@
 #include "js_native_api_types.h"
 #include "js_native_api_v8_internals.h"
 #include "node_deferred_finalization.h"
+#include "replayio.h"
 
 inline napi_status napi_clear_last_error(node_api_basic_env env);
 
@@ -98,7 +99,15 @@ struct napi_env__ {
     int open_handle_scopes_before = open_handle_scopes;
     int open_callback_scopes_before = open_callback_scopes;
     napi_clear_last_error(this);
-    call(this);
+    {
+      // The module's own code runs in here, and the recording describes it as
+      // the N-API calls it made, which the replay performs at the same points
+      // instead of running the code (see napi_module_register_by_symbol). A GC
+      // poll the module reaches, by using the V8 API itself, is therefore at a
+      // point the replay never has.
+      v8::replayio::AutoSuspendReplayGCPoll suspend_gc_poll(isolate);
+      call(this);
+    }
     CHECK_EQ(open_handle_scopes, open_handle_scopes_before);
     CHECK_EQ(open_callback_scopes, open_callback_scopes_before);
     if (!last_exception.IsEmpty()) {
