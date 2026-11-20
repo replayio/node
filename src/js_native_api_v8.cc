@@ -674,10 +674,17 @@ bool RecordReplayInModuleCallback() {
          node::recordreplay::IsInsideInterceptedCallback();
 }
 
-// Stands in for a module's finalizer when replaying, where the replayed call
-// which created the reference has no finalizer (the driver passes it as null),
-// so that the reference is finalized along the same path as when recording.
-// Finalizers are never called when replaying, see CallModuleFinalizer.
+// Stands in for a module's finalizer when the replayed call which created the
+// reference had none of its own, because the driver passes the module's pointer
+// as null, so that the reference is finalized along the same path as when
+// recording. Finalizers are never called when replaying, see
+// CallModuleFinalizer.
+//
+// Reference::RecordReplayTrack installs it when the reference is created, the
+// only point at which the two sides can differ in having one. A module which
+// resets its finalizer afterwards, as napi_remove_wrap does for a wrap it
+// owns, resets this along with it, so that node finalizes the reference
+// without calling anything, as upstream does.
 void RecordReplayFinalizerStub(napi_env env, void* data, void* hint) {}
 
 }  // anonymous namespace
@@ -760,9 +767,15 @@ void Reference::RecordReplayTrack() {
       _record_replay_finalization->Track(this, "napi_ref");
   if (_record_replay_finalize_id) {
     // Whether the recording's module gave a finalizer, which the replayed call
-    // may not have (see RecordReplayFinalizerStub).
-    _record_replay_has_finalizer = v8::recordreplay::RecordReplayValue(
+    // may not have. Stand in for it from here, where the reference is created:
+    // that is the only point at which the two sides can differ in having one,
+    // and from it the stub follows the module's finalizer wherever node takes
+    // it, see RecordReplayFinalizerStub.
+    bool recorded_has_finalizer = v8::recordreplay::RecordReplayValue(
         "napi_ref has finalizer", RecordReplayHasUserFinalizer());
+    if (recorded_has_finalizer && !RecordReplayHasUserFinalizer()) {
+      RecordReplaySetFinalizerStub();
+    }
   }
 }
 
@@ -774,9 +787,6 @@ void Reference::RecordReplayFinalize() {
   persistent_.Reset();
   // The value is gone on both sides now, so a later read needs no flush.
   _record_replay_env->record_replay_cleared_refs.erase(_record_replay_id);
-  if (_record_replay_has_finalizer && !RecordReplayHasUserFinalizer()) {
-    RecordReplaySetFinalizerStub();
-  }
   // A user finalizer is module code, which the GC's weak callback does not run
   // itself: it hands it to napi_env__::InvokeFinalizerFromGC, which is the
   // environment's second pass, an immediate, or a synchronous call for a module
