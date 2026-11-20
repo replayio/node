@@ -527,12 +527,21 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
     timeout_time = current_time + rel_timeout;
   }
 
+  auto record_termination = [](bool taken) {
+    return recordreplay::RecordReplayValue("Futex wait took termination", taken);
+  };
+
   // The following is not really a loop; the do-while construct makes it easier
   // to break out early.
   // Keep the code in the loop as minimal as possible, because this is all in
   // the critical section.
   do {
     replayio::AutoDisallowEvents disallow("FutexEmulation::WaitSync");
+    // An inspector resume can leave termination pending without waking the
+    // isolate. Whether this wait takes it depends on an unrelated interrupt.
+    // Check before locking the wait list, as RequestInterrupt locks it second.
+    bool pending_termination = recordreplay::IsRecordingOrReplaying() &&
+                               isolate->stack_guard()->CheckTerminateExecution();
     NoGarbageCollectionMutexGuard lock_guard(wait_list->mutex());
 
     std::atomic<T>* p = reinterpret_cast<std::atomic<T>*>(wait_location);
@@ -555,15 +564,26 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
     node->waiting_ = true;
     wait_list->AddNode(node);
 
+    bool replay_termination = pending_termination && recordreplay::IsReplaying() &&
+                              !recordreplay::HasDivergedFromRecording();
     // The ordered lock taken for entering the list is released with events
     // allowed, as OrderedUnlock does nothing otherwise.
     if (ordered_lock) {
       recordreplay::EndDisallowEvents();
       ordered_lock.reset();
+      if (replay_termination) {
+        // Reproduce whether an interrupt reached the waiter before it left.
+        // The exit lock distinguishes notification from timeout below.
+        if (record_termination(false)) {
+          node->interrupted_ = true;
+        } else {
+          result = direct_handle(Smi::FromInt(WaitReturnValue::kTimedOut), isolate);
+        }
+      }
       recordreplay::BeginDisallowEventsWithLabel("FutexEmulation::WaitSync");
     }
 
-    while (true) {
+    while (result.is_null()) {
       if (V8_UNLIKELY(node->interrupted_)) {
         // Reset the interrupted flag while still holding the mutex.
         node->interrupted_ = false;
@@ -600,6 +620,7 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
             isolate->stack_guard()->CheckTerminateExecution()) {
           isolate->stack_guard()->ClearTerminateExecution();
           recordreplay::EndDisallowEvents();
+          if (pending_termination && !replay_termination) record_termination(true);
           interrupt_object = isolate->TerminateExecution();
           recordreplay::BeginDisallowEventsWithLabel(
               "FutexEmulation::WaitSync");
@@ -669,6 +690,10 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
     if (recordreplay::IsRecordingOrReplaying()) {
       lock_guard.Unlock();
       recordreplay::EndDisallowEvents();
+      if (pending_termination && !replay_termination &&
+          !IsExceptionHole(*result, isolate)) {
+        record_termination(false);
+      }
       ordered_lock.emplace(gRecordReplayOrderedLockId);
       recordreplay::BeginDisallowEventsWithLabel("FutexEmulation::WaitSync");
       lock_guard.Lock();
