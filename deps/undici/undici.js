@@ -5528,12 +5528,15 @@ var require_request = __commonJS({
           controller.rawHeaders = headers;
         }
         const parsedHeaders = Array.isArray(headers) ? parseHeaders(headers) : headers;
+        recordReplayNetwork.undiciDeliveryBegin(this);
         try {
           this[kHandler].onResponseStart?.(controller, statusCode, parsedHeaders, statusText);
           return !controller?.paused;
         } catch (err) {
           this.abort(err);
           return false;
+        } finally {
+          recordReplayNetwork.undiciDeliveryEnd(this);
         }
       }
       onResponseData(chunk) {
@@ -5544,12 +5547,15 @@ var require_request = __commonJS({
         }
         recordReplayNetwork.undiciResponseData(this, chunk);
         const controller = this[kController];
+        recordReplayNetwork.undiciDeliveryBegin(this, chunk);
         try {
           this[kHandler].onResponseData?.(controller, chunk);
           return !controller?.paused;
         } catch (err) {
           this.abort(err);
           return false;
+        } finally {
+          recordReplayNetwork.undiciDeliveryEnd(this);
         }
       }
       /**
@@ -5593,10 +5599,13 @@ var require_request = __commonJS({
           controller.rawTrailers = trailers;
         }
         const parsedTrailers = Array.isArray(trailers) ? parseHeaders(trailers) : trailers;
+        recordReplayNetwork.undiciDeliveryBegin(this);
         try {
           return this[kHandler].onResponseEnd?.(controller, parsedTrailers);
         } catch (err) {
           this.onResponseError(err);
+        } finally {
+          recordReplayNetwork.undiciDeliveryEnd(this);
         }
       }
       onResponseError(error) {
@@ -5610,7 +5619,12 @@ var require_request = __commonJS({
         }
         this.aborted = true;
         const controller = this[kController];
-        return this[kHandler].onResponseError?.(controller, error);
+        recordReplayNetwork.undiciDeliveryBegin(this);
+        try {
+          return this[kHandler].onResponseError?.(controller, error);
+        } finally {
+          recordReplayNetwork.undiciDeliveryEnd(this);
+        }
       }
       onFinally() {
         if (this.errorHandler) {
