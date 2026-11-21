@@ -412,7 +412,9 @@ TLSWrap::TLSWrap(Environment* env,
       under_stream_ws == UnderlyingStreamWriteStatus::kHasActive;
   // It holds SecureContexts, whose cleanup runs at the GC poll when
   // recording/replaying (see RecordReplayTrack), so it has to be destroyed
-  // at points the replay reproduces as well.
+  // at points the replay reproduces as well. Switching this off while
+  // SecureContexts are still tracked fails the CHECK in
+  // BaseObject::RecordReplayFinalize() when replaying.
   RecordReplayTrack("TLSWrap");
   MakeWeak();
   CHECK(sc_);
