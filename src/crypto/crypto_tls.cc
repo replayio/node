@@ -410,6 +410,10 @@ TLSWrap::TLSWrap(Environment* env,
       sc_(sc) {
   flags_.has_active_write_issued_by_prev_listener =
       under_stream_ws == UnderlyingStreamWriteStatus::kHasActive;
+  // It holds SecureContexts, whose cleanup runs at the GC poll when
+  // recording/replaying (see RecordReplayTrack), so it has to be destroyed
+  // at points the replay reproduces as well.
+  RecordReplayTrack("TLSWrap");
   MakeWeak();
   CHECK(sc_);
   ssl_ = sc_->CreateSSL();

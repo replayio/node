@@ -1732,6 +1732,9 @@ SecureContext* SecureContext::Create(Environment* env) {
 
 SecureContext::SecureContext(Environment* env, Local<Object> wrap)
     : BaseObject(env, wrap) {
+  // Freeing its OpenSSL objects takes ordered locks, which the GC must not
+  // take when recording/replaying, see RecordReplayTrack.
+  RecordReplayTrack("SecureContext");
   MakeWeak();
 }
 

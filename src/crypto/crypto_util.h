@@ -348,7 +348,12 @@ class CryptoJob : public AsyncWrap, public ThreadPoolWork {
         params_(std::move(params)) {
     // If the CryptoJob is async, then the instance will be
     // cleaned up when AfterThreadPoolWork is called.
-    if (mode == kCryptoJobSync) MakeWeak();
+    if (mode == kCryptoJobSync) {
+      // Freeing the OpenSSL objects in its params takes ordered locks, which
+      // the GC must not take when recording/replaying, see RecordReplayTrack.
+      RecordReplayTrack("CryptoJob");
+      MakeWeak();
+    }
   }
 
   bool IsNotIndicativeOfMemoryLeakAtExit() const override {

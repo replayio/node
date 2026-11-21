@@ -247,6 +247,9 @@ class NativeKeyObject : public BaseObject {
                   v8::Local<v8::Object> wrap,
                   const KeyObjectData& handle_data)
       : BaseObject(env, wrap), handle_data_(handle_data.addRef()) {
+    // Freeing its OpenSSL objects takes ordered locks, which the GC must not
+    // take when recording/replaying, see RecordReplayTrack.
+    RecordReplayTrack("NativeKeyObject");
     MakeWeak();
   }
 
@@ -362,6 +365,9 @@ class NativeCryptoKey : public BaseObject {
                                    ? secondary_handle_data.addRef()
                                    : KeyObjectData()),
         seed_data_(std::move(seed_data)) {
+    // Freeing its OpenSSL objects takes ordered locks, which the GC must not
+    // take when recording/replaying, see RecordReplayTrack.
+    RecordReplayTrack("NativeCryptoKey");
     MakeWeak();
   }
 

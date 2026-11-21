@@ -1101,6 +1101,9 @@ X509Certificate::X509Certificate(Environment* env,
                                  std::shared_ptr<ManagedX509> cert,
                                  Local<Object> issuer_chain)
     : BaseObject(env, object), cert_(std::move(cert)) {
+  // Freeing its OpenSSL objects takes ordered locks, which the GC must not
+  // take when recording/replaying, see RecordReplayTrack.
+  RecordReplayTrack("X509Certificate");
   MakeWeak();
 
   if (!issuer_chain.IsEmpty()) {

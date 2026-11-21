@@ -1190,6 +1190,9 @@ void KeyObjectHandle::New(const FunctionCallbackInfo<Value>& args) {
 KeyObjectHandle::KeyObjectHandle(Environment* env,
                                  Local<Object> wrap)
     : BaseObject(env, wrap) {
+  // Freeing its OpenSSL objects takes ordered locks, which the GC must not
+  // take when recording/replaying, see RecordReplayTrack.
+  RecordReplayTrack("KeyObjectHandle");
   MakeWeak();
 }
 

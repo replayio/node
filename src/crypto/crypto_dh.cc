@@ -47,6 +47,9 @@ using v8::Value;
 namespace crypto {
 DiffieHellman::DiffieHellman(Environment* env, Local<Object> wrap, DHPointer dh)
     : BaseObject(env, wrap), dh_(std::move(dh)) {
+  // Freeing its OpenSSL objects takes ordered locks, which the GC must not
+  // take when recording/replaying, see RecordReplayTrack.
+  RecordReplayTrack("DiffieHellman");
   MakeWeak();
 }
 
