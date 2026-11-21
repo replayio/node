@@ -533,13 +533,17 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
   // Keep the code in the loop as minimal as possible, because this is all in
   // the critical section.
   do {
-    const bool events_available = ordered_lock && replayio::AreEventsAvailable();
+    const bool events_available =
+        ordered_lock && replayio::AreEventsAvailable();
     replayio::AutoDisallowEvents disallow("FutexEmulation::WaitSync");
-    // An inspector resume can leave termination pending without waking the
-    // isolate. Whether this wait takes it depends on an unrelated interrupt.
-    // Check before locking the wait list, as RequestInterrupt locks it second.
-    bool pending_termination = events_available &&
-                               isolate->stack_guard()->CheckTerminateExecution();
+    // An inspector resume can leave a termination pending without waking the
+    // isolate, and the wait then takes it only if an unrelated interrupt wakes
+    // it. Those wakes are not in the recorded order, so the recording notes
+    // whether the wait took the termination and the replay follows it. This is
+    // checked before locking the wait list, because RequestInterrupt takes the
+    // wait list's mutex while holding the one the check takes.
+    const bool pending_termination =
+        events_available && isolate->stack_guard()->CheckTerminateExecution();
     NoGarbageCollectionMutexGuard lock_guard(wait_list->mutex());
 
     std::atomic<T>* p = reinterpret_cast<std::atomic<T>*>(wait_location);
@@ -567,8 +571,10 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
     // The ordered lock taken for entering the list is released with events
     // allowed, as OrderedUnlock does nothing otherwise.
     if (ordered_lock) {
-      // The decision may be in a later recording chunk. Other waiters and
-      // notifiers need the list mutex while replay waits for that chunk.
+      // Reading the decision can block, until a later recording chunk arrives
+      // or for good when the recording stopped while this thread was waiting.
+      // Every isolate shares the wait list's mutex, and Wake() and NotifyWake()
+      // need it meanwhile.
       if (replay_termination) lock_guard.Unlock();
       recordreplay::EndDisallowEvents();
       ordered_lock.reset();
@@ -586,12 +592,15 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
         if (took_termination == 1) {
           node->interrupted_ = true;
         } else if (took_termination == 0) {
-          result = direct_handle(Smi::FromInt(WaitReturnValue::kTimedOut), isolate);
+          result = direct_handle(Smi::FromInt(WaitReturnValue::kTimedOut),
+                                 isolate);
         }
       }
     }
 
-    while (result.is_null()) {
+    while (true) {
+      // The replay's recorded decision can already have settled the wait.
+      if (!result.is_null()) break;
       if (V8_UNLIKELY(node->interrupted_)) {
         // Reset the interrupted flag while still holding the mutex.
         node->interrupted_ = false;
@@ -622,14 +631,16 @@ Tagged<Object> FutexEmulation::WaitSync(Isolate* isolate, void* wait_location,
         // would send it back to waiting, so that a worker terminated while
         // blocked here never stopped, so the termination is handled here, with
         // events allowed. Either this thread requested it before waiting (e.g.
-        // a worker's process.exit()), which the replay reaches the same way,
-        // or another thread did, which invalidated the recording.
+        // a worker's process.exit()), and the replay takes it where the
+        // recording did (see pending_termination), or another thread did,
+        // which invalidated the recording.
         if (!IsExceptionHole(interrupt_object, isolate) &&
             isolate->stack_guard()->CheckTerminateExecution()) {
           isolate->stack_guard()->ClearTerminateExecution();
           recordreplay::EndDisallowEvents();
           if (pending_termination && !replay_termination) {
-            recordreplay::RecordReplayValue("Futex wait took termination", true);
+            recordreplay::RecordReplayValue("Futex wait took termination",
+                                            true);
           }
           interrupt_object = isolate->TerminateExecution();
           recordreplay::BeginDisallowEventsWithLabel(
