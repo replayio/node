@@ -137,7 +137,14 @@ int ossl_namemap_doall_names(const OSSL_NAMEMAP *namemap, int number,
     return i > 0;
 }
 
-int ossl_namemap_name2num(const OSSL_NAMEMAP *namemap, const char *name)
+/*
+ * Record/Replay: namenum_ht is read without a lock (lockless_reads), and what
+ * a read finds decides which ordered locks the reading thread takes next. A
+ * name is inserted under namemap->lock, so while recording/replaying the
+ * lookups take it too and see the insertions the recording saw. Callers which
+ * hold namemap->lock already use the unlocked namemap_name2num().
+ */
+static int namemap_name2num(const OSSL_NAMEMAP *namemap, const char *name)
 {
     int number = 0;
     HT_VALUE *val;
@@ -163,7 +170,7 @@ int ossl_namemap_name2num(const OSSL_NAMEMAP *namemap, const char *name)
     return number;
 }
 
-int ossl_namemap_name2num_n(const OSSL_NAMEMAP *namemap,
+static int namemap_name2num_n(const OSSL_NAMEMAP *namemap,
     const char *name, size_t name_len)
 {
     int number = 0;
@@ -188,6 +195,52 @@ int ossl_namemap_name2num_n(const OSSL_NAMEMAP *namemap,
         number = (int)(intptr_t)val->value;
 
     return number;
+}
+
+#ifdef OSSL_RECORD_REPLAY
+static const OSSL_NAMEMAP *namemap_lock_for_lookup(const OSSL_NAMEMAP *namemap)
+{
+    if (!ossl_record_replay_active())
+        return NULL;
+#ifndef FIPS_MODULE
+    if (namemap == NULL)
+        namemap = ossl_namemap_stored(NULL);
+#endif
+    if (namemap == NULL || !CRYPTO_THREAD_read_lock(namemap->lock))
+        return NULL;
+    return namemap;
+}
+#endif
+
+int ossl_namemap_name2num(const OSSL_NAMEMAP *namemap, const char *name)
+{
+#ifdef OSSL_RECORD_REPLAY
+    const OSSL_NAMEMAP *locked = namemap_lock_for_lookup(namemap);
+
+    if (locked != NULL) {
+        int number = namemap_name2num(locked, name);
+
+        CRYPTO_THREAD_unlock(locked->lock);
+        return number;
+    }
+#endif
+    return namemap_name2num(namemap, name);
+}
+
+int ossl_namemap_name2num_n(const OSSL_NAMEMAP *namemap,
+    const char *name, size_t name_len)
+{
+#ifdef OSSL_RECORD_REPLAY
+    const OSSL_NAMEMAP *locked = namemap_lock_for_lookup(namemap);
+
+    if (locked != NULL) {
+        int number = namemap_name2num_n(locked, name, name_len);
+
+        CRYPTO_THREAD_unlock(locked->lock);
+        return number;
+    }
+#endif
+    return namemap_name2num_n(namemap, name, name_len);
 }
 
 const char *ossl_namemap_num2name(const OSSL_NAMEMAP *namemap, int number,
@@ -261,7 +314,7 @@ static int namemap_add_name(OSSL_NAMEMAP *namemap, int number,
     NAMENUM_KEY key;
 
     /* If it already exists, we don't add it */
-    if ((ret = ossl_namemap_name2num(namemap, name)) != 0)
+    if ((ret = namemap_name2num(namemap, name)) != 0)
         return ret;
 
     if ((number = numname_insert(namemap, number, name)) == 0)
@@ -344,7 +397,7 @@ int ossl_namemap_add_names(OSSL_NAMEMAP *namemap, int number,
             goto end;
         }
 
-        this_number = ossl_namemap_name2num(namemap, p);
+        this_number = namemap_name2num(namemap, p);
 
         if (number == 0) {
             number = this_number;
