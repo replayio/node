@@ -157,8 +157,12 @@ class V8_EXPORT_PRIVATE V8_NODISCARD StackGuard final {
   // stack overflow, then handle the interruption accordingly.
   // Only interrupts that match the given `InterruptLevel` will be handled,
   // leaving other interrupts pending as if this method had not been called.
+  // JS code's stack checks pass record_replay_js_stack_check, which leaves a
+  // termination the main thread requested for itself pending while recording
+  // or replaying (see RecordReplayDeferTermination).
   Tagged<Object> HandleInterrupts(
-      InterruptLevel level = InterruptLevel::kAnyEffect);
+      InterruptLevel level = InterruptLevel::kAnyEffect,
+      bool record_replay_js_stack_check = false);
 
   // Special case of {HandleInterrupts}: checks for termination requests only.
   // This is guaranteed to never cause GC, so can be used to interrupt
@@ -175,7 +179,8 @@ class V8_EXPORT_PRIVATE V8_NODISCARD StackGuard final {
   bool CheckInterrupt(InterruptFlag flag);
   void RequestInterrupt(InterruptFlag flag);
   void ClearInterrupt(InterruptFlag flag);
-  int FetchAndClearInterrupts(InterruptLevel level);
+  int FetchAndClearInterrupts(InterruptLevel level,
+                              bool record_replay_defer_termination = false);
 
   void SetStackLimitInternal(const ExecutionAccess& lock, uintptr_t limit,
                              uintptr_t jslimit);
