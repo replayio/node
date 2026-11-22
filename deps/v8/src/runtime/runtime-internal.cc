@@ -363,7 +363,7 @@ RUNTIME_FUNCTION(Runtime_StackGuard) {
   }
 
   return isolate->stack_guard()->HandleInterrupts(
-      StackGuard::InterruptLevel::kAnyEffect);
+      StackGuard::InterruptLevel::kAnyEffect, true);
 }
 
 RUNTIME_FUNCTION(Runtime_HandleNoHeapWritesInterrupts) {
@@ -378,7 +378,7 @@ RUNTIME_FUNCTION(Runtime_HandleNoHeapWritesInterrupts) {
   }
 
   return isolate->stack_guard()->HandleInterrupts(
-      StackGuard::InterruptLevel::kNoHeapWrites);
+      StackGuard::InterruptLevel::kNoHeapWrites, true);
 }
 
 RUNTIME_FUNCTION(Runtime_StackGuardWithGap) {
@@ -394,7 +394,7 @@ RUNTIME_FUNCTION(Runtime_StackGuardWithGap) {
   }
 
   return isolate->stack_guard()->HandleInterrupts(
-      StackGuard::InterruptLevel::kAnyEffect);
+      StackGuard::InterruptLevel::kAnyEffect, true);
 }
 
 namespace {
@@ -416,7 +416,8 @@ Tagged<Object> BytecodeBudgetInterruptWithStackCheck(Isolate* isolate,
     // the runtime function call being what overflows the stack.
     return isolate->StackOverflow();
   } else if (check.InterruptRequested()) {
-    Tagged<Object> return_value = isolate->stack_guard()->HandleInterrupts();
+    Tagged<Object> return_value = isolate->stack_guard()->HandleInterrupts(
+        StackGuard::InterruptLevel::kAnyEffect, true);
     if (!IsUndefined(return_value, isolate)) {
       return return_value;
     }
