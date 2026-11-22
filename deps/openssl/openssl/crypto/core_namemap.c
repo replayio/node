@@ -9,6 +9,7 @@
 
 #include "internal/namemap.h"
 #include "internal/tsan_assist.h"
+#include "internal/record_replay.h"
 #include "internal/hashtable.h"
 #include "internal/sizes.h"
 #include "crypto/context.h"
@@ -197,7 +198,6 @@ static int namemap_name2num_n(const OSSL_NAMEMAP *namemap,
     return number;
 }
 
-#ifdef OSSL_RECORD_REPLAY
 static const OSSL_NAMEMAP *namemap_lock_for_lookup(const OSSL_NAMEMAP *namemap)
 {
     if (!ossl_record_replay_active())
@@ -210,11 +210,9 @@ static const OSSL_NAMEMAP *namemap_lock_for_lookup(const OSSL_NAMEMAP *namemap)
         return NULL;
     return namemap;
 }
-#endif
 
 int ossl_namemap_name2num(const OSSL_NAMEMAP *namemap, const char *name)
 {
-#ifdef OSSL_RECORD_REPLAY
     const OSSL_NAMEMAP *locked = namemap_lock_for_lookup(namemap);
 
     if (locked != NULL) {
@@ -223,14 +221,12 @@ int ossl_namemap_name2num(const OSSL_NAMEMAP *namemap, const char *name)
         CRYPTO_THREAD_unlock(locked->lock);
         return number;
     }
-#endif
     return namemap_name2num(namemap, name);
 }
 
 int ossl_namemap_name2num_n(const OSSL_NAMEMAP *namemap,
     const char *name, size_t name_len)
 {
-#ifdef OSSL_RECORD_REPLAY
     const OSSL_NAMEMAP *locked = namemap_lock_for_lookup(namemap);
 
     if (locked != NULL) {
@@ -239,7 +235,6 @@ int ossl_namemap_name2num_n(const OSSL_NAMEMAP *namemap,
         CRYPTO_THREAD_unlock(locked->lock);
         return number;
     }
-#endif
     return namemap_name2num_n(namemap, name, name_len);
 }
 
