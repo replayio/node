@@ -4804,6 +4804,23 @@ void FunctionCallbackRecordReplayCurrentExecutionPoint(const FunctionCallbackInf
   }
 }
 
+// Starts a checkpoint where the program asks for one. Tests use it to put a
+// known point before the execution they measure, which the execution points
+// after it are then relative to. The checkpoint is flushed because the
+// time-based throttle would otherwise drop one this close to the last.
+void FunctionCallbackRecordReplayForceCheckpoint(const FunctionCallbackInfo<Value>& args) {
+  if (!recordreplay::IsRecordingOrReplaying() || !IsMainThread()) {
+    return;
+  }
+
+  // A replay evaluating this must not add a checkpoint of its own.
+  if (recordreplay::IsInReplayCode("forceCheckpoint")) {
+    return;
+  }
+
+  RecordReplayNewCheckpointFlushed();
+}
+
 extern size_t RecordReplayElapsedTimeMs();
 
 void FunctionCallbackRecordReplayElapsedTimeMs(const FunctionCallbackInfo<Value>& args) {

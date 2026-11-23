@@ -34,6 +34,7 @@ extern void FunctionCallbackRecordReplayGetCurrentError(const FunctionCallbackIn
 extern void FunctionCallbackRecordReplayGetRecordingId(const FunctionCallbackInfo<Value>& args);
 extern void FunctionCallbackRecordReplayCurrentExecutionPoint(const FunctionCallbackInfo<Value>& args);
 extern void FunctionCallbackRecordReplayElapsedTimeMs(const FunctionCallbackInfo<Value>& args);
+extern void FunctionCallbackRecordReplayForceCheckpoint(const FunctionCallbackInfo<Value>& args);
 
 }
 
@@ -576,6 +577,8 @@ void InitializeRecordReplayMethods(Environment* env, Local<Object> target) {
             v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
   SetMethod(context, target, "recordReplayElapsedTimeMs",
             v8::FunctionCallbackRecordReplayElapsedTimeMs);
+  SetMethod(context, target, "recordReplayForceCheckpoint",
+            v8::FunctionCallbackRecordReplayForceCheckpoint);
   SetMethod(context, target, "recordReplayAnnotationHook",
             RecordReplayAnnotationHook);
   SetMethod(context, target, "recordReplayNetworkEnabled",
@@ -608,6 +611,7 @@ void RegisterRecordReplayExternalReferences(
   registry->Register(v8::FunctionCallbackRecordReplayGetRecordingId);
   registry->Register(v8::FunctionCallbackRecordReplayCurrentExecutionPoint);
   registry->Register(v8::FunctionCallbackRecordReplayElapsedTimeMs);
+  registry->Register(v8::FunctionCallbackRecordReplayForceCheckpoint);
   registry->Register(RecordReplayAnnotationHook);
   registry->Register(RecordReplayNetworkEnabled);
   registry->Register(RecordReplayNetworkRequest);
