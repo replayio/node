@@ -1054,7 +1054,10 @@ RUNTIME_FUNCTION(Runtime_ProfileCreateSnapshotDataBlob) {
 extern uint64_t* gProgressCounter;
 extern uint64_t gTargetProgress;
 extern bool gRecordReplayAssertProgress;
-extern int gRecordReplayCheckProgress;
+extern uint64_t gRecordReplayProgressLimit;
+extern bool RecordReplayProgressChecksEnabled();
+extern void RecordReplaySetProgressLimit(bool checks_enabled);
+extern void RecordReplayUpdateProgressLimit();
 
 extern bool RecordReplayShouldAssertForSource(const char* source);
 
@@ -1122,6 +1125,7 @@ RecordReplayScrubDivergentProgressScope::
   if (start_progress_ >= *gProgressCounter) return;
   // [RUN-1988] Divergent path advanced PC via instrumented user code.
   *gProgressCounter = start_progress_;
+  RecordReplayUpdateProgressLimit();
   if (start_data_size_ == 0) {
     if (gProgressData) {
       delete gProgressData;
@@ -1370,8 +1374,12 @@ static void RecordReplayOnTargetProgressReachedFromJS(Isolate* isolate) {
                                   it.frame()->LookupCode());
 }
 
-static void OnExecutionProgress(Isolate* isolate, Handle<JSFunction> function) {
-  if (++*gProgressCounter == gTargetProgress) {
+// What a progress advance does once the counter has been incremented. Baseline
+// and optimized code increment it inline and only call into the VM at the
+// progress limit (see RecordReplayUpdateProgressLimit).
+static void OnExecutionProgressIncremented(Isolate* isolate,
+                                           Handle<JSFunction> function) {
+  if (*gProgressCounter == gTargetProgress) {
     RecordReplayOnTargetProgressReachedFromJS(isolate);
   }
 
@@ -1382,7 +1390,8 @@ static void OnExecutionProgress(Isolate* isolate, Handle<JSFunction> function) {
     gProgressData->push_back(BuildScriptProgressEntry(function));
   }
 
-  if (gRecordReplayCheckProgress) {
+  bool checks_enabled = RecordReplayProgressChecksEnabled();
+  if (checks_enabled) {
     Handle<SharedFunctionInfo> shared(function->shared(), isolate);
     Handle<Script> script(Cast<Script>(shared->script()), isolate);
 
@@ -1409,6 +1418,13 @@ static void OnExecutionProgress(Isolate* isolate, Handle<JSFunction> function) {
       }
     }
   }
+
+  RecordReplaySetProgressLimit(checks_enabled);
+}
+
+static void OnExecutionProgress(Isolate* isolate, Handle<JSFunction> function) {
+  ++*gProgressCounter;
+  OnExecutionProgressIncremented(isolate, function);
 }
 
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
@@ -1416,9 +1432,11 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
-RUNTIME_FUNCTION(Runtime_RecordReplayTargetProgressReached) {
-  CHECK(*gProgressCounter == gTargetProgress);
-  RecordReplayOnTargetProgressReachedFromJS(isolate);
+// Called by optimized code once the progress counter it incremented inline
+// reaches the progress limit.
+RUNTIME_FUNCTION(Runtime_RecordReplayProgressLimitReached) {
+  CHECK(*gProgressCounter == gRecordReplayProgressLimit);
+  OnExecutionProgressIncremented(isolate, args.at<JSFunction>(0));
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
@@ -1432,12 +1450,12 @@ RUNTIME_FUNCTION(Runtime_RecordReplayBaselineExecutionProgress) {
   return args[1];
 }
 
-// Called by the baseline JIT once the progress counter it incremented inline
-// reaches the target progress.
-RUNTIME_FUNCTION(Runtime_RecordReplayBaselineTargetProgressReached) {
-  CHECK(*gProgressCounter == gTargetProgress);
-  RecordReplayOnTargetProgressReached();
-  return args[0];
+// The baseline JIT's variant of Runtime_RecordReplayProgressLimitReached,
+// which takes the accumulator and returns it.
+RUNTIME_FUNCTION(Runtime_RecordReplayBaselineProgressLimitReached) {
+  CHECK(*gProgressCounter == gRecordReplayProgressLimit);
+  OnExecutionProgressIncremented(isolate, args.at<JSFunction>(0));
+  return args[1];
 }
 
 // Assertion and instrumentation site indexes embedded in bytecodes are offset

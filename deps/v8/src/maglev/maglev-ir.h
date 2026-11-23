@@ -10415,13 +10415,13 @@ class HandleNoHeapWritesInterrupt
   int MaxCallStackArgs() const { return 0; }
 };
 
-// The record/replay progress counter's update, as TurboFan makes it: increment
-// the counter inline, and call into the VM at the target progress, where what
-// runs (pausing, breakpoints, instrumentation changes, API interrupt callbacks)
-// can run JS and discard this code. Optimized code doesn't run progress checks,
-// see BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter. Like
-// the loop stack check, it isn't a heap write: the call deoptimizes this frame
-// if what ran there could have written the heap (see
+// The record/replay progress counter's update, as every tier above the
+// interpreter makes it: increment the counter inline, and call into the VM at
+// the progress limit (see RecordReplayUpdateProgressLimit). What runs at the
+// target progress (pausing, breakpoints, instrumentation changes, API
+// interrupt callbacks) can run JS and discard this code. Like the loop stack
+// check, it isn't a heap write: the call deoptimizes this frame if what ran
+// there could have written the heap (see
 // RecordReplayOnTargetProgressReachedFromJS).
 class RecordReplayIncrementAndCheckProgressCounter
     : public FixedInputNodeT<1, RecordReplayIncrementAndCheckProgressCounter> {

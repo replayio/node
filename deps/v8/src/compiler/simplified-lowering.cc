@@ -4782,9 +4782,10 @@ class RepresentationSelector {
                             MachineRepresentation::kTagged);
       }
       case IrOpcode::kIncrementAndCheckProgressCounter:
-        // The frame state and the context.
+        // The frame state, the closure and the context.
         ProcessInput<T>(node, 0, UseInfo::AnyTagged());
         ProcessInput<T>(node, 1, UseInfo::AnyTagged());
+        ProcessInput<T>(node, 2, UseInfo::AnyTagged());
         return;
       case IrOpcode::kFrameState:
         return VisitFrameState<T>(FrameState{node});

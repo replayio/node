@@ -862,19 +862,14 @@ FUNCTION_REFERENCE(abort_with_reason, i::abort_with_reason)
 FUNCTION_REFERENCE(abort_with_sandbox_violation,
                    i::abort_with_sandbox_violation)
 extern uint64_t* gProgressCounter;
-extern uint64_t gTargetProgress;
-extern int gRecordReplayCheckProgress;
+extern uint64_t gRecordReplayProgressLimit;
 extern bool gRecordReplayIsRecordingOrReplaying;
 ExternalReference ExternalReference::record_replay_progress_counter() {
   return ExternalReference(gProgressCounter);
 }
 
-ExternalReference ExternalReference::record_replay_target_progress() {
-  return ExternalReference(&gTargetProgress);
-}
-
-ExternalReference ExternalReference::record_replay_check_progress() {
-  return ExternalReference(&gRecordReplayCheckProgress);
+ExternalReference ExternalReference::record_replay_progress_limit() {
+  return ExternalReference(&gRecordReplayProgressLimit);
 }
 
 ExternalReference

@@ -16896,7 +16896,7 @@ ReduceResult MaglevGraphBuilder::VisitAbort() {
 
 // Assertions on progress need the VM call at every advance. Otherwise, as in
 // TurboFan, the counter is updated inline and the VM is only called at the
-// target progress (see RecordReplayIncrementAndCheckProgressCounter). That node
+// progress limit (see RecordReplayIncrementAndCheckProgressCounter). That node
 // keeps the 64-bit counter in one register, and is only used on x64 and arm64,
 // the 64-bit architectures baseline code has the inline update on. Turbolev,
 // which builds its graph with this builder, keeps the VM call. The node isn't a
