@@ -1619,8 +1619,9 @@ static void OnGeneratorInstrumentationSite(Isolate* isolate,
   HandleScope scope(isolate);
   Handle<JSFunction> function = args.at<JSFunction>(0);
   int32_t index = args.smi_value_at(1);
-  Handle<JSGeneratorObject> generator_object =
-      args.at<JSGeneratorObject>(2);
+  // Undefined at the "generator" site on function entry, which runs before
+  // the generator object is created.
+  Handle<Object> generator_object = args.at(2);
 
   // Note: RecordReplayObjectId calls have to occur in the same places whether
   // or not instrumentation is enabled, so that objects are assigned consistent
