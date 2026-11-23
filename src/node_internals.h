@@ -493,6 +493,13 @@ namespace recordreplay {
 // in an evaluation while paused, where operation_name would otherwise report
 // (or change) the replaying process instead of the recorded one. Matches
 // RecordReplayThrowIfEventsUnavailable in the Chromium fork.
+//
+// Every binding that reaches the file system or spawns a process begins with
+// this, so a new one in node_file.cc, node_dir.cc, fs_event_wrap.cc,
+// node_stat_watcher.cc, process_wrap.cc or spawn_sync.cc needs it too. Some of
+// them a pause cannot reach today, because a binding that already throws runs
+// first, and they are gated all the same: which one runs first is up to lib,
+// and the orderings there change.
 bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name);
 bool ThrowIfEventsUnavailable(const v8::FunctionCallbackInfo<v8::Value>& args,
                               const char* operation_name);

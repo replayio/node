@@ -422,6 +422,9 @@ static void OpenDir(const FunctionCallbackInfo<Value>& args) {
 
 static void OpenDirSync(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.opendirSync")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   CHECK_GE(args.Length(), 1);

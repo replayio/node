@@ -556,6 +556,9 @@ void FileHandle::Close(const FunctionCallbackInfo<Value>& args) {
 }
 
 void FileHandle::CloseSync(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "filehandle.close")) {
+    return;
+  }
   FileHandle* fd;
   ASSIGN_OR_RETURN_UNWRAP(&fd, args.This());
 
@@ -1111,6 +1114,9 @@ void Close(const FunctionCallbackInfo<Value>& args) {
 
 static void ExistsSync(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.existsSync")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
   CHECK_GE(args.Length(), 1);
 
@@ -1358,6 +1364,9 @@ static void StatFs(const FunctionCallbackInfo<Value>& args) {
   Realm* realm = Realm::GetCurrent(args);
   BindingData* binding_data = realm->GetBindingData<BindingData>();
   Environment* env = realm->env();
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.statfs")) {
+    return;
+  }
 
   const int argc = args.Length();
   CHECK_GE(argc, 2);
@@ -1918,6 +1927,9 @@ static void RecordedFilesystemOp(const char* why,
 
 static void RmSync(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.rmSync")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   CHECK_EQ(args.Length(), 4);  // path, maxRetries, recursive, retryDelay
@@ -2903,6 +2915,9 @@ class ReadDirRecursiveWork final : public ThreadPoolWork {
 // readdirRecursive(path, encoding, withTypes[, req])
 static void ReadDirRecursive(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.readdir")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   const int argc = args.Length();
@@ -3466,6 +3481,9 @@ static void WriteFileUtf8(const FunctionCallbackInfo<Value>& args) {
   // (file, data, options.flag, options.mode)
 
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.writeFileSync")) {
+    return;
+  }
   auto isolate = env->isolate();
 
   CHECK_EQ(args.Length(), 4);
@@ -3620,6 +3638,9 @@ static void Read(const FunctionCallbackInfo<Value>& args) {
 
 static void ReadFileUtf8(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.readFileSync")) {
+    return;
+  }
   auto isolate = env->isolate();
 
   CHECK_GE(args.Length(), 2);
@@ -3792,6 +3813,9 @@ class ReadFileJob final : public AsyncWrap, public ThreadPoolWork {
   // error the asynchronous open() would have delivered through its request
   // (nothing is scheduled then; the caller passes it to the callback).
   static void Run(const FunctionCallbackInfo<Value>& args) {
+    if (recordreplay::ThrowIfEventsUnavailable(args, "fs.readFile")) {
+      return;
+    }
     ReadFileJob* job;
     ASSIGN_OR_RETURN_UNWRAP(&job, args.This());
     Environment* env = job->AsyncWrap::env();
@@ -4060,6 +4084,9 @@ class WriteFileJob final : public AsyncWrap, public ThreadPoolWork {
   // Returns undefined when the job was scheduled, or the ERR_ACCESS_DENIED
   // error the asynchronous open() would have delivered (nothing is scheduled).
   static void Run(const FunctionCallbackInfo<Value>& args) {
+    if (recordreplay::ThrowIfEventsUnavailable(args, "fs.writeFile")) {
+      return;
+    }
     WriteFileJob* job;
     ASSIGN_OR_RETURN_UNWRAP(&job, args.This());
     Environment* env = job->AsyncWrap::env();
@@ -4677,6 +4704,9 @@ static void Mkdtemp(const FunctionCallbackInfo<Value>& args) {
 
 static void GetFormatOfExtensionlessFile(
     const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "import")) {
+    return;
+  }
   CHECK_EQ(args.Length(), 1);
   CHECK(args[0]->IsString());
 
@@ -4722,6 +4752,9 @@ static void GetFormatOfExtensionlessFile(
 
 static void CpSyncCheckPaths(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.cpSync")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   CHECK_EQ(args.Length(), 4);  // src, dest, dereference, recursive
@@ -5331,6 +5364,9 @@ CpError CopyDirRecursive(const std::filesystem::path& src_path,
 
 static void CpSyncOverrideFile(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.cpSync")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   CHECK_EQ(args.Length(), 4);  // src, dest, mode, preserveTimestamps
@@ -5391,6 +5427,9 @@ static void CpSyncCopyDir(const FunctionCallbackInfo<Value>& args) {
                                // verbatimSymlinks, preserveTimestamps
 
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "fs.cpSync")) {
+    return;
+  }
   Isolate* isolate = env->isolate();
 
   BufferValue src(isolate, args[0]);
@@ -5457,6 +5496,9 @@ class CpDirJob final : public AsyncWrap, public ThreadPoolWork {
   }
 
   static void Run(const FunctionCallbackInfo<Value>& args) {
+    if (recordreplay::ThrowIfEventsUnavailable(args, "fs.cp")) {
+      return;
+    }
     CpDirJob* job;
     ASSIGN_OR_RETURN_UNWRAP(&job, args.This());
     CHECK(!job->scheduled_);
@@ -5575,6 +5617,9 @@ constexpr std::array<std::string_view, 10> legacy_main_extensions = {
 }  // namespace
 
 void BindingData::LegacyMainResolve(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "require")) {
+    return;
+  }
   CHECK_GE(args.Length(), 1);
   CHECK(args[0]->IsString());
 
