@@ -309,12 +309,12 @@ int NewRequestPartNode(int request, const std::string& json) {
   return node;
 }
 
-// The body of a server request: AsyncDependencyGraph::OnRequestData,
+// The body of a server request: AsyncDependencyGraph::OnRequestBodyBytes,
 // OnBeginRequestData, OnBeginRequestEnd, OnRequestAbandoned.
-void RequestData(const FunctionCallbackInfo<Value>& args) {
+void RequestBodyBytes(const FunctionCallbackInfo<Value>& args) {
   int request = RequestArg(args, 0);
   CHECK(args[1]->IsArrayBufferView());
-  GetCurrent(args).OnRequestData(request, args[1].As<ArrayBufferView>());
+  GetCurrent(args).OnRequestBodyBytes(request, args[1].As<ArrayBufferView>());
 }
 
 void BeginRequestData(const FunctionCallbackInfo<Value>& args) {
@@ -501,8 +501,8 @@ int AsyncDependencyGraph::OnBeginRequest(Isolate* isolate,
   return node;
 }
 
-void AsyncDependencyGraph::OnRequestData(int request,
-                                         Local<ArrayBufferView> chunk) {
+void AsyncDependencyGraph::OnRequestBodyBytes(int request,
+                                              Local<ArrayBufferView> chunk) {
   if (!v8::recordreplay::DependencyGraphEnabled() || !request) return;
   RequestBody& body = request_bodies_[request];
   size_t length = chunk->ByteLength();
@@ -643,7 +643,8 @@ void AsyncDependencyGraph::CreatePerIsolateProperties(
   SetMethod(isolate, target, "dependencyGraphBeginDispatch", BeginDispatch);
   SetMethod(isolate, target, "dependencyGraphEndDispatch", EndDispatch);
   SetMethod(isolate, target, "dependencyGraphBeginRequest", BeginRequest);
-  SetMethod(isolate, target, "dependencyGraphRequestData", RequestData);
+  SetMethod(
+      isolate, target, "dependencyGraphRequestBodyBytes", RequestBodyBytes);
   SetMethod(
       isolate, target, "dependencyGraphBeginRequestData", BeginRequestData);
   SetMethod(
@@ -670,7 +671,7 @@ void AsyncDependencyGraph::RegisterExternalReferences(
   registry->Register(BeginDispatch);
   registry->Register(EndDispatch);
   registry->Register(BeginRequest);
-  registry->Register(RequestData);
+  registry->Register(RequestBodyBytes);
   registry->Register(BeginRequestData);
   registry->Register(BeginRequestEnd);
   registry->Register(RequestAbandoned);

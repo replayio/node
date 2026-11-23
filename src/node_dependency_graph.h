@@ -107,7 +107,7 @@ class AsyncDependencyGraph {
                      v8::Local<v8::Value> raw_headers,
                      v8::Local<v8::Value> header_element_limit);
   // A chunk of the body of request (its node; 0: none), as received.
-  void OnRequestData(int request, v8::Local<v8::ArrayBufferView> chunk);
+  void OnRequestBodyBytes(int request, v8::Local<v8::ArrayBufferView> chunk);
   // The hand-over of a body chunk of length bytes begins: a dispatch in a
   // requestData node with a request edge from request. A dispatch without a
   // node if request is 0, so its end always pairs.
