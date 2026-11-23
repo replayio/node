@@ -22,6 +22,23 @@ enum class RequestBodyDrop {
   kBudget,   // "budget": the process's body bytes are spent
 };
 
+// What this build reports in the dependency graph, beyond async ops, event
+// dispatches and Web Locks. The root marker lists all of them (features), so a
+// reader tells a build without one from a graph without its nodes.
+enum class DependencyGraphFeature {
+  kRequestStart,        // "requestStart": requestStart{method,url} dispatches,
+                        // request edges to their responses' nodes
+  kNetworkRequest,      // "networkRequest": networkRequest{requestId}
+  kNetworkReceiveData,  // "networkReceiveData": answer parts handed to a
+                        // client in networkReceiveData dispatches
+  kRequestHeaders,      // "requestHeaders": requestStart{headers,
+                        // headersCapped,headersUnread}
+  kRequestBody,         // "requestBody": requestEnd{length,body|bodyDropped}
+  kRequestHeaderNames,  // "requestHeaderNames": requestStart{headerNames}
+  kRequestParts,        // "requestParts": requestData and requestEnd
+                        // dispatches
+};
+
 // The classes of async op in the Replay dependency graph: the node an op's
 // init adds, and the node each of its callbacks runs in, with the edge
 // between them. Timers and microtasks use the kinds Chromium reports them
@@ -88,6 +105,7 @@ class AsyncDependencyGraph {
               v8::Local<v8::String> type);
   void OnInitTimer(double async_id, double duration, bool single_shot);
   void OnInitMicrotask(double async_id);
+  // The root marker: marker{reason:ExecuteScript,name:StartExecution,features}.
   void OnInitScript(double async_id);
   void OnDestroy(double async_id);
   // offset: the window's stack slot, the stack length before the push.
