@@ -924,6 +924,13 @@ ProcessResult MaglevGraphOptimizer::VisitHandleNoHeapWritesInterrupt(
   return ProcessResult::kContinue;
 }
 
+ProcessResult
+MaglevGraphOptimizer::VisitRecordReplayIncrementAndCheckProgressCounter(
+    RecordReplayIncrementAndCheckProgressCounter* node,
+    const ProcessingState& state) {
+  return ProcessResult::kContinue;
+}
+
 ProcessResult MaglevGraphOptimizer::VisitReduceInterruptBudgetForLoop(
     ReduceInterruptBudgetForLoop* node, const ProcessingState& state) {
   // TODO(b/424157317): Optimize.

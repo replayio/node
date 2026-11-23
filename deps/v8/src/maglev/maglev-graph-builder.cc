@@ -99,6 +99,11 @@
   TRACE("Failed " << __func__ << ":" << __LINE__ << ": " << __VA_ARGS__); \
   return {};
 
+namespace v8::internal {
+extern bool gRecordReplayAssertProgress;
+extern bool gRecordReplayInstrumentationEnabled;
+}  // namespace v8::internal
+
 namespace v8::internal::maglev {
 
 namespace {
@@ -16889,18 +16894,35 @@ ReduceResult MaglevGraphBuilder::VisitAbort() {
   return BuildAbort(reason);
 }
 
-// The record/replay bytecodes reach this builder because turboshaft's
-// maglev-graph-building-phase links against it, and Maglev itself would run
-// them once enabled. Each one makes the VM call its runtime function, as the
-// interpreter does: Maglev has no equivalent of TurboFan's inline progress
-// counter, and the instrumentation calls have to run on every tier.
+// Assertions on progress need the VM call at every advance. Otherwise, as in
+// baseline code, the counter is updated inline, and the VM is called at the
+// target progress or while progress checks are enabled (see
+// RecordReplayIncrementAndCheckProgressCounter). That node keeps the 64-bit
+// counter in one register, and is only used on x64 and arm64, the 64-bit
+// architectures baseline code has the inline update on. Turbolev, which builds
+// its graph with this builder, keeps the VM call.
 ReduceResult MaglevGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
+#if V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64
+  if (!gRecordReplayAssertProgress && !is_turbolev()) {
+    RETURN_IF_ABORT(
+        AddNewNode<RecordReplayIncrementAndCheckProgressCounter>(
+            {GetClosure()}));
+    return ReduceResult::Done();
+  }
+#endif
   RETURN_IF_ABORT(BuildCallRuntime(
       Runtime::kRecordReplayAssertExecutionProgress, {GetClosure()}));
   return ReduceResult::Done();
 }
 
+// The instrumentation calls do nothing while instrumentation is disabled, and
+// changing it discards all optimized code (see RecordReplayChangeInstrument),
+// so they are left out then, as TurboFan does. The generator's call always
+// runs, see Runtime_RecordReplayInstrumentationGenerator.
 ReduceResult MaglevGraphBuilder::VisitRecordReplayInstrumentation() {
+  if (!gRecordReplayInstrumentationEnabled) {
+    return ReduceResult::Done();
+  }
   ValueNode* index = GetSmiConstant(iterator_.GetConstantPoolIndexOperand(0));
   RETURN_IF_ABORT(BuildCallRuntime(Runtime::kRecordReplayInstrumentation,
                                    {GetClosure(), index}));

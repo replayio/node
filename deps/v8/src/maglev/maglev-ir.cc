@@ -8132,6 +8132,54 @@ void HandleNoHeapWritesInterrupt::GenerateCode(MaglevAssembler* masm,
   __ bind(*done);
 }
 
+void RecordReplayIncrementAndCheckProgressCounter::
+    SetValueLocationConstraints() {
+  UseAny(ClosureInput());
+  set_temporaries_needed(2);
+}
+
+// The node has a single lazy deopt point, so both cases make the same call,
+// which updates the counter itself: it is only stored here when no call is
+// needed.
+void RecordReplayIncrementAndCheckProgressCounter::GenerateCode(
+    MaglevAssembler* masm, const ProcessingState& state) {
+  ZoneLabelRef done(masm);
+  Label* call_runtime = __ MakeDeferredCode(
+      [](MaglevAssembler* masm, ZoneLabelRef done,
+         RecordReplayIncrementAndCheckProgressCounter* node) {
+        {
+          SaveRegisterStateForCall save_register_state(
+              masm, node->register_snapshot());
+          __ Push(node->ClosureInput());
+          __ Move(kContextRegister, masm->native_context().object());
+          __ CallRuntime(Runtime::kRecordReplayAssertExecutionProgress, 1);
+          save_register_state.DefineSafepointWithLazyDeopt(
+              node->lazy_deopt_info());
+        }
+        __ Jump(*done);
+      },
+      done, this);
+
+  MaglevAssembler::TemporaryRegisterScope temps(masm);
+  Register scratch = temps.AcquireScratch();
+  Register counter = temps.Acquire();
+  Register target = temps.Acquire();
+  __ LoadInt32(counter,
+               __ ExternalReferenceAsOperand(
+                   ExternalReference::record_replay_check_progress(), scratch));
+  __ CompareInt32AndJumpIf(counter, 0, kNotEqual, call_runtime);
+  MemOperand counter_operand = __ ExternalReferenceAsOperand(
+      ExternalReference::record_replay_progress_counter(), scratch);
+  __ Move(counter, counter_operand);
+  __ IncrementAddress(counter, 1);
+  __ Move(target,
+          __ ExternalReferenceAsOperand(
+              ExternalReference::record_replay_target_progress(), target));
+  __ CompareIntPtrAndJumpIf(counter, target, kEqual, call_runtime);
+  __ Move(counter_operand, counter);
+  __ bind(*done);
+}
+
 #endif  // V8_ENABLE_MAGLEV
 
 // ---

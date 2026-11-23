@@ -5405,6 +5405,12 @@ class GraphBuildingNodeProcessor {
     // used as a frontend for Turboshaft.
     UNREACHABLE();
   }
+  maglev::ProcessResult Process(
+      maglev::RecordReplayIncrementAndCheckProgressCounter* node,
+      const maglev::ProcessingState&) {
+    // Not emitted by Maglev when it is used as a frontend for Turboshaft.
+    UNREACHABLE();
+  }
   maglev::ProcessResult Process(maglev::HandleNoHeapWritesInterrupt* node,
                                 const maglev::ProcessingState&) {
     GET_FRAME_STATE_MAYBE_ABORT(frame_state, node->lazy_deopt_info());
