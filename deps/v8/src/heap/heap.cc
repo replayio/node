@@ -3697,6 +3697,27 @@ namespace {
 static constexpr int kMaxConsecutiveIneffectiveMarkCompacts = 4;
 }
 
+// A replay must not die of a heap limit the recorded run never hit, and this
+// check comes close to doing that. A replay's old generation grows past
+// max_old_generation_size (see IsOldGenerationExpansionAllowed), so the size
+// half of IsIneffectiveMarkCompact() holds for good from then on, while the
+// limit still paces collections, which leaves a replay past its limit
+// collecting for nearly every old generation slow path allocation of its own.
+// Mutator utilization falls through the 0.4 threshold over about a dozen of
+// those collections: measured on a replay holding 120 MB under a 48 MB limit,
+// it went from 0.995 to 0.25 and reached the fourth consecutive ineffective
+// mark-compact, one step short of the fatal below.
+//
+// What keeps the fatal out of reach is InvokeNearHeapLimitCallback() raising
+// the limit instead, which resets the count. Every near heap limit callback
+// node installs raises the limit, and a replay always has one: the fork's own
+// inspector session installs the inspector's on the main thread (see
+// Agent::RecordReplayConnect), and node installs Worker::NearHeapLimit on
+// every worker isolate. On the main thread the fork's own branch of
+// InvokeNearHeapLimitCallback() doubles the limit rather than calling the
+// embedder back, and a worker's limit crawls up in 16 MB steps instead. Both
+// leave the fatal needing a limit already at the pointer compression cage, so
+// there is no bypass here: there is no path to guard.
 void Heap::CheckIneffectiveMarkCompact(size_t old_generation_size,
                                        size_t global_size,
                                        double mutator_utilization) {
@@ -4267,6 +4288,12 @@ extern void RecordReplayTriggerProgressInterrupt();
 // interrupts.
 bool Heap::InvokeNearHeapLimitCallback() {
   if (!near_heap_limit_callbacks_.empty()) {
+    // Raise the limit here rather than calling the embedder back at a point
+    // the recording may not have reached, and call it back for the recorded
+    // number of times at the next progress interrupt instead (see
+    // RecordReplayOnProgressInterrupt). Returning true from here is also what
+    // keeps a replay off the ineffective mark-compact fatal, which has no
+    // bypass of its own (see CheckIneffectiveMarkCompact).
     if (recordreplay::IsRecordingOrReplaying("interrupts") &&
         v8::IsMainThread()) {
       record_replay_near_heap_limit_calls_++;
