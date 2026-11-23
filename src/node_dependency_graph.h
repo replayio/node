@@ -37,6 +37,7 @@ enum class DependencyGraphFeature {
   kRequestHeaderNames,  // "requestHeaderNames": requestStart{headerNames}
   kRequestParts,        // "requestParts": requestData and requestEnd
                         // dispatches
+  kCount,               // not a feature: their number
 };
 
 // The classes of async op in the Replay dependency graph: the node an op's

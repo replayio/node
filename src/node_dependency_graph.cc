@@ -237,20 +237,11 @@ std::string_view DependencyGraphFeatureName(DependencyGraphFeature feature) {
       return "requestHeaderNames";
     case DependencyGraphFeature::kRequestParts:
       return "requestParts";
+    case DependencyGraphFeature::kCount:
+      break;
   }
   UNREACHABLE();
 }
-
-// This build's features: every DependencyGraphFeature.
-constexpr DependencyGraphFeature kDependencyGraphFeatures[] = {
-    DependencyGraphFeature::kRequestStart,
-    DependencyGraphFeature::kNetworkRequest,
-    DependencyGraphFeature::kNetworkReceiveData,
-    DependencyGraphFeature::kRequestHeaders,
-    DependencyGraphFeature::kRequestBody,
-    DependencyGraphFeature::kRequestHeaderNames,
-    DependencyGraphFeature::kRequestParts,
-};
 
 std::string Base64(const std::string& bytes) {
   std::string base64(simdutf::base64_length_from_binary(bytes.size()), '\0');
@@ -463,9 +454,12 @@ void AsyncDependencyGraph::OnInitScript(double async_id) {
         NodeJsonWith("marker", [](JSONWriter& writer) {
           writer.json_keyvalue("reason", std::string_view("ExecuteScript"));
           writer.json_keyvalue("name", std::string_view("StartExecution"));
+          // This build's features: every DependencyGraphFeature.
           writer.json_arraystart("features");
-          for (DependencyGraphFeature feature : kDependencyGraphFeatures) {
-            writer.json_element(DependencyGraphFeatureName(feature));
+          for (int i = 0; i < static_cast<int>(DependencyGraphFeature::kCount);
+               i++) {
+            writer.json_element(DependencyGraphFeatureName(
+                static_cast<DependencyGraphFeature>(i)));
           }
           writer.json_arrayend();
         }));
