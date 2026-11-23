@@ -65,7 +65,7 @@ class DependencyExecution {
 // is dispatched in a DependencyExecution of a requestStart{method,url} node,
 // ended as other dispatches. So is the delivery of an outbound request's
 // answer to its client (lib/internal/recordreplay/network.js), in a
-// networkReceiveData{requestId,length} node.
+// networkReceiveData{requestId,length,part,timedBy} node.
 //
 // Every method returns at once unless
 // v8::recordreplay::DependencyGraphEnabled(): the map, the windows and the
@@ -92,10 +92,13 @@ class AsyncDependencyGraph {
   int OnBeginRequest(v8::Isolate* isolate,
                      v8::Local<v8::Value> method,
                      v8::Local<v8::Value> url);
-  // request_id: the request's network data id. length: the answer's bytes.
+  // request_id: the request's network data id. length: the part's bytes.
+  // part, timed_by: lib/internal/recordreplay/network.js beginDelivery.
   void OnBeginReceiveData(v8::Isolate* isolate,
                           v8::Local<v8::String> request_id,
-                          double length);
+                          double length,
+                          v8::Local<v8::String> part,
+                          v8::Local<v8::String> timed_by);
   // Ends the innermost dispatch not ended yet.
   void OnEndDispatch();
 
