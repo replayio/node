@@ -4,6 +4,7 @@
 #include <array>
 #include <iomanip>
 #include <limits>
+#include <set>
 #include <sstream>
 #include <string_view>
 #include <utility>
@@ -113,6 +114,9 @@ constexpr std::array<std::string_view, 7> kRequestHeaderNames = {
 struct RequestHeaders {
   // Per kRequestHeaderNames entry: its values in order.
   std::array<std::vector<std::string>, kRequestHeaderNames.size()> values;
+  // Every name read, lowercase, also those not in kRequestHeaderNames. No
+  // values.
+  std::set<std::string> names;
   // The rawHeaders elements reached the parser's limit: elements past it, if
   // sent, were dropped. Reached, not passed: the parser keeps exactly that
   // many when it drops, so equal is also reported when none was dropped.
@@ -152,6 +156,7 @@ RequestHeaders ReadRequestHeaders(Isolate* isolate,
       continue;
     }
     std::string lowercase = ToLower(*name);
+    headers.names.insert(lowercase);
     auto it = std::find(kRequestHeaderNames.begin(),
                         kRequestHeaderNames.end(),
                         std::string_view(lowercase));
@@ -184,6 +189,11 @@ std::string RequestStartJson(std::string_view method,
       writer.json_arrayend();
     }
     writer.json_objectend();
+    writer.json_arraystart("headerNames");
+    for (const std::string& name : headers.names) {
+      writer.json_element(std::string_view(name));
+    }
+    writer.json_arrayend();
     writer.json_keyvalue("headersCapped", headers.capped);
     writer.json_keyvalue("headersUnread", headers.unread);
   });

@@ -68,11 +68,10 @@ class DependencyExecution {
 // nest. Not dispatchEvent: the backend reads that kind as DOM input.
 //
 // An HTTP server request (lib/internal/recordreplay/dependency_graph_http.js)
-// is dispatched in a DependencyExecution of a
-// requestStart{method,url,headers,headersCapped,headersUnread} node, ended as
-// other dispatches. So is the delivery of an outbound request's answer to its
-// client (lib/internal/recordreplay/network.js), in a
-// networkReceiveData{requestId,length,part,timedBy} node. A server request's
+// is dispatched in a DependencyExecution of a requestStart{method,url,headers,
+// headerNames,headersCapped,headersUnread} node, ended as other dispatches. So
+// is the delivery of an outbound request's answer to its client
+// (lib/internal/recordreplay/network.js), in a networkReceiveData{requestId,length,part,timedBy} node. A server request's
 // complete message adds a requestEnd{length,body|bodyDropped} node.
 //
 // Every method returns at once unless
