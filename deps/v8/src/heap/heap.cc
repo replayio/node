@@ -2624,6 +2624,36 @@ void Heap::EnsureSweepingCompletedForObject(Tagged<HeapObject> object) {
 
 void Heap::RecomputeLimits(GarbageCollector collector) {
   if (collector == GarbageCollector::MARK_COMPACTOR) {
+    if (recordreplay::IsReplaying()) {
+      // A replay's old generation grows past max_old_generation_size (see
+      // IsOldGenerationExpansionAllowed), so the maximum is not a bound here,
+      // but it still paces collections, and that pace collapses as the heap
+      // approaches it. BoundAllocationLimit() clamps every new allocation
+      // limit to halfway between the consumed size and the maximum, so the
+      // headroom it leaves shrinks towards nothing as the two converge, and
+      // once the heap is past the maximum there is none at all and
+      // OldGenerationSpaceAvailable() returns 0. A replay in that state runs a
+      // full collection for nearly every old generation page it needs, at a
+      // pace the recorded run was never held to.
+      //
+      // Keep the maximum ahead of the heap instead. The trigger is the ratio
+      // IsIneffectiveMarkCompact() treats as a high heap ratio, so that this
+      // covers the whole band that check calls near the limit rather than only
+      // the part above the maximum. Twice the consumed size, because raising it
+      // to the consumed size would leave that clamp at exactly the current
+      // size and change nothing.
+      const size_t consumed = limits()->OldGenerationConsumedBytesAtLastGC();
+      const size_t maximum = limits()->max_old_generation_size();
+      if (consumed >= v8_flags.ineffective_gc_size_threshold * maximum) {
+        const size_t allocator_limit =
+            AllocatorLimitOnMaxOldGenerationSize(physical_memory());
+        const size_t raised =
+            consumed > allocator_limit / 2 ? allocator_limit : 2 * consumed;
+        if (raised > maximum) {
+          limits()->SetMaximumSizes(raised, physical_memory());
+        }
+      }
+    }
     const LimitsComputationResult new_limits = limits()->UpdateAllocationLimits(
         CurrentHeapGrowingMode(), {}, "RecomputeLimitsAfterMajorGC");
 
@@ -3697,30 +3727,29 @@ namespace {
 static constexpr int kMaxConsecutiveIneffectiveMarkCompacts = 4;
 }
 
-// A replay must not die of a heap limit the recorded run never hit, and this
-// check comes close to doing that. A replay's old generation grows past
-// max_old_generation_size (see IsOldGenerationExpansionAllowed), so the size
-// half of IsIneffectiveMarkCompact() holds for good from then on, while the
-// limit still paces collections, which leaves a replay past its limit
-// collecting for nearly every old generation slow path allocation of its own.
-// Mutator utilization falls through the 0.4 threshold over about a dozen of
-// those collections: measured on replays holding several times a 48 MB limit,
-// it went from 0.995 to 0.125, and they reached the fourth consecutive
-// ineffective mark-compact, the one the fatal below is on, eighteen times.
-//
-// What keeps the fatal out of reach is InvokeNearHeapLimitCallback() raising
-// the limit instead, which resets the count. Every near heap limit callback
-// node installs raises the limit, and a replay always has one: the fork's own
-// inspector session installs the inspector's on the main thread (see
-// Agent::RecordReplayConnect), and node installs Worker::NearHeapLimit on
-// every worker isolate. On the main thread the fork's own branch of
-// InvokeNearHeapLimitCallback() doubles the limit rather than calling the
-// embedder back, and a worker's limit crawls up in 16 MB steps instead. Both
-// leave the fatal needing a limit already at the pointer compression cage, so
-// there is no bypass here: there is no path to guard.
 void Heap::CheckIneffectiveMarkCompact(size_t old_generation_size,
                                        size_t global_size,
                                        double mutator_utilization) {
+  // A replay must not die of a heap limit the recorded run never hit, which
+  // this check does. A replay's old generation grows past
+  // max_old_generation_size (see IsOldGenerationExpansionAllowed), so the size
+  // half of IsIneffectiveMarkCompact() holds from 0.95 of the maximum up, and
+  // collecting against a maximum the recorded run was never held to brings the
+  // mutator utilization half with it. Reaching the fourth consecutive
+  // ineffective mark-compact is not itself fatal, because a near heap limit
+  // callback that raises the limit resets the count, but it leaves the process
+  // one missing callback away from dying.
+  //
+  // Keeping the maximum ahead of the heap (see RecomputeLimits) is what stops
+  // a replay getting there, and it leaves the size half false at this point in
+  // every collection measured. It does not guarantee it: epilogue callbacks
+  // can allocate between that raise and this check, and a build with pointer
+  // compression saturates the raise against
+  // AllocatorLimitOnMaxOldGenerationSize(), after which it cannot keep ahead
+  // at all. So state the invariant here rather than leave it resting on that
+  // arithmetic. This returns before the count, so that a replay also never
+  // reports one through HasConsecutiveIneffectiveMarkCompact().
+  if (recordreplay::IsReplaying()) return;
   if (!v8_flags.detect_ineffective_gcs_near_heap_limit) return;
   if (!IsIneffectiveMarkCompact(old_generation_size, global_size,
                                 mutator_utilization)) {
@@ -4291,9 +4320,7 @@ bool Heap::InvokeNearHeapLimitCallback() {
     // Raise the limit here rather than calling the embedder back at a point
     // the recording may not have reached, and call it back for the recorded
     // number of times at the next progress interrupt instead (see
-    // RecordReplayOnProgressInterrupt). Returning true from here is also what
-    // keeps a replay off the ineffective mark-compact fatal, which has no
-    // bypass of its own (see CheckIneffectiveMarkCompact).
+    // RecordReplayOnProgressInterrupt).
     if (recordreplay::IsRecordingOrReplaying("interrupts") &&
         v8::IsMainThread()) {
       record_replay_near_heap_limit_calls_++;
