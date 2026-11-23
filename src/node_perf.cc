@@ -268,6 +268,13 @@ static void ReconcileGarbageCollectionTracking(Environment* env) {
   if (wanted == state->gc_tracking_installed) return;
 
   if (wanted) {
+    // GC performance entries are created at points which differ between
+    // recording and replaying, and are delivered to JS. Like other performance
+    // entries they are not supported when recording/replaying. Only installing
+    // the callbacks observes them: a call that removes them, or one that
+    // restores the state of a snapshot built without them, does not.
+    v8::recordreplay::InvalidateRecording("GC performance entries observed");
+
     // Reset current_gc_type to 0
     state->current_gc_type = 0;
     env->isolate()->AddGCPrologueCallback(MarkGarbageCollectionStart,
@@ -285,11 +292,6 @@ static void ReconcileGarbageCollectionTracking(Environment* env) {
 static void UpdateGarbageCollectionTracking(
     const FunctionCallbackInfo<Value>& args) {
   ReconcileGarbageCollectionTracking(Environment::GetCurrent(args));
-
-  // GC performance entries are created at points which differ between
-  // recording and replaying, and are delivered to JS. Like other performance
-  // entries they are not supported when recording/replaying.
-  v8::recordreplay::InvalidateRecording("GC performance entries observed");
 }
 
 // Notify a custom PerformanceEntry to observers
