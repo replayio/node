@@ -4403,6 +4403,12 @@ static int gNextObjectId = 1;
 
 int RecordReplayObjectId(Handle<Object> internal_object) {
   CHECK(IsMainThread());
+
+  // Ids are weakly keyed by the object. A primitive can't be looked up or
+  // collected as a key, so every one would add an entry nothing ever removes.
+  if (!IsJSReceiver(*internal_object)) {
+    return 0;
+  }
   v8::Isolate* isolate = v8::Isolate::GetCurrent();
 
   v8::Local<v8::Value> object = v8::Utils::ToLocal(internal_object);
