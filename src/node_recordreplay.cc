@@ -255,8 +255,44 @@ void ApplyRecordReplayMaxOldSpace() {
   V8::SetFlagsFromString(flag.c_str(), flag.size());
 }
 
+// Whether the command line asks node to build a V8 startup snapshot, which is
+// not recorded (see InitializeRecordReplay). --build-snapshot and
+// --build-snapshot-config are not allowed in NODE_OPTIONS, so the command line
+// is their only source, and node only parses it later: this runs before the
+// driver rewrites the arguments for a replay. Every argument is looked at, so a
+// program whose own arguments contain --build-snapshot is not recorded either.
+static bool BuildingStartupSnapshot(int argc, char** argv) {
+  for (int i = 1; i < argc; i++) {
+    // Covers --build-snapshot-config, which implies --build-snapshot, in both
+    // its --opt=value and --opt value forms.
+    if (!strncmp(argv[i], "--build-snapshot", strlen("--build-snapshot"))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void InitializeRecordReplay(int* pargc, char*** pargv) {
   if (getenv("RECORD_REPLAY_DONT_RECORD")) {
+    return;
+  }
+
+  // Building a startup snapshot cannot be recorded. While recording, every
+  // script that compiles is kept in an eternal handle so the debugger can find
+  // it again, and V8's snapshot serializer requires every eternal, global and
+  // traced handle alive at serialization to have been registered for
+  // serialization, so the build dies in CheckGlobalAndEternalHandles. Eternal
+  // handles cannot be released, and the registry they belong to is process
+  // state that no snapshot carries, so there is nothing to register them as.
+  //
+  // An invalidated recording is not enough: invalidating discards a recording
+  // but leaves the instrumentation that creates those handles running, so the
+  // build still dies. The driver is not loaded at all instead, which also means
+  // nothing can report the reason, so it is said here. Processes started from
+  // the snapshot record as usual.
+  if (BuildingStartupSnapshot(*pargc, *pargv)) {
+    fprintf(stderr,
+            "Building a V8 startup snapshot is not recorded.\n");
     return;
   }
 
