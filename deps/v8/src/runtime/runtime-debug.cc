@@ -1383,9 +1383,9 @@ static void OnExecutionProgress(Isolate* isolate, Handle<JSFunction> function) {
 
 // A termination the main thread requested for itself waits for the progress
 // counter's next advance (see RecordReplayDeferTermination in stack-guard.cc).
-// The interpreter and Maglev call into the VM at every advance, and baseline
-// and optimized code at the target progress, which the request's progress
-// interrupt sets to the next advance. It waits longer while an InterruptsScope
+// The interpreter calls into the VM at every advance, and compiled code at the
+// target progress, which the request's progress interrupt sets to the next
+// advance. It waits longer while an InterruptsScope
 // postpones it, as in a pause.
 static bool RecordReplayTakeDeferredTermination(Isolate* isolate) {
   if (V8_LIKELY(!isolate->record_replay_deferred_termination()) ||
