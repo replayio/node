@@ -1343,16 +1343,19 @@ static bool gHasPrintedStack = false;
 
 // Optimized code doesn't treat the call at the target progress as a heap write
 // (see maglev::RecordReplayIncrementAndCheckProgressCounter), so it must not
-// continue after something ran there that could have written the heap: JS, API
-// interrupt callbacks or the replay's commands. The calling optimized frame is
-// deoptimized then, and resumes after the progress bytecode. A checkpoint,
-// which is what the target is usually for, leaves the frame alone.
+// continue after JS ran there (an inspector command's evaluation, a pause's
+// commands). The calling optimized frame is deoptimized then, and resumes
+// after the progress bytecode. A checkpoint, which is what the target is
+// usually for, leaves the frame alone, and so does an API interrupt callback
+// that runs no JS: the loop stack check runs those without treating them as
+// heap writes either. Such a callback can also exist only in the recording (a
+// DevTools request from another thread), and deoptimizing for it would leave
+// the recording and the replay in different tiers, which take a pending
+// termination at different checks.
 static void RecordReplayOnTargetProgressReachedFromJS(Isolate* isolate) {
   uint32_t js_executions = isolate->javascript_execution_counter();
-  uint64_t native_accesses = isolate->record_replay_native_heap_accesses();
   RecordReplayOnTargetProgressReached();
-  if (js_executions == isolate->javascript_execution_counter() &&
-      native_accesses == isolate->record_replay_native_heap_accesses()) {
+  if (js_executions == isolate->javascript_execution_counter()) {
     return;
   }
   JavaScriptStackFrameIterator it(isolate);

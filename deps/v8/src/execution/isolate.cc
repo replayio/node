@@ -2449,7 +2449,6 @@ void Isolate::RecordReplayInvokeApiInterruptCallbacksAtProgress() {
     entries.pop();
     VMState<EXTERNAL> state(this);
     HandleScope handle_scope(this);
-    RecordReplayNoteNativeHeapAccess();
     entry.first(reinterpret_cast<v8::Isolate*>(this), entry.second);
   }
 
