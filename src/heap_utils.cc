@@ -455,6 +455,15 @@ void CreateHeapSnapshotStream(const FunctionCallbackInfo<Value>& args) {
 
 void TriggerHeapSnapshot(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  // Writing the snapshot reaches the file system of the machine that replays,
+  // and the form which takes no filename reads that machine's working
+  // directory to name the file. createHeapSnapshotStream() needs no gate: it
+  // writes nothing, and HeapSnapshotJSONSerializer serializes an empty
+  // snapshot while recording or replaying, so neither machine's heap is
+  // reported either way.
+  if (recordreplay::ThrowIfEventsUnavailable(env, "v8.writeHeapSnapshot")) {
+    return;
+  }
   Isolate* isolate = args.GetIsolate();
   CHECK_EQ(args.Length(), 2);
   Local<Value> filename_v = args[0];
