@@ -3831,19 +3831,12 @@ void BytecodeGraphBuilder::VisitIncBlockCounter() {
 void BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
   PrepareEagerCheckpoint();
 
-  // Assertions on progress need the VM call. Otherwise, as in baseline code,
-  // update the counter inline and only call into the VM at the target
-  // progress, where the call lazily deoptimizes this code if what runs there
-  // (pausing, breakpoints, instrumentation changes, API interrupt callbacks)
-  // discards it.
-  //
-  // Unlike baseline code, optimized code (here and in Maglev) doesn't run
-  // progress checks: they only add diagnostics, and progress is the same
-  // without them. gRecordReplayCheckProgress can't be tested here, as it is
-  // nonzero while events are disallowed on the main thread, which they are
-  // while optimizing (Compiler::CompileOptimized): code compiled then would
-  // make the VM call at every advance. Testing it in the inline update instead
-  // makes hot optimized code 10-15% slower while recording.
+  // Assertions on progress need the VM call at every advance. Otherwise, as in
+  // baseline and Maglev code, update the counter inline and only call into the
+  // VM at the progress limit: the target progress, or every advance while
+  // progress checks are enabled (see RecordReplayUpdateProgressLimit). The call
+  // lazily deoptimizes this code if what runs there (pausing, breakpoints,
+  // instrumentation changes, API interrupt callbacks) discards it.
   if (gRecordReplayAssertProgress) {
     Node* closure = GetFunctionClosure();
     const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayAssertExecutionProgress);
@@ -3856,7 +3849,8 @@ void BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
         BytecodeOffset(offset), OutputFrameStateCombine::Ignore(),
         bytecode_analysis().GetOutLivenessFor(offset));
     Node* node = NewNode(simplified()->IncrementAndCheckProgressCounter(),
-                         frame_state, environment()->Context());
+                         frame_state, GetFunctionClosure(),
+                         environment()->Context());
     environment()->RecordAfterState(node, Environment::kAttachFrameState);
   }
   CHECK(needs_eager_checkpoint());

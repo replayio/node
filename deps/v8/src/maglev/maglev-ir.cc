@@ -8167,15 +8167,15 @@ void RecordReplayIncrementAndCheckProgressCounter::GenerateCode(
   MaglevAssembler::TemporaryRegisterScope temps(masm);
   Register scratch = temps.AcquireScratch();
   Register counter = temps.Acquire();
-  Register target = temps.Acquire();
+  Register limit = temps.Acquire();
   MemOperand counter_operand = __ ExternalReferenceAsOperand(
       ExternalReference::record_replay_progress_counter(), scratch);
   __ Move(counter, counter_operand);
   __ IncrementAddress(counter, 1);
-  __ Move(target,
+  __ Move(limit,
           __ ExternalReferenceAsOperand(
-              ExternalReference::record_replay_target_progress(), target));
-  __ CompareIntPtrAndJumpIf(counter, target, kEqual, call_runtime);
+              ExternalReference::record_replay_progress_limit(), limit));
+  __ CompareIntPtrAndJumpIf(counter, limit, kEqual, call_runtime);
   __ Move(counter_operand, counter);
   __ bind(*done);
 }

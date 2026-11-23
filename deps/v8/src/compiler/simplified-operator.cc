@@ -2543,12 +2543,12 @@ const Operator* SimplifiedOperatorBuilder::DateNow() {
 
 const Operator* SimplifiedOperatorBuilder::IncrementAndCheckProgressCounter() {
   // The value inputs are the frame state for after the progress bytecode,
-  // where the call at the target progress lazily deoptimizes to, and the
-  // context the call runs in.
+  // where the VM call lazily deoptimizes to, the closure it is made for, and
+  // the context it runs in.
   return zone()->New<Operator>(IrOpcode::kIncrementAndCheckProgressCounter,
                                Operator::kNoThrow,
                                "IncrementAndCheckProgressCounter",
-                               2, 1, 0, 1, 1, 0);
+                               3, 1, 0, 1, 1, 0);
 }
 
 const Operator* SimplifiedOperatorBuilder::TransitionAndStoreNonNumberElement(

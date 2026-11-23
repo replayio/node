@@ -2809,13 +2809,13 @@ OpIndex GraphBuilder::Process(
     case IrOpcode::kIncrementAndCheckProgressCounter: {
       // The record/replay progress counter, as the effect control linearizer
       // lowered it before turboshaft took over the backend: update the counter
-      // inline and only call into the VM at the target progress, where the
-      // call lazily deoptimizes this code if what runs there (pausing,
-      // breakpoints, instrumentation changes, API interrupt callbacks)
-      // discards it, or could have written the heap (see
-      // RecordReplayOnTargetProgressReachedFromJS). So the call has the loop
-      // stack check's effects, and doesn't write. The driver changes the
-      // target and anything run there advances the counter, so neither load
+      // inline and only call into the VM at the progress limit (see
+      // RecordReplayUpdateProgressLimit), where the call lazily deoptimizes
+      // this code if what runs there (pausing, breakpoints, instrumentation
+      // changes, API interrupt callbacks) discards it, or could have written
+      // the heap (see RecordReplayOnTargetProgressReachedFromJS). So the call
+      // has the loop stack check's effects, and doesn't write. The limit
+      // changes and anything run there advances the counter, so neither load
       // can be eliminated.
       OpIndex counter = __ ExternalConstant(
           ExternalReference::record_replay_progress_counter());
@@ -2824,22 +2824,23 @@ OpIndex GraphBuilder::Process(
                   MemoryRepresentation::Uint64());
       V<Word64> incremented = __ Word64Add(value, 1);
       __ StoreOffHeap(counter, incremented, MemoryRepresentation::Uint64());
-      OpIndex target = __ ExternalConstant(
-          ExternalReference::record_replay_target_progress());
-      V<Word64> target_value =
-          __ Load(target, LoadOp::Kind::RawAligned().NotLoadEliminable(),
+      OpIndex limit = __ ExternalConstant(
+          ExternalReference::record_replay_progress_limit());
+      V<Word64> limit_value =
+          __ Load(limit, LoadOp::Kind::RawAligned().NotLoadEliminable(),
                   MemoryRepresentation::Uint64());
 
-      IF (UNLIKELY(__ Word64Equal(incremented, target_value))) {
+      IF (UNLIKELY(__ Word64Equal(incremented, limit_value))) {
         OpIndex arguments[] = {
+            Map(node->InputAt(1)),
             __ ExternalConstant(ExternalReference::Create(
-                Runtime::kRecordReplayTargetProgressReached)),
-            __ Word32Constant(0), Map(node->InputAt(1))};
+                Runtime::kRecordReplayProgressLimitReached)),
+            __ Word32Constant(1), Map(node->InputAt(2))};
         __ Call(__ CEntryStubConstant(isolate, 1),
                 V<turboshaft::FrameState>::Cast(Map(node->InputAt(0))),
                 base::VectorOf(arguments),
-                runtime::RecordReplayTargetProgressReached::Create(
-                    0, __ output_graph().graph_zone(), LazyDeoptOnThrow::kNo),
+                runtime::RecordReplayProgressLimitReached::Create(
+                    1, __ output_graph().graph_zone(), LazyDeoptOnThrow::kNo),
                 OpEffects()
                     .CanDependOnChecks()
                     .CanDeopt()

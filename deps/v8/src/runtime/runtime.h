@@ -184,9 +184,9 @@ constexpr bool CanTriggerGC(T... properties) {
   F(SetGeneratorScopeVariableValue, 4, 1)       \
   I(IncBlockCounter, 2, 1)                      \
   F(RecordReplayAssertExecutionProgress, 1, 1)  \
-  F(RecordReplayTargetProgressReached, 0, 1)    \
+  F(RecordReplayProgressLimitReached, 1, 1)     \
   F(RecordReplayBaselineExecutionProgress, 2, 1) \
-  F(RecordReplayBaselineTargetProgressReached, 1, 1) \
+  F(RecordReplayBaselineProgressLimitReached, 2, 1) \
   F(RecordReplayAssertValue, 3, 1)              \
   F(RecordReplayInstrumentation, 2, 1)          \
   F(RecordReplayInstrumentationGenerator, 3, 1) \

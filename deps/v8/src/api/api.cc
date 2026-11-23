@@ -12178,8 +12178,11 @@ void RecordReplayChangeInstrument(bool enabled) {
 
 uint64_t gTargetProgress;
 
+void RecordReplayUpdateProgressLimit();
+
 void RecordReplaySetTargetProgress(uint64_t progress) {
   gTargetProgress = progress;
+  RecordReplayUpdateProgressLimit();
 }
 
 void RecordReplayOnTargetProgressReached() {
@@ -12235,6 +12238,34 @@ bool gRecordReplayAssertProgress;
 // Enable progress CHECKs / RUN-1919. Also incremented while EventsDisallowed
 // on the main thread.
 int gRecordReplayCheckProgress;
+
+// Whether progress advances run the checks in OnExecutionProgress. None of
+// them can fail or warn once the replay has diverged from the recording, as it
+// has in a pause, so they don't run there.
+bool RecordReplayProgressChecksEnabled() {
+  return gRecordReplayCheckProgress &&
+         !recordreplay::HasDivergedFromRecording();
+}
+
+// The progress value at which compiled code calls into the VM. Baseline and
+// optimized code increment the counter inline and compare it against this, so
+// that whether progress checks run is decided when the code runs, in every
+// tier, without a load of its own: it is the target progress, or the next
+// progress value while the checks are enabled, so that every advance calls
+// into the VM then. Everything that changes the counter, the target or whether
+// the checks are enabled updates it. The driver sets the target after every
+// change it makes to the counter (UpdateTargetProgress), and the VM updates it
+// after every advance it handles.
+uint64_t gRecordReplayProgressLimit;
+
+void RecordReplaySetProgressLimit(bool checks_enabled) {
+  gRecordReplayProgressLimit =
+      checks_enabled ? *gProgressCounter + 1 : gTargetProgress;
+}
+
+void RecordReplayUpdateProgressLimit() {
+  RecordReplaySetProgressLimit(RecordReplayProgressChecksEnabled());
+}
 
 // Any source filters where JS asserts should be added.
 static std::vector<std::string> gRecordReplayJSAssertFilters;
@@ -12308,6 +12339,7 @@ static void RecordReplayBeforeFirstCheckpoint() {
                           {{"progress", *gProgressCounter}});
   }
   *gProgressCounter = 0;
+  RecordReplayUpdateProgressLimit();
 }
 
 } // namespace internal
@@ -12528,16 +12560,19 @@ extern "C" void V8RecordReplayEndPassThroughEvents() {
 void recordreplay::BeginDisallowEvents() {
   if (IsRecordingOrReplaying()) {
     gRecordReplayBeginDisallowEvents();
-    if (IsMainThread())
-      ++internal::gRecordReplayCheckProgress;
+    // Events are disallowed and allowed again often, so this doesn't ask
+    // whether the replay has diverged: the VM call at the next advance sets
+    // the progress limit again.
+    if (IsMainThread() && !internal::gRecordReplayCheckProgress++)
+      internal::RecordReplaySetProgressLimit(true);
   }
 }
 
 void recordreplay::BeginDisallowEventsWithLabel(const char* label) {
   if (IsRecordingOrReplaying()) {
     gRecordReplayBeginDisallowEventsWithLabel(label);
-    if (IsMainThread())
-      ++internal::gRecordReplayCheckProgress;
+    if (IsMainThread() && !internal::gRecordReplayCheckProgress++)
+      internal::RecordReplaySetProgressLimit(true);
   }
 }
 
@@ -12551,8 +12586,8 @@ extern "C" void V8RecordReplayBeginDisallowEventsWithLabel(const char* label) {
 
 void recordreplay::EndDisallowEvents() {
   if (IsRecordingOrReplaying()) {
-    if (IsMainThread())
-      --internal::gRecordReplayCheckProgress;
+    if (IsMainThread() && !--internal::gRecordReplayCheckProgress)
+      internal::RecordReplaySetProgressLimit(false);
     gRecordReplayEndDisallowEvents();
   }
 }
@@ -13171,6 +13206,8 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
 
   internal::gRecordReplayInstrumentNodeInternals = !!getenv("RECORD_REPLAY_INSTRUMENT_NODE");
   internal::InitializeRecordReplayAsserts();
+  // The driver set the first target before the checks were initialized.
+  internal::RecordReplayUpdateProgressLimit();
   internal::FutexEmulation::RecordReplayInitialize();
 
   // After the asserts, and before any isolate is created.
