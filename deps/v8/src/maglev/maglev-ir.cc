@@ -8138,9 +8138,8 @@ void RecordReplayIncrementAndCheckProgressCounter::
   set_temporaries_needed(2);
 }
 
-// The node has a single lazy deopt point, so both cases make the same call,
-// which updates the counter itself: it is only stored here when no call is
-// needed.
+// The call updates the counter itself, so it is only stored here when no call
+// is needed.
 void RecordReplayIncrementAndCheckProgressCounter::GenerateCode(
     MaglevAssembler* masm, const ProcessingState& state) {
   ZoneLabelRef done(masm);
@@ -8164,10 +8163,6 @@ void RecordReplayIncrementAndCheckProgressCounter::GenerateCode(
   Register scratch = temps.AcquireScratch();
   Register counter = temps.Acquire();
   Register target = temps.Acquire();
-  __ LoadInt32(counter,
-               __ ExternalReferenceAsOperand(
-                   ExternalReference::record_replay_check_progress(), scratch));
-  __ CompareInt32AndJumpIf(counter, 0, kNotEqual, call_runtime);
   MemOperand counter_operand = __ ExternalReferenceAsOperand(
       ExternalReference::record_replay_progress_counter(), scratch);
   __ Move(counter, counter_operand);

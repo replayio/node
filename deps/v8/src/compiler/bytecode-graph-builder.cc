@@ -3837,11 +3837,13 @@ void BytecodeGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
   // (pausing, breakpoints, instrumentation changes, API interrupt callbacks)
   // discards it.
   //
-  // Unlike baseline code, optimized code doesn't run progress checks.
-  // Checking gRecordReplayCheckProgress here would make all optimized code
-  // use the VM call: it is enabled while events are disallowed on the main
-  // thread, which they are while optimizing (Compiler::CompileOptimized), and
-  // loading it in the inline update instead slows optimized code down too much.
+  // Unlike baseline code, optimized code (here and in Maglev) doesn't run
+  // progress checks: they only add diagnostics, and progress is the same
+  // without them. gRecordReplayCheckProgress can't be tested here, as it is
+  // nonzero while events are disallowed on the main thread, which they are
+  // while optimizing (Compiler::CompileOptimized): code compiled then would
+  // make the VM call at every advance. Testing it in the inline update instead
+  // makes hot optimized code 10-15% slower while recording.
   if (gRecordReplayAssertProgress) {
     Node* closure = GetFunctionClosure();
     const Operator* op = javascript()->CallRuntime(Runtime::kRecordReplayAssertExecutionProgress);
