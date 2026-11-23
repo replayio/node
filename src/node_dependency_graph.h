@@ -137,13 +137,14 @@ class AsyncDependencyGraph {
     uint64_t length = 0;
     // All bytes so far, unless dropped.
     std::string bytes;
-    std::optional<RequestBodyDrop> dropped;
+    // Its bytes were dropped: too long, or past the budget.
+    bool dropped = false;
   };
 
   void AddOp(double async_id, AsyncOp op, const std::string& json);
   void PushDispatch(int node);
   // Frees the body's bytes, and their part of body_bytes_.
-  void DropBody(RequestBody& body, RequestBodyDrop drop);
+  void DropBody(RequestBody& body);
   // Drops the innermost dispatches an unwind already ended.
   void DropEndedDispatches();
 

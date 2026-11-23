@@ -195,7 +195,10 @@ constexpr uint64_t kMaxRequestBodyBytes = 64 * 1024;
 
 // The most body bytes of a process that requestEnd nodes report, together with
 // those kept for messages not complete yet. A body past it is dropped. In the
-// graph JSON, base64 makes them 4/3 as many.
+// graph JSON, base64 makes them 4/3 as many. First come, first kept: once it
+// is spent, every later body of the process is dropped, also those of the
+// requests a user cares about. Accepted for a bounded graph; requestEnd says
+// so (bodyDropped "budget").
 constexpr uint64_t kRequestBodyBudgetBytes = 4 * 1024 * 1024;
 
 std::string_view RequestBodyDropName(RequestBodyDrop drop) {
@@ -488,10 +491,9 @@ void AsyncDependencyGraph::OnRequestData(int request,
   size_t length = chunk->ByteLength();
   body.length += length;
   if (body.dropped) return;
-  if (body.length > kMaxRequestBodyBytes) {
-    DropBody(body, RequestBodyDrop::kTooLong);
-  } else if (body_bytes_ + length > kRequestBodyBudgetBytes) {
-    DropBody(body, RequestBodyDrop::kBudget);
+  if (body.length > kMaxRequestBodyBytes ||
+      body_bytes_ + length > kRequestBodyBudgetBytes) {
+    DropBody(body);
   } else {
     size_t offset = body.bytes.size();
     body.bytes.resize(offset + length);
@@ -500,10 +502,10 @@ void AsyncDependencyGraph::OnRequestData(int request,
   }
 }
 
-void AsyncDependencyGraph::DropBody(RequestBody& body, RequestBodyDrop drop) {
+void AsyncDependencyGraph::DropBody(RequestBody& body) {
   body_bytes_ -= body.bytes.size();
   std::string().swap(body.bytes);
-  body.dropped = drop;
+  body.dropped = true;
 }
 
 void AsyncDependencyGraph::OnRequestEnd(int request) {
@@ -513,13 +515,20 @@ void AsyncDependencyGraph::OnRequestEnd(int request) {
     body = std::move(it->second);
     request_bodies_.erase(it);
   }
+  // From the length alone, so too-long wins over budget, whichever dropped the
+  // bytes first: more budget would not have kept a too-long body.
+  std::optional<RequestBodyDrop> drop;
+  if (body.length > kMaxRequestBodyBytes) {
+    drop = RequestBodyDrop::kTooLong;
+  } else if (body.dropped) {
+    drop = RequestBodyDrop::kBudget;
+  }
   // The bytes stay in body_bytes_: the node reports them.
   NewRequestPartNode(
       request, NodeJsonWith("requestEnd", [&](JSONWriter& writer) {
         writer.json_keyvalue("length", body.length);
-        if (body.dropped) {
-          writer.json_keyvalue("bodyDropped",
-                               RequestBodyDropName(*body.dropped));
+        if (drop) {
+          writer.json_keyvalue("bodyDropped", RequestBodyDropName(*drop));
         } else {
           writer.json_keyvalue("body", std::string_view(Base64(body.bytes)));
         }
