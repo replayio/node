@@ -382,6 +382,7 @@ class ExceptionHandlerInfo;
   V(GetContinuationPreservedEmbedderData)                             \
   V(ReturnedValue)                                                    \
   V(StringSlice)                                                      \
+  V(RecordReplayIncrementAndCheckProgressCounter)                     \
   CONSTANT_VALUE_NODE_LIST(V)                                         \
   CONVERSION_NODE_LIST(V)                                             \
   INT32_OPERATIONS_NODE_LIST(V)                                       \
@@ -458,7 +459,6 @@ class ExceptionHandlerInfo;
   V(StoreContextSlotWithWriteBarrier)         \
   V(StoreTrustedPointerFieldWithWriteBarrier) \
   V(HandleNoHeapWritesInterrupt)              \
-  V(RecordReplayIncrementAndCheckProgressCounter) \
   V(ReduceInterruptBudgetForLoop)             \
   V(ReduceInterruptBudgetForReturn)           \
   V(ThrowReferenceErrorIfHole)                \
@@ -10423,22 +10423,42 @@ class HandleNoHeapWritesInterrupt
 // check, it isn't a heap write: the call deoptimizes this frame if what ran
 // there could have written the heap (see
 // RecordReplayOnTargetProgressReachedFromJS).
+//
+// Its value is the counter after the update. When nothing between two of these
+// nodes can change the counter, the later one increments the earlier one's
+// value instead of reading the counter back from memory, which would wait on
+// the earlier store (see ForwardInGraph). The counter is still stored at every
+// update, so everything else reads it from memory as before.
+class Graph;
 class RecordReplayIncrementAndCheckProgressCounter
-    : public FixedInputNodeT<1, RecordReplayIncrementAndCheckProgressCounter> {
+    : public FixedInputValueNodeT<2,
+                                  RecordReplayIncrementAndCheckProgressCounter> {
  public:
   explicit RecordReplayIncrementAndCheckProgressCounter(uint64_t bitfield)
       : Base(bitfield) {}
 
-  DECLARE_INPUTS(Closure)
-  DECLARE_INPUT_TYPES(Tagged)
+  // Previous is a placeholder constant until the update is forwarded.
+  DECLARE_INPUTS(Previous, Closure)
+  DECLARE_INPUT_TYPES(IntPtr, Tagged)
 
+  // Each node is one advance, whether or not its value is used: LazyDeopt makes
+  // it required when unused, and NotIdempotent keeps it from being merged.
   static constexpr OpProperties kProperties =
       OpProperties::DeferredCall() | OpProperties::CanAllocate() |
-      OpProperties::LazyDeopt() | OpProperties::NotIdempotent();
+      OpProperties::LazyDeopt() | OpProperties::NotIdempotent() |
+      OpProperties::IntPtr();
+
+  bool forwarded() const {
+    return input(kPreviousIndex)
+        .node()
+        ->Is<RecordReplayIncrementAndCheckProgressCounter>();
+  }
+  static void ForwardInGraph(Graph* graph);
 
   int MaxCallStackArgs() const { return 1; }
   void SetValueLocationConstraints();
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
+  void PrintParams(std::ostream&) const;
 };
 
 class ReduceInterruptBudgetForLoop

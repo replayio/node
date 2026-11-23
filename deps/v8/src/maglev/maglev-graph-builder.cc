@@ -16907,7 +16907,7 @@ ReduceResult MaglevGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() 
   if (!gRecordReplayAssertProgress && !is_turbolev()) {
     RETURN_IF_ABORT(
         AddNewNode<RecordReplayIncrementAndCheckProgressCounter>(
-            {GetClosure()}));
+            {GetIntPtrConstant(0), GetClosure()}));
     latest_checkpointed_frame_ = nullptr;
     return ReduceResult::Done();
   }

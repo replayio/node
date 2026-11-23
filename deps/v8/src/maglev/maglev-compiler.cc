@@ -150,6 +150,10 @@ bool MaglevCompiler::Compile(LocalIsolate* local_isolate,
     }
   }
 
+  if (recordreplay::IsRecordingOrReplaying()) {
+    RecordReplayIncrementAndCheckProgressCounter::ForwardInGraph(graph);
+  }
+
   {
     // Post-hoc optimisation:
     //   - Remove unreachable blocks
