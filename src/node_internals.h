@@ -496,10 +496,10 @@ namespace recordreplay {
 //
 // Every binding that reaches the file system or spawns a process begins with
 // this, so a new one in node_file.cc, node_dir.cc, fs_event_wrap.cc,
-// node_stat_watcher.cc, process_wrap.cc or spawn_sync.cc needs it too. Some of
-// them a pause cannot reach today, because a binding that already throws runs
-// first, and they are gated all the same: which one runs first is up to lib,
-// and the orderings there change.
+// node_stat_watcher.cc, process_wrap.cc, spawn_sync.cc or heap_utils.cc needs
+// it too. Some of them a pause cannot reach today, because a binding that
+// already throws runs first, and they are gated all the same: which one runs
+// first is up to lib, and the orderings there change.
 bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name);
 bool ThrowIfEventsUnavailable(const v8::FunctionCallbackInfo<v8::Value>& args,
                               const char* operation_name);
