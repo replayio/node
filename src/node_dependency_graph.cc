@@ -20,6 +20,7 @@ using v8::Array;
 using v8::ArrayBufferView;
 using v8::Context;
 using v8::FunctionCallbackInfo;
+using v8::HandleScope;
 using v8::Isolate;
 using v8::Local;
 using v8::Number;
@@ -112,41 +113,57 @@ constexpr std::array<std::string_view, 7> kRequestHeaderNames = {
 struct RequestHeaders {
   // Per kRequestHeaderNames entry: its values in order.
   std::array<std::vector<std::string>, kRequestHeaderNames.size()> values;
-  // The header lines reached the parser's limit: lines past it, if sent, were
-  // dropped.
+  // The rawHeaders elements reached the parser's limit: elements past it, if
+  // sent, were dropped. Reached, not passed: the parser keeps exactly that
+  // many when it drops, so equal is also reported when none was dropped.
   bool capped = false;
+  // rawHeaders, or a name element or a reported value element up to the
+  // limit, was no own data string, so it was not read.
+  bool unread = false;
 };
 
-// raw_headers: IncomingMessage#rawHeaders, [name, value, ...]. line_limit:
-// the parser's maxHeaderPairs; not a positive number: none.
+// raw_headers: IncomingMessage#rawHeaders, [name, value, ...] elements.
+// element_limit: the parser's maxHeaderPairs, which counts elements; not a
+// positive number: none.
 RequestHeaders ReadRequestHeaders(Isolate* isolate,
                                   Local<Value> raw_headers,
-                                  Local<Value> line_limit) {
+                                  Local<Value> element_limit) {
   RequestHeaders headers;
-  if (!raw_headers->IsArray()) return headers;
-  Local<Array> lines = raw_headers.As<Array>();
+  if (!raw_headers->IsArray()) {
+    headers.unread = true;
+    return headers;
+  }
+  Local<Array> elements = raw_headers.As<Array>();
   Local<Context> context = isolate->GetCurrentContext();
-  double limit = line_limit->IsNumber() ? line_limit.As<Number>()->Value() : 0;
-  uint32_t count = lines->Length();
+  double limit =
+      element_limit->IsNumber() ? element_limit.As<Number>()->Value() : 0;
+  uint32_t count = elements->Length();
   if (limit > 0 && count >= limit) {
     headers.capped = true;
     count = static_cast<uint32_t>(limit);
   }
   for (uint32_t i = 0; i + 1 < count; i += 2) {
+    // Frees each pair's handles: up to maxHeaderPairs elements are scanned.
+    HandleScope scope(isolate);
     std::optional<std::string> name =
-        OwnStringElement(isolate, context, lines, i);
-    if (!name) continue;
+        OwnStringElement(isolate, context, elements, i);
+    if (!name) {
+      headers.unread = true;
+      continue;
+    }
     std::string lowercase = ToLower(*name);
     auto it = std::find(kRequestHeaderNames.begin(),
                         kRequestHeaderNames.end(),
                         std::string_view(lowercase));
     if (it == kRequestHeaderNames.end()) continue;
     std::optional<std::string> value =
-        OwnStringElement(isolate, context, lines, i + 1);
-    if (value) {
-      headers.values[it - kRequestHeaderNames.begin()].push_back(
-          std::move(*value));
+        OwnStringElement(isolate, context, elements, i + 1);
+    if (!value) {
+      headers.unread = true;
+      continue;
     }
+    headers.values[it - kRequestHeaderNames.begin()].push_back(
+        std::move(*value));
   }
   return headers;
 }
@@ -168,11 +185,35 @@ std::string RequestStartJson(std::string_view method,
     }
     writer.json_objectend();
     writer.json_keyvalue("headersCapped", headers.capped);
+    writer.json_keyvalue("headersUnread", headers.unread);
   });
 }
 
-// requestEnd reports the body's bytes up to this many, from its start.
-constexpr size_t kMaxRequestBodyBytes = 64 * 1024;
+// requestEnd reports the bytes of a body of up to this many; of a longer one,
+// none.
+constexpr uint64_t kMaxRequestBodyBytes = 64 * 1024;
+
+// The most body bytes of a process that requestEnd nodes report, together with
+// those kept for messages not complete yet. A body past it is dropped. In the
+// graph JSON, base64 makes them 4/3 as many.
+constexpr uint64_t kRequestBodyBudgetBytes = 4 * 1024 * 1024;
+
+std::string_view RequestBodyDropName(RequestBodyDrop drop) {
+  switch (drop) {
+    case RequestBodyDrop::kTooLong:
+      return "too-long";
+    case RequestBodyDrop::kBudget:
+      return "budget";
+  }
+  UNREACHABLE();
+}
+
+std::string Base64(const std::string& bytes) {
+  std::string base64(simdutf::base64_length_from_binary(bytes.size()), '\0');
+  base64.resize(
+      simdutf::binary_to_base64(bytes.data(), bytes.size(), base64.data()));
+  return base64;
+}
 
 AsyncDependencyGraph& GetCurrent(const FunctionCallbackInfo<Value>& args) {
   return Environment::GetCurrent(args)->async_hooks()->dependency_graph();
@@ -256,7 +297,7 @@ void NewRequestPartNode(int request, const std::string& json) {
 }
 
 // The body of a server request: AsyncDependencyGraph::OnRequestData,
-// OnRequestEnd.
+// OnRequestEnd, OnRequestAbandoned.
 void RequestData(const FunctionCallbackInfo<Value>& args) {
   int request = RequestArg(args, 0);
   CHECK(args[1]->IsArrayBufferView());
@@ -265,6 +306,10 @@ void RequestData(const FunctionCallbackInfo<Value>& args) {
 
 void RequestEnd(const FunctionCallbackInfo<Value>& args) {
   GetCurrent(args).OnRequestEnd(RequestArg(args, 0));
+}
+
+void RequestAbandoned(const FunctionCallbackInfo<Value>& args) {
+  GetCurrent(args).OnRequestAbandoned(RequestArg(args, 0));
 }
 
 // A server response (http.ServerResponse): responseStart{status} at its head,
@@ -422,7 +467,7 @@ int AsyncDependencyGraph::OnBeginRequest(Isolate* isolate,
                                          Local<Value> method,
                                          Local<Value> url,
                                          Local<Value> raw_headers,
-                                         Local<Value> header_line_limit) {
+                                         Local<Value> header_element_limit) {
   if (!v8::recordreplay::DependencyGraphEnabled()) return 0;
   Utf8Value method_utf8(isolate, StringOrEmpty(isolate, method));
   Utf8Value url_utf8(isolate, StringOrEmpty(isolate, url));
@@ -430,7 +475,7 @@ int AsyncDependencyGraph::OnBeginRequest(Isolate* isolate,
       RequestStartJson(
           method_utf8.ToStringView(),
           url_utf8.ToStringView(),
-          ReadRequestHeaders(isolate, raw_headers, header_line_limit))
+          ReadRequestHeaders(isolate, raw_headers, header_element_limit))
           .c_str());
   PushDispatch(node);
   return node;
@@ -442,10 +487,23 @@ void AsyncDependencyGraph::OnRequestData(int request,
   RequestBody& body = request_bodies_[request];
   size_t length = chunk->ByteLength();
   body.length += length;
-  size_t offset = body.bytes.size();
-  size_t kept = std::min(length, kMaxRequestBodyBytes - offset);
-  body.bytes.resize(offset + kept);
-  chunk->CopyContents(body.bytes.data() + offset, kept);
+  if (body.dropped) return;
+  if (body.length > kMaxRequestBodyBytes) {
+    DropBody(body, RequestBodyDrop::kTooLong);
+  } else if (body_bytes_ + length > kRequestBodyBudgetBytes) {
+    DropBody(body, RequestBodyDrop::kBudget);
+  } else {
+    size_t offset = body.bytes.size();
+    body.bytes.resize(offset + length);
+    chunk->CopyContents(body.bytes.data() + offset, length);
+    body_bytes_ += length;
+  }
+}
+
+void AsyncDependencyGraph::DropBody(RequestBody& body, RequestBodyDrop drop) {
+  body_bytes_ -= body.bytes.size();
+  std::string().swap(body.bytes);
+  body.dropped = drop;
 }
 
 void AsyncDependencyGraph::OnRequestEnd(int request) {
@@ -455,16 +513,25 @@ void AsyncDependencyGraph::OnRequestEnd(int request) {
     body = std::move(it->second);
     request_bodies_.erase(it);
   }
-  std::string base64(simdutf::base64_length_from_binary(body.bytes.size()),
-                     '\0');
-  base64.resize(simdutf::binary_to_base64(
-      body.bytes.data(), body.bytes.size(), base64.data()));
+  // The bytes stay in body_bytes_: the node reports them.
   NewRequestPartNode(
-      request,
-      NodeJson("requestEnd",
-               std::pair{"length", body.length},
-               std::pair{"body", std::string_view(base64)},
-               std::pair{"truncated", body.length > body.bytes.size()}));
+      request, NodeJsonWith("requestEnd", [&](JSONWriter& writer) {
+        writer.json_keyvalue("length", body.length);
+        if (body.dropped) {
+          writer.json_keyvalue("bodyDropped",
+                               RequestBodyDropName(*body.dropped));
+        } else {
+          writer.json_keyvalue("body", std::string_view(Base64(body.bytes)));
+        }
+      }));
+}
+
+void AsyncDependencyGraph::OnRequestAbandoned(int request) {
+  if (!v8::recordreplay::DependencyGraphEnabled() || !request) return;
+  auto it = request_bodies_.find(request);
+  if (it == request_bodies_.end()) return;
+  body_bytes_ -= it->second.bytes.size();
+  request_bodies_.erase(it);
 }
 
 void AsyncDependencyGraph::OnBeginReceiveData(Isolate* isolate,
@@ -539,6 +606,8 @@ void AsyncDependencyGraph::CreatePerIsolateProperties(
   SetMethod(isolate, target, "dependencyGraphBeginRequest", BeginRequest);
   SetMethod(isolate, target, "dependencyGraphRequestData", RequestData);
   SetMethod(isolate, target, "dependencyGraphRequestEnd", RequestEnd);
+  SetMethod(
+      isolate, target, "dependencyGraphRequestAbandoned", RequestAbandoned);
   SetMethod(isolate, target, "dependencyGraphResponseStart", ResponseStart);
   SetMethod(isolate, target, "dependencyGraphResponseData", ResponseData);
   SetMethod(isolate, target, "dependencyGraphResponseEnd", ResponseEnd);
@@ -561,6 +630,7 @@ void AsyncDependencyGraph::RegisterExternalReferences(
   registry->Register(BeginRequest);
   registry->Register(RequestData);
   registry->Register(RequestEnd);
+  registry->Register(RequestAbandoned);
   registry->Register(ResponseStart);
   registry->Register(ResponseData);
   registry->Register(ResponseEnd);

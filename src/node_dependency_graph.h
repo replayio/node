@@ -16,6 +16,12 @@ namespace node {
 class ExternalReferenceRegistry;
 class IsolateData;
 
+// Why a requestEnd reports no bytes of its body (bodyDropped).
+enum class RequestBodyDrop {
+  kTooLong,  // "too-long": longer than requestEnd reports
+  kBudget,   // "budget": the process's body bytes are spent
+};
+
 // The classes of async op in the Replay dependency graph: the node an op's
 // init adds, and the node each of its callbacks runs in, with the edge
 // between them. Timers and microtasks use the kinds Chromium reports them
@@ -63,11 +69,11 @@ class DependencyExecution {
 //
 // An HTTP server request (lib/internal/recordreplay/dependency_graph_http.js)
 // is dispatched in a DependencyExecution of a
-// requestStart{method,url,headers,headersCapped} node, ended as other
-// dispatches. So is the delivery of an outbound request's answer to its
+// requestStart{method,url,headers,headersCapped,headersUnread} node, ended as
+// other dispatches. So is the delivery of an outbound request's answer to its
 // client (lib/internal/recordreplay/network.js), in a
 // networkReceiveData{requestId,length,part,timedBy} node. A server request's
-// complete message adds a requestEnd node.
+// complete message adds a requestEnd{length,body|bodyDropped} node.
 //
 // Every method returns at once unless
 // v8::recordreplay::DependencyGraphEnabled(): the map, the windows, the
@@ -91,18 +97,21 @@ class AsyncDependencyGraph {
   void OnBeginDispatch(v8::Isolate* isolate, v8::Local<v8::Value> type);
   // Returns the request's node, 0 if none. method and url other than strings
   // are reported empty. raw_headers: IncomingMessage#rawHeaders, of which only
-  // own string elements are read; header_line_limit: the parser's
-  // maxHeaderPairs.
+  // own string elements are read; header_element_limit: the parser's
+  // maxHeaderPairs, a count of rawHeaders elements.
   int OnBeginRequest(v8::Isolate* isolate,
                      v8::Local<v8::Value> method,
                      v8::Local<v8::Value> url,
                      v8::Local<v8::Value> raw_headers,
-                     v8::Local<v8::Value> header_line_limit);
+                     v8::Local<v8::Value> header_element_limit);
   // A chunk of the body of request (its node; 0: none), as received.
   void OnRequestData(int request, v8::Local<v8::ArrayBufferView> chunk);
-  // The request's message is complete: a requestEnd{length,body,truncated}
-  // node with a request edge from it. body: the first bytes, base64.
+  // The request's message is complete: a requestEnd node with a request edge
+  // from it. Its body: all bytes, base64, or why none (bodyDropped).
   void OnRequestEnd(int request);
+  // The request's parser is freed: its message, if not complete, never will
+  // be. Frees its body.
+  void OnRequestAbandoned(int request);
   // request_id: the request's network data id. length: the part's bytes.
   // part, timed_by: lib/internal/recordreplay/network.js beginDelivery.
   void OnBeginReceiveData(v8::Isolate* isolate,
@@ -125,13 +134,16 @@ class AsyncDependencyGraph {
   };
 
   struct RequestBody {
-    double length = 0;
-    // The first bytes, up to the cap requestEnd reports.
+    uint64_t length = 0;
+    // All bytes so far, unless dropped.
     std::string bytes;
+    std::optional<RequestBodyDrop> dropped;
   };
 
   void AddOp(double async_id, AsyncOp op, const std::string& json);
   void PushDispatch(int node);
+  // Frees the body's bytes, and their part of body_bytes_.
+  void DropBody(RequestBody& body, RequestBodyDrop drop);
   // Drops the innermost dispatches an unwind already ended.
   void DropEndedDispatches();
 
@@ -141,9 +153,11 @@ class AsyncDependencyGraph {
   // Per dispatch not ended, innermost last: its execution, or nullopt if it
   // didn't begin.
   std::vector<std::optional<DependencyExecution>> dispatches_;
-  // Per request node whose message is not complete. A request that never
-  // completes (its connection closed) keeps its entry.
+  // Per request node whose message is not complete and not abandoned.
   std::unordered_map<int, RequestBody> request_bodies_;
+  // The body bytes in request_bodies_ and in requestEnd nodes: at most
+  // kRequestBodyBudgetBytes.
+  uint64_t body_bytes_ = 0;
 };
 
 // A DependencyExecution for the lifetime of a C++ scope.
