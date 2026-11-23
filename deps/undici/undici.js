@@ -5528,12 +5528,15 @@ var require_request = __commonJS({
           controller.rawHeaders = headers;
         }
         const parsedHeaders = Array.isArray(headers) ? parseHeaders(headers) : headers;
+        recordReplayNetwork.undiciDeliveryBegin(this, recordReplayNetwork.AnswerPart.headers);
         try {
           this[kHandler].onResponseStart?.(controller, statusCode, parsedHeaders, statusText);
           return !controller?.paused;
         } catch (err) {
           this.abort(err);
           return false;
+        } finally {
+          recordReplayNetwork.answerDeliveryEnd();
         }
       }
       onResponseData(chunk) {
@@ -5544,12 +5547,15 @@ var require_request = __commonJS({
         }
         recordReplayNetwork.undiciResponseData(this, chunk);
         const controller = this[kController];
+        recordReplayNetwork.undiciDeliveryBegin(this, recordReplayNetwork.AnswerPart.data, chunk);
         try {
           this[kHandler].onResponseData?.(controller, chunk);
           return !controller?.paused;
         } catch (err) {
           this.abort(err);
           return false;
+        } finally {
+          recordReplayNetwork.answerDeliveryEnd();
         }
       }
       /**
@@ -5593,10 +5599,13 @@ var require_request = __commonJS({
           controller.rawTrailers = trailers;
         }
         const parsedTrailers = Array.isArray(trailers) ? parseHeaders(trailers) : trailers;
+        recordReplayNetwork.undiciDeliveryBegin(this, recordReplayNetwork.AnswerPart.end);
         try {
           return this[kHandler].onResponseEnd?.(controller, parsedTrailers);
         } catch (err) {
           this.onResponseError(err);
+        } finally {
+          recordReplayNetwork.answerDeliveryEnd();
         }
       }
       onResponseError(error) {
@@ -7254,6 +7263,8 @@ var require_client_h1 = __commonJS({
     var assert = require("node:assert");
     var util = require_util();
     var { channels } = require_diagnostics();
+    // Replay: the socket's input (lib/internal/recordreplay/network.js).
+    var recordReplayNetwork = require("internal/recordreplay/network");
     var timers = require_timers();
     var {
       RequestContentLengthMismatchError,
@@ -8026,13 +8037,24 @@ var require_client_h1 = __commonJS({
     }
     __name(onHttpSocketError, "onHttpSocketError");
     function onHttpSocketReadable() {
-      this[kParser]?.readMore();
+      recordReplayNetwork.connectionInputBegin();
+      try {
+        this[kParser]?.readMore();
+      } finally {
+        recordReplayNetwork.connectionInputEnd();
+      }
     }
     __name(onHttpSocketReadable, "onHttpSocketReadable");
     function onHttpSocketEnd() {
       const parser = this[kParser];
       if (parser.statusCode && !parser.shouldKeepAlive) {
-        const parserErr = parser.finish();
+        let parserErr;
+        recordReplayNetwork.connectionInputBegin();
+        try {
+          parserErr = parser.finish();
+        } finally {
+          recordReplayNetwork.connectionInputEnd();
+        }
         if (parserErr) {
           util.destroy(this, parserErr);
         }

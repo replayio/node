@@ -120,6 +120,17 @@ void BeginRequest(const FunctionCallbackInfo<Value>& args) {
       args.GetIsolate(), args[0], args[1]));
 }
 
+void BeginReceiveData(const FunctionCallbackInfo<Value>& args) {
+  CHECK(args[0]->IsString());
+  CHECK(args[2]->IsString());
+  CHECK(args[3]->IsString());
+  GetCurrent(args).OnBeginReceiveData(args.GetIsolate(),
+                                      args[0].As<String>(),
+                                      NumberArg(args, 1),
+                                      args[2].As<String>(),
+                                      args[3].As<String>());
+}
+
 int RequestArg(const FunctionCallbackInfo<Value>& args, int index) {
   CHECK(args[index]->IsInt32());
   return args[index].As<v8::Int32>()->Value();
@@ -299,6 +310,24 @@ int AsyncDependencyGraph::OnBeginRequest(Isolate* isolate,
   return node;
 }
 
+void AsyncDependencyGraph::OnBeginReceiveData(Isolate* isolate,
+                                              Local<String> request_id,
+                                              double length,
+                                              Local<String> part,
+                                              Local<String> timed_by) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  Utf8Value id(isolate, request_id);
+  Utf8Value part_name(isolate, part);
+  Utf8Value timed_by_name(isolate, timed_by);
+  PushDispatch(v8::recordreplay::NewDependencyGraphNode(
+      NodeJson("networkReceiveData",
+               std::pair{"requestId", id.ToStringView()},
+               std::pair{"length", length},
+               std::pair{"part", part_name.ToStringView()},
+               std::pair{"timedBy", timed_by_name.ToStringView()})
+          .c_str()));
+}
+
 void AsyncDependencyGraph::PushDispatch(int node) {
   dispatches_.push_back(DependencyExecution::Begin(node));
 }
@@ -355,6 +384,8 @@ void AsyncDependencyGraph::CreatePerIsolateProperties(
   SetMethod(isolate, target, "dependencyGraphResponseData", ResponseData);
   SetMethod(isolate, target, "dependencyGraphResponseEnd", ResponseEnd);
   SetMethod(isolate, target, "dependencyGraphNetworkRequest", NetworkRequest);
+  SetMethod(
+      isolate, target, "dependencyGraphBeginReceiveData", BeginReceiveData);
 }
 
 void AsyncDependencyGraph::RegisterExternalReferences(
@@ -373,6 +404,7 @@ void AsyncDependencyGraph::RegisterExternalReferences(
   registry->Register(ResponseData);
   registry->Register(ResponseEnd);
   registry->Register(NetworkRequest);
+  registry->Register(BeginReceiveData);
 }
 
 }  // namespace node
