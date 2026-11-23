@@ -3704,9 +3704,9 @@ static constexpr int kMaxConsecutiveIneffectiveMarkCompacts = 4;
 // limit still paces collections, which leaves a replay past its limit
 // collecting for nearly every old generation slow path allocation of its own.
 // Mutator utilization falls through the 0.4 threshold over about a dozen of
-// those collections: measured on a replay holding 120 MB under a 48 MB limit,
-// it went from 0.995 to 0.25 and reached the fourth consecutive ineffective
-// mark-compact, one step short of the fatal below.
+// those collections: measured on replays holding several times a 48 MB limit,
+// it went from 0.995 to 0.125, and they reached the fourth consecutive
+// ineffective mark-compact, the one the fatal below is on, eighteen times.
 //
 // What keeps the fatal out of reach is InvokeNearHeapLimitCallback() raising
 // the limit instead, which resets the count. Every near heap limit callback
