@@ -80,10 +80,10 @@ Local<Value> StringOrEmpty(Isolate* isolate, Local<Value> value) {
 
 // The array's own data element at index, if a string. Runs no JS: no getter,
 // no prototype lookup.
-std::optional<std::string> OwnStringElement(Local<Context> context,
+std::optional<std::string> OwnStringElement(Isolate* isolate,
+                                            Local<Context> context,
                                             Local<Array> array,
                                             uint32_t index) {
-  Isolate* isolate = context->GetIsolate();
   Local<String> key;
   Local<Value> element;
   if (!array->HasRealIndexedProperty(context, index).FromMaybe(false) ||
@@ -133,14 +133,16 @@ RequestHeaders ReadRequestHeaders(Isolate* isolate,
     count = static_cast<uint32_t>(limit);
   }
   for (uint32_t i = 0; i + 1 < count; i += 2) {
-    std::optional<std::string> name = OwnStringElement(context, lines, i);
+    std::optional<std::string> name =
+        OwnStringElement(isolate, context, lines, i);
     if (!name) continue;
     std::string lowercase = ToLower(*name);
     auto it = std::find(kRequestHeaderNames.begin(),
                         kRequestHeaderNames.end(),
                         std::string_view(lowercase));
     if (it == kRequestHeaderNames.end()) continue;
-    std::optional<std::string> value = OwnStringElement(context, lines, i + 1);
+    std::optional<std::string> value =
+        OwnStringElement(isolate, context, lines, i + 1);
     if (value) {
       headers.values[it - kRequestHeaderNames.begin()].push_back(
           std::move(*value));
