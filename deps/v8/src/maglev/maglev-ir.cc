@@ -8134,14 +8134,82 @@ void HandleNoHeapWritesInterrupt::GenerateCode(MaglevAssembler* masm,
 
 void RecordReplayIncrementAndCheckProgressCounter::
     SetValueLocationConstraints() {
+  if (forwarded()) {
+    UseRegister(PreviousInput());
+    DefineSameAsFirst(this);
+    // Code built with debug_code checks that the value it is given matches
+    // the counter in memory.
+    if (v8_flags.debug_code) set_temporaries_needed(1);
+  } else {
+    UseAny(PreviousInput());
+    DefineAsRegister(this);
+    // The result can share a register with the closure, which the call still
+    // needs, so the counter is computed in a temporary.
+    set_temporaries_needed(1);
+  }
   UseAny(ClosureInput());
-  set_temporaries_needed(2);
 }
 
-// The call updates the counter itself, so it is only stored here when no call
-// is needed.
+namespace {
+
+// Between two progress counter updates, the counter only changes in what runs
+// JS or handles interrupts, and every node that can do either is a call or can
+// lazily deoptimize. Other nodes' deferred calls (to collect garbage, migrate
+// an object, or tier up) leave it alone.
+bool CanChangeProgressCounter(NodeBase* node) {
+  return node->properties().is_call() || node->properties().can_lazy_deopt();
+}
+
+}  // namespace
+
+// An update is forwarded from the last one before it in its block or, for a
+// block with a single predecessor, from the last one in that predecessor, which
+// is how an inlined function's body continues into its caller. Loop headers
+// and exception handlers are merges, so nothing is forwarded into them.
+void RecordReplayIncrementAndCheckProgressCounter::ForwardInGraph(
+    Graph* graph) {
+  ZoneUnorderedMap<BasicBlock*, RecordReplayIncrementAndCheckProgressCounter*>
+      last_in_block(graph->zone());
+  for (BasicBlock* block : *graph) {
+    RecordReplayIncrementAndCheckProgressCounter* previous = nullptr;
+    int predecessors = 0;
+    BasicBlock* predecessor = nullptr;
+    block->ForEachPredecessor([&](BasicBlock* p) {
+      predecessors++;
+      predecessor = p;
+    });
+    if (predecessors == 1 && !block->is_exception_handler_block()) {
+      auto it = last_in_block.find(predecessor);
+      if (it != last_in_block.end()) previous = it->second;
+    }
+    for (Node* node : block->nodes()) {
+      if (node == nullptr) continue;
+      if (auto* update =
+              node->TryCast<RecordReplayIncrementAndCheckProgressCounter>()) {
+        if (previous) update->change_input(kPreviousIndex, previous);
+        previous = update;
+      } else if (CanChangeProgressCounter(node)) {
+        previous = nullptr;
+      }
+    }
+    if (CanChangeProgressCounter(block->control_node())) previous = nullptr;
+    if (previous) last_in_block[block] = previous;
+  }
+}
+
+void RecordReplayIncrementAndCheckProgressCounter::PrintParams(
+    std::ostream& os) const {
+  if (forwarded()) os << "(forwarded)";
+}
+
+// The counter is stored before it is compared, as TurboFan does, so the
+// register holding its address is free for the comparison. The call can change
+// the counter, so it is reloaded after it.
 void RecordReplayIncrementAndCheckProgressCounter::GenerateCode(
     MaglevAssembler* masm, const ProcessingState& state) {
+  MaglevAssembler::TemporaryRegisterScope temps(masm);
+  Register result_register = ToRegister(result());
+  Register counter = forwarded() ? result_register : temps.Acquire();
   ZoneLabelRef done(masm);
   Label* call_runtime = __ MakeDeferredCode(
       [](MaglevAssembler* masm, ZoneLabelRef done,
@@ -8151,10 +8219,16 @@ void RecordReplayIncrementAndCheckProgressCounter::GenerateCode(
               masm, node->register_snapshot());
           __ Push(node->ClosureInput());
           __ Move(kContextRegister, masm->native_context().object());
-          __ CallRuntime(Runtime::kRecordReplayAssertExecutionProgress, 1);
+          __ CallRuntime(Runtime::kRecordReplayProgressLimitReached, 1);
           save_register_state.DefineSafepointWithLazyDeopt(
               node->lazy_deopt_info());
         }
+        MaglevAssembler::TemporaryRegisterScope temps(masm);
+        Register scratch = temps.AcquireScratch();
+        __ Move(ToRegister(node->result()),
+                __ ExternalReferenceAsOperand(
+                    ExternalReference::record_replay_progress_counter(),
+                    scratch));
         __ Jump(*done);
       },
       done, this);
@@ -8164,19 +8238,41 @@ void RecordReplayIncrementAndCheckProgressCounter::GenerateCode(
     __ ResetLastYoungAllocation();
   }
 
-  MaglevAssembler::TemporaryRegisterScope temps(masm);
   Register scratch = temps.AcquireScratch();
-  Register counter = temps.Acquire();
-  Register limit = temps.Acquire();
   MemOperand counter_operand = __ ExternalReferenceAsOperand(
       ExternalReference::record_replay_progress_counter(), scratch);
-  __ Move(counter, counter_operand);
+  if (forwarded()) {
+    DCHECK_EQ(counter, ToRegister(PreviousInput()));
+    if (v8_flags.debug_code) {
+      Register check = temps.Acquire();
+      Label matches;
+      __ Move(check, counter_operand);
+      __ CompareIntPtrAndJumpIf(counter, check, kEqual, &matches);
+      __ Abort(AbortReason::kUnexpectedValue);
+      __ bind(&matches);
+    }
+  } else {
+    __ Move(counter, counter_operand);
+  }
   __ IncrementAddress(counter, 1);
-  __ Move(limit,
-          __ ExternalReferenceAsOperand(
-              ExternalReference::record_replay_progress_limit(), limit));
-  __ CompareIntPtrAndJumpIf(counter, limit, kEqual, call_runtime);
   __ Move(counter_operand, counter);
+  MemOperand limit_operand = __ ExternalReferenceAsOperand(
+      ExternalReference::record_replay_progress_limit(), scratch);
+#ifdef V8_TARGET_ARCH_X64
+  // Every optimized loop and call runs this, so keep the fused compare and
+  // jump from crossing a 32-byte boundary on CPUs with the JCC erratum, as
+  // TurboFan does for its branches: the uop cache doesn't hold code that does.
+  if (CpuFeatures::IsSupported(INTEL_JCC_ERRATUM_MITIGATION)) {
+    __ aligned_cmpq(counter, limit_operand);
+  } else {
+    __ cmpq(counter, limit_operand);
+  }
+  __ JumpIf(kEqual, call_runtime);
+#else
+  __ Move(scratch, limit_operand);
+  __ CompareIntPtrAndJumpIf(counter, scratch, kEqual, call_runtime);
+#endif
+  __ Move(result_register, counter);
   __ bind(*done);
 }
 
