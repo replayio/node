@@ -302,23 +302,30 @@ int RequestArg(const FunctionCallbackInfo<Value>& args, int index) {
 }
 
 // A node with a request edge from its request's node (0: none).
-void NewRequestPartNode(int request, const std::string& json) {
+int NewRequestPartNode(int request, const std::string& json) {
+  int node = v8::recordreplay::NewDependencyGraphNode(json.c_str());
   v8::recordreplay::AddDependencyGraphEdge(
-      request,
-      v8::recordreplay::NewDependencyGraphNode(json.c_str()),
-      R"({"kind":"request"})");
+      request, node, R"({"kind":"request"})");
+  return node;
 }
 
-// The body of a server request: AsyncDependencyGraph::OnRequestData,
-// OnRequestEnd, OnRequestAbandoned.
-void RequestData(const FunctionCallbackInfo<Value>& args) {
+// The body of a server request: AsyncDependencyGraph::OnRequestBodyBytes,
+// OnBeginRequestData, OnBeginRequestEnd, OnRequestAbandoned.
+void RequestBodyBytes(const FunctionCallbackInfo<Value>& args) {
   int request = RequestArg(args, 0);
   CHECK(args[1]->IsArrayBufferView());
-  GetCurrent(args).OnRequestData(request, args[1].As<ArrayBufferView>());
+  GetCurrent(args).OnRequestBodyBytes(request, args[1].As<ArrayBufferView>());
 }
 
-void RequestEnd(const FunctionCallbackInfo<Value>& args) {
-  GetCurrent(args).OnRequestEnd(RequestArg(args, 0));
+void BeginRequestData(const FunctionCallbackInfo<Value>& args) {
+  int request = RequestArg(args, 0);
+  CHECK(args[1]->IsArrayBufferView());
+  GetCurrent(args).OnBeginRequestData(
+      request, args[1].As<ArrayBufferView>()->ByteLength());
+}
+
+void BeginRequestEnd(const FunctionCallbackInfo<Value>& args) {
+  GetCurrent(args).OnBeginRequestEnd(RequestArg(args, 0));
 }
 
 void RequestAbandoned(const FunctionCallbackInfo<Value>& args) {
@@ -494,8 +501,8 @@ int AsyncDependencyGraph::OnBeginRequest(Isolate* isolate,
   return node;
 }
 
-void AsyncDependencyGraph::OnRequestData(int request,
-                                         Local<ArrayBufferView> chunk) {
+void AsyncDependencyGraph::OnRequestBodyBytes(int request,
+                                              Local<ArrayBufferView> chunk) {
   if (!v8::recordreplay::DependencyGraphEnabled() || !request) return;
   RequestBody& body = request_bodies_[request];
   size_t length = chunk->ByteLength();
@@ -518,8 +525,21 @@ void AsyncDependencyGraph::DropBody(RequestBody& body) {
   body.dropped = true;
 }
 
-void AsyncDependencyGraph::OnRequestEnd(int request) {
-  if (!v8::recordreplay::DependencyGraphEnabled() || !request) return;
+void AsyncDependencyGraph::OnBeginRequestData(int request, size_t length) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  PushDispatch(request ? NewRequestPartNode(
+                             request,
+                             NodeJson("requestData",
+                                      std::pair{"length", uint64_t{length}}))
+                       : 0);
+}
+
+void AsyncDependencyGraph::OnBeginRequestEnd(int request) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  PushDispatch(request ? NewRequestEndNode(request) : 0);
+}
+
+int AsyncDependencyGraph::NewRequestEndNode(int request) {
   RequestBody body;
   if (auto it = request_bodies_.find(request); it != request_bodies_.end()) {
     body = std::move(it->second);
@@ -534,7 +554,7 @@ void AsyncDependencyGraph::OnRequestEnd(int request) {
     drop = RequestBodyDrop::kBudget;
   }
   // The bytes stay in body_bytes_: the node reports them.
-  NewRequestPartNode(
+  return NewRequestPartNode(
       request, NodeJsonWith("requestEnd", [&](JSONWriter& writer) {
         writer.json_keyvalue("length", body.length);
         if (drop) {
@@ -623,8 +643,12 @@ void AsyncDependencyGraph::CreatePerIsolateProperties(
   SetMethod(isolate, target, "dependencyGraphBeginDispatch", BeginDispatch);
   SetMethod(isolate, target, "dependencyGraphEndDispatch", EndDispatch);
   SetMethod(isolate, target, "dependencyGraphBeginRequest", BeginRequest);
-  SetMethod(isolate, target, "dependencyGraphRequestData", RequestData);
-  SetMethod(isolate, target, "dependencyGraphRequestEnd", RequestEnd);
+  SetMethod(
+      isolate, target, "dependencyGraphRequestBodyBytes", RequestBodyBytes);
+  SetMethod(
+      isolate, target, "dependencyGraphBeginRequestData", BeginRequestData);
+  SetMethod(
+      isolate, target, "dependencyGraphBeginRequestEnd", BeginRequestEnd);
   SetMethod(
       isolate, target, "dependencyGraphRequestAbandoned", RequestAbandoned);
   SetMethod(isolate, target, "dependencyGraphResponseStart", ResponseStart);
@@ -647,8 +671,9 @@ void AsyncDependencyGraph::RegisterExternalReferences(
   registry->Register(BeginDispatch);
   registry->Register(EndDispatch);
   registry->Register(BeginRequest);
-  registry->Register(RequestData);
-  registry->Register(RequestEnd);
+  registry->Register(RequestBodyBytes);
+  registry->Register(BeginRequestData);
+  registry->Register(BeginRequestEnd);
   registry->Register(RequestAbandoned);
   registry->Register(ResponseStart);
   registry->Register(ResponseData);
