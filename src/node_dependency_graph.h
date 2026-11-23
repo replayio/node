@@ -71,8 +71,11 @@ class DependencyExecution {
 // is dispatched in a DependencyExecution of a requestStart{method,url,headers,
 // headerNames,headersCapped,headersUnread} node, ended as other dispatches. So
 // is the delivery of an outbound request's answer to its client
-// (lib/internal/recordreplay/network.js), in a networkReceiveData{requestId,length,part,timedBy} node. A server request's
-// complete message adds a requestEnd{length,body|bodyDropped} node.
+// (lib/internal/recordreplay/network.js), in a
+// networkReceiveData{requestId,length,part,timedBy} node. So is the hand-over
+// of each part of a server request's message to the program
+// (lib/_http_common.js): a body chunk's in a requestData{length} node, the
+// complete message's in a requestEnd{length,body|bodyDropped} node.
 //
 // Every method returns at once unless
 // v8::recordreplay::DependencyGraphEnabled(): the map, the windows, the
@@ -105,9 +108,14 @@ class AsyncDependencyGraph {
                      v8::Local<v8::Value> header_element_limit);
   // A chunk of the body of request (its node; 0: none), as received.
   void OnRequestData(int request, v8::Local<v8::ArrayBufferView> chunk);
-  // The request's message is complete: a requestEnd node with a request edge
-  // from it. Its body: all bytes, base64, or why none (bodyDropped).
-  void OnRequestEnd(int request);
+  // The hand-over of a body chunk of length bytes begins: a dispatch in a
+  // requestData node with a request edge from request. A dispatch without a
+  // node if request is 0, so its end always pairs.
+  void OnBeginRequestData(int request, size_t length);
+  // The request's message is complete, and the hand-over of its end begins: a
+  // dispatch, as a chunk's, in a requestEnd node. Its body: all bytes, base64,
+  // or why none (bodyDropped).
+  void OnBeginRequestEnd(int request);
   // The request's parser is freed: its message, if not complete, never will
   // be. Frees its body.
   void OnRequestAbandoned(int request);
@@ -142,6 +150,8 @@ class AsyncDependencyGraph {
 
   void AddOp(double async_id, AsyncOp op, const std::string& json);
   void PushDispatch(int node);
+  // Takes the request's body.
+  int NewRequestEndNode(int request);
   // Frees the body's bytes, and their part of body_bytes_.
   void DropBody(RequestBody& body);
   // Drops the innermost dispatches an unwind already ended.
