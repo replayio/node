@@ -221,6 +221,37 @@ std::string_view RequestBodyDropName(RequestBodyDrop drop) {
   UNREACHABLE();
 }
 
+std::string_view DependencyGraphFeatureName(DependencyGraphFeature feature) {
+  switch (feature) {
+    case DependencyGraphFeature::kRequestStart:
+      return "requestStart";
+    case DependencyGraphFeature::kNetworkRequest:
+      return "networkRequest";
+    case DependencyGraphFeature::kNetworkReceiveData:
+      return "networkReceiveData";
+    case DependencyGraphFeature::kRequestHeaders:
+      return "requestHeaders";
+    case DependencyGraphFeature::kRequestBody:
+      return "requestBody";
+    case DependencyGraphFeature::kRequestHeaderNames:
+      return "requestHeaderNames";
+    case DependencyGraphFeature::kRequestParts:
+      return "requestParts";
+  }
+  UNREACHABLE();
+}
+
+// This build's features: every DependencyGraphFeature.
+constexpr DependencyGraphFeature kDependencyGraphFeatures[] = {
+    DependencyGraphFeature::kRequestStart,
+    DependencyGraphFeature::kNetworkRequest,
+    DependencyGraphFeature::kNetworkReceiveData,
+    DependencyGraphFeature::kRequestHeaders,
+    DependencyGraphFeature::kRequestBody,
+    DependencyGraphFeature::kRequestHeaderNames,
+    DependencyGraphFeature::kRequestParts,
+};
+
 std::string Base64(const std::string& bytes) {
   std::string base64(simdutf::base64_length_from_binary(bytes.size()), '\0');
   base64.resize(
@@ -429,9 +460,15 @@ void AsyncDependencyGraph::OnInitScript(double async_id) {
   if (!v8::recordreplay::DependencyGraphEnabled()) return;
   AddOp(async_id,
         AsyncOp::kScript,
-        NodeJson("marker",
-                 std::pair{"reason", std::string_view("ExecuteScript")},
-                 std::pair{"name", std::string_view("StartExecution")}));
+        NodeJsonWith("marker", [](JSONWriter& writer) {
+          writer.json_keyvalue("reason", std::string_view("ExecuteScript"));
+          writer.json_keyvalue("name", std::string_view("StartExecution"));
+          writer.json_arraystart("features");
+          for (DependencyGraphFeature feature : kDependencyGraphFeatures) {
+            writer.json_element(DependencyGraphFeatureName(feature));
+          }
+          writer.json_arrayend();
+        }));
 }
 
 void AsyncDependencyGraph::OnDestroy(double async_id) {
