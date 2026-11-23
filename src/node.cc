@@ -1212,6 +1212,10 @@ InitializeOncePerProcessInternal(const std::vector<std::string>& args,
     }
   }
 
+  // The time origin, read once the driver records and replays the clocks and
+  // before any Environment copies it.
+  performance::InitPerformance();
+
   worker::SiblingGroup::InitializeOncePerProcess();
   SigintWatchdogHelper::InitializeOncePerProcess();
 

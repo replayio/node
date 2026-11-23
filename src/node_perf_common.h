@@ -26,6 +26,8 @@ extern uint64_t performance_process_start;
 extern double performance_process_start_timestamp;
 extern uint64_t performance_v8_start;
 
+void InitPerformance();
+
 #define NODE_PERFORMANCE_MILESTONES(V)                                         \
   V(TIME_ORIGIN_TIMESTAMP, "timeOriginTimestamp")                              \
   V(TIME_ORIGIN, "timeOrigin")                                                 \
