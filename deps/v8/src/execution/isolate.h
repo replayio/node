@@ -1108,6 +1108,15 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   void RequestInvalidateNoProfilingProtector();
   void RecordReplayInvokeApiInterruptCallbacksAtProgress();
+  // Counts what can write the heap without entering JS: API interrupt
+  // callbacks and the replay's commands. Entering JS is counted by
+  // javascript_execution_counter().
+  void RecordReplayNoteNativeHeapAccess() {
+    ++record_replay_native_heap_accesses_;
+  }
+  uint64_t record_replay_native_heap_accesses() const {
+    return record_replay_native_heap_accesses_;
+  }
   // Administration
   void Iterate(RootVisitor* v);
   void Iterate(RootVisitor* v, ThreadLocalTop* t);
@@ -2763,6 +2772,8 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // callbacks, with the topmost JavaScript frame's fp when it started.
   bool record_replay_invoking_api_interrupts_ = false;
   Address record_replay_api_interrupts_js_fp_ = kNullAddress;
+
+  uint64_t record_replay_native_heap_accesses_ = 0;
 
   std::unique_ptr<replayio::ReplayIsolateData> replay_data_;
 

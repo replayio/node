@@ -4247,6 +4247,7 @@ char* CommandCallback(const char* command, const char* params) {
   replayio::AutoDisallowEvents disallow;
 
   Isolate* isolate = Isolate::Current();
+  isolate->RecordReplayNoteNativeHeapAccess();
   std::optional<SaveAndSwitchContext> ssc;
   EnsureIsolateContext(isolate, ssc);
 
