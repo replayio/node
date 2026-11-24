@@ -886,14 +886,17 @@ void Reference::InvokeFinalizerFromGC() {
 
 // Mark the reference as weak and eligible for collection by the GC.
 void Reference::SetWeak() {
-  // Values of tracked references are held strongly when replaying, see
-  // RecordReplayTrack.
-  if (_record_replay_id && v8::recordreplay::IsReplaying()) {
-    return;
-  }
   if (can_be_weak_) {
+    // Values of tracked references are held strongly when replaying, see
+    // RecordReplayTrack.
+    if (_record_replay_id && v8::recordreplay::IsReplaying()) {
+      return;
+    }
     persistent_.SetWeak(this, WeakCallback, v8::WeakCallbackType::kParameter);
   } else {
+    // A value which cannot be held weakly is dropped here rather than by the
+    // GC. The replay reaches this call too, so both sides drop it at the same
+    // point and there is nothing to hold.
     persistent_.Reset();
   }
 }
