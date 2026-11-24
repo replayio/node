@@ -580,10 +580,10 @@ class V8_EXPORT_PRIVATE BytecodeArrayBuilder final {
         RecordReplayMaybePopPendingBreakpoints(scope_start);
     if (!latest_source_info_.is_valid() ||
         latest_source_info_.source_position() < scope_start) {
-      return std::nullopt;
       // An invalid source info still makes the caller push the popped
       // breakpoints back.
       if (popped_breakpoints) return BytecodeSourceInfo();
+      return std::nullopt;
     }
     BytecodeSourceInfo source_info = latest_source_info_;
     latest_source_info_.set_invalid();
