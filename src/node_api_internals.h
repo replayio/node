@@ -25,7 +25,9 @@ struct node_napi_env__ : public napi_env__ {
   void CallFinalizer(napi_finalize cb, void* data, void* hint);
 
   void EnqueueFinalizer(v8impl::RefTracker* finalizer) override;
+  void DequeueFinalizer(v8impl::RefTracker* finalizer) override;
   void DrainFinalizerQueue();
+  v8impl::RefTracker* NextPendingFinalizer();
 
   void trigger_fatal_exception(v8::Local<v8::Value> local_err);
   template <bool enforceUncaughtExceptionPolicy, typename T>
@@ -41,6 +43,9 @@ struct node_napi_env__ : public napi_env__ {
   std::string filename;
   bool destructing = false;
   bool finalization_scheduled = false;
+  // When recording/replaying, the pending finalizers in the order they were
+  // enqueued, which is the order DrainFinalizerQueue runs them in.
+  std::vector<v8impl::RefTracker*> record_replay_pending_finalizers;
 };
 
 using node_napi_env = node_napi_env__*;

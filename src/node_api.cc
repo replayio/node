@@ -18,6 +18,7 @@
 #include "tracing/traced_value.h"
 #include "util-inl.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <memory>
@@ -136,6 +137,9 @@ void node_napi_env__::CallFinalizer(napi_finalize cb, void* data, void* hint) {
 
 void node_napi_env__::EnqueueFinalizer(v8impl::RefTracker* finalizer) {
   napi_env__::EnqueueFinalizer(finalizer);
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    record_replay_pending_finalizers.push_back(finalizer);
+  }
   // Schedule a second pass only when it has not been scheduled, and not
   // destructing the env.
   // When the env is being destructed, queued finalizers are drained in the
@@ -151,13 +155,45 @@ void node_napi_env__::EnqueueFinalizer(v8impl::RefTracker* finalizer) {
   }
 }
 
+void node_napi_env__::DequeueFinalizer(v8impl::RefTracker* finalizer) {
+  napi_env__::DequeueFinalizer(finalizer);
+  if (v8::recordreplay::IsRecordingOrReplaying()) {
+    auto& queue = record_replay_pending_finalizers;
+    queue.erase(std::remove(queue.begin(), queue.end(), finalizer),
+                queue.end());
+  }
+}
+
+// The finalizer the queue hands over next. Upstream takes whichever the
+// unordered set iterates first, which depends on where the references sit in
+// memory and so differs between recording and replaying, since the module's
+// own allocations are not made when replaying. That order becomes observable
+// as soon as one finalizer touches another queued one. Deleting a reference
+// whose finalizer is queued leaves that finalizer uncalled, which is what the
+// reference napi_wrap hands back is for, while the module's finalizers are
+// replayed in the order the recording ran them in, whichever reference node
+// opens the callback region for.
+//
+// Take them in the order they were enqueued instead, which is the recording's
+// on both sides. The GC poll hands the collected references over in the order
+// the recording names them in (see recordreplay::DeferredFinalization), and
+// node 16 gave each finalizer an immediate of its own, so they ran in that
+// order there as well.
+v8impl::RefTracker* node_napi_env__::NextPendingFinalizer() {
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    return *pending_finalizers.begin();
+  }
+  CHECK(!record_replay_pending_finalizers.empty());
+  return record_replay_pending_finalizers.front();
+}
+
 void node_napi_env__::DrainFinalizerQueue() {
   // As userland code can delete additional references in one finalizer,
   // the list of pending finalizers may be mutated as we execute them, so
   // we keep iterating it until it is empty.
   while (!pending_finalizers.empty()) {
-    v8impl::RefTracker* ref_tracker = *pending_finalizers.begin();
-    pending_finalizers.erase(ref_tracker);
+    v8impl::RefTracker* ref_tracker = NextPendingFinalizer();
+    DequeueFinalizer(ref_tracker);
     ref_tracker->Finalize();
   }
 }
