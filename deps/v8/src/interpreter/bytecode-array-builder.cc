@@ -20,6 +20,7 @@
 #include "src/interpreter/interpreter-intrinsics.h"
 #include "src/objects/feedback-vector-inl.h"
 #include "src/objects/smi.h"
+#include "src/replay/dependency-graph.h"
 
 namespace v8 {
 namespace internal {
@@ -1630,10 +1631,16 @@ void BytecodeArrayBuilder::RecordReplayPushPoppedBreakpoints() {
 BytecodeArrayBuilder&
 BytecodeArrayBuilder::RecordReplayInstrumentationGenerator(
     const char* kind, Register generator_object) {
-  // Even though instrumentation opcodes aren't needed when recording, we still
-  // need to emit InstrumentationGenerator opcodes so that generator objects
-  // will be associated with IDs at consistent points.
-  if (emit_record_replay_opcodes_) {
+  // These sites assign object IDs to generator objects, which every replaying
+  // process has to do at the same points whether or not it is scanning. A
+  // recording only needs the IDs while asserts include them: JS value asserts,
+  // and dependency graph asserts through the IDs of promises, which come from
+  // the same counter. Without those asserts nothing reads them while
+  // recording, and assigning them costs most of what recording adds to hot
+  // generator and async function calls.
+  if (emit_record_replay_opcodes_ &&
+      (recordreplay::IsReplaying() || gRecordReplayAssertValues ||
+       RecordReplayDependencyGraph::AssertsUpdates())) {
     int index =
         RecordReplayRegisterInstrumentationSite(kind, kNoSourcePosition);
     OutputRecordReplayInstrumentationGenerator(index, generator_object);

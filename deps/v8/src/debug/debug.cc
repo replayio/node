@@ -4706,6 +4706,9 @@ void FunctionCallbackRecordReplayAssert(const FunctionCallbackInfo<Value>& callA
       recordreplay::AssertBytes("AssertValue StringBytes", contents.get(), len);
     }
   } else {
+    // The object IDs in these contents only match the replay's under JS value
+    // asserts. Otherwise replaying processes also give IDs to generator objects
+    // and promises, which recordings don't.
     std::string contents = i::RecordReplayBasicValueContents(value);
     recordreplay::Assert("AssertValue %s", contents.c_str());
   }
