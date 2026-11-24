@@ -121,6 +121,13 @@ static V8_INLINE void __cpuidex(int cpu_info[4], int info_type,
                      "=d"(cpu_info[3])
                    : "a"(info_type), "c"(sub_info_type));
 #endif  // defined(__i386__) && defined(__pic__)
+
+  // Deliberately not recorded, unlike __cpuid() above. The only caller reads
+  // leaf 7 sub-leaf 1, whose features gate whether an instruction may be
+  // emitted rather than choosing between equivalent sequences, so making the
+  // replay agree with the recording about them would have it emit instructions
+  // its own CPU need not implement. They are turned off for both sides
+  // instead: see ApplyRecordReplayCpuFeatures in src/node_recordreplay.cc.
 }
 
 #endif  // !V8_LIBC_MSVCRT
