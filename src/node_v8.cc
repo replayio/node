@@ -702,11 +702,19 @@ std::ostringstream* GCProfiler::out_stream() {
 
 void GCProfiler::New(const FunctionCallbackInfo<Value>& args) {
   CHECK(args.IsConstructCall());
+  // A profiler nothing can read is of no use, so refuse it where it is asked
+  // for rather than at the stop() that would have returned the profile.
+  if (recordreplay::ThrowIfEventsUnavailable(args, "new v8.GCProfiler()")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   new GCProfiler(env, args.This());
 }
 
 void GCProfiler::Start(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "v8.GCProfiler.start")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   GCProfiler* profiler;
   ASSIGN_OR_RETURN_UNWRAP(&profiler, args.This());
@@ -724,6 +732,7 @@ void GCProfiler::Start(const FunctionCallbackInfo<Value>& args) {
     profiler->writer()->json_keyvalue("startTime", 0);
   }
   profiler->writer()->json_arraystart("statistics");
+
   env->isolate()->AddGCPrologueCallback(BeforeGCCallback,
                                         static_cast<void*>(profiler));
   env->isolate()->AddGCEpilogueCallback(AfterGCCallback,
@@ -732,6 +741,9 @@ void GCProfiler::Start(const FunctionCallbackInfo<Value>& args) {
 }
 
 void GCProfiler::Stop(const FunctionCallbackInfo<v8::Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "v8.GCProfiler.stop")) {
+    return;
+  }
   Environment* env = Environment::GetCurrent(args);
   GCProfiler* profiler;
   ASSIGN_OR_RETURN_UNWRAP(&profiler, args.This());
@@ -749,6 +761,25 @@ void GCProfiler::Stop(const FunctionCallbackInfo<v8::Value>& args) {
   profiler->writer()->json_end();
   profiler->state = GCProfiler::GCProfilerState::kStopped;
   auto string = profiler->out_stream()->str();
+
+  // The entries were written by V8's GC callbacks, which run as often as the
+  // heap the program is running on collects: a replaying heap can be given a
+  // different old space maximum, so it collects at other times and reports
+  // other sizes, and each entry's cost is a measured duration in any case.
+  // The callbacks run inside the garbage collector, where the recorder
+  // disallows events, so nothing they do is part of the recording and the
+  // replay is free to write a profile of its own here. Record the finished
+  // profile at the point it is handed to JavaScript, as a diagnostic report
+  // is recorded in node_report.cc, so the program reads the profile of the
+  // heap it was recorded on.
+  size_t length = v8::recordreplay::RecordReplayValue("GCProfiler::Stop length",
+                                                      string.length());
+  string.resize(length);
+  if (length) {
+    v8::recordreplay::RecordReplayBytes(
+        "GCProfiler::Stop", &string[0], length);
+  }
+
   Local<Value> ret;
   if (ToV8Value(env->context(), string, env->isolate()).ToLocal(&ret)) {
     args.GetReturnValue().Set(ret);
