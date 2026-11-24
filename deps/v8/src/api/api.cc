@@ -12796,6 +12796,11 @@ bool internal::RecordReplayDependencyGraph::ReportsPromises() {
   return gDependencyGraphReportsPromises && IsMainThread();
 }
 
+// static
+bool internal::RecordReplayDependencyGraph::AssertsUpdates() {
+  return gRecordReplayAssertDependencyGraph;
+}
+
 bool recordreplay::DependencyGraphEnabled() {
   return gDependencyGraphEnabled && IsMainThread();
 }
