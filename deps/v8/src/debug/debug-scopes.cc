@@ -1031,13 +1031,17 @@ bool ScopeIterator::VisitLocals(const Visitor& visitor, Mode mode,
           break;
         }
         DCHECK(var->IsContextSlot());
+        // A variable the replay moved into the context can have a slot index
+        // the context does not have, when the function was compiled without
+        // the move: its code came out of the startup snapshot, which is built
+        // before any replay. Context::Get() only DCHECKs the index, so the
+        // check has to come before the read, or a release build reads past
+        // the context and makes a handle of whatever follows it.
+        if (index >= context_->length()) continue;
         DCHECK_EQ(context_->scope_info()->ContextSlotIndex(*var->name()),
                   index);
         value =
             indirect_handle(Context::Get(context_, index, isolate_), isolate_);
-        // This index is sometimes out of range when gathering state using
-        // the Record Replay driver.
-        if (index >= context_->length()) continue;
         break;
 
       case VariableLocation::MODULE: {
