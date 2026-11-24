@@ -11,6 +11,7 @@
 #include "node_profiling.h"
 #include "node_snapshot_builder.h"
 #include "permission/permission.h"
+#include "node_internals.h"
 #include "util-inl.h"
 #include "v8-cppgc.h"
 #include "v8-profiler.h"
@@ -1264,6 +1265,10 @@ class WorkerHeapStatisticsTaker : public AsyncWrap {
 };
 
 void Worker::GetHeapStatistics(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "worker.getHeapStatistics")) {
+    return;
+  }
   Worker* w;
   ASSIGN_OR_RETURN_UNWRAP(&w, args.This());
 
@@ -1290,6 +1295,19 @@ void Worker::GetHeapStatistics(const FunctionCallbackInfo<Value>& args) {
     // it's not copied in the lambda, but only the pointer is.
     auto heap_stats = std::make_unique<HeapStatistics>();
     worker_env->isolate()->GetHeapStatistics(heap_stats.get());
+
+    // A replaying worker's heap is not the recorded one's: the driver can give
+    // it a different old space maximum (ApplyRecordReplayMaxOldSpace), and
+    // NearHeapLimit() raises that maximum further under heap pressure the
+    // recorded worker never had, which the limit here is derived from. Record
+    // the whole snapshot where it is taken, as v8.getHeapStatistics() records
+    // an isolate's own statistics, so that what the parent posts to JS is what
+    // the recorded worker measured. The interrupt runs from the worker's event
+    // loop when recording or replaying (see Environment::RequestInterruptFromV8),
+    // so this is a point the replay reaches as well.
+    v8::recordreplay::RecordReplayBytes("Worker::GetHeapStatistics",
+                                        heap_stats.get(),
+                                        sizeof(HeapStatistics));
 
     // Here, the worker thread temporarily owns the WorkerHeapStatisticsTaker
     // object.
