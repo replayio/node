@@ -1994,9 +1994,11 @@ V8DebuggerAgentImpl::currentExternalStackTrace() {
 bool V8DebuggerAgentImpl::isPaused() const {
   // Replay's pause scripts inspect the stack (Debugger.getCallFrames,
   // Debugger.evaluateOnCallFrame) at replay points where V8 isn't stopped in
-  // the debugger. The recording has to behave the same, or a session's
-  // Debugger events would differ between the recording and the replay.
-  if (v8::recordreplay::IsRecordingOrReplaying()) {
+  // the debugger. Replay's own session is connected when recording too, so it
+  // behaves the same on both sides. A user's session sees V8's actual pause
+  // state, which the replay reproduces: claiming a pause there would e.g. send
+  // it Debugger.paused as soon as it enables the domain.
+  if (v8::recordreplay::IsRecordingOrReplaying() && m_session->replayOwned()) {
     return true;
   }
   return m_debugger->isPausedInContextGroup(m_session->contextGroupId());
