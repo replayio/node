@@ -1629,8 +1629,7 @@ static void OnGeneratorInstrumentationSite(Isolate* isolate,
   // while asserts include them, and only then do recordings run these sites
   // (BytecodeArrayBuilder::RecordReplayInstrumentationGenerator): JS value
   // asserts include object IDs, and dependency graph asserts include the IDs
-  // of promises, which the graph assigns while recording only under those
-  // asserts (RecordReplayDependencyGraph::ReportsPromises).
+  // of promises (RecordReplayDependencyGraph::ReportsPromises).
   CHECK(!gCurrentGeneratorId);
   gCurrentGeneratorId = RecordReplayObjectId(generator_object);
 

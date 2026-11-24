@@ -29,8 +29,8 @@ class RecordReplayDependencyGraph : public AllStatic {
   static bool ReportsPromises();
 
   // Whether graph updates are asserted (RECORD_REPLAY_DEPENDENCY_GRAPH_ASSERTS).
-  // The updates then happen while recording too, and the promise IDs in them
-  // have to match the recording's.
+  // Recordings of an instrumented graph then update it too, and the promise IDs
+  // in the asserted updates have to match the recording's.
   static bool AssertsUpdates();
 
   // Precondition for both: ReportsPromises().
