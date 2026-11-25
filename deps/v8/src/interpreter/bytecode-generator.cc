@@ -7040,9 +7040,6 @@ void BytecodeGenerator::VisitCall(Call* expr) {
 
   builder()->SetExpressionPosition(expr);
 
-  if (use_reflect_apply) {
-    builder()->CallJSRuntime(Context::REFLECT_APPLY_INDEX, args);
-  } else if (spread_position == Call::kHasFinalSpread) {
   // Emit a breakpoint for all call expressions
   // after arguments have already been evaluated.
   // This might duplicate the call's parent's position,
@@ -7075,6 +7072,10 @@ void BytecodeGenerator::VisitCall(Call* expr) {
     // added.
     builder()->RecordReplayInstrumentation("breakpoint", expr->position());
   }
+
+  if (use_reflect_apply) {
+    builder()->CallJSRuntime(Context::REFLECT_APPLY_INDEX, args);
+  } else if (spread_position == Call::kHasFinalSpread) {
     DCHECK(!implicit_undefined_receiver);
     builder()->CallWithSpread(callee, args,
                               feedback_index(feedback_spec()->AddCallICSlot()));
