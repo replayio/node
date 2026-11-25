@@ -29,6 +29,7 @@
 #include "node_profiling.h"
 #include "permission/permission.h"
 #include "node_internals.h"
+#include "replayio.h"
 #include "util-inl.h"
 #include "v8-profiler.h"
 #include "v8.h"
@@ -618,15 +619,102 @@ static MaybeLocal<Object> ConvertHeapStatsToJSObject(
       context, heap_stats_tmpl, heap_statistics_values);
 }
 
+static constexpr const char* kCppHeapStatistics = "GetCppHeapStatistics";
+
+static size_t RecordReplaySize(size_t value) {
+  return v8::recordreplay::RecordReplayValue(kCppHeapStatistics, value);
+}
+
+// Resizes to the recorded length, then records the elements in one go: every
+// element of these is a size, or a pair of them.
+template <typename T>
+static void RecordReplayVector(std::vector<T>* values) {
+  values->resize(RecordReplaySize(values->size()));
+  if (!values->empty()) {
+    v8::recordreplay::RecordReplayBytes(
+        kCppHeapStatistics, values->data(), values->size() * sizeof(T));
+  }
+}
+
+static void RecordReplayString(std::string* value) {
+  value->resize(RecordReplaySize(value->length()));
+  if (!value->empty()) {
+    v8::recordreplay::RecordReplayBytes(
+        kCppHeapStatistics, value->data(), value->length());
+  }
+}
+
+// The statistics the recording measured, field by field: the structure has a
+// space entry per space, a page entry per page in it and a name per type, so
+// how much of it there is comes from the recording as well.
+static void RecordReplayCppHeapStatistics(cppgc::HeapStatistics* stats) {
+  stats->committed_size_bytes = RecordReplaySize(stats->committed_size_bytes);
+  stats->resident_size_bytes = RecordReplaySize(stats->resident_size_bytes);
+  stats->used_size_bytes = RecordReplaySize(stats->used_size_bytes);
+  stats->pooled_memory_size_bytes =
+      RecordReplaySize(stats->pooled_memory_size_bytes);
+  stats->space_stats.resize(RecordReplaySize(stats->space_stats.size()));
+  for (cppgc::HeapStatistics::SpaceStatistics& space : stats->space_stats) {
+    RecordReplayString(&space.name);
+    space.committed_size_bytes = RecordReplaySize(space.committed_size_bytes);
+    space.resident_size_bytes = RecordReplaySize(space.resident_size_bytes);
+    space.used_size_bytes = RecordReplaySize(space.used_size_bytes);
+    space.page_stats.resize(RecordReplaySize(space.page_stats.size()));
+    for (cppgc::HeapStatistics::PageStatistics& page : space.page_stats) {
+      page.committed_size_bytes = RecordReplaySize(page.committed_size_bytes);
+      page.resident_size_bytes = RecordReplaySize(page.resident_size_bytes);
+      page.used_size_bytes = RecordReplaySize(page.used_size_bytes);
+      RecordReplayVector(&page.object_statistics);
+    }
+    RecordReplayVector(&space.free_list_stats.bucket_size);
+    RecordReplayVector(&space.free_list_stats.free_count);
+    RecordReplayVector(&space.free_list_stats.free_size);
+  }
+  stats->type_names.resize(RecordReplaySize(stats->type_names.size()));
+  for (std::string& name : stats->type_names) {
+    RecordReplayString(&name);
+  }
+}
+
+// Collecting the statistics finishes a sweep that is running, and the sweeper
+// reads the clock as it goes: a replay sweeps its own heap at other points, so
+// those reads are in the recording where the replay has none of them, and the
+// replay stops with a mismatch at the next recorded call. Collect with the
+// events passed through, on both sides, so the sweep still runs where the
+// program ran it and neither side's clock reads are part of the recording.
+//
+// The numbers the sweep leaves behind are the measuring heap's, which is not
+// the recorded one: the driver can give a replay another old space maximum,
+// and the unified heap collects the C++ heap along with the JavaScript one. So
+// record them, as v8.getHeapStatistics() records an isolate's own statistics
+// and node_report.cc records a diagnostic report, and the program reads the
+// numbers of the heap it was recorded on.
+static cppgc::HeapStatistics CollectCppHeapStatistics(
+    Isolate* isolate, cppgc::HeapStatistics::DetailLevel detail_level) {
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    return isolate->GetCppHeap()->CollectStatistics(detail_level);
+  }
+  cppgc::HeapStatistics stats;
+  {
+    v8::replayio::AutoPassThroughEvents pass_through;
+    stats = isolate->GetCppHeap()->CollectStatistics(detail_level);
+  }
+  RecordReplayCppHeapStatistics(&stats);
+  return stats;
+}
+
 static void GetCppHeapStatistics(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "v8.getCppHeapStatistics")) {
+    return;
+  }
   Isolate* isolate = args.GetIsolate();
   HandleScope handle_scope(isolate);
 
   CHECK_EQ(args.Length(), 1);
   CHECK(args[0]->IsInt32());
 
-  cppgc::HeapStatistics stats = isolate->GetCppHeap()->CollectStatistics(
-      FromV8Value<cppgc::HeapStatistics::DetailLevel>(args[0]));
+  cppgc::HeapStatistics stats = CollectCppHeapStatistics(
+      isolate, FromV8Value<cppgc::HeapStatistics::DetailLevel>(args[0]));
 
   Local<Object> result;
   if (!ConvertHeapStatsToJSObject(isolate, stats).ToLocal(&result)) {
