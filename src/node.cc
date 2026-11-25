@@ -1183,6 +1183,7 @@ bool CanEnableWebAssemblyTrapHandler() {
 extern char gBuildId[];
 void InitializeRecordReplay(int* pargc, char*** pargv);
 void ApplyRecordReplayMaxOldSpace();
+void ApplyRecordReplayCpuFeatures();
 static std::shared_ptr<InitializationResultImpl>
 InitializeOncePerProcessInternal(const std::vector<std::string>& args,
                                  ProcessInitializationFlags::Flags flags =
@@ -1234,6 +1235,7 @@ InitializeOncePerProcessInternal(const std::vector<std::string>& args,
   }
 
   ApplyRecordReplayMaxOldSpace();
+  ApplyRecordReplayCpuFeatures();
 
   if (!(flags & ProcessInitializationFlags::kNoUseLargePages) &&
       (per_process::cli_options->use_largepages == "on")) {

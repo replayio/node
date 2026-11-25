@@ -263,6 +263,38 @@ void ApplyRecordReplayMaxOldSpace() {
   V8::SetFlagsFromString(flag.c_str(), flag.size());
 }
 
+// x64 codegen selects on two CPUID leaf 7 sub-leaf 1 features, AVX-VNNI and
+// AVX-VNNI-INT8, which it reads from whichever CPU the process is running on.
+// Left alone they make a replay generate different code than the recording
+// did, and the wasm relaxed dot products are where that shows: with either
+// feature the op becomes one vpdpbssd or vpdpbusd, and without them a
+// saturating vpmaddubsw and pmaddwd pair. The three disagree once the i7
+// operand's high bit is set, and they differ in length, which moves when
+// Liftoff asks to tier up even when the results agree.
+//
+// Recording the leaf would not fix this. It would make both sides agree about
+// what the CPU had, but these features gate whether an instruction may be
+// emitted at all, so a recording from a machine with AVX-VNNI would have the
+// replay emit vpdpbusd or vpdpbssd on a host that need not implement it,
+// trading a divergence for an illegal instruction. A replay runs wherever
+// there is capacity and cannot be promised to be as new as every recording's
+// machine. Turning both features off for recording and replaying alike is what
+// makes the generated code the same, whatever either CPU can do: the only ops
+// affected are those dot products, and the operands that tell the lowerings
+// apart are the ones the opcodes leave implementation-defined, so no
+// conforming program can see which one it got.
+//
+// This runs before V8::Initialize(), which is what probes the CPU, and like
+// the old space limit above it is applied as a V8 flag after the command
+// line's so that the arguments stay the same when replaying.
+void ApplyRecordReplayCpuFeatures() {
+  if (!v8::recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+  static const char kFlags[] = "--no-enable-avx-vnni --no-enable-avx-vnni-int8";
+  V8::SetFlagsFromString(kFlags, sizeof(kFlags) - 1);
+}
+
 // Whether the command line asks node to build a V8 startup snapshot, which is
 // not recorded (see InitializeRecordReplay). --build-snapshot and
 // --build-snapshot-config are not allowed in NODE_OPTIONS, so the command line
