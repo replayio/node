@@ -119,6 +119,11 @@ class FSContinuationData : public MemoryRetainer {
   inline bool ShouldRetryENOENT(const std::string& path);
   inline void Done(int result);
 
+  // Used by mkdirp: the error of the mkdir whose path a stat then checks. Not
+  // in req->data, which stays the request's ReqWrap.
+  void set_mkdir_error(int error) { mkdir_error_ = error; }
+  int mkdir_error() const { return mkdir_error_; }
+
   int mode() const { return mode_; }
   const std::vector<std::string>& paths() const { return paths_; }
   const std::string& first_path() const { return first_path_; }
@@ -134,6 +139,7 @@ class FSContinuationData : public MemoryRetainer {
   std::vector<std::string> paths_;
   std::vector<std::string> enoent_paths_;
   std::string first_path_;
+  int mkdir_error_ = 0;
 };
 
 class FSReqBase : public ReqWrap<uv_fs_t> {

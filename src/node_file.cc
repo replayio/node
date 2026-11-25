@@ -2224,13 +2224,13 @@ int MKDirpAsync(
             }
             default:
               uv_fs_req_cleanup(req);
-              // Stash err for use in the callback.
-              req->data = reinterpret_cast<void*>(static_cast<intptr_t>(err));
+              req_wrap->continuation_data()->set_mkdir_error(err);
               int err = uv_fs_stat(
                   loop, req, path.c_str(), uv_fs_callback_t{[](uv_fs_t* req) {
                     FSReqBase* req_wrap = FSReqBase::from_req(req);
                     int err = static_cast<int>(req->result);
-                    if (reinterpret_cast<intptr_t>(req->data) == UV_EEXIST &&
+                    if (req_wrap->continuation_data()->mkdir_error() ==
+                            UV_EEXIST &&
                         req_wrap->continuation_data()->paths().size() > 0) {
                       if (err == 0 && S_ISDIR(req->statbuf.st_mode)) {
                         Environment* env = req_wrap->env();
