@@ -12147,17 +12147,15 @@ void RecordReplayOnExceptionUnwind(Isolate* isolate) {
   }
 }
 
-// Until the driver is loaded this points at a counter of its own, so that it
-// is never null. V8 13.6's startup deserializer checks that external
-// references the serializer deduplicated are still equal
-// (StartupDeserializer::DeserializeAndCheckExternalReferenceTable), and
-// record_replay_progress_counter is this pointer's value: null while
-// node_mksnapshot builds the startup snapshot, where it deduplicated against
-// the table's nullptr entry, and the driver's counter in a recorded run, where
-// it no longer does. Nothing reads the fallback's value; every user of the
-// counter runs while recording or replaying.
-static uint64_t gUnusedProgressCounter;
-uint64_t* gProgressCounter = &gUnusedProgressCounter;
+// V8 owns the progress counter, and the driver keeps it here once
+// RecordReplaySetProgressCounter hands it over. JIT code then addresses it off
+// the root register, as it does the target progress, instead of holding the
+// driver's counter address in a register. Being a static that is never null,
+// it also deduplicates the same way in node_mksnapshot as in a recorded run,
+// which V8 13.6's startup deserializer checks
+// (StartupDeserializer::DeserializeAndCheckExternalReferenceTable).
+static uint64_t gProgressCounterStorage;
+uint64_t* gProgressCounter = &gProgressCounterStorage;
 
 bool gRecordReplayInstrumentationEnabled;
 
@@ -13162,9 +13160,9 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   RecordReplayLoadSymbol(handle, "RecordReplaySetCrashReasonCallback", setCrashReasonCallback);
   setCrashReasonCallback(V8RecordReplayCrashReasonCallback);
 
-  uint64_t* (*getProgressCounter)();
-  RecordReplayLoadSymbol(handle, "RecordReplayProgressCounter", getProgressCounter);
-  internal::gProgressCounter = getProgressCounter();
+  void (*setProgressCounter)(uint64_t* counter);
+  RecordReplayLoadSymbol(handle, "RecordReplaySetProgressCounter", setProgressCounter);
+  setProgressCounter(internal::gProgressCounter);
 
   void (*setChangeInstrumentCallback)(void (*callback)(bool wantInstrumentation));
   RecordReplayLoadSymbol(handle, "RecordReplaySetChangeInstrumentCallback", setChangeInstrumentCallback);
