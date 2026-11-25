@@ -1944,7 +1944,9 @@ int Heap::NotifyContextDisposed(bool has_dependent_context) {
     if (memory_reducer_) {
       memory_reducer_->NotifyPossibleGarbage();
     }
-    if (recordreplay::IsRecordingOrReplaying()) {
+    // Under --no-memory-reducer, and the flags which imply it like
+    // --predictable, there is no reducer whose timer could be posted.
+    if (memory_reducer_ && recordreplay::IsRecordingOrReplaying()) {
       memory_reducer_->RecordReplayPostRequestedTimer();
     }
   } else if (v8_flags.idle_gc_on_context_disposal &&
