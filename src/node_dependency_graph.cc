@@ -1,5 +1,8 @@
 #include "node_dependency_graph.h"
 
+#include <fcntl.h>
+#include <sys/stat.h>
+
 #include <algorithm>
 #include <array>
 #include <iomanip>
@@ -12,8 +15,11 @@
 #include "env-inl.h"
 #include "json_utils.h"
 #include "node_external_reference.h"
+#include "path.h"
+#include "req_wrap-inl.h"
 #include "simdutf.h"
 #include "util-inl.h"
+#include "uv.h"
 
 namespace node {
 
@@ -237,6 +243,8 @@ std::string_view DependencyGraphFeatureName(DependencyGraphFeature feature) {
       return "requestHeaderNames";
     case DependencyGraphFeature::kRequestParts:
       return "requestParts";
+    case DependencyGraphFeature::kFsOps:
+      return "fsOps";
     case DependencyGraphFeature::kCount:
       break;
   }
@@ -393,6 +401,402 @@ void NetworkRequest(const FunctionCallbackInfo<Value>& args) {
           .c_str());
 }
 
+#ifndef _WIN32
+
+// A path an fs request was given. No syscall resolves it: replaying can't
+// issue one, so symlinks stay unresolved.
+struct FsPath {
+  // Lexically normalized, against the cwd if relative. nullopt: relative, and
+  // the cwd is unknown.
+  std::optional<std::string> absolute;
+  // As given, if relative.
+  std::optional<std::string> relative;
+};
+
+FsPath ResolveFsPath(std::string_view path,
+                     const std::optional<std::string>& cwd) {
+  if (!path.empty() && path.front() == '/') {
+    return {"/" + NormalizeString(path, false, "/"), std::nullopt};
+  }
+  FsPath resolved{std::nullopt, std::string(path)};
+  if (cwd) {
+    resolved.absolute =
+        "/" + NormalizeString(*cwd + "/" + std::string(path), false, "/");
+  }
+  return resolved;
+}
+
+// What an fs request reports when posted. Read then: the request's buffers
+// and offset change while it runs.
+struct FsIssue {
+  uv_fs_type type;
+  bool sync;
+  std::optional<FsPath> path;
+  std::optional<FsPath> new_path;
+  // symlink: the link's contents, which resolve against the link's directory,
+  // not the cwd.
+  std::optional<std::string> target;
+  std::optional<uv_file> fd;
+  // The path of the open that returned fd, if seen.
+  std::optional<std::string> fd_path;
+  // open.
+  std::optional<int> flags;
+  // Explicit only: none for the current position.
+  std::optional<int64_t> offset;
+  std::optional<uint64_t> length;
+};
+
+struct PendingFsOp {
+  FsIssue issue;
+  // Async: its fsOp node (0: none). Sync: 0, it is added at completion.
+  int node;
+};
+
+#endif  // _WIN32
+
+// fs ops (InstallFsDependencyGraph). Main thread only.
+struct FsOps {
+  // Whether fsOp nodes are reported: the observers are installed.
+  bool reported = false;
+  std::optional<std::string> cwd;
+#ifndef _WIN32
+  // Per request posted, until its completion.
+  std::unordered_map<const uv_fs_t*, PendingFsOp> pending;
+  // Per fd an open's completion returned, until its close is posted: the
+  // open's path.
+  std::unordered_map<uv_file, std::string> fd_paths;
+#endif  // _WIN32
+};
+
+FsOps& GetFsOps() {
+  // Never destroyed: requests complete until exit.
+  static FsOps* ops = new FsOps();
+  return *ops;
+}
+
+#ifndef _WIN32
+
+std::string_view FsOpName(uv_fs_type type) {
+  switch (type) {
+    case UV_FS_UNKNOWN:
+      return "unknown";
+    case UV_FS_CUSTOM:
+      return "custom";
+    case UV_FS_OPEN:
+      return "open";
+    case UV_FS_CLOSE:
+      return "close";
+    case UV_FS_READ:
+      return "read";
+    case UV_FS_WRITE:
+      return "write";
+    case UV_FS_SENDFILE:
+      return "sendfile";
+    case UV_FS_STAT:
+      return "stat";
+    case UV_FS_LSTAT:
+      return "lstat";
+    case UV_FS_FSTAT:
+      return "fstat";
+    case UV_FS_FTRUNCATE:
+      return "ftruncate";
+    case UV_FS_UTIME:
+      return "utime";
+    case UV_FS_FUTIME:
+      return "futime";
+    case UV_FS_ACCESS:
+      return "access";
+    case UV_FS_CHMOD:
+      return "chmod";
+    case UV_FS_FCHMOD:
+      return "fchmod";
+    case UV_FS_FSYNC:
+      return "fsync";
+    case UV_FS_FDATASYNC:
+      return "fdatasync";
+    case UV_FS_UNLINK:
+      return "unlink";
+    case UV_FS_RMDIR:
+      return "rmdir";
+    case UV_FS_MKDIR:
+      return "mkdir";
+    case UV_FS_MKDTEMP:
+      return "mkdtemp";
+    case UV_FS_RENAME:
+      return "rename";
+    case UV_FS_SCANDIR:
+      return "scandir";
+    case UV_FS_LINK:
+      return "link";
+    case UV_FS_SYMLINK:
+      return "symlink";
+    case UV_FS_READLINK:
+      return "readlink";
+    case UV_FS_CHOWN:
+      return "chown";
+    case UV_FS_FCHOWN:
+      return "fchown";
+    case UV_FS_REALPATH:
+      return "realpath";
+    case UV_FS_COPYFILE:
+      return "copyfile";
+    case UV_FS_LCHOWN:
+      return "lchown";
+    case UV_FS_OPENDIR:
+      return "opendir";
+    case UV_FS_READDIR:
+      return "readdir";
+    case UV_FS_CLOSEDIR:
+      return "closedir";
+    case UV_FS_STATFS:
+      return "statfs";
+    case UV_FS_MKSTEMP:
+      return "mkstemp";
+    case UV_FS_LUTIME:
+      return "lutime";
+  }
+  UNREACHABLE();
+}
+
+bool FsOpTakesFd(uv_fs_type type) {
+  switch (type) {
+    case UV_FS_CLOSE:
+    case UV_FS_READ:
+    case UV_FS_WRITE:
+    case UV_FS_SENDFILE:
+    case UV_FS_FSTAT:
+    case UV_FS_FTRUNCATE:
+    case UV_FS_FUTIME:
+    case UV_FS_FCHMOD:
+    case UV_FS_FSYNC:
+    case UV_FS_FDATASYNC:
+    case UV_FS_FCHOWN:
+      return true;
+    default:
+      return false;
+  }
+}
+
+FsIssue ReadFsIssue(const uv_fs_t* req, const FsOps& ops) {
+  FsIssue issue{req->fs_type, req->cb == nullptr};
+  if (req->path != nullptr) {
+    if (req->fs_type == UV_FS_SYMLINK) {
+      issue.target = req->path;
+    } else {
+      issue.path = ResolveFsPath(req->path, ops.cwd);
+    }
+  }
+  if (req->new_path != nullptr) {
+    issue.new_path = ResolveFsPath(req->new_path, ops.cwd);
+  }
+  if (FsOpTakesFd(req->fs_type)) {
+    issue.fd = req->file;
+    if (auto it = ops.fd_paths.find(req->file); it != ops.fd_paths.end()) {
+      issue.fd_path = it->second;
+    }
+  }
+  switch (req->fs_type) {
+    case UV_FS_OPEN:
+      issue.flags = req->flags;
+      break;
+    case UV_FS_READ:
+    case UV_FS_WRITE: {
+      if (req->off >= 0) issue.offset = req->off;
+      uint64_t length = 0;
+      for (unsigned int i = 0; i < req->nbufs; i++) length += req->bufs[i].len;
+      issue.length = length;
+      break;
+    }
+    case UV_FS_FTRUNCATE:
+      issue.offset = req->off;
+      break;
+    default:
+      break;
+  }
+  return issue;
+}
+
+// Bits of open flags by name, a combined one (O_SYNC has O_DSYNC's bit) before
+// its parts.
+constexpr std::pair<int, std::string_view> kOpenFlagNames[] = {
+    {O_CREAT, "O_CREAT"},
+    {O_EXCL, "O_EXCL"},
+    {O_NOCTTY, "O_NOCTTY"},
+    {O_TRUNC, "O_TRUNC"},
+    {O_APPEND, "O_APPEND"},
+    {O_NONBLOCK, "O_NONBLOCK"},
+    {O_SYNC, "O_SYNC"},
+    {O_DSYNC, "O_DSYNC"},
+    {O_DIRECTORY, "O_DIRECTORY"},
+    {O_NOFOLLOW, "O_NOFOLLOW"},
+    {O_CLOEXEC, "O_CLOEXEC"},
+#ifdef O_NOATIME
+    {O_NOATIME, "O_NOATIME"},
+#endif
+#ifdef O_DIRECT
+    {O_DIRECT, "O_DIRECT"},
+#endif
+};
+
+// flags: the access mode's and each known bit's name; otherFlags: the bits
+// left, if any.
+void WriteOpenFlags(JSONWriter& writer, int flags) {
+  writer.json_arraystart("flags");
+  switch (flags & O_ACCMODE) {
+    case O_RDONLY:
+      writer.json_element(std::string_view("O_RDONLY"));
+      break;
+    case O_WRONLY:
+      writer.json_element(std::string_view("O_WRONLY"));
+      break;
+    case O_RDWR:
+      writer.json_element(std::string_view("O_RDWR"));
+      break;
+  }
+  int other = flags & ~O_ACCMODE;
+  for (const auto& [bits, name] : kOpenFlagNames) {
+    if ((other & bits) == bits) {
+      writer.json_element(name);
+      other &= ~bits;
+    }
+  }
+  writer.json_arrayend();
+  if (other) writer.json_keyvalue("otherFlags", other);
+}
+
+// path and rawPath, or newPath and rawNewPath.
+void WriteFsPath(JSONWriter& writer,
+                 const FsPath& path,
+                 std::string_view absolute_key,
+                 std::string_view relative_key) {
+  if (path.absolute) {
+    writer.json_keyvalue(absolute_key, std::string_view(*path.absolute));
+  }
+  if (path.relative) {
+    writer.json_keyvalue(relative_key, std::string_view(*path.relative));
+  }
+}
+
+void WriteFsIssue(JSONWriter& writer, const FsIssue& issue) {
+  writer.json_keyvalue("op", FsOpName(issue.type));
+  writer.json_keyvalue("sync", issue.sync);
+  if (issue.path) WriteFsPath(writer, *issue.path, "path", "rawPath");
+  if (issue.new_path) {
+    WriteFsPath(writer, *issue.new_path, "newPath", "rawNewPath");
+  }
+  if (issue.target) {
+    writer.json_keyvalue("target", std::string_view(*issue.target));
+  }
+  if (issue.fd) writer.json_keyvalue("fd", *issue.fd);
+  if (issue.fd_path) {
+    writer.json_keyvalue("fdPath", std::string_view(*issue.fd_path));
+  }
+  if (issue.flags) WriteOpenFlags(writer, *issue.flags);
+  if (issue.offset) writer.json_keyvalue("offset", *issue.offset);
+  if (issue.length) writer.json_keyvalue("length", *issue.length);
+}
+
+std::string_view FileTypeName(uint64_t mode) {
+  switch (mode & S_IFMT) {
+    case S_IFREG:
+      return "file";
+    case S_IFDIR:
+      return "directory";
+    case S_IFLNK:
+      return "symlink";
+    case S_IFIFO:
+      return "fifo";
+    case S_IFSOCK:
+      return "socket";
+    case S_IFCHR:
+      return "characterDevice";
+    case S_IFBLK:
+      return "blockDevice";
+  }
+  return "unknown";
+}
+
+// result (fd, bytes, entries, 0) or error (the uv error name); a stat's
+// result.
+void WriteFsResult(JSONWriter& writer, const uv_fs_t* req) {
+  if (req->result < 0) {
+    writer.json_keyvalue(
+        "error",
+        std::string_view(uv_err_name(static_cast<int>(req->result))));
+    return;
+  }
+  writer.json_keyvalue("result", int64_t{req->result});
+  if (req->fs_type != UV_FS_STAT && req->fs_type != UV_FS_LSTAT &&
+      req->fs_type != UV_FS_FSTAT) {
+    return;
+  }
+  const uv_stat_t& stat = req->statbuf;
+  writer.json_keyvalue("size", stat.st_size);
+  writer.json_keyvalue("modifiedTime",
+                       stat.st_mtim.tv_sec * 1e3 + stat.st_mtim.tv_nsec / 1e6);
+  writer.json_keyvalue("inode", stat.st_ino);
+  writer.json_keyvalue("device", stat.st_dev);
+  writer.json_keyvalue("fileType", FileTypeName(stat.st_mode));
+}
+
+// The asyncInit node of the op that posted the request, 0 if none: node posts
+// its async requests from a ReqWrap, which points req->data at itself
+// (ReqWrap::Dispatched). Requests posted otherwise, e.g. by addons, don't.
+int FsRequestInitNode(uv_fs_t* req) {
+  ReqWrap<uv_fs_t>* wrap = ReqWrap<uv_fs_t>::from_req(req);
+  if (req->data != wrap) return 0;
+  return wrap->env()->async_hooks()->dependency_graph().InitNode(
+      wrap->get_async_id());
+}
+
+void OnFsIssue(uv_fs_t* req) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  FsOps& ops = GetFsOps();
+  PendingFsOp pending{ReadFsIssue(req, ops), 0};
+  if (!pending.issue.sync) {
+    pending.node = v8::recordreplay::NewDependencyGraphNode(
+        NodeJsonWith("fsOp",
+                     [&](JSONWriter& writer) {
+                       WriteFsIssue(writer, pending.issue);
+                     })
+            .c_str());
+    v8::recordreplay::AddDependencyGraphEdge(
+        FsRequestInitNode(req), pending.node, R"({"kind":"fsOperation"})");
+  }
+  if (req->fs_type == UV_FS_CLOSE) ops.fd_paths.erase(req->file);
+  ops.pending.insert_or_assign(req, std::move(pending));
+}
+
+void OnFsDone(uv_fs_t* req) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  FsOps& ops = GetFsOps();
+  auto it = ops.pending.find(req);
+  if (it == ops.pending.end()) return;
+  PendingFsOp pending = std::move(it->second);
+  ops.pending.erase(it);
+  if (pending.issue.sync) {
+    v8::recordreplay::NewDependencyGraphNode(
+        NodeJsonWith("fsOp", [&](JSONWriter& writer) {
+          WriteFsIssue(writer, pending.issue);
+          WriteFsResult(writer, req);
+        }).c_str());
+  } else if (pending.node) {
+    int node = v8::recordreplay::NewDependencyGraphNode(
+        NodeJsonWith("fsDone", [&](JSONWriter& writer) {
+          WriteFsResult(writer, req);
+        }).c_str());
+    v8::recordreplay::AddDependencyGraphEdge(
+        pending.node, node, R"({"kind":"fsCompletion"})");
+  }
+  if (req->fs_type == UV_FS_OPEN && req->result >= 0 && pending.issue.path &&
+      pending.issue.path->absolute) {
+    ops.fd_paths.insert_or_assign(static_cast<uv_file>(req->result),
+                                  std::move(*pending.issue.path->absolute));
+  }
+}
+
+#endif  // _WIN32
+
 }  // namespace
 
 std::optional<DependencyExecution> DependencyExecution::Begin(int node) {
@@ -454,14 +858,22 @@ void AsyncDependencyGraph::OnInitScript(double async_id) {
         NodeJsonWith("marker", [](JSONWriter& writer) {
           writer.json_keyvalue("reason", std::string_view("ExecuteScript"));
           writer.json_keyvalue("name", std::string_view("StartExecution"));
-          // This build's features: every DependencyGraphFeature.
+          // This build's features: every DependencyGraphFeature, kFsOps if
+          // reported.
+          const FsOps& fs_ops = GetFsOps();
           writer.json_arraystart("features");
           for (int i = 0; i < static_cast<int>(DependencyGraphFeature::kCount);
                i++) {
-            writer.json_element(DependencyGraphFeatureName(
-                static_cast<DependencyGraphFeature>(i)));
+            auto feature = static_cast<DependencyGraphFeature>(i);
+            if (feature == DependencyGraphFeature::kFsOps && !fs_ops.reported) {
+              continue;
+            }
+            writer.json_element(DependencyGraphFeatureName(feature));
           }
           writer.json_arrayend();
+          if (fs_ops.reported && fs_ops.cwd) {
+            writer.json_keyvalue("cwd", std::string_view(*fs_ops.cwd));
+          }
         }));
 }
 
@@ -636,6 +1048,11 @@ void AsyncDependencyGraph::OnEndDispatch() {
   if (execution) execution->End();
 }
 
+int AsyncDependencyGraph::InitNode(double async_id) const {
+  auto it = ops_.find(async_id);
+  return it == ops_.end() ? 0 : it->second.node;
+}
+
 void AsyncDependencyGraph::DropEndedDispatches() {
   while (!dispatches_.empty() && dispatches_.back() &&
          dispatches_.back()->ended()) {
@@ -659,6 +1076,31 @@ int NewLockGrantedDependencyNode(int request_node) {
   v8::recordreplay::AddDependencyGraphEdge(
       request_node, node, R"({"kind":"creator"})");
   return node;
+}
+
+void InstallFsDependencyGraph() {
+#ifndef _WIN32
+  if (!v8::recordreplay::DependencyGraphEnabled() ||
+      !v8::recordreplay::FeatureEnabled("dependency-graph-fs")) {
+    return;
+  }
+  GetFsOps().reported = true;
+  uv_fs_set_observers(OnFsIssue, OnFsDone);
+#endif  // _WIN32
+}
+
+void RecordFsDependencyGraphCwd() {
+  if (!v8::recordreplay::DependencyGraphInstrumented()) return;
+  // Read when recording too: a getcwd only when replaying would be a syscall
+  // the recording doesn't have.
+  char cwd[PATH_MAX_BYTES];
+  size_t size = sizeof(cwd);
+  size_t length = v8::recordreplay::RecordReplayValue(
+      "FsDependencyGraphCwdLength", uv_cwd(cwd, &size) == 0 ? size : 0);
+  CHECK_LE(length, sizeof(cwd));
+  if (!length) return;
+  v8::recordreplay::RecordReplayBytes("FsDependencyGraphCwd", cwd, length);
+  GetFsOps().cwd = std::string(cwd, length);
 }
 
 void AsyncDependencyGraph::CreatePerIsolateProperties(

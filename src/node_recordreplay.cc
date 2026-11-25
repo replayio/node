@@ -330,6 +330,7 @@ void InitializeRecordReplay(int* pargc, char*** pargv) {
     gRecordReplayAttach(gBuildId);
     gRecordReplayRecordCommandLineArguments(pargc, pargv);
     v8::recordreplay::SetRecordingOrReplaying(handle);
+    InstallFsDependencyGraph();
 
     if (gRecordReplaySaveRecording) {
       gRecordReplaySaveRecording(nullptr);

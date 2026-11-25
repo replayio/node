@@ -140,9 +140,19 @@ extern char *mkdtemp(char *template); /* See issue #740 on AIX < 7 */
   }                                                                           \
   while (0)
 
+static uv_fs_observer_cb uv__fs_issue_observer;
+static uv_fs_observer_cb uv__fs_done_observer;
+
+void uv_fs_set_observers(uv_fs_observer_cb issue, uv_fs_observer_cb done) {
+  uv__fs_issue_observer = issue;
+  uv__fs_done_observer = done;
+}
+
 #define POST                                                                  \
   do {                                                                        \
     REPLAY_ASSERT_MAYBE_EVENTS_DISALLOWED("POST_WORK %d", (int)req->fs_type); \
+    if (uv__fs_issue_observer != NULL)                                        \
+      uv__fs_issue_observer(req);                                             \
     if (cb != NULL) {                                                         \
       uv__req_register(loop);                                                 \
       uv__work_submit(loop,                                                   \
@@ -155,6 +165,8 @@ extern char *mkdtemp(char *template); /* See issue #740 on AIX < 7 */
     else {                                                                    \
       uv__fs_work(&req->work_req);                                            \
       REPLAY_ASSERT_MAYBE_EVENTS_DISALLOWED("POST_WORK_DONE %d %d", (int)req->fs_type, req->result); \
+      if (uv__fs_done_observer != NULL)                                       \
+        uv__fs_done_observer(req);                                            \
       return req->result;                                                     \
     }                                                                         \
   }                                                                           \
@@ -1806,6 +1818,9 @@ static void uv__fs_done(struct uv__work* w, int status) {
     assert(req->result == 0);
     req->result = UV_ECANCELED;
   }
+
+  if (uv__fs_done_observer != NULL)
+    uv__fs_done_observer(req);
 
   req->cb(req);
 }

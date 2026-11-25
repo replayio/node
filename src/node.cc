@@ -293,6 +293,7 @@ MaybeLocal<Value> StartExecution(Environment* env,
   if (v8::IsMainThread()) {
     v8::recordreplay::NewCheckpoint();
   }
+  RecordFsDependencyGraphCwd();
   // The root of the dependency graph: the main script runs in its window.
   env->async_hooks()->dependency_graph().OnInitScript(1);
   InternalCallbackScope callback_scope(

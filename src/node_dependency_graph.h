@@ -37,6 +37,8 @@ enum class DependencyGraphFeature {
   kRequestHeaderNames,  // "requestHeaderNames": requestStart{headerNames}
   kRequestParts,        // "requestParts": requestData and requestEnd
                         // dispatches
+  kFsOps,               // "fsOps": fsOp and fsDone (InstallFsDependencyGraph),
+                        // the root marker's cwd. Listed only when reported.
   kCount,               // not a feature: their number
 };
 
@@ -147,6 +149,8 @@ class AsyncDependencyGraph {
                           v8::Local<v8::String> timed_by);
   // Ends the innermost dispatch not ended yet.
   void OnEndDispatch();
+  // The node the id's last init added, 0 if none.
+  int InitNode(double async_id) const;
 
   // The JS bindings, on internalBinding('async_wrap').
   static void CreatePerIsolateProperties(IsolateData* isolate_data,
@@ -212,6 +216,24 @@ class DependencyExecutionScope {
 int NewLockRequestDependencyNode(v8::Isolate* isolate,
                                  v8::Local<v8::String> name);
 int NewLockGrantedDependencyNode(int request_node);
+
+// fs ops in the Replay dependency graph: every libuv fs request the main thread
+// posts (uv_fs_set_observers), sync or async, adds an fsOp{op,sync,path,
+// rawPath,newPath,rawNewPath,target,fd,fdPath,flags,otherFlags,offset,length}
+// node. An async one's completion, before its callback, adds an
+// fsDone{result|error,size,modifiedTime,inode,device,fileType} node with an
+// fsCompletion edge from its fsOp, which has an fsOperation edge from its
+// ReqWrap's asyncInit. A sync one's fsOp carries the fsDone fields. Paths only,
+// never contents. Not covered: fs work off the main thread (threadpool jobs),
+// and fs syscalls outside libuv.
+//
+// Reported while v8::recordreplay::DependencyGraphEnabled(), unless the driver
+// disables the dependency-graph-fs feature: it changes no JS behavior, so a
+// replay can turn it off. Call before any fs request is posted.
+void InstallFsDependencyGraph();
+// The process cwd fsOp paths resolve against: read once, recorded, while
+// v8::recordreplay::DependencyGraphInstrumented(), at the first checkpoint.
+void RecordFsDependencyGraphCwd();
 
 }  // namespace node
 
