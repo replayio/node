@@ -947,6 +947,9 @@ class WorkerCpuUsageTaker : public AsyncWrap {
 };
 
 void Worker::CpuUsage(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "worker.cpuUsage")) {
+    return;
+  }
   Worker* w;
   ASSIGN_OR_RETURN_UNWRAP(&w, args.This());
 
