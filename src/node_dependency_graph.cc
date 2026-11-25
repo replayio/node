@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 #include "env-inl.h"
 #include "json_utils.h"
@@ -430,10 +431,10 @@ FsPath ResolveFsPath(std::string_view path,
   return resolved;
 }
 
-// What an fs request reports when posted. Read then: the request's buffers
-// and offset change while it runs.
+// What an fs request or an FsJob reports when issued. A request's is read
+// then: its buffers and offset change while it runs.
 struct FsIssue {
-  uv_fs_type type;
+  std::variant<uv_fs_type, FsJob> op;
   bool sync;
   std::optional<FsPath> path;
   std::optional<FsPath> new_path;
@@ -575,6 +576,28 @@ std::string_view FsOpName(uv_fs_type type) {
   UNREACHABLE();
 }
 
+std::string_view FsOpName(FsJob job) {
+  switch (job) {
+    case FsJob::kReadFile:
+      return "readFile";
+    case FsJob::kWriteFile:
+      return "writeFile";
+    case FsJob::kReadDirRecursive:
+      return "readdirRecursive";
+    case FsJob::kCpCheckPaths:
+      return "cpCheckPaths";
+    case FsJob::kCpFile:
+      return "cpFile";
+    case FsJob::kCpDir:
+      return "cpDir";
+    case FsJob::kRm:
+      return "rm";
+    case FsJob::kChdir:
+      return "chdir";
+  }
+  UNREACHABLE();
+}
+
 bool FsOpTakesFd(uv_fs_type type) {
   switch (type) {
     case UV_FS_CLOSE:
@@ -700,7 +723,8 @@ void WriteFsPath(JSONWriter& writer,
 }
 
 void WriteFsIssue(JSONWriter& writer, const FsIssue& issue) {
-  writer.json_keyvalue("op", FsOpName(issue.type));
+  writer.json_keyvalue(
+      "op", std::visit([](auto op) { return FsOpName(op); }, issue.op));
   writer.json_keyvalue("sync", issue.sync);
   if (issue.path) WriteFsPath(writer, *issue.path, "path", "rawPath");
   if (issue.new_path) {
@@ -836,6 +860,46 @@ void OnFsDone(uv_fs_t* req) {
 void OnFsDispatched() {
   if (!v8::recordreplay::DependencyGraphEnabled()) return;
   GetFsOps().completion = 0;
+}
+
+bool FsJobsReported() {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return false;
+  const FsOps& ops = GetFsOps();
+  return ops.reported && !ops.recorder_io_depth;
+}
+
+FsIssue ReadFsJobIssue(const FsJobIssue& job, bool sync, const FsOps& ops) {
+  FsIssue issue{job.job, sync};
+  issue.path = ResolveFsPath(job.path, ops.cwd);
+  if (job.new_path) issue.new_path = ResolveFsPath(*job.new_path, ops.cwd);
+  issue.flags = job.flags;
+  issue.length = job.length;
+  return issue;
+}
+
+void WriteFsJobResult(JSONWriter& writer, const FsJobResult& result) {
+  if (result.error) {
+    writer.json_keyvalue("error", std::string_view(uv_err_name(result.error)));
+    if (result.error_op) {
+      writer.json_keyvalue("errorOp", std::string_view(result.error_op));
+    }
+  }
+  if (result.failed) writer.json_keyvalue("failed", true);
+  if (result.result) writer.json_keyvalue("result", *result.result);
+  if (result.fd) writer.json_keyvalue("fd", *result.fd);
+}
+
+// The state a succeeded job changes: the fd it handed back, the cwd.
+void ApplyFsJobResult(FsOps& ops,
+                      const FsIssue& issue,
+                      const FsJobResult& result) {
+  if (result.error || result.failed || !issue.path->absolute) return;
+  if (result.fd) {
+    ops.fd_paths.insert_or_assign(*result.fd, *issue.path->absolute);
+  }
+  if (std::get<FsJob>(issue.op) == FsJob::kChdir) {
+    ops.cwd = *issue.path->absolute;
+  }
 }
 
 #endif  // _WIN32
@@ -1156,6 +1220,53 @@ void OnFsFdHandedOver(int fd) {
 #ifndef _WIN32
   if (!FsOpsReportable()) return;
   GetFsOps().fd_paths.erase(fd);
+#endif  // _WIN32
+}
+
+int OnFsJobIssue(AsyncWrap* wrap, const FsJobIssue& job) {
+#ifndef _WIN32
+  if (!FsJobsReported()) return 0;
+  FsIssue issue = ReadFsJobIssue(job, false, GetFsOps());
+  int node = v8::recordreplay::NewDependencyGraphNode(
+      NodeJsonWith("fsOp", [&](JSONWriter& writer) {
+        WriteFsIssue(writer, issue);
+      }).c_str());
+  v8::recordreplay::AddDependencyGraphEdge(
+      wrap->env()->async_hooks()->dependency_graph().InitNode(
+          wrap->get_async_id()),
+      node,
+      R"({"kind":"fsOperation"})");
+  return node;
+#else
+  return 0;
+#endif  // _WIN32
+}
+
+void OnFsJobDone(int node, const FsJobIssue& job, const FsJobResult& result) {
+#ifndef _WIN32
+  if (!node || !FsJobsReported()) return;
+  FsOps& ops = GetFsOps();
+  int done = v8::recordreplay::NewDependencyGraphNode(
+      NodeJsonWith("fsDone", [&](JSONWriter& writer) {
+        WriteFsJobResult(writer, result);
+      }).c_str());
+  v8::recordreplay::AddDependencyGraphEdge(
+      node, done, R"({"kind":"fsCompletion"})");
+  ApplyFsJobResult(ops, ReadFsJobIssue(job, false, ops), result);
+#endif  // _WIN32
+}
+
+void OnFsJobSync(const FsJobIssue& job, const FsJobResult& result) {
+#ifndef _WIN32
+  if (!FsJobsReported()) return;
+  FsOps& ops = GetFsOps();
+  FsIssue issue = ReadFsJobIssue(job, true, ops);
+  v8::recordreplay::NewDependencyGraphNode(
+      NodeJsonWith("fsOp", [&](JSONWriter& writer) {
+        WriteFsIssue(writer, issue);
+        WriteFsJobResult(writer, result);
+      }).c_str());
+  ApplyFsJobResult(ops, issue, result);
 #endif  // _WIN32
 }
 

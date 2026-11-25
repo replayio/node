@@ -1940,6 +1940,8 @@ static void RmSync(const FunctionCallbackInfo<Value>& args) {
   ToNamespacedPath(env, &path);
   THROW_IF_INSUFFICIENT_PERMISSIONS(
       env, permission::PermissionScope::kFileSystemWrite, path.ToStringView());
+  FsJobSyncScope dependency_graph(
+      isolate, {.job = FsJob::kRm, .path = path.ToStringView()});
   auto file_path = path.ToPath();
   std::error_code error;
   const bool recorded = v8::recordreplay::IsRecordingOrReplaying();
@@ -2829,6 +2831,16 @@ MaybeLocal<Value> MarshalRecursiveReadDir(Isolate* isolate,
 constexpr int kReadDirRecursiveWorkers = 4;
 constexpr int kReadDirRecursiveSyncHelpers = kReadDirRecursiveWorkers - 1;
 
+// A finished walk's FsJobResult: its error, or the entries it read.
+FsJobResult ReadDirRecursiveResult(const RecursiveReadDir& walk) {
+  if (walk.error() != 0) return {.error = walk.error(), .error_op = "scandir"};
+  int64_t entries = 0;
+  for (const auto& dir : walk.dirs()) {
+    entries += static_cast<int64_t>(dir->entries.size());
+  }
+  return {.result = entries};
+}
+
 // An asynchronous recursive readdir: the walk, and the request it settles
 // once every worker has finished.
 class ReadDirRecursiveRequest {
@@ -2841,10 +2853,13 @@ class ReadDirRecursiveRequest {
                           int workers)
       : env_(env),
         req_wrap_(req_wrap),
+        path_(path),
         walk_(std::move(path)),
         encoding_(encoding),
         with_types_(with_types),
-        pending_(workers) {}
+        pending_(workers),
+        dependency_graph_node_(OnFsJobIssue(req_wrap, DependencyGraphIssue())) {
+  }
 
   RecursiveReadDir* walk() { return &walk_; }
 
@@ -2853,6 +2868,10 @@ class ReadDirRecursiveRequest {
     CHECK(status == 0 || status == UV_ECANCELED);
     if (status == UV_ECANCELED) cancelled_ = true;
     if (--pending_ > 0) return;
+    OnFsJobDone(dependency_graph_node_,
+                DependencyGraphIssue(),
+                cancelled_ ? FsJobResult{.error = UV_ECANCELED}
+                           : ReadDirRecursiveResult(walk_));
 
     Isolate* isolate = env_->isolate();
     HandleScope handle_scope(isolate);
@@ -2884,13 +2903,20 @@ class ReadDirRecursiveRequest {
   }
 
  private:
+  FsJobIssue DependencyGraphIssue() const {
+    return {.job = FsJob::kReadDirRecursive, .path = path_};
+  }
+
   Environment* const env_;
   BaseObjectPtr<FSReqBase> req_wrap_;
+  const std::string path_;
   RecursiveReadDir walk_;
   const enum encoding encoding_;
   const bool with_types_;
   int pending_;
   bool cancelled_ = false;
+  // Its fsOp (OnFsJobIssue).
+  const int dependency_graph_node_;
 };
 
 class ReadDirRecursiveWork final : public ThreadPoolWork {
@@ -2958,6 +2984,8 @@ static void ReadDirRecursive(const FunctionCallbackInfo<Value>& args) {
     RecursiveReadDir walk(path.ToString());
     walk.RunWithHelpers(kReadDirRecursiveSyncHelpers);
     FS_SYNC_TRACE_END(readdir);
+    OnFsJobSync({.job = FsJob::kReadDirRecursive, .path = path.ToStringView()},
+                ReadDirRecursiveResult(walk));
 
     if (walk.error() != 0) {
       return env->ThrowUVException(
@@ -3833,6 +3861,8 @@ class ReadFileJob final : public AsyncWrap, public ThreadPoolWork {
     // Keep the wrapper alive while the work is in flight.
     job->ClearWeak();
     FS_ASYNC_TRACE_BEGIN0(UV_FS_READ, job)
+    job->dependency_graph_node_ =
+        OnFsJobIssue(job, job->DependencyGraphIssue());
     job->ScheduleWork();
   }
 
@@ -3917,6 +3947,9 @@ class ReadFileJob final : public AsyncWrap, public ThreadPoolWork {
     std::unique_ptr<ReadFileJob> self(this);
     CHECK(status == 0 || status == UV_ECANCELED);
     FS_ASYNC_TRACE_END0(UV_FS_READ, this)
+    OnFsJobDone(dependency_graph_node_,
+                DependencyGraphIssue(),
+                DependencyGraphResult(status));
     if (status == UV_ECANCELED) {
       if (fd_ >= 0) CloseQuietly(fd_);
       return;
@@ -3993,6 +4026,17 @@ class ReadFileJob final : public AsyncWrap, public ThreadPoolWork {
     error_ = error;
   }
 
+  FsJobIssue DependencyGraphIssue() const {
+    return {.job = FsJob::kReadFile, .path = path_, .flags = flags_};
+  }
+
+  FsJobResult DependencyGraphResult(int status) const {
+    if (status == UV_ECANCELED) return {.error = UV_ECANCELED};
+    if (error_ != 0) return {.error = error_, .error_op = syscall_};
+    if (fd_ >= 0) return {.fd = fd_};
+    return {.result = static_cast<int64_t>(len_)};
+  }
+
   // The permission checks AsyncCheckOpenPermissions() performs for open(),
   // producing the error object instead of rejecting a request wrap.
   static MaybeLocal<Value> OpenPermissionError(Environment* env,
@@ -4051,6 +4095,8 @@ class ReadFileJob final : public AsyncWrap, public ThreadPoolWork {
   int error_ = 0;
   int close_error_ = 0;
   int fd_ = -1;
+  // Its fsOp (OnFsJobIssue).
+  int dependency_graph_node_ = 0;
 };
 
 // Writes a whole buffer to a file in ONE thread pool round trip -- open +
@@ -4104,6 +4150,8 @@ class WriteFileJob final : public AsyncWrap, public ThreadPoolWork {
     job->scheduled_ = true;
     job->ClearWeak();
     FS_ASYNC_TRACE_BEGIN0(UV_FS_WRITE, job)
+    job->dependency_graph_node_ =
+        OnFsJobIssue(job, job->DependencyGraphIssue());
     job->ScheduleWork();
   }
 
@@ -4137,6 +4185,9 @@ class WriteFileJob final : public AsyncWrap, public ThreadPoolWork {
     std::unique_ptr<WriteFileJob> self(this);
     CHECK(status == 0 || status == UV_ECANCELED);
     FS_ASYNC_TRACE_END0(UV_FS_WRITE, this)
+    OnFsJobDone(dependency_graph_node_,
+                DependencyGraphIssue(),
+                DependencyGraphResult(status));
     if (status == UV_ECANCELED || !env->can_call_into_js()) return;
     HandleScope handle_scope(env->isolate());
     Context::Scope context_scope(env->context());
@@ -4199,6 +4250,19 @@ class WriteFileJob final : public AsyncWrap, public ThreadPoolWork {
     error_ = error;
   }
 
+  FsJobIssue DependencyGraphIssue() const {
+    return {.job = FsJob::kWriteFile,
+            .path = path_,
+            .flags = flags_,
+            .length = length_};
+  }
+
+  FsJobResult DependencyGraphResult(int status) const {
+    if (status == UV_ECANCELED) return {.error = UV_ECANCELED};
+    if (error_ != 0) return {.error = error_, .error_op = syscall_};
+    return {.result = static_cast<int64_t>(length_)};
+  }
+
   const std::string path_;
   v8::Global<v8::ArrayBufferView> buffer_;
   std::shared_ptr<v8::BackingStore> backing_store_;
@@ -4210,6 +4274,8 @@ class WriteFileJob final : public AsyncWrap, public ThreadPoolWork {
   bool scheduled_ = false;
   int error_ = 0;
   const char* syscall_ = nullptr;
+  // Its fsOp (OnFsJobIssue).
+  int dependency_graph_node_ = 0;
 };
 
 // Wrapper for readv(2).
@@ -4773,6 +4839,10 @@ static void CpSyncCheckPaths(const FunctionCallbackInfo<Value>& args) {
   ToNamespacedPath(env, &dest);
   THROW_IF_INSUFFICIENT_PERMISSIONS(
       env, permission::PermissionScope::kFileSystemWrite, dest.ToStringView());
+  FsJobSyncScope dependency_graph(isolate,
+                                  {.job = FsJob::kCpCheckPaths,
+                                   .path = src.ToStringView(),
+                                   .new_path = dest.ToStringView()});
 
   auto dest_path = dest.ToPath();
   bool dereference = args[2]->IsTrue();
@@ -4977,6 +5047,20 @@ struct CpError {
     env->isolate()->ThrowException(ToException(env));
   }
 };
+
+FsJobResult CpErrorResult(const CpError& error) {
+  switch (error.kind) {
+    case CpError::kNone:
+      return {};
+    case CpError::kUv:
+      return {.error = error.code, .error_op = error.syscall};
+    case CpError::kErrno:
+      return {.error = uv_translate_sys_error(error.code),
+              .error_op = error.syscall};
+    default:
+      return {.failed = true};
+  }
+}
 
 CpError CopyUtimes(const std::filesystem::path& src,
                    const std::filesystem::path& dest) {
@@ -5391,6 +5475,10 @@ static void CpSyncOverrideFile(const FunctionCallbackInfo<Value>& args) {
       env, permission::PermissionScope::kFileSystemRead, src.ToStringView());
   THROW_IF_INSUFFICIENT_PERMISSIONS(
       env, permission::PermissionScope::kFileSystemWrite, dest.ToStringView());
+  FsJobSyncScope dependency_graph(isolate,
+                                  {.job = FsJob::kCpFile,
+                                   .path = src.ToStringView(),
+                                   .new_path = dest.ToStringView()});
 
   auto src_path = src.ToPath();
   auto dest_path = dest.ToPath();
@@ -5460,6 +5548,10 @@ static void CpSyncCopyDir(const FunctionCallbackInfo<Value>& args) {
                                     preserve_timestamps,
                                     false,
                                     0});
+  OnFsJobSync({.job = FsJob::kCpDir,
+               .path = src.ToStringView(),
+               .new_path = dest.ToStringView()},
+              CpErrorResult(error));
   if (error.kind != CpError::kNone) {
     error.Throw(env);
   }
@@ -5505,6 +5597,8 @@ class CpDirJob final : public AsyncWrap, public ThreadPoolWork {
     CHECK(!job->scheduled_);
     job->scheduled_ = true;
     job->ClearWeak();
+    job->dependency_graph_node_ =
+        OnFsJobIssue(job, job->DependencyGraphIssue());
     job->ScheduleWork();
   }
 
@@ -5516,6 +5610,10 @@ class CpDirJob final : public AsyncWrap, public ThreadPoolWork {
     Environment* env = AsyncWrap::env();
     std::unique_ptr<CpDirJob> self(this);
     CHECK(status == 0 || status == UV_ECANCELED);
+    OnFsJobDone(dependency_graph_node_,
+                DependencyGraphIssue(),
+                status == UV_ECANCELED ? FsJobResult{.error = UV_ECANCELED}
+                                       : CpErrorResult(error_));
     if (status == UV_ECANCELED || !env->can_call_into_js()) return;
     Isolate* isolate = env->isolate();
     HandleScope handle_scope(isolate);
@@ -5552,18 +5650,28 @@ class CpDirJob final : public AsyncWrap, public ThreadPoolWork {
       : AsyncWrap(env, object, AsyncWrap::PROVIDER_FSREQCALLBACK),
         ThreadPoolWork(env, "fs.cp"),
         src_(std::move(src)),
+        src_display_(ConvertPathToUTF8(src_)),
         dest_(std::move(dest)),
         dest_display_(std::move(dest_display)),
         options_(options) {
     MakeWeak();
   }
 
+  FsJobIssue DependencyGraphIssue() const {
+    return {.job = FsJob::kCpDir,
+            .path = src_display_,
+            .new_path = dest_display_};
+  }
+
   const std::filesystem::path src_;
+  const std::string src_display_;
   const std::filesystem::path dest_;
   const std::string dest_display_;
   const CpDirOptions options_;
   CpError error_;
   bool scheduled_ = false;
+  // Its fsOp (OnFsJobIssue).
+  int dependency_graph_node_ = 0;
 };
 
 BindingData::FilePathIsFileReturnType BindingData::FilePathIsFile(

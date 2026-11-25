@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -13,6 +14,7 @@
 
 namespace node {
 
+class AsyncWrap;
 class ExternalReferenceRegistry;
 class IsolateData;
 
@@ -225,11 +227,13 @@ int NewLockGrantedDependencyNode(int request_node);
 // an fsCompletion edge from its fsOp, which has an fsOperation edge from its
 // ReqWrap's asyncInit, and an fsCallback edge to the callback window it
 // dispatches. A sync one's fsOp carries the fsDone fields. Paths only, never
-// contents. Not covered: fs work off the main thread (threadpool jobs), and fs
-// syscalls outside libuv. Not recorded: what queued a StatWatcher's polls, the
-// path of a readdir or closedir. Not reported: the recorder's own requests,
-// between dependencyGraphBeginRecorderIO and dependencyGraphEndRecorderIO, and
-// requests posted while events are disallowed (GC).
+// contents. fs work that posts no main-thread libuv request reports itself as
+// an FsJob, with the same nodes. Not covered: fs syscalls outside libuv and
+// FsJobs, e.g. of native addons. Not recorded: what queued a StatWatcher's
+// polls, the path of a readdir or closedir. Not reported: the recorder's own
+// requests, between dependencyGraphBeginRecorderIO and
+// dependencyGraphEndRecorderIO, and requests posted while events are disallowed
+// (GC).
 //
 // Reported while v8::recordreplay::DependencyGraphEnabled(), unless the driver
 // disables the dependency-graph-fs feature: it changes no JS behavior, so a
@@ -241,6 +245,70 @@ void OnFsFdHandedOver(int fd);
 // The process cwd fsOp paths resolve against: read once, recorded, while
 // v8::recordreplay::DependencyGraphInstrumented(), at the first checkpoint.
 void RecordFsDependencyGraphCwd();
+
+// fs work an fsOp reports as one op, though it posts no main-thread libuv
+// request: threadpool jobs, std::filesystem bindings, chdir.
+enum class FsJob {
+  kReadFile,          // "readFile": ReadFileJob
+  kWriteFile,         // "writeFile": WriteFileJob
+  kReadDirRecursive,  // "readdirRecursive": readdirRecursive
+  kCpCheckPaths,      // "cpCheckPaths": CpSyncCheckPaths
+  kCpFile,            // "cpFile": CpSyncOverrideFile
+  kCpDir,             // "cpDir": CpSyncCopyDir, CpDirJob
+  kRm,                // "rm": RmSync
+  kChdir,             // "chdir": process.chdir; on success the cwd paths
+                      // resolve against
+};
+
+// What an FsJob reports when issued. The views outlive the call.
+struct FsJobIssue {
+  FsJob job;
+  std::string_view path;
+  // The destination (cp).
+  std::optional<std::string_view> new_path;
+  std::optional<int> flags;
+  std::optional<uint64_t> length;
+};
+
+// What an FsJob reports when done.
+struct FsJobResult {
+  // A uv error code, 0 if none or none known.
+  int error = 0;
+  // The step whose error it is, e.g. "open" of a readFile.
+  const char* error_op = nullptr;
+  // It failed without a uv error code, e.g. by an exception.
+  bool failed = false;
+  // Bytes, entries.
+  std::optional<int64_t> result;
+  // readFile: the fd it handed back to read in chunks.
+  std::optional<int> fd;
+};
+
+// An async FsJob of wrap (its asyncInit has the fsOperation edge). Returns its
+// fsOp node for OnFsJobDone, 0 if none.
+int OnFsJobIssue(AsyncWrap* wrap, const FsJobIssue& issue);
+// node: OnFsJobIssue's; issue: the same.
+void OnFsJobDone(int node, const FsJobIssue& issue, const FsJobResult& result);
+// A sync FsJob: one fsOp.
+void OnFsJobSync(const FsJobIssue& issue, const FsJobResult& result);
+
+// A sync FsJob for the lifetime of a binding's scope: failed if the binding
+// leaves an exception pending.
+class FsJobSyncScope {
+ public:
+  FsJobSyncScope(v8::Isolate* isolate, const FsJobIssue& issue)
+      : isolate_(isolate), issue_(issue) {}
+  ~FsJobSyncScope() {
+    if (!v8::recordreplay::DependencyGraphEnabled()) return;
+    OnFsJobSync(issue_, {.failed = isolate_->HasPendingException()});
+  }
+  FsJobSyncScope(const FsJobSyncScope&) = delete;
+  FsJobSyncScope& operator=(const FsJobSyncScope&) = delete;
+
+ private:
+  v8::Isolate* isolate_;
+  FsJobIssue issue_;
+};
 
 }  // namespace node
 

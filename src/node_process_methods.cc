@@ -96,6 +96,8 @@ static void Chdir(const FunctionCallbackInfo<Value>& args) {
   THROW_IF_INSUFFICIENT_PERMISSIONS(
       env, permission::PermissionScope::kFileSystemRead, path.ToStringView());
   int err = uv_chdir(*path);
+  OnFsJobSync({.job = FsJob::kChdir, .path = path.ToStringView()},
+              {.error = err, .error_op = err ? "chdir" : nullptr});
   if (err) {
     // Also include the original working directory, since that will usually
     // be helpful information when debugging a `chdir()` failure.
