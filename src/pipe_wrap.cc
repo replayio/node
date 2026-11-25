@@ -226,6 +226,7 @@ void PipeWrap::Open(const FunctionCallbackInfo<Value>& args) {
   }
 
   int err = uv_pipe_open(&wrap->handle_, fd);
+  OnFsFdHandedOver(fd);
   if (err == 0) wrap->set_fd(fd);
 
   args.GetReturnValue().Set(err);

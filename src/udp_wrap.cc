@@ -377,6 +377,7 @@ void UDPWrap::Open(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsNumber());
   int fd = FromV8Value<int>(args[0]);
   int err = uv_udp_open(&wrap->handle_, fd);
+  OnFsFdHandedOver(fd);
   if (err == 0) wrap->net_permission_granted_ = true;
 
   args.GetReturnValue().Set(err);

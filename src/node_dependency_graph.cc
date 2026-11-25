@@ -406,23 +406,27 @@ void NetworkRequest(const FunctionCallbackInfo<Value>& args) {
 // A path an fs request was given. No syscall resolves it: replaying can't
 // issue one, so symlinks stay unresolved.
 struct FsPath {
-  // Lexically normalized, against the cwd if relative. nullopt: relative, and
-  // the cwd is unknown.
+  // Lexically normalized, against the cwd if relative. nullopt: unknown, also
+  // for a path with a .. component: what precedes it may be a symlink.
   std::optional<std::string> absolute;
-  // As given, if relative.
-  std::optional<std::string> relative;
+  // As given, if relative or absolute is unknown.
+  std::optional<std::string> raw;
 };
+
+bool HasParentComponent(std::string_view path) {
+  return ("/" + std::string(path) + "/").find("/../") != std::string::npos;
+}
 
 FsPath ResolveFsPath(std::string_view path,
                      const std::optional<std::string>& cwd) {
-  if (!path.empty() && path.front() == '/') {
-    return {"/" + NormalizeString(path, false, "/"), std::nullopt};
+  const bool relative = !path.starts_with('/');
+  FsPath resolved;
+  if (!path.empty() && !HasParentComponent(path) && (!relative || cwd)) {
+    const std::string joined =
+        relative ? *cwd + "/" + std::string(path) : std::string(path);
+    resolved.absolute = "/" + NormalizeString(joined, false, "/");
   }
-  FsPath resolved{std::nullopt, std::string(path)};
-  if (cwd) {
-    resolved.absolute =
-        "/" + NormalizeString(*cwd + "/" + std::string(path), false, "/");
-  }
+  if (relative || !resolved.absolute) resolved.raw = path;
   return resolved;
 }
 
@@ -462,11 +466,14 @@ struct FsOps {
   // The recorder's own I/O scopes entered and not left
   // (dependencyGraphBeginRecorderIO): their requests are not the program's.
   uint32_t recorder_io_depth = 0;
+  // The fsDone node whose callback is running and began no window yet, 0 if
+  // none.
+  int completion = 0;
 #ifndef _WIN32
   // Per request posted, until its completion.
   std::unordered_map<const uv_fs_t*, PendingFsOp> pending;
-  // Per fd an open's completion returned, until its close is posted: the
-  // open's path.
+  // Per fd an open's completion returned, until its close is posted or it is
+  // handed over (OnFsFdHandedOver): the open's path.
   std::unordered_map<uv_file, std::string> fd_paths;
 #endif  // _WIN32
 };
@@ -478,6 +485,13 @@ FsOps& GetFsOps() {
 }
 
 #ifndef _WIN32
+
+// Not while events are disallowed: GC closes fds at points that differ between
+// replays, and node ids taken there would too.
+bool FsOpsReportable() {
+  return v8::recordreplay::DependencyGraphEnabled() &&
+         !v8::recordreplay::AreEventsDisallowed("FsDependencyGraph");
+}
 
 std::string_view FsOpName(uv_fs_type type) {
   switch (type) {
@@ -580,11 +594,18 @@ bool FsOpTakesFd(uv_fs_type type) {
   }
 }
 
+// The path of these is a template until their completion.
+bool FsOpCreatesPath(uv_fs_type type) {
+  return type == UV_FS_MKDTEMP || type == UV_FS_MKSTEMP;
+}
+
 FsIssue ReadFsIssue(const uv_fs_t* req, const FsOps& ops) {
   FsIssue issue{req->fs_type, req->cb == nullptr};
   if (req->path != nullptr) {
     if (req->fs_type == UV_FS_SYMLINK) {
       issue.target = req->path;
+    } else if (FsOpCreatesPath(req->fs_type)) {
+      issue.path = FsPath{std::nullopt, req->path};
     } else {
       issue.path = ResolveFsPath(req->path, ops.cwd);
     }
@@ -671,13 +692,11 @@ void WriteOpenFlags(JSONWriter& writer, int flags) {
 void WriteFsPath(JSONWriter& writer,
                  const FsPath& path,
                  std::string_view absolute_key,
-                 std::string_view relative_key) {
+                 std::string_view raw_key) {
   if (path.absolute) {
     writer.json_keyvalue(absolute_key, std::string_view(*path.absolute));
   }
-  if (path.relative) {
-    writer.json_keyvalue(relative_key, std::string_view(*path.relative));
-  }
+  if (path.raw) writer.json_keyvalue(raw_key, std::string_view(*path.raw));
 }
 
 void WriteFsIssue(JSONWriter& writer, const FsIssue& issue) {
@@ -720,7 +739,8 @@ std::string_view FileTypeName(uint64_t mode) {
 }
 
 // result (fd, bytes, entries, 0) or error (the uv error name); a stat's
-// result.
+// result; the path mkdtemp and mkstemp created, unless relative: the cwd it
+// resolved against may have changed.
 void WriteFsResult(JSONWriter& writer, const uv_fs_t* req) {
   if (req->result < 0) {
     writer.json_keyvalue(
@@ -729,6 +749,12 @@ void WriteFsResult(JSONWriter& writer, const uv_fs_t* req) {
     return;
   }
   writer.json_keyvalue("result", int64_t{req->result});
+  if (FsOpCreatesPath(req->fs_type)) {
+    const FsPath created = ResolveFsPath(req->path, std::nullopt);
+    if (created.absolute) {
+      writer.json_keyvalue("path", std::string_view(*created.absolute));
+    }
+  }
   if (req->fs_type != UV_FS_STAT && req->fs_type != UV_FS_LSTAT &&
       req->fs_type != UV_FS_FSTAT) {
     return;
@@ -753,7 +779,7 @@ int FsRequestInitNode(uv_fs_t* req) {
 }
 
 void OnFsIssue(uv_fs_t* req) {
-  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  if (!FsOpsReportable()) return;
   FsOps& ops = GetFsOps();
   if (ops.recorder_io_depth) return;
   PendingFsOp pending{ReadFsIssue(req, ops), 0};
@@ -771,8 +797,17 @@ void OnFsIssue(uv_fs_t* req) {
   ops.pending.insert_or_assign(req, std::move(pending));
 }
 
+// An unknown path forgets that of an earlier open.
+void SetFdPath(FsOps& ops, uv_file fd, const std::optional<FsPath>& path) {
+  if (path && path->absolute) {
+    ops.fd_paths.insert_or_assign(fd, *path->absolute);
+  } else {
+    ops.fd_paths.erase(fd);
+  }
+}
+
 void OnFsDone(uv_fs_t* req) {
-  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  if (!FsOpsReportable()) return;
   FsOps& ops = GetFsOps();
   auto it = ops.pending.find(req);
   if (it == ops.pending.end()) return;
@@ -791,12 +826,16 @@ void OnFsDone(uv_fs_t* req) {
         }).c_str());
     v8::recordreplay::AddDependencyGraphEdge(
         pending.node, node, R"({"kind":"fsCompletion"})");
+    ops.completion = node;
   }
-  if (req->fs_type == UV_FS_OPEN && req->result >= 0 && pending.issue.path &&
-      pending.issue.path->absolute) {
-    ops.fd_paths.insert_or_assign(static_cast<uv_file>(req->result),
-                                  std::move(*pending.issue.path->absolute));
+  if (req->fs_type == UV_FS_OPEN && req->result >= 0) {
+    SetFdPath(ops, static_cast<uv_file>(req->result), pending.issue.path);
   }
+}
+
+void OnFsDispatched() {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  GetFsOps().completion = 0;
 }
 
 #endif  // _WIN32
@@ -905,13 +944,19 @@ void AsyncDependencyGraph::OnPush(double async_id, uint32_t offset) {
   OnPop(offset);
   // Only grows: not-begun slots for JS pushes before setupDependencyGraph().
   windows_.resize(offset);
+  // The completion dispatches the first window that begins in its callback.
+  const int fs_done = std::exchange(GetFsOps().completion, 0);
   auto it = ops_.find(async_id);
   if (it == ops_.end()) {
     windows_.push_back(std::nullopt);
     return;
   }
-  windows_.push_back(
-      DependencyExecution::Begin(RunNode(it->second.node, it->second.op)));
+  const int run = RunNode(it->second.node, it->second.op);
+  if (it->second.op == AsyncOp::kGeneric) {
+    v8::recordreplay::AddDependencyGraphEdge(
+        fs_done, run, R"({"kind":"fsCallback"})");
+  }
+  windows_.push_back(DependencyExecution::Begin(run));
 }
 
 void AsyncDependencyGraph::OnPop(uint32_t length) {
@@ -1103,7 +1148,14 @@ void InstallFsDependencyGraph() {
     return;
   }
   GetFsOps().reported = true;
-  uv_fs_set_observers(OnFsIssue, OnFsDone);
+  uv_fs_set_observers(OnFsIssue, OnFsDone, OnFsDispatched);
+#endif  // _WIN32
+}
+
+void OnFsFdHandedOver(int fd) {
+#ifndef _WIN32
+  if (!FsOpsReportable()) return;
+  GetFsOps().fd_paths.erase(fd);
 #endif  // _WIN32
 }
 
@@ -1116,9 +1168,11 @@ void RecordFsDependencyGraphCwd() {
   size_t length = v8::recordreplay::RecordReplayValue(
       "FsDependencyGraphCwdLength", uv_cwd(cwd, &size) == 0 ? size : 0);
   CHECK_LE(length, sizeof(cwd));
+  std::optional<std::string>& known = GetFsOps().cwd;
+  known.reset();
   if (!length) return;
   v8::recordreplay::RecordReplayBytes("FsDependencyGraphCwd", cwd, length);
-  GetFsOps().cwd = std::string(cwd, length);
+  known = std::string(cwd, length);
 }
 
 void AsyncDependencyGraph::CreatePerIsolateProperties(

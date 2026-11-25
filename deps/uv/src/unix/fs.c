@@ -142,10 +142,14 @@ extern char *mkdtemp(char *template); /* See issue #740 on AIX < 7 */
 
 static uv_fs_observer_cb uv__fs_issue_observer;
 static uv_fs_observer_cb uv__fs_done_observer;
+static uv_fs_dispatched_cb uv__fs_dispatched_observer;
 
-void uv_fs_set_observers(uv_fs_observer_cb issue, uv_fs_observer_cb done) {
+void uv_fs_set_observers(uv_fs_observer_cb issue,
+                         uv_fs_observer_cb done,
+                         uv_fs_dispatched_cb dispatched) {
   uv__fs_issue_observer = issue;
   uv__fs_done_observer = done;
+  uv__fs_dispatched_observer = dispatched;
 }
 
 #define POST                                                                  \
@@ -1823,6 +1827,9 @@ static void uv__fs_done(struct uv__work* w, int status) {
     uv__fs_done_observer(req);
 
   req->cb(req);
+
+  if (uv__fs_dispatched_observer != NULL)
+    uv__fs_dispatched_observer();
 }
 
 

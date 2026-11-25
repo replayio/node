@@ -965,6 +965,8 @@ class FdEntry final : public EntryImpl {
         uv_fs_close(nullptr, &req, file, nullptr);
         return nullptr;
       }
+      // GC may close it: see DrainAndClose.
+      OnFsFdHandedOver(file);
       Realm* realm = entry->env()->principal_realm();
       return std::make_shared<ReaderImpl>(
           BaseObjectPtr<fs::FileHandle>(

@@ -221,17 +221,23 @@ int NewLockGrantedDependencyNode(int request_node);
 // posts (uv_fs_set_observers), sync or async, adds an fsOp{op,sync,path,
 // rawPath,newPath,rawNewPath,target,fd,fdPath,flags,otherFlags,offset,length}
 // node. An async one's completion, before its callback, adds an
-// fsDone{result|error,size,modifiedTime,inode,device,fileType} node with an
-// fsCompletion edge from its fsOp, which has an fsOperation edge from its
-// ReqWrap's asyncInit. A sync one's fsOp carries the fsDone fields. Paths only,
-// never contents. Not covered: fs work off the main thread (threadpool jobs),
-// and fs syscalls outside libuv. Not reported: the recorder's own requests,
-// between dependencyGraphBeginRecorderIO and dependencyGraphEndRecorderIO.
+// fsDone{result|error,path,size,modifiedTime,inode,device,fileType} node with
+// an fsCompletion edge from its fsOp, which has an fsOperation edge from its
+// ReqWrap's asyncInit, and an fsCallback edge to the callback window it
+// dispatches. A sync one's fsOp carries the fsDone fields. Paths only, never
+// contents. Not covered: fs work off the main thread (threadpool jobs), and fs
+// syscalls outside libuv. Not recorded: what queued a StatWatcher's polls, the
+// path of a readdir or closedir. Not reported: the recorder's own requests,
+// between dependencyGraphBeginRecorderIO and dependencyGraphEndRecorderIO, and
+// requests posted while events are disallowed (GC).
 //
 // Reported while v8::recordreplay::DependencyGraphEnabled(), unless the driver
 // disables the dependency-graph-fs feature: it changes no JS behavior, so a
 // replay can turn it off. Call before any fs request is posted.
 void InstallFsDependencyGraph();
+// fd's close may not be an fs request the main thread posts: its ops report no
+// fdPath.
+void OnFsFdHandedOver(int fd);
 // The process cwd fsOp paths resolve against: read once, recorded, while
 // v8::recordreplay::DependencyGraphInstrumented(), at the first checkpoint.
 void RecordFsDependencyGraphCwd();

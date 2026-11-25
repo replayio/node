@@ -1474,11 +1474,14 @@ UV_EXTERN uv_stat_t* uv_fs_get_statbuf(uv_fs_t*);
 /* Record/replay: observers of every fs request posted (unix), on the thread
  * that posts or completes it. issue: when posted, with its arguments set. done:
  * when its result is set, before its callback (async) or its return (sync).
- * Requests libuv posts itself (io_uring fallbacks) get no issue. Set them
- * before any request is posted. NULL: none. */
+ * dispatched: after its callback (async), which may have freed it. Requests
+ * libuv posts itself (io_uring fallbacks) get no issue. Set them before any
+ * request is posted. NULL: none. */
 typedef void (*uv_fs_observer_cb)(uv_fs_t* req);
+typedef void (*uv_fs_dispatched_cb)(void);
 UV_EXTERN void uv_fs_set_observers(uv_fs_observer_cb issue,
-                                   uv_fs_observer_cb done);
+                                   uv_fs_observer_cb done,
+                                   uv_fs_dispatched_cb dispatched);
 
 UV_EXTERN void uv_fs_req_cleanup(uv_fs_t* req);
 UV_EXTERN int uv_fs_close(uv_loop_t* loop,

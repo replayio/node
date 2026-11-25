@@ -391,6 +391,7 @@ void TCPWrap::Open(const FunctionCallbackInfo<Value>& args) {
 
   int err = uv_tcp_open(&wrap->handle_, fd);
 
+  OnFsFdHandedOver(fd);
   if (err == 0) wrap->set_fd(fd);
 
   args.GetReturnValue().Set(err);

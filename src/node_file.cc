@@ -342,6 +342,7 @@ BaseObject::TransferMode FileHandle::GetTransferMode() const {
 std::unique_ptr<worker::TransferData> FileHandle::TransferForMessaging() {
   CHECK_NE(GetTransferMode(), TransferMode::kDisallowCloneAndTransfer);
   auto ret = std::make_unique<TransferData>(fd_);
+  OnFsFdHandedOver(fd_);
   closed_ = true;
   return ret;
 }
