@@ -423,6 +423,11 @@ Environment::deferred_finalization() {
   return deferred_finalization_.get();
 }
 
+inline performance::GCPerformanceEntries*
+Environment::gc_performance_entries() {
+  return gc_performance_entries_.get();
+}
+
 inline builtins::BuiltinLoader* Environment::builtin_loader() {
   return &builtin_loader_;
 }

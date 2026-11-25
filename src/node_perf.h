@@ -8,11 +8,13 @@
 #include "node.h"
 #include "node_internals.h"
 #include "node_perf_common.h"
+#include "replayio.h"
 
 #include "v8.h"
 #include "uv.h"
 
 #include <string>
+#include <vector>
 
 namespace node {
 
@@ -158,6 +160,90 @@ struct GCPerformanceEntryTraits {
 };
 
 using GCPerformanceEntry = PerformanceEntry<GCPerformanceEntryTraits>;
+
+// Delivers 'gc' performance entries at a deterministic point when
+// recording/replaying.
+//
+// Upstream creates an entry in the GC's epilogue callback and hands it to an
+// unrefed immediate from there. The GC runs at points the replay does not
+// reproduce, and in different numbers, so neither the entries' values nor the
+// immediates they push can come from the replay's own collections: the values
+// are read inside the GC, and every push changes the queue that
+// Environment::CheckImmediate drains, which both sides have to agree on.
+//
+// Instead the epilogue only notes the entry's fields while recording, and V8's
+// GC poll (deps/v8/src/replay/gc-poll.h), which handles WeakRefs,
+// FinalizationRegistries and node's deferred finalization the same way, calls
+// Poll() to write the notes into the recording and push the immediates from
+// there. When replaying, the GC's callbacks do nothing and the recorded notes
+// say which entries to deliver at the same poll.
+//
+// An entry therefore reaches JS a turn later than upstream delivers it, and a
+// collection on a V8 task that no microtask checkpoint follows has to wait for
+// the next one, so an idle event loop can hold an entry until its next turn.
+// The delay is the same on both sides, and costs the entry when the process
+// exits before that turn: a collection during an observer's own dispatch has
+// its immediate queued by the poll after that turn's native drain, where the
+// GC itself would have queued it in time. Entries from earlier turns are
+// unaffected, and the two sides of a recording still agree.
+//
+// Switched off by the "gc-performance-entries" feature, which leaves the
+// recording invalidated as before.
+class GCPerformanceEntries : public v8::replayio::ReplayGCPollParticipant {
+ public:
+  GCPerformanceEntries(Environment* env, PerformanceState* state);
+  ~GCPerformanceEntries() override;
+
+  GCPerformanceEntries(const GCPerformanceEntries&) = delete;
+  GCPerformanceEntries& operator=(const GCPerformanceEntries&) = delete;
+
+  // Whether entries are recorded/replayed rather than the recording being
+  // invalidated. False without recording/replaying, so nothing changes there.
+  static bool Enabled();
+
+  // Called by MarkGarbageCollectionEnd while recording, inside the GC: notes
+  // the entry for the next poll.
+  void Note(double start_time,
+            double duration,
+            PerformanceGCKind kind,
+            PerformanceGCFlags flags);
+
+  // Records/replays the entries noted since the last call and pushes an unrefed
+  // immediate for each, as the GC's epilogue does without recording/replaying.
+  // Called from the poll, and from where the GC callbacks are removed, so that
+  // nothing stays noted once the poll stops running. An entry is delivered
+  // either way and Notify() decides whether an observer is still there to
+  // receive it, which is what upstream does with an immediate it has already
+  // queued: dropping the entry here instead would lose it when a program
+  // re-observes 'gc' along with another type, because that lowers the observer
+  // count to zero and raises it again in the same turn.
+  void Flush();
+
+  // v8::replayio::ReplayGCPollParticipant.
+  bool IsActive() const override;
+  bool HasPending() const override;
+  void Poll() override;
+
+ private:
+  // An entry's fields, as the recording carries them.
+  struct Recorded {
+    double start_time;
+    double duration;
+    uint32_t kind;
+    uint32_t flags;
+  };
+
+  Environment* env_;
+  // The environment's performance state, held directly so that IsActive() does
+  // not reach for it: this is created after it and destroyed before it.
+  PerformanceState* state_;
+  // Whether this was added to V8's GC poll.
+  bool registered_ = false;
+  // While recording, the entries the recording does not describe yet. Only
+  // touched on the isolate's thread: the GC's callbacks run there, and so does
+  // the poll.
+  std::vector<Recorded> pending_;
+};
 
 }  // namespace performance
 }  // namespace node

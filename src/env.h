@@ -93,6 +93,7 @@ class CompiledFnEntry;
 }
 
 namespace performance {
+class GCPerformanceEntries;
 class PerformanceState;
 }
 
@@ -895,6 +896,10 @@ class Environment final : public MemoryRetainer {
   // recording/replaying.
   inline recordreplay::DeferredFinalization* deferred_finalization();
 
+  // Delivery of 'gc' performance entries at a deterministic point when
+  // recording/replaying.
+  inline performance::GCPerformanceEntries* gc_performance_entries();
+
   builtins::BuiltinLoader* builtin_loader();
 
   std::unordered_multimap<int, loader::ModuleWrap*> hash_to_module_map;
@@ -1357,6 +1362,8 @@ class Environment final : public MemoryRetainer {
   // This is the time when the environment is created.
   const uint64_t environment_start_;
   std::unique_ptr<performance::PerformanceState> performance_state_;
+  // Destroyed before performance_state_, which it holds a pointer to.
+  std::unique_ptr<performance::GCPerformanceEntries> gc_performance_entries_;
 
   bool has_serialized_options_ = false;
 
