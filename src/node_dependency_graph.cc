@@ -459,6 +459,9 @@ struct FsOps {
   // Whether fsOp nodes are reported: the observers are installed.
   bool reported = false;
   std::optional<std::string> cwd;
+  // The recorder's own I/O scopes entered and not left
+  // (dependencyGraphBeginRecorderIO): their requests are not the program's.
+  uint32_t recorder_io_depth = 0;
 #ifndef _WIN32
   // Per request posted, until its completion.
   std::unordered_map<const uv_fs_t*, PendingFsOp> pending;
@@ -752,6 +755,7 @@ int FsRequestInitNode(uv_fs_t* req) {
 void OnFsIssue(uv_fs_t* req) {
   if (!v8::recordreplay::DependencyGraphEnabled()) return;
   FsOps& ops = GetFsOps();
+  if (ops.recorder_io_depth) return;
   PendingFsOp pending{ReadFsIssue(req, ops), 0};
   if (!pending.issue.sync) {
     pending.node = v8::recordreplay::NewDependencyGraphNode(
@@ -796,6 +800,20 @@ void OnFsDone(uv_fs_t* req) {
 }
 
 #endif  // _WIN32
+
+// The recorder's own I/O (lib/internal/recordreplay) runs between these: its
+// fs requests add no fsOp nodes. Scopes nest.
+void BeginRecorderIO(const FunctionCallbackInfo<Value>& args) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  GetFsOps().recorder_io_depth++;
+}
+
+void EndRecorderIO(const FunctionCallbackInfo<Value>& args) {
+  if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  FsOps& ops = GetFsOps();
+  CHECK_GT(ops.recorder_io_depth, 0);
+  ops.recorder_io_depth--;
+}
 
 }  // namespace
 
@@ -1130,6 +1148,9 @@ void AsyncDependencyGraph::CreatePerIsolateProperties(
   SetMethod(isolate, target, "dependencyGraphNetworkRequest", NetworkRequest);
   SetMethod(
       isolate, target, "dependencyGraphBeginReceiveData", BeginReceiveData);
+  SetMethod(
+      isolate, target, "dependencyGraphBeginRecorderIO", BeginRecorderIO);
+  SetMethod(isolate, target, "dependencyGraphEndRecorderIO", EndRecorderIO);
 }
 
 void AsyncDependencyGraph::RegisterExternalReferences(
@@ -1153,6 +1174,8 @@ void AsyncDependencyGraph::RegisterExternalReferences(
   registry->Register(ResponseEnd);
   registry->Register(NetworkRequest);
   registry->Register(BeginReceiveData);
+  registry->Register(BeginRecorderIO);
+  registry->Register(EndRecorderIO);
 }
 
 }  // namespace node

@@ -225,7 +225,8 @@ int NewLockGrantedDependencyNode(int request_node);
 // fsCompletion edge from its fsOp, which has an fsOperation edge from its
 // ReqWrap's asyncInit. A sync one's fsOp carries the fsDone fields. Paths only,
 // never contents. Not covered: fs work off the main thread (threadpool jobs),
-// and fs syscalls outside libuv.
+// and fs syscalls outside libuv. Not reported: the recorder's own requests,
+// between dependencyGraphBeginRecorderIO and dependencyGraphEndRecorderIO.
 //
 // Reported while v8::recordreplay::DependencyGraphEnabled(), unless the driver
 // disables the dependency-graph-fs feature: it changes no JS behavior, so a
