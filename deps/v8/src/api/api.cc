@@ -12152,7 +12152,7 @@ void RecordReplayOnExceptionUnwind(Isolate* isolate) {
 // the root register, as it does the target progress, instead of holding the
 // driver's counter address in a register. Being a static that is never null,
 // it also deduplicates the same way in node_mksnapshot as in a recorded run,
-// which V8 13.6's startup deserializer checks
+// which the startup deserializer checks
 // (StartupDeserializer::DeserializeAndCheckExternalReferenceTable).
 static uint64_t gProgressCounterStorage;
 uint64_t* gProgressCounter = &gProgressCounterStorage;
