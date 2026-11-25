@@ -113,14 +113,21 @@ bool AreEventsUnavailable() {
   return v8::recordreplay::IsRecordingOrReplaying() && !AreEventsAvailable();
 }
 
-bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name) {
+bool ThrowIfEventsUnavailable(v8::Isolate* isolate,
+                              const char* operation_name) {
   if (!AreEventsUnavailable()) {
     return false;
   }
   std::string message = std::string("Cannot replay operation ") +
                          operation_name + " because it was not recorded.";
-  env->ThrowTypeError(message.c_str());
+  v8::HandleScope handle_scope(isolate);
+  isolate->ThrowException(
+      v8::Exception::TypeError(OneByteString(isolate, message.c_str())));
   return true;
+}
+
+bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name) {
+  return ThrowIfEventsUnavailable(env->isolate(), operation_name);
 }
 
 bool ThrowIfEventsUnavailable(const v8::FunctionCallbackInfo<v8::Value>& args,

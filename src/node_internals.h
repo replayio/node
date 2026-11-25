@@ -500,6 +500,15 @@ namespace recordreplay {
 // it too. Some of them a pause cannot reach today, because a binding that
 // already throws runs first, and they are gated all the same: which one runs
 // first is up to lib, and the orderings there change.
+//
+// A binding that upstream installs a fast API callback for has a second entry
+// point, and it is the one optimized code takes, so the fast callback needs the
+// gate as well as the regular one beside it (see os::FastGetFreeMemory). A fast
+// callback is handed an isolate rather than an environment, through the
+// FastApiCallbackOptions parameter it has to declare to receive one, and
+// TurboFan propagates the exception this leaves pending.
+bool ThrowIfEventsUnavailable(v8::Isolate* isolate,
+                              const char* operation_name);
 bool ThrowIfEventsUnavailable(Environment* env, const char* operation_name);
 bool ThrowIfEventsUnavailable(const v8::FunctionCallbackInfo<v8::Value>& args,
                               const char* operation_name);
