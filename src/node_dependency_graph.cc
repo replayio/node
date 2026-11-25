@@ -863,7 +863,7 @@ void OnFsDispatched() {
 }
 
 bool FsJobsReported() {
-  if (!v8::recordreplay::DependencyGraphEnabled()) return false;
+  if (!FsOpsReportable()) return false;
   const FsOps& ops = GetFsOps();
   return ops.reported && !ops.recorder_io_depth;
 }
@@ -887,19 +887,6 @@ void WriteFsJobResult(JSONWriter& writer, const FsJobResult& result) {
   if (result.failed) writer.json_keyvalue("failed", true);
   if (result.result) writer.json_keyvalue("result", *result.result);
   if (result.fd) writer.json_keyvalue("fd", *result.fd);
-}
-
-// The state a succeeded job changes: the fd it handed back, the cwd.
-void ApplyFsJobResult(FsOps& ops,
-                      const FsIssue& issue,
-                      const FsJobResult& result) {
-  if (result.error || result.failed || !issue.path->absolute) return;
-  if (result.fd) {
-    ops.fd_paths.insert_or_assign(*result.fd, *issue.path->absolute);
-  }
-  if (std::get<FsJob>(issue.op) == FsJob::kChdir) {
-    ops.cwd = *issue.path->absolute;
-  }
 }
 
 #endif  // _WIN32
@@ -1242,7 +1229,9 @@ int OnFsJobIssue(AsyncWrap* wrap, const FsJobIssue& job) {
 #endif  // _WIN32
 }
 
-void OnFsJobDone(int node, const FsJobIssue& job, const FsJobResult& result) {
+FsJobDoneScope::FsJobDoneScope(int node,
+                               const FsJobIssue& job,
+                               const FsJobResult& result) {
 #ifndef _WIN32
   if (!node || !FsJobsReported()) return;
   FsOps& ops = GetFsOps();
@@ -1252,21 +1241,29 @@ void OnFsJobDone(int node, const FsJobIssue& job, const FsJobResult& result) {
       }).c_str());
   v8::recordreplay::AddDependencyGraphEdge(
       node, done, R"({"kind":"fsCompletion"})");
-  ApplyFsJobResult(ops, ReadFsJobIssue(job, false, ops), result);
+  ops.completion = done;
+  // Not of a relative path: the cwd may have changed since the open.
+  if (result.fd) {
+    SetFdPath(ops, *result.fd, ResolveFsPath(job.path, std::nullopt));
+  }
+#endif  // _WIN32
+}
+
+FsJobDoneScope::~FsJobDoneScope() {
+#ifndef _WIN32
+  OnFsDispatched();
 #endif  // _WIN32
 }
 
 void OnFsJobSync(const FsJobIssue& job, const FsJobResult& result) {
 #ifndef _WIN32
   if (!FsJobsReported()) return;
-  FsOps& ops = GetFsOps();
-  FsIssue issue = ReadFsJobIssue(job, true, ops);
+  FsIssue issue = ReadFsJobIssue(job, true, GetFsOps());
   v8::recordreplay::NewDependencyGraphNode(
       NodeJsonWith("fsOp", [&](JSONWriter& writer) {
         WriteFsIssue(writer, issue);
         WriteFsJobResult(writer, result);
       }).c_str());
-  ApplyFsJobResult(ops, issue, result);
 #endif  // _WIN32
 }
 

@@ -106,6 +106,7 @@ static void Chdir(const FunctionCallbackInfo<Value>& args) {
     uv_cwd(buf, &cwd_len);
     return env->ThrowUVException(err, "chdir", nullptr, buf, *path);
   }
+  RecordFsDependencyGraphCwd();
 }
 
 inline Local<ArrayBuffer> get_fields_array_buffer(

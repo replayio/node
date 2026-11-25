@@ -2868,10 +2868,11 @@ class ReadDirRecursiveRequest {
     CHECK(status == 0 || status == UV_ECANCELED);
     if (status == UV_ECANCELED) cancelled_ = true;
     if (--pending_ > 0) return;
-    OnFsJobDone(dependency_graph_node_,
-                DependencyGraphIssue(),
-                cancelled_ ? FsJobResult{.error = UV_ECANCELED}
-                           : ReadDirRecursiveResult(walk_));
+    FsJobDoneScope dependency_graph(dependency_graph_node_,
+                                    DependencyGraphIssue(),
+                                    cancelled_
+                                        ? FsJobResult{.error = UV_ECANCELED}
+                                        : ReadDirRecursiveResult(walk_));
 
     Isolate* isolate = env_->isolate();
     HandleScope handle_scope(isolate);
@@ -3947,9 +3948,9 @@ class ReadFileJob final : public AsyncWrap, public ThreadPoolWork {
     std::unique_ptr<ReadFileJob> self(this);
     CHECK(status == 0 || status == UV_ECANCELED);
     FS_ASYNC_TRACE_END0(UV_FS_READ, this)
-    OnFsJobDone(dependency_graph_node_,
-                DependencyGraphIssue(),
-                DependencyGraphResult(status));
+    FsJobDoneScope dependency_graph(dependency_graph_node_,
+                                    DependencyGraphIssue(),
+                                    DependencyGraphResult(status));
     if (status == UV_ECANCELED) {
       if (fd_ >= 0) CloseQuietly(fd_);
       return;
@@ -4185,9 +4186,9 @@ class WriteFileJob final : public AsyncWrap, public ThreadPoolWork {
     std::unique_ptr<WriteFileJob> self(this);
     CHECK(status == 0 || status == UV_ECANCELED);
     FS_ASYNC_TRACE_END0(UV_FS_WRITE, this)
-    OnFsJobDone(dependency_graph_node_,
-                DependencyGraphIssue(),
-                DependencyGraphResult(status));
+    FsJobDoneScope dependency_graph(dependency_graph_node_,
+                                    DependencyGraphIssue(),
+                                    DependencyGraphResult(status));
     if (status == UV_ECANCELED || !env->can_call_into_js()) return;
     HandleScope handle_scope(env->isolate());
     Context::Scope context_scope(env->context());
@@ -5610,10 +5611,11 @@ class CpDirJob final : public AsyncWrap, public ThreadPoolWork {
     Environment* env = AsyncWrap::env();
     std::unique_ptr<CpDirJob> self(this);
     CHECK(status == 0 || status == UV_ECANCELED);
-    OnFsJobDone(dependency_graph_node_,
-                DependencyGraphIssue(),
-                status == UV_ECANCELED ? FsJobResult{.error = UV_ECANCELED}
-                                       : CpErrorResult(error_));
+    FsJobDoneScope dependency_graph(
+        dependency_graph_node_,
+        DependencyGraphIssue(),
+        status == UV_ECANCELED ? FsJobResult{.error = UV_ECANCELED}
+                               : CpErrorResult(error_));
     if (status == UV_ECANCELED || !env->can_call_into_js()) return;
     Isolate* isolate = env->isolate();
     HandleScope handle_scope(isolate);

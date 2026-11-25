@@ -242,8 +242,9 @@ void InstallFsDependencyGraph();
 // fd's close may not be an fs request the main thread posts: its ops report no
 // fdPath.
 void OnFsFdHandedOver(int fd);
-// The process cwd fsOp paths resolve against: read once, recorded, while
-// v8::recordreplay::DependencyGraphInstrumented(), at the first checkpoint.
+// The process cwd fsOp paths resolve against: read, recorded, while
+// v8::recordreplay::DependencyGraphInstrumented(), at the first checkpoint and
+// after each chdir.
 void RecordFsDependencyGraphCwd();
 
 // fs work an fsOp reports as one op, though it posts no main-thread libuv
@@ -256,8 +257,7 @@ enum class FsJob {
   kCpFile,            // "cpFile": CpSyncOverrideFile
   kCpDir,             // "cpDir": CpSyncCopyDir, CpDirJob
   kRm,                // "rm": RmSync
-  kChdir,             // "chdir": process.chdir; on success the cwd paths
-                      // resolve against
+  kChdir,             // "chdir": process.chdir
 };
 
 // What an FsJob reports when issued. The views outlive the call.
@@ -285,10 +285,19 @@ struct FsJobResult {
 };
 
 // An async FsJob of wrap (its asyncInit has the fsOperation edge). Returns its
-// fsOp node for OnFsJobDone, 0 if none.
+// fsOp node for FsJobDoneScope, 0 if none.
 int OnFsJobIssue(AsyncWrap* wrap, const FsJobIssue& issue);
-// node: OnFsJobIssue's; issue: the same.
-void OnFsJobDone(int node, const FsJobIssue& issue, const FsJobResult& result);
+
+// The completion of an async FsJob, in the scope its callback runs in. node:
+// OnFsJobIssue's; issue: the same.
+class FsJobDoneScope {
+ public:
+  FsJobDoneScope(int node, const FsJobIssue& issue, const FsJobResult& result);
+  ~FsJobDoneScope();
+  FsJobDoneScope(const FsJobDoneScope&) = delete;
+  FsJobDoneScope& operator=(const FsJobDoneScope&) = delete;
+};
+
 // A sync FsJob: one fsOp.
 void OnFsJobSync(const FsJobIssue& issue, const FsJobResult& result);
 
