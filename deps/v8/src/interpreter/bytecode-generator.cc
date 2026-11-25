@@ -8802,6 +8802,12 @@ void BytecodeGenerator::BuildGeneratorObjectVariableInitialization() {
     BuildVariableAssignment(generator_object_var, Token::kInit,
                             HoleCheckMode::kElided);
   }
+
+  // The "generator" site at function entry runs before the object exists.
+  if (recordreplay::IsRecordingOrReplaying()) {
+    builder()->RecordReplayInstrumentationGenerator("generatorObject",
+                                                    generator_object());
+  }
 }
 
 void BytecodeGenerator::BuildPushUndefinedIntoRegisterList(

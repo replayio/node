@@ -1620,7 +1620,8 @@ static void OnGeneratorInstrumentationSite(Isolate* isolate,
   Handle<JSFunction> function = args.at<JSFunction>(0);
   int32_t index = args.smi_value_at(1);
   // Undefined at the "generator" site on function entry, which runs before
-  // the generator object is created.
+  // the generator object is created. The "generatorObject" site right after
+  // its creation gives the activation its id.
   Handle<Object> generator_object = args.at(2);
 
   // Note: RecordReplayObjectId calls have to occur in the same places whether
