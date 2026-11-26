@@ -662,6 +662,10 @@ class BytecodeGenerator final : public AstVisitor<BytecodeGenerator> {
   SharedFeedbackSlot dummy_feedback_slot_;
 
   BytecodeJumpTable* generator_jump_table_;
+  // Set once the generator object of a resumable function has been created,
+  // which the body prologue does when recording or replaying so that it can
+  // announce the frame with it.
+  bool record_replay_generator_object_initialized_ = false;
   int suspend_count_;
   // TODO(solanes): assess if we can move loop_depth_ into LoopScope.
   int loop_depth_;

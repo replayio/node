@@ -1807,6 +1807,12 @@ void BytecodeGenerator::GenerateBodyPrologue() {
     }
 
     if (IsResumableFunction(literal->kind())) {
+      // The frame is announced with the generator object, so it has to exist
+      // by now. Upstream creates it further down, after the parameter
+      // initialization block of a generator; the announcement has to stay
+      // here, at the start of the frame, because the calls that block makes
+      // are inside it.
+      BuildGeneratorObjectVariableInitialization();
       builder()->RecordReplayInstrumentationGenerator("generator",
                                                       generator_object());
     } else {
@@ -8780,6 +8786,13 @@ void BytecodeGenerator::VisitNewTargetVariable(Variable* variable) {
 // {.generator_object} variable.
 void BytecodeGenerator::BuildGeneratorObjectVariableInitialization() {
   DCHECK(IsResumableFunction(info()->literal()->kind()));
+
+  // When recording or replaying, GenerateBodyPrologue has already created the
+  // object, and the body's own call has nothing left to do.
+  if (record_replay_generator_object_initialized_) {
+    return;
+  }
+  record_replay_generator_object_initialized_ = true;
 
   Variable* generator_object_var = closure_scope()->generator_object_var();
   RegisterAllocationScope register_scope(this);
