@@ -194,9 +194,6 @@ steps:
       # Backend k8s image preinstalls pnpm; here use npx (Node 25 dropped corepack).
       npx --yes pnpm@10.11.0 install --frozen-lockfile
       # test/node-recording vitest suite; it sets the assert env vars itself.
-      # TEST ONLY (revert): JS and dependency graph asserts (RT3a check).
-      export RECORD_REPLAY_JS_ASSERTS=1
-      export RECORD_REPLAY_DEPENDENCY_GRAPH_ASSERTS=1
       npx tsx src/build/buildNode.ts test-node-recording --build-id "$$BUILD_ID"
 
   - label: "test-node-core"
