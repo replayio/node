@@ -1314,7 +1314,12 @@ Reduction LoadElimination::ReduceOtherNode(Node* node) {
       // the predecessor.
       if (state == nullptr) return NoChange();
       // Check if this {node} has some uncontrolled side effects.
-      if (!node->op()->HasProperty(Operator::kNoWrite)) {
+      // The record/replay progress counter's update stays a write, which keeps
+      // an eager deopt after it from resuming before it (see
+      // CheckpointElimination), but it writes no heap: its call deoptimizes
+      // this code when what runs there could have written the heap.
+      if (!node->op()->HasProperty(Operator::kNoWrite) &&
+          node->opcode() != IrOpcode::kIncrementAndCheckProgressCounter) {
         state = state->KillAll(zone());
       }
       return UpdateState(node, state);

@@ -8159,6 +8159,11 @@ void RecordReplayIncrementAndCheckProgressCounter::GenerateCode(
       },
       done, this);
 
+  // The call might trigger GC.
+  if (v8_flags.verify_write_barriers) {
+    __ ResetLastYoungAllocation();
+  }
+
   MaglevAssembler::TemporaryRegisterScope temps(masm);
   Register scratch = temps.AcquireScratch();
   Register counter = temps.Acquire();

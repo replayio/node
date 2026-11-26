@@ -16899,13 +16899,16 @@ ReduceResult MaglevGraphBuilder::VisitAbort() {
 // target progress (see RecordReplayIncrementAndCheckProgressCounter). That node
 // keeps the 64-bit counter in one register, and is only used on x64 and arm64,
 // the 64-bit architectures baseline code has the inline update on. Turbolev,
-// which builds its graph with this builder, keeps the VM call.
+// which builds its graph with this builder, keeps the VM call. The node isn't a
+// write, which would drop the checkpointed frame, so that is done by hand: an
+// eager deopt resuming before the progress bytecode would count it again.
 ReduceResult MaglevGraphBuilder::VisitRecordReplayIncExecutionProgressCounter() {
 #if V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64
   if (!gRecordReplayAssertProgress && !is_turbolev()) {
     RETURN_IF_ABORT(
         AddNewNode<RecordReplayIncrementAndCheckProgressCounter>(
             {GetClosure()}));
+    latest_checkpointed_frame_ = nullptr;
     return ReduceResult::Done();
   }
 #endif

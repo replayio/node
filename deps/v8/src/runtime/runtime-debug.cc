@@ -12,6 +12,7 @@
 #include "src/debug/debug-scopes.h"
 #include "src/debug/debug.h"
 #include "src/debug/liveedit.h"
+#include "src/deoptimizer/deoptimizer.h"
 #include "src/execution/arguments-inl.h"
 #include "src/execution/frames-inl.h"
 #include "src/execution/isolate-inl.h"
@@ -1340,9 +1341,38 @@ std::string GetStackContents(Isolate* isolate, size_t max_frames) {
 
 static bool gHasPrintedStack = false;
 
+// Optimized code doesn't treat the call at the target progress as a heap write
+// (see maglev::RecordReplayIncrementAndCheckProgressCounter), so it must not
+// continue after JS ran there (an inspector command's evaluation, a pause's
+// commands). The calling optimized frame is deoptimized then, and resumes
+// after the progress bytecode. A checkpoint, which is what the target is
+// usually for, leaves the frame alone, and so does an API interrupt callback
+// that runs no JS: the loop stack check runs those without treating them as
+// heap writes either. Such a callback can also exist only in the recording (a
+// DevTools request from another thread), and deoptimizing for it would leave
+// the recording and the replay in different tiers, which take a pending
+// termination at different checks.
+static void RecordReplayOnTargetProgressReachedFromJS(Isolate* isolate) {
+  uint32_t js_executions = isolate->javascript_execution_counter();
+  RecordReplayOnTargetProgressReached();
+  if (js_executions == isolate->javascript_execution_counter()) {
+    return;
+  }
+  JavaScriptStackFrameIterator it(isolate);
+  if (it.done() || !it.frame()->is_optimized_js()) {
+    return;
+  }
+  // As in RecordReplayChangeInstrument: whether this runs can differ between
+  // recording and replaying.
+  replayio::AutoDisallowEvents disallow("RecordReplayOnTargetProgressReachedFromJS");
+  Deoptimizer::DeoptimizeFunction(it.frame()->function(),
+                                  LazyDeoptimizeReason::kDebugger,
+                                  it.frame()->LookupCode());
+}
+
 static void OnExecutionProgress(Isolate* isolate, Handle<JSFunction> function) {
   if (++*gProgressCounter == gTargetProgress) {
-    RecordReplayOnTargetProgressReached();
+    RecordReplayOnTargetProgressReachedFromJS(isolate);
   }
 
   if (gRecordReplayAssertProgress) {
@@ -1388,7 +1418,7 @@ RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
 
 RUNTIME_FUNCTION(Runtime_RecordReplayTargetProgressReached) {
   CHECK(*gProgressCounter == gTargetProgress);
-  RecordReplayOnTargetProgressReached();
+  RecordReplayOnTargetProgressReachedFromJS(isolate);
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
