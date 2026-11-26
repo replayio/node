@@ -4946,13 +4946,19 @@ Handle<Object> JSPromise::TriggerPromiseReactions(
 #endif  // V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA
     }
 
-    MicrotaskQueue* microtask_queue = handler_context->microtask_queue();
-    if (microtask_queue) {
-      microtask_queue->EnqueueMicrotask(*Cast<PromiseReactionJobTask>(task));
-    }
+    EnqueueReactionJob(isolate, Cast<PromiseReactionJobTask>(task));
   }
 
   return isolate->factory()->undefined_value();
+}
+
+// static
+void JSPromise::EnqueueReactionJob(Isolate* isolate,
+                                   DirectHandle<PromiseReactionJobTask> task) {
+  MicrotaskQueue* microtask_queue =
+      task->context()->native_context()->microtask_queue();
+  if (!microtask_queue) return;
+  microtask_queue->EnqueueMicrotask(*task);
 }
 
 #ifdef V8_LOWER_LIMITS_MODE

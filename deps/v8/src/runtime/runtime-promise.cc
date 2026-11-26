@@ -7,6 +7,7 @@
 #include "src/execution/arguments-inl.h"
 #include "src/execution/microtask-queue.h"
 #include "src/objects/js-promise-inl.h"
+#include "src/objects/promise-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -104,6 +105,17 @@ RUNTIME_FUNCTION(Runtime_PromiseHookAfter) {
     isolate->OnPromiseAfter(Cast<JSPromise>(promise));
     RETURN_FAILURE_IF_EXCEPTION(isolate);
   }
+  return ReadOnlyRoots(isolate).undefined_value();
+}
+
+// A reaction job of the already settled promise (args[0]), attached while the
+// promise hook flag is on.
+RUNTIME_FUNCTION(Runtime_RecordReplayEnqueuePromiseReactionJob) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  DCHECK(IsJSPromise(args[0]));
+  JSPromise::EnqueueReactionJob(isolate,
+                                args.at<PromiseReactionJobTask>(1));
   return ReadOnlyRoots(isolate).undefined_value();
 }
 

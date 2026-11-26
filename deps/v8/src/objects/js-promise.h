@@ -68,6 +68,11 @@ class JSPromise
   V8_WARN_UNUSED_RESULT static MaybeHandle<Object> Resolve(
       DirectHandle<JSPromise> promise, DirectHandle<Object> resolution);
 
+  // Enqueues the job on its context's microtask queue; drops it if the
+  // context shut down.
+  static void EnqueueReactionJob(Isolate* isolate,
+                                 DirectHandle<PromiseReactionJobTask> task);
+
   // Dispatched behavior.
   DECL_PRINTER(JSPromise)
   DECL_VERIFIER(JSPromise)

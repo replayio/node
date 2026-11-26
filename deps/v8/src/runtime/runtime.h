@@ -448,6 +448,7 @@ constexpr bool CanTriggerGC(T... properties) {
   F(PromiseHookInit, 2, 1)               \
   F(PromiseRejectEventFromStack, 2, 1)   \
   F(PromiseRevokeReject, 1, 1)           \
+  F(RecordReplayEnqueuePromiseReactionJob, 2, 1) \
   F(RejectPromise, 3, 1)                 \
   F(ResolvePromise, 2, 1)                \
   F(ConstructSuppressedError, 3, 1)      \

@@ -14,6 +14,9 @@ extern transitioning runtime PromiseRevokeReject(
 
 extern transitioning runtime PromiseRejectEventFromStack(
     implicit context: Context)(JSPromise, JSAny): JSAny;
+
+extern runtime RecordReplayEnqueuePromiseReactionJob(
+    implicit context: Context)(JSPromise, PromiseReactionJobTask): void;
 }
 
 // https://tc39.es/ecma262/#sec-promise-abstract-operations
@@ -484,7 +487,13 @@ transitioning macro PerformPromiseThenImpl(
           runtime::PromiseRevokeReject(promise);
         }
       }
-    EnqueueMicrotask(handlerContext, microtask);
+    // DependencyGraphInstrumented (recorded) turns this flag on, so recording
+    // and replaying take the same path.
+    if (IsIsolatePromiseHookEnabled(PromiseHookFlags())) {
+      runtime::RecordReplayEnqueuePromiseReactionJob(promise, microtask);
+    } else {
+      EnqueueMicrotask(handlerContext, microtask);
+    }
   }
   promise.SetHasHandler();
 }
