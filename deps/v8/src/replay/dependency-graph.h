@@ -22,7 +22,7 @@ class RecordReplayDependencyGraph : public AllStatic {
   // is created.
   static void Initialize();
 
-  // Whether OnPromiseHook and OnPromiseAdoption are called. Besides while
+  // Whether the calls below are made. Besides while
   // recordreplay::DependencyGraphEnabled(), this is while JS value asserts are
   // on: they include the object IDs the calls assign to promises, so the calls
   // have to happen at the same places when recording and replaying.
@@ -33,13 +33,22 @@ class RecordReplayDependencyGraph : public AllStatic {
   // in the asserted updates have to match the recording's.
   static bool AssertsUpdates();
 
-  // Precondition for both: ReportsPromises().
+  // Precondition for all: ReportsPromises().
   static void OnPromiseHook(Isolate* isolate, PromiseHookType type,
                             DirectHandle<JSPromise> promise,
                             DirectHandle<Object> parent);
   static void OnPromiseAdoption(Isolate* isolate,
                                 DirectHandle<JSPromise> promise,
                                 DirectHandle<JSReceiver> adopted);
+
+  // At the settle of a promise, before its reaction jobs are enqueued. Returns
+  // the node ID of the settle which triggers the promise's reactions: its own,
+  // or that of the thenable it adopted; 0 if not recorded.
+  static int OnPromiseSettle(Isolate* isolate, DirectHandle<JSPromise> promise);
+
+  // The value OnPromiseSettle returned for the settled promise.
+  static int ReactionSettleNodeId(Isolate* isolate,
+                                  DirectHandle<JSPromise> settled);
 };
 
 }  // namespace internal

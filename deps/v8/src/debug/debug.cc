@@ -4441,8 +4441,18 @@ struct PromiseDependencyGraphData {
   // Graph node ID for the point the promise was created.
   int new_node_id = 0;
 
-  // Graph node ID for the point the promise was settled.
+  // Graph node ID of the promise's first kResolve hook: its settle, or the
+  // resolve with a thenable it then adopts.
   int settled_node_id = 0;
+
+  // persistent_id of the thenable the promise was last resolved with; 0 if
+  // none.
+  int adopted_persistent_id = 0;
+
+  // Graph node ID of the settle which triggers the promise's reactions:
+  // settled_node_id, or with an adopted thenable that thenable's
+  // reaction_settle_node_id; 0 if not recorded.
+  int reaction_settle_node_id = 0;
 };
 
 using PromiseDependencyGraphDataMap =
@@ -4470,11 +4480,37 @@ void RecordReplayDependencyGraph::OnPromiseAdoption(
   PromiseDependencyGraphData& adopted_data =
       GetOrCreatePromiseDependencyGraphData(isolate, adopted);
 
+  data.adopted_persistent_id = adopted_data.persistent_id;
   if (adopted_data.new_node_id) {
     recordreplay::AddDependencyGraphEdge(data.settled_node_id,
                                          adopted_data.new_node_id,
                                          "{\"kind\":\"adoptedPromise\"}");
   }
+}
+
+// static
+int RecordReplayDependencyGraph::OnPromiseSettle(
+    Isolate* isolate, DirectHandle<JSPromise> promise) {
+  DCHECK(ReportsPromises());
+  DCHECK_NE(v8::Promise::kPending, promise->status());
+  PromiseDependencyGraphData& data =
+      GetOrCreatePromiseDependencyGraphData(isolate, promise);
+  // A reaction of the adopted thenable, which settled before, resolved it.
+  data.reaction_settle_node_id =
+      data.adopted_persistent_id
+          ? gPromiseDependencyGraphDataMap->at(data.adopted_persistent_id)
+                .reaction_settle_node_id
+          : data.settled_node_id;
+  return data.reaction_settle_node_id;
+}
+
+// static
+int RecordReplayDependencyGraph::ReactionSettleNodeId(
+    Isolate* isolate, DirectHandle<JSPromise> settled) {
+  DCHECK(ReportsPromises());
+  DCHECK_NE(v8::Promise::kPending, settled->status());
+  return GetOrCreatePromiseDependencyGraphData(isolate, settled)
+      .reaction_settle_node_id;
 }
 
 // static

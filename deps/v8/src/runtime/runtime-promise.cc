@@ -8,6 +8,7 @@
 #include "src/execution/microtask-queue.h"
 #include "src/objects/js-promise-inl.h"
 #include "src/objects/promise-inl.h"
+#include "src/replay/dependency-graph.h"
 
 namespace v8 {
 namespace internal {
@@ -20,6 +21,10 @@ RUNTIME_FUNCTION(Runtime_PromiseRejectEventFromStack) {
 
   isolate->RunAllPromiseHooks(PromiseHookType::kResolve, promise,
                               isolate->factory()->undefined_value());
+  // Created rejected (Promise.reject): no TriggerPromiseReactions settle.
+  if (RecordReplayDependencyGraph::ReportsPromises()) {
+    RecordReplayDependencyGraph::OnPromiseSettle(isolate, promise);
+  }
   isolate->debug()->OnPromiseReject(promise, value);
 
   // Report only if we don't actually have a handler.
@@ -113,9 +118,13 @@ RUNTIME_FUNCTION(Runtime_PromiseHookAfter) {
 RUNTIME_FUNCTION(Runtime_RecordReplayEnqueuePromiseReactionJob) {
   HandleScope scope(isolate);
   DCHECK_EQ(2, args.length());
-  DCHECK(IsJSPromise(args[0]));
-  JSPromise::EnqueueReactionJob(isolate,
-                                args.at<PromiseReactionJobTask>(1));
+  DirectHandle<JSPromise> settled = args.at<JSPromise>(0);
+  int reaction_settle_node_id =
+      RecordReplayDependencyGraph::ReportsPromises()
+          ? RecordReplayDependencyGraph::ReactionSettleNodeId(isolate, settled)
+          : 0;
+  JSPromise::EnqueueReactionJob(isolate, args.at<PromiseReactionJobTask>(1),
+                                reaction_settle_node_id);
   return ReadOnlyRoots(isolate).undefined_value();
 }
 

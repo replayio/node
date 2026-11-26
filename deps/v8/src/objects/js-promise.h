@@ -68,10 +68,18 @@ class JSPromise
   V8_WARN_UNUSED_RESULT static MaybeHandle<Object> Resolve(
       DirectHandle<JSPromise> promise, DirectHandle<Object> resolution);
 
+  // The JSPromise of a reaction's promise_or_capability, which the promise
+  // hooks of its job report; empty if there is none.
+  static MaybeDirectHandle<JSPromise> ReactionPromise(
+      Isolate* isolate, DirectHandle<HeapObject> promise_or_capability);
+
   // Enqueues the job on its context's microtask queue; drops it if the
-  // context shut down.
+  // context shut down. reaction_settle_node_id: graph node of the settle which
+  // triggers the job (RecordReplayDependencyGraph::OnPromiseSettle); 0 if not
+  // recorded.
   static void EnqueueReactionJob(Isolate* isolate,
-                                 DirectHandle<PromiseReactionJobTask> task);
+                                 DirectHandle<PromiseReactionJobTask> task,
+                                 int reaction_settle_node_id);
 
   // Dispatched behavior.
   DECL_PRINTER(JSPromise)
@@ -90,6 +98,7 @@ class JSPromise
  private:
   // ES section #sec-triggerpromisereactions
   static Handle<Object> TriggerPromiseReactions(Isolate* isolate,
+                                                DirectHandle<JSPromise> promise,
                                                 DirectHandle<Object> reactions,
                                                 DirectHandle<Object> argument,
                                                 PromiseReaction::Type type);

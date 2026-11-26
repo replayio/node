@@ -4674,7 +4674,7 @@ Handle<Object> JSPromise::Fulfill(DirectHandle<JSPromise> promise,
   promise->set_status(Promise::kFulfilled);
 
   // 7. Return TriggerPromiseReactions(reactions, value).
-  return TriggerPromiseReactions(isolate, reactions, value,
+  return TriggerPromiseReactions(isolate, promise, reactions, value,
                                  PromiseReaction::kFulfill);
 }
 
@@ -4732,7 +4732,7 @@ Handle<Object> JSPromise::Reject(DirectHandle<JSPromise> promise,
   }
 
   // 8. Return TriggerPromiseReactions(reactions, reason).
-  return TriggerPromiseReactions(isolate, reactions, reason,
+  return TriggerPromiseReactions(isolate, promise, reactions, reason,
                                  PromiseReaction::kReject);
 }
 
@@ -4845,8 +4845,9 @@ MaybeHandle<Object> JSPromise::Resolve(DirectHandle<JSPromise> promise,
 
 // static
 Handle<Object> JSPromise::TriggerPromiseReactions(
-    Isolate* isolate, DirectHandle<Object> reactions,
-    DirectHandle<Object> argument, PromiseReaction::Type type) {
+    Isolate* isolate, DirectHandle<JSPromise> promise,
+    DirectHandle<Object> reactions, DirectHandle<Object> argument,
+    PromiseReaction::Type type) {
   CHECK(IsSmi(*reactions) || IsPromiseReaction(*reactions));
 
   // We need to reverse the {reactions} here, since we record them
@@ -4865,6 +4866,11 @@ Handle<Object> JSPromise::TriggerPromiseReactions(
     }
     reactions = direct_handle(reversed, isolate);
   }
+
+  int reaction_settle_node_id =
+      RecordReplayDependencyGraph::ReportsPromises()
+          ? RecordReplayDependencyGraph::OnPromiseSettle(isolate, promise)
+          : 0;
 
   // Morph the {reactions} into PromiseReactionJobTasks
   // and push them onto the microtask queue.
@@ -4946,15 +4952,29 @@ Handle<Object> JSPromise::TriggerPromiseReactions(
 #endif  // V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA
     }
 
-    EnqueueReactionJob(isolate, Cast<PromiseReactionJobTask>(task));
+    EnqueueReactionJob(isolate, Cast<PromiseReactionJobTask>(task),
+                       reaction_settle_node_id);
   }
 
   return isolate->factory()->undefined_value();
 }
 
 // static
+MaybeDirectHandle<JSPromise> JSPromise::ReactionPromise(
+    Isolate* isolate, DirectHandle<HeapObject> promise_or_capability) {
+  DirectHandle<HeapObject> promise = promise_or_capability;
+  if (IsPromiseCapability(*promise)) {
+    promise =
+        direct_handle(Cast<PromiseCapability>(*promise)->promise(), isolate);
+  }
+  if (!IsJSPromise(*promise)) return {};
+  return Cast<JSPromise>(promise);
+}
+
+// static
 void JSPromise::EnqueueReactionJob(Isolate* isolate,
-                                   DirectHandle<PromiseReactionJobTask> task) {
+                                   DirectHandle<PromiseReactionJobTask> task,
+                                   int reaction_settle_node_id) {
   MicrotaskQueue* microtask_queue =
       task->context()->native_context()->microtask_queue();
   if (!microtask_queue) return;

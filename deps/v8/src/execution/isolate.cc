@@ -7596,12 +7596,10 @@ void Isolate::OnTerminationDuringRunMicrotasks() {
         Cast<PromiseReactionJobTask>(current_microtask);
     DirectHandle<HeapObject> promise_or_capability(
         promise_reaction_job_task->promise_or_capability(), this);
-    if (IsPromiseCapability(*promise_or_capability)) {
-      promise_or_capability = direct_handle(
-          Cast<PromiseCapability>(promise_or_capability)->promise(), this);
-    }
-    if (IsJSPromise(*promise_or_capability)) {
-      OnPromiseAfter(Cast<JSPromise>(promise_or_capability));
+    DirectHandle<JSPromise> promise;
+    if (JSPromise::ReactionPromise(this, promise_or_capability)
+            .ToHandle(&promise)) {
+      OnPromiseAfter(promise);
     }
   } else if (IsPromiseResolveThenableJobTask(*current_microtask)) {
     auto promise_resolve_thenable_job_task =
