@@ -4619,8 +4619,11 @@ void RecordReplayDependencyGraph::OnPromiseHook(Isolate* isolate,
       break;
     }
     case PromiseHookType::kAfter: {
-      DCHECK(gRunningPromiseJobSettles && !gRunningPromiseJobSettles->empty());
-      gRunningPromiseJobSettles->pop_back();
+      // Isolate::OnTerminationDuringRunMicrotasks reports kAfter for the
+      // current job, whose kBefore may not have run.
+      if (gRunningPromiseJobSettles && !gRunningPromiseJobSettles->empty()) {
+        gRunningPromiseJobSettles->pop_back();
+      }
       recordreplay::EndDependencyExecution();
       break;
     }
