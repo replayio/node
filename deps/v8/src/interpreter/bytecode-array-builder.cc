@@ -847,7 +847,11 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadContextSlot(
       }
     }
   }
-  RecordReplayAssertValue("LoadContextSlot");
+  // A recording reads a variable the replay moved from the stack from its
+  // register, which asserts nothing (see Variable::RecordReplayIsForced).
+  if (!variable->RecordReplayIsMovedFromStack()) {
+    RecordReplayAssertValue("LoadContextSlot");
+  }
   return *this;
 }
 
