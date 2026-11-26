@@ -1381,14 +1381,36 @@ static void OnExecutionProgress(Isolate* isolate, Handle<JSFunction> function) {
   }
 }
 
+// A termination the main thread requested for itself waits for the progress
+// counter's next advance (see RecordReplayDeferTermination in stack-guard.cc).
+// The interpreter calls into the VM at every advance, and compiled code at the
+// target progress, which the request's progress interrupt sets to the next
+// advance. It waits longer while an InterruptsScope
+// postpones it, as in a pause.
+static bool RecordReplayTakeDeferredTermination(Isolate* isolate) {
+  if (V8_LIKELY(!isolate->record_replay_deferred_termination()) ||
+      recordreplay::AreEventsDisallowed() ||
+      !isolate->stack_guard()->CheckTerminateExecution()) {
+    return false;
+  }
+  isolate->stack_guard()->ClearTerminateExecution();
+  return true;
+}
+
 RUNTIME_FUNCTION(Runtime_RecordReplayAssertExecutionProgress) {
   OnExecutionProgress(isolate, args.at<JSFunction>(0));
+  if (RecordReplayTakeDeferredTermination(isolate)) {
+    return isolate->TerminateExecution();
+  }
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
 RUNTIME_FUNCTION(Runtime_RecordReplayTargetProgressReached) {
   CHECK(*gProgressCounter == gTargetProgress);
   RecordReplayOnTargetProgressReached();
+  if (RecordReplayTakeDeferredTermination(isolate)) {
+    return isolate->TerminateExecution();
+  }
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
@@ -1399,6 +1421,9 @@ RUNTIME_FUNCTION(Runtime_RecordReplayTargetProgressReached) {
 // accumulator.
 RUNTIME_FUNCTION(Runtime_RecordReplayBaselineExecutionProgress) {
   OnExecutionProgress(isolate, args.at<JSFunction>(0));
+  if (RecordReplayTakeDeferredTermination(isolate)) {
+    return isolate->TerminateExecution();
+  }
   return args[1];
 }
 
@@ -1407,6 +1432,9 @@ RUNTIME_FUNCTION(Runtime_RecordReplayBaselineExecutionProgress) {
 RUNTIME_FUNCTION(Runtime_RecordReplayBaselineTargetProgressReached) {
   CHECK(*gProgressCounter == gTargetProgress);
   RecordReplayOnTargetProgressReached();
+  if (RecordReplayTakeDeferredTermination(isolate)) {
+    return isolate->TerminateExecution();
+  }
   return args[0];
 }
 

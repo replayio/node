@@ -166,16 +166,49 @@ bool StackGuard::CheckInterrupt(InterruptFlag flag) {
   return (thread_local_.interrupt_flags_ & flag) != 0;
 }
 
+extern void RecordReplayTriggerProgressInterrupt();
+
+// Requested by the isolate's own thread (an inspector resume with
+// terminateOnResume, Runtime.terminateExecution handled on that thread, a
+// worker's process.exit()), a termination is taken at the next stack check.
+// Where JS code has one depends on how it was compiled: optimized code has none
+// at the entry of a function it inlined, and the replay inlines differently than
+// the recording, as its bytecode is larger (instrumentation opcodes, forced
+// context allocation). On the main thread, JS stack checks leave it pending, and
+// it is taken at the progress counter's next advance instead, which every tier
+// reaches at the same points: a progress interrupt makes baseline and optimized
+// code call into the VM there, and the replay calls into it where the recording
+// did (see Runtime_RecordReplayTargetProgressReached). Other checks (debugger
+// statements, breakpoints, wasm, the runtime's own) still take it, as they run
+// at the same points in every tier, and wasm never advances the counter.
+//
+// Other threads have no progress interrupts and keep taking it at the next
+// stack check, which leaves them exposed to the difference in inlining. So does
+// JS without progress instrumentation (scripts compiled with events disallowed
+// or ignored by URL), which never advances the counter, and an endless loop in
+// it keeps the termination pending.
+static void RecordReplayDeferTermination(Isolate* isolate) {
+  if (!recordreplay::IsRecordingOrReplaying("interrupts") || !IsMainThread() ||
+      recordreplay::AreEventsDisallowed() ||
+      recordreplay::HasDivergedFromRecording()) {
+    return;
+  }
+  isolate->set_record_replay_deferred_termination(true);
+  if (recordreplay::IsRecording()) {
+    RecordReplayTriggerProgressInterrupt();
+  }
+}
+
 void StackGuard::RequestInterrupt(InterruptFlag flag) {
-  // Terminating execution stops the isolate's thread at whichever stack check
-  // it reaches next. Requested by that thread itself, as a worker's
-  // process.exit() does, that is the next stack check in the same code, which
-  // the replay reaches the same way; requested from another thread, it is a
-  // point the replay can't reproduce.
-  if (flag == TERMINATE_EXECUTION &&
-      isolate_->thread_id() != ThreadId::Current()) {
-    recordreplay::InvalidateRecording(
-        "Requested terminate execution from another thread");
+  // Terminating execution stops the isolate's thread at a point the replay
+  // can't reproduce when another thread requests it.
+  if (flag == TERMINATE_EXECUTION) {
+    if (isolate_->thread_id() != ThreadId::Current()) {
+      recordreplay::InvalidateRecording(
+          "Requested terminate execution from another thread");
+    } else {
+      RecordReplayDeferTermination(isolate_);
+    }
   }
 
   ExecutionAccess access(isolate_);
@@ -204,6 +237,9 @@ void StackGuard::ClearInterrupt(InterruptFlag flag) {
   // Clear the interrupt flag from the active interrupt flags.
   thread_local_.interrupt_flags_ &= ~flag;
   update_interrupt_requests_and_stack_limits(access);
+  if (flag == TERMINATE_EXECUTION) {
+    isolate_->set_record_replay_deferred_termination(false);
+  }
 }
 
 bool StackGuard::HasTerminationRequest() {
@@ -214,12 +250,14 @@ bool StackGuard::HasTerminationRequest() {
   if ((thread_local_.interrupt_flags_ & TERMINATE_EXECUTION) != 0) {
     thread_local_.interrupt_flags_ &= ~TERMINATE_EXECUTION;
     update_interrupt_requests_and_stack_limits(access);
+    isolate_->set_record_replay_deferred_termination(false);
     return true;
   }
   return false;
 }
 
-int StackGuard::FetchAndClearInterrupts(InterruptLevel level) {
+int StackGuard::FetchAndClearInterrupts(InterruptLevel level,
+                                        bool record_replay_defer_termination) {
   ExecutionAccess access(isolate_);
   InterruptFlag mask = InterruptLevelMask(level);
   if ((thread_local_.interrupt_flags_ & TERMINATE_EXECUTION) != 0) {
@@ -228,11 +266,20 @@ int StackGuard::FetchAndClearInterrupts(InterruptLevel level) {
     // fetch and clear that bit. On resume, V8 can continue processing other
     // interrupts.
     mask = TERMINATE_EXECUTION;
+    // A deferred termination stays requested, and the other interrupts are
+    // handled meanwhile.
+    if (record_replay_defer_termination) {
+      mask = static_cast<InterruptFlag>(InterruptLevelMask(level) &
+                                        ~TERMINATE_EXECUTION);
+    }
   }
 
   int result = static_cast<int>(thread_local_.interrupt_flags_ & mask);
   thread_local_.interrupt_flags_ &= ~mask;
   update_interrupt_requests_and_stack_limits(access);
+  if (result & TERMINATE_EXECUTION) {
+    isolate_->set_record_replay_deferred_termination(false);
+  }
   return result;
 }
 
@@ -306,7 +353,8 @@ class V8_NODISCARD ShouldBeZeroOnReturnScope final {
 
 }  // namespace
 
-Tagged<Object> StackGuard::HandleInterrupts(InterruptLevel level) {
+Tagged<Object> StackGuard::HandleInterrupts(InterruptLevel level,
+                                            bool record_replay_js_stack_check) {
   TRACE_EVENT0("v8.execute", "V8.HandleInterrupts");
 
 #if DEBUG
@@ -325,7 +373,13 @@ Tagged<Object> StackGuard::HandleInterrupts(InterruptLevel level) {
 
   // Fetch and clear interrupt bits in one go. See comments inside the method
   // for special handling of TERMINATE_EXECUTION.
-  int interrupt_flags = FetchAndClearInterrupts(level);
+  // A replay that diverged from the recording has no recorded progress
+  // interrupt to take a deferred termination at.
+  const bool defer_termination =
+      record_replay_js_stack_check &&
+      isolate_->record_replay_deferred_termination() &&
+      !recordreplay::HasDivergedFromRecording();
+  int interrupt_flags = FetchAndClearInterrupts(level, defer_termination);
 
   // All interrupts should be fully processed when returning from this method.
   ShouldBeZeroOnReturnScope should_be_zero_on_return(&interrupt_flags);
