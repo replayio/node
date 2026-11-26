@@ -452,7 +452,6 @@ void LocalHeap::MarkSharedLinearAllocationAreasBlack() {
 void LocalHeap::FreeLinearAllocationAreasAndResetFreeLists() {
   heap_allocator_.FreeLinearAllocationAreasAndResetFreeLists();
 }
-  replayio::AutoDisallowEvents disallow("LocalHeap::PerformCollectionAndAllocateAgain");
 
 void LocalHeap::FreeSharedLinearAllocationAreasAndResetFreeLists() {
   if (heap_allocator_.shared_space_allocator()) {
