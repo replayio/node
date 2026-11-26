@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <optional>
+#include <set>
 #include <unordered_map>
 
 #include "include/replayio.h"
@@ -4127,6 +4128,10 @@ extern bool gRecordReplayHasCheckpoint;
 // recorder only takes sources from the first checkpoint on.
 static std::vector<int>* gRecordReplayScriptsBeforeFirstCheckpoint;
 
+// Ids of the registered scripts that name a source map (see
+// replayio::GetSourceMappedScripts).
+static std::set<int>* gRecordReplaySourceMappedScripts;
+
 static void RecordReplayRegisterScript(DirectHandle<Script> script) {
   CHECK(IsMainThread());
 
@@ -4143,6 +4148,16 @@ static void RecordReplayRegisterScript(DirectHandle<Script> script) {
 
   (*gRecordReplayScripts)[script->id()] =
     Eternal<Value>((v8::Isolate*)isolate, v8::Utils::ToLocal(script));
+
+  // The scripts the inspector would report a source map URL for in
+  // Debugger.scriptParsed. The URL comes from the parse, which is done by now.
+  if (script->IsSubjectToDebugging() && IsString(script->source_mapping_url()) &&
+      Cast<String>(script->source_mapping_url())->length() > 0) {
+    if (!gRecordReplaySourceMappedScripts) {
+      gRecordReplaySourceMappedScripts = new std::set<int>;
+    }
+    gRecordReplaySourceMappedScripts->insert(script->id());
+  }
 
   // Registered scripts (Pause / CountStackFrames) are exactly the instrumented
   // ones, so that every frame instrumentation pushes is counted and none other.
@@ -4680,6 +4695,32 @@ void FunctionCallbackRecordReplayIgnoreScript(const FunctionCallbackInfo<Value>&
   Local<Boolean> rv = Boolean::New(isolate, ignore);
   callArgs.GetReturnValue().Set(rv);
 }
+
+namespace replayio {
+
+std::vector<SourceMappedScript> GetSourceMappedScripts(Isolate* v8isolate) {
+  CHECK(IsMainThread());
+  std::vector<SourceMappedScript> scripts;
+  if (!i::gRecordReplaySourceMappedScripts) {
+    return scripts;
+  }
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8isolate);
+  auto string_or_empty = [&](i::Tagged<i::Object> value) {
+    return Utils::ToLocal(i::direct_handle(
+        IsString(value) ? i::Cast<i::String>(value)
+                        : i::ReadOnlyRoots(isolate).empty_string(),
+        isolate));
+  };
+  for (int id : *i::gRecordReplaySourceMappedScripts) {
+    i::DirectHandle<i::Script> script = i::GetScript(isolate, id);
+    scripts.push_back({id, string_or_empty(script->name()),
+                       string_or_empty(script->source_url()),
+                       string_or_empty(script->source_mapping_url())});
+  }
+  return scripts;
+}
+
+}  // namespace replayio
 
 void FunctionCallbackRecordReplayAssert(const FunctionCallbackInfo<Value>& callArgs) {
   if (!recordreplay::IsRecordingOrReplaying()) {

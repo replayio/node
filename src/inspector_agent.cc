@@ -858,6 +858,25 @@ class NodeInspectorClient : public V8InspectorClient {
     return platform->CurrentClockTimeMillis();
   }
 
+  // V8 otherwise takes these ids, such as the debuggerId a Debugger.enable
+  // returns, from the isolate's random number generator, which the replay
+  // doesn't draw from in the same order as the recording. The id is recorded
+  // instead. Ids for Replay's own work, which runs with events disallowed,
+  // still come from V8.
+  int64_t generateUniqueId() override {
+    if (!v8::recordreplay::IsRecordingOrReplaying() ||
+        v8::recordreplay::AreEventsDisallowed()) {
+      return 0;
+    }
+    int64_t id = 0;
+    {
+      v8::replayio::AutoPassThroughEvents pass_through;
+      CHECK_EQ(uv_random(nullptr, nullptr, &id, sizeof(id), 0, nullptr), 0);
+    }
+    return static_cast<int64_t>(v8::recordreplay::RecordReplayValue(
+        "NodeInspectorClient::generateUniqueId", static_cast<uintptr_t>(id)));
+  }
+
   std::unique_ptr<StringBuffer> resourceNameToUrl(
       const StringView& resource_name_view) override {
     std::string resource_name =

@@ -9,6 +9,8 @@
 #ifndef INCLUDE_RECORD_REPLAY_H_
 #define INCLUDE_RECORD_REPLAY_H_
 
+#include <vector>
+
 #include "v8.h"
 
 namespace v8 {
@@ -98,6 +100,23 @@ V8_EXPORT void AddReplayGCPollParticipant(Isolate* isolate,
                                           ReplayGCPollParticipant* participant);
 V8_EXPORT void RemoveReplayGCPollParticipant(
     Isolate* isolate, ReplayGCPollParticipant* participant);
+
+// A script compiled on the main thread while recording or replaying that names
+// a source map, through a sourceMappingURL comment or the embedder's origin.
+// The strings are those V8's inspector reports in Debugger.scriptParsed before
+// the embedder turns the name into a URL; a missing one is empty.
+struct SourceMappedScript {
+  int id;
+  Local<String> name;
+  Local<String> source_url;
+  Local<String> source_mapping_url;
+};
+
+// Every such script registered so far, by increasing id. Scripts are
+// registered at the same points when recording and replaying, whether or not
+// V8's debugger is active, so both sides see the same list.
+V8_EXPORT std::vector<SourceMappedScript> GetSourceMappedScripts(
+    Isolate* isolate);
 
 }  // namespace replayio
 }  // namespace v8

@@ -6,6 +6,7 @@
 #include "node.h"
 #include "node_external_reference.h"
 #include "node_internals.h"
+#include "node_url.h"
 #include "replayio.h"
 #include "util-inl.h"
 #include "v8-inspector.h"
@@ -587,6 +588,45 @@ static void RecordReplayNetworkInitiator(
   }
 }
 
+// The scripts Replay collects source maps for (see
+// lib/internal/recordreplay/sourcemap.js), each with the URL that
+// Debugger.scriptParsed reports: its sourceURL comment, or else its name, as a
+// file URL when that is an absolute path (see
+// NodeInspectorClient::resourceNameToUrl).
+static void RecordReplayGetSourceMappedScripts(
+    const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+  std::vector<v8::replayio::SourceMappedScript> scripts =
+      v8::replayio::GetSourceMappedScripts(isolate);
+  v8::LocalVector<Value> result(isolate);
+  for (const v8::replayio::SourceMappedScript& script : scripts) {
+    Local<Value> url = script.source_url;
+    if (script.source_url->Length() == 0) {
+      url = script.name;
+      Utf8Value name(isolate, script.name);
+      if (name.length() > 0 && name[0] == '/') {
+        url = ToV8Value(context, url::FromFilePath(name.ToStringView()))
+                  .ToLocalChecked();
+      }
+    }
+    Local<v8::Name> names[] = {
+        FIXED_ONE_BYTE_STRING(isolate, "scriptId"),
+        FIXED_ONE_BYTE_STRING(isolate, "url"),
+        FIXED_ONE_BYTE_STRING(isolate, "sourceMapURL"),
+    };
+    Local<Value> values[] = {
+        ToV8Value(context, std::to_string(script.id)).ToLocalChecked(),
+        url,
+        script.source_mapping_url,
+    };
+    result.push_back(
+        Object::New(isolate, v8::Null(isolate), names, values, 3));
+  }
+  args.GetReturnValue().Set(
+      v8::Array::New(isolate, result.data(), result.size()));
+}
+
 void InitializeRecordReplayMethods(Environment* env, Local<Object> target) {
   Local<Context> context = env->context();
   SetMethod(context, target, "isRecordingOrReplaying",
@@ -606,6 +646,8 @@ void InitializeRecordReplayMethods(Environment* env, Local<Object> target) {
             v8::FunctionCallbackRecordReplayAssert);
   SetMethod(context, target, "recordReplayGetCurrentError",
             v8::FunctionCallbackRecordReplayGetCurrentError);
+  SetMethod(context, target, "recordReplayGetSourceMappedScripts",
+            RecordReplayGetSourceMappedScripts);
   SetMethod(context, target, "recordReplaySetCDPMessageCallback",
             RecordReplaySetCDPMessageCallback);
   SetMethod(context, target, "recordReplaySendCDPMessage",
@@ -645,6 +687,7 @@ void RegisterRecordReplayExternalReferences(
   registry->Register(v8::FunctionCallbackRecordReplayIgnoreScript);
   registry->Register(v8::FunctionCallbackRecordReplayAssert);
   registry->Register(v8::FunctionCallbackRecordReplayGetCurrentError);
+  registry->Register(RecordReplayGetSourceMappedScripts);
   registry->Register(RecordReplaySetCDPMessageCallback);
   registry->Register(RecordReplaySendCDPMessage);
   registry->Register(v8::FunctionCallbackRecordReplayGetRecordingId);
