@@ -44,6 +44,7 @@ using v8::Array;
 using v8::ArrayBuffer;
 using v8::Boolean;
 using v8::Context;
+using v8::FastApiCallbackOptions;
 using v8::Float64Array;
 using v8::FunctionCallbackInfo;
 using v8::Int32;
@@ -163,8 +164,13 @@ static void GetFreeMemory(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(amount);
 }
 
-static double FastGetFreeMemory(Local<Value> receiver) {
+static double FastGetFreeMemory(Local<Value> receiver,
+                                // NOLINTNEXTLINE(runtime/references)
+                                FastApiCallbackOptions& options) {
   TRACK_V8_FAST_API_CALL("os.freemem");
+  if (recordreplay::ThrowIfEventsUnavailable(options.isolate, "os.freemem")) {
+    return 0;
+  }
   return static_cast<double>(uv_get_free_memory());
 }
 
@@ -179,8 +185,13 @@ static void GetTotalMemory(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(amount);
 }
 
-double FastGetTotalMemory(Local<Value> receiver) {
+double FastGetTotalMemory(Local<Value> receiver,
+                          // NOLINTNEXTLINE(runtime/references)
+                          FastApiCallbackOptions& options) {
   TRACK_V8_FAST_API_CALL("os.totalmem");
+  if (recordreplay::ThrowIfEventsUnavailable(options.isolate, "os.totalmem")) {
+    return 0;
+  }
   return static_cast<double>(uv_get_total_memory());
 }
 
@@ -449,12 +460,22 @@ static void GetPriority(const FunctionCallbackInfo<Value>& args) {
 }
 
 static void GetAvailableParallelism(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "os.availableParallelism")) {
+    return;
+  }
   unsigned int parallelism = uv_available_parallelism();
   args.GetReturnValue().Set(parallelism);
 }
 
-uint32_t FastGetAvailableParallelism(v8::Local<v8::Value> receiver) {
+uint32_t FastGetAvailableParallelism(
+    v8::Local<v8::Value> receiver,
+    // NOLINTNEXTLINE(runtime/references)
+    FastApiCallbackOptions& options) {
   TRACK_V8_FAST_API_CALL("os.availableParallelism");
+  if (recordreplay::ThrowIfEventsUnavailable(options.isolate,
+                                             "os.availableParallelism")) {
+    return 0;
+  }
   return uv_available_parallelism();
 }
 

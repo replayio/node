@@ -3915,11 +3915,19 @@ static Handle<Object> RecordReplayConvertFunctionOffsetToLocation(Isolate* isola
 
 bool RecordReplayIgnoreScript(Tagged<Script> script);
 
-static Handle<Object> RecordReplayCountStackFrames(Isolate* isolate,
-                                                   Handle<Object> params) {
-  // This is handled in C++ instead of via a protocol JS handler for efficiency.
-  // Counting the stack frames is a common operation when there are many
-  // exception unwinds and so forth.
+// The driver calls this directly, instead of sending a Target.countStackFrames
+// command, because scans count the frames at every generator resume and
+// exception unwind.
+size_t RecordReplayCountStackFramesCallback() {
+  CHECK(IsMainThread());
+  replayio::AutoDisallowEvents disallow;
+
+  Isolate* isolate = Isolate::Current();
+  std::optional<SaveAndSwitchContext> ssc;
+  EnsureIsolateContext(isolate, ssc);
+
+  HandleScope scope(isolate);
+
   size_t count = 0;
   for (JavaScriptStackFrameIterator it(isolate); !it.done(); it.Advance()) {
     JavaScriptFrame* frame = it.frame();
@@ -3949,9 +3957,7 @@ static Handle<Object> RecordReplayCountStackFrames(Isolate* isolate,
     }
   }
 
-  Handle<JSObject> rv = NewPlainObject(isolate);
-  SetProperty(isolate, rv, "count", count);
-  return rv;
+  return count;
 }
 
 static Handle<Object> RecordReplayGetFunctionsInRange(Isolate* isolate,
@@ -3977,17 +3983,6 @@ static Handle<Object> RecordReplayGetFunctionsInRange(Isolate* isolate,
 
   Handle<JSObject> rv = NewPlainObject(isolate);
   SetProperty(isolate, rv, "functions", functionsJSArray);
-  return rv;
-}
-
-extern int RecordReplayCurrentGeneratorIdRaw();
-
-static Handle<Object> RecordReplayCurrentGeneratorId(Isolate* isolate, Handle<Object> params) {
-  Handle<JSObject> rv = NewPlainObject(isolate);
-  int id = RecordReplayCurrentGeneratorIdRaw();
-  if (id) {
-    SetProperty(isolate, rv, "id", id);
-  }
   return rv;
 }
 
@@ -4233,9 +4228,7 @@ static InternalCommandCallback gInternalCommandCallbacks[] = {
   { "Debugger.getPossibleBreakpoints", RecordReplayGetPossibleBreakpoints },
   { "Target.convertLocationToFunctionOffset", RecordReplayConvertLocationToFunctionOffset },
   { "Target.convertFunctionOffsetToLocation", RecordReplayConvertFunctionOffsetToLocation },
-  { "Target.countStackFrames", RecordReplayCountStackFrames },
   { "Target.getFunctionsInRange", RecordReplayGetFunctionsInRange },
-  { "Target.currentGeneratorId", RecordReplayCurrentGeneratorId },
   { "Target.getStackFunctionIDs", RecordReplayGetStackFunctionIds },
 };
 
@@ -4706,6 +4699,9 @@ void FunctionCallbackRecordReplayAssert(const FunctionCallbackInfo<Value>& callA
       recordreplay::AssertBytes("AssertValue StringBytes", contents.get(), len);
     }
   } else {
+    // The object IDs in these contents only match the replay's under JS value
+    // asserts. Otherwise replaying processes also give IDs to generator objects
+    // and promises, which recordings don't.
     std::string contents = i::RecordReplayBasicValueContents(value);
     recordreplay::Assert("AssertValue %s", contents.c_str());
   }

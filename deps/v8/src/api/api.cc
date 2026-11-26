@@ -12221,6 +12221,8 @@ extern char* CommandCallback(const char* command, const char* params);
 extern void ClearPauseDataCallback();
 
 extern void PossibleBreakpointsCallback(const char* source_id);
+extern int RecordReplayCurrentGeneratorIdRaw();
+extern size_t RecordReplayCountStackFramesCallback();
 
 // Whether execution within node internal scripts should advance the progress counter.
 static bool gRecordReplayInstrumentNodeInternals;
@@ -12796,6 +12798,11 @@ bool internal::RecordReplayDependencyGraph::ReportsPromises() {
   return gDependencyGraphReportsPromises && IsMainThread();
 }
 
+// static
+bool internal::RecordReplayDependencyGraph::AssertsUpdates() {
+  return gRecordReplayAssertDependencyGraph;
+}
+
 bool recordreplay::DependencyGraphEnabled() {
   return gDependencyGraphEnabled && IsMainThread();
 }
@@ -13138,6 +13145,14 @@ void recordreplay::SetRecordingOrReplaying(void* handle) {
   void (*setPossibleBreakpointsCallback)(void (*callback)(const char* source_id));
   RecordReplayLoadSymbol(handle, "RecordReplaySetPossibleBreakpointsCallback", setPossibleBreakpointsCallback);
   setPossibleBreakpointsCallback(i::PossibleBreakpointsCallback);
+
+  void (*setCurrentGeneratorIdCallback)(int (*callback)());
+  RecordReplayLoadSymbol(handle, "RecordReplaySetCurrentGeneratorIdCallback", setCurrentGeneratorIdCallback);
+  setCurrentGeneratorIdCallback(i::RecordReplayCurrentGeneratorIdRaw);
+
+  void (*setCountStackFramesCallback)(size_t (*callback)());
+  RecordReplayLoadSymbol(handle, "RecordReplaySetCountStackFramesCallback", setCountStackFramesCallback);
+  setCountStackFramesCallback(i::RecordReplayCountStackFramesCallback);
 
   void (*setClearPauseDataCallback)(void (*callback)());
   RecordReplayLoadSymbol(handle, "RecordReplaySetClearPauseDataCallback", setClearPauseDataCallback);

@@ -177,12 +177,25 @@ void MarkGarbageCollectionStart(
     GCCallbackFlags flags,
     void* data) {
   Environment* env = static_cast<Environment*>(data);
+  // A replay has its own collections, which describe nothing: the entries it
+  // delivers come from the recording, at the GC poll. The callbacks are still
+  // installed, so that what the cleanup hook removes is what was added.
+  if (v8::recordreplay::IsReplaying() && GCPerformanceEntries::Enabled()) {
+    return;
+  }
   // Prevent gc callback from reentering with different type
   // See https://github.com/nodejs/node/issues/44046
   if (env->performance_state()->current_gc_type != 0) {
     return;
   }
-  env->performance_state()->performance_last_gc_start_mark = PERFORMANCE_NOW();
+  // Events are disallowed inside the GC, so the clock is read for real on both
+  // sides. Only the value the recording carries is delivered, written by
+  // GCPerformanceEntries::Poll at a point the replay reaches too.
+  {
+    v8::replayio::AutoPassThroughEvents pass_through;
+    env->performance_state()->performance_last_gc_start_mark =
+        PERFORMANCE_NOW();
+  }
   env->performance_state()->current_gc_type = type;
 }
 
@@ -232,8 +245,25 @@ void MarkGarbageCollectionEnd(
   double start_time =
       (state->performance_last_gc_start_mark - env->time_origin()) /
       NANOS_PER_MILLIS;
-  double duration = (PERFORMANCE_NOW() / NANOS_PER_MILLIS) -
+  double now;
+  {
+    // As in MarkGarbageCollectionStart.
+    v8::replayio::AutoPassThroughEvents pass_through;
+    now = PERFORMANCE_NOW();
+  }
+  double duration = (now / NANOS_PER_MILLIS) -
                     (state->performance_last_gc_start_mark / NANOS_PER_MILLIS);
+
+  // Nothing is delivered from inside the GC when recording/replaying: the poll
+  // does it, from the recording's own entries.
+  if (GCPerformanceEntries::Enabled()) {
+    env->gc_performance_entries()->Note(
+        start_time,
+        duration,
+        static_cast<PerformanceGCKind>(type),
+        static_cast<PerformanceGCFlags>(flags));
+    return;
+  }
 
   std::unique_ptr<GCPerformanceEntry> entry =
       std::make_unique<GCPerformanceEntry>(
@@ -243,6 +273,10 @@ void MarkGarbageCollectionEnd(
           GCPerformanceEntry::Details(static_cast<PerformanceGCKind>(type),
                                       static_cast<PerformanceGCFlags>(flags)));
 
+  // The branch above returned, so this is the path of a build that is not
+  // recording/replaying. A rebase which drops that branch, or its braces, would
+  // deliver an entry from inside the GC, at a point the replay never reaches.
+  CHECK(!GCPerformanceEntries::Enabled());
   env->SetImmediate([entry = std::move(entry)](Environment* env) {
     entry->Notify(env);
   }, CallbackFlags::kUnrefed);
@@ -269,11 +303,15 @@ static void ReconcileGarbageCollectionTracking(Environment* env) {
 
   if (wanted) {
     // GC performance entries are created at points which differ between
-    // recording and replaying, and are delivered to JS. Like other performance
-    // entries they are not supported when recording/replaying. Only installing
-    // the callbacks observes them: a call that removes them, or one that
-    // restores the state of a snapshot built without them, does not.
-    v8::recordreplay::InvalidateRecording("GC performance entries observed");
+    // recording and replaying, and are delivered to JS. GCPerformanceEntries
+    // records the ones the recording's collections produced and delivers those
+    // at the GC poll; without it they are not supported when
+    // recording/replaying, as other performance entries are not. Only
+    // installing the callbacks observes them: a call that removes them, or one
+    // that restores the state of a snapshot built without them, does not.
+    if (!GCPerformanceEntries::Enabled()) {
+      v8::recordreplay::InvalidateRecording("GC performance entries observed");
+    }
 
     // Reset current_gc_type to 0
     state->current_gc_type = 0;
@@ -284,6 +322,9 @@ static void ReconcileGarbageCollectionTracking(Environment* env) {
     env->AddCleanupHook(GarbageCollectionCleanupHook, env);
     state->gc_tracking_installed = true;
   } else {
+    if (GCPerformanceEntries::Enabled()) {
+      env->gc_performance_entries()->Flush();
+    }
     env->RemoveCleanupHook(GarbageCollectionCleanupHook, env);
     GarbageCollectionCleanupHook(env);
   }
@@ -292,6 +333,82 @@ static void ReconcileGarbageCollectionTracking(Environment* env) {
 static void UpdateGarbageCollectionTracking(
     const FunctionCallbackInfo<Value>& args) {
   ReconcileGarbageCollectionTracking(Environment::GetCurrent(args));
+}
+
+GCPerformanceEntries::GCPerformanceEntries(Environment* env,
+                                           PerformanceState* state)
+    : env_(env), state_(state) {
+  if (!Enabled()) return;
+  registered_ = true;
+  v8::replayio::AddReplayGCPollParticipant(env_->isolate(), this);
+}
+
+GCPerformanceEntries::~GCPerformanceEntries() {
+  if (!registered_) return;
+  v8::replayio::RemoveReplayGCPollParticipant(env_->isolate(), this);
+}
+
+bool GCPerformanceEntries::Enabled() {
+  return v8::recordreplay::IsRecordingOrReplaying("gc-performance-entries");
+}
+
+void GCPerformanceEntries::Note(double start_time,
+                                double duration,
+                                PerformanceGCKind kind,
+                                PerformanceGCFlags flags) {
+  // A replay's own collections describe nothing, and its callbacks return
+  // before this.
+  CHECK(v8::recordreplay::IsRecording());
+  pending_.push_back(Recorded{start_time,
+                              duration,
+                              static_cast<uint32_t>(kind),
+                              static_cast<uint32_t>(flags)});
+}
+
+bool GCPerformanceEntries::IsActive() const {
+  // The same on both sides, as the poll requires: the flag is only changed by
+  // ReconcileGarbageCollectionTracking, which runs where the observer count
+  // changes, and no poll can run in between.
+  return registered_ && state_->gc_tracking_installed;
+}
+
+bool GCPerformanceEntries::HasPending() const {
+  return !pending_.empty();
+}
+
+void GCPerformanceEntries::Poll() {
+  Flush();
+}
+
+void GCPerformanceEntries::Flush() {
+  std::vector<Recorded> entries;
+  entries.swap(pending_);
+  entries.resize(v8::recordreplay::RecordReplayValue(
+      "GCPerformanceEntries.flush", entries.size()));
+  if (entries.empty()) return;
+  v8::recordreplay::RecordReplayBytes("GCPerformanceEntries.flush entries",
+                                      entries.data(),
+                                      entries.size() * sizeof(Recorded));
+
+  // Delivered the way the GC's epilogue delivers them without
+  // recording/replaying: one unrefed immediate each, which keeps the entries
+  // out of the poll, out of JS, and off the list of things that hold the event
+  // loop open. Observers see them sorted by startTime either way, so the order
+  // they are pushed in is not what a program reads.
+  for (const Recorded& entry : entries) {
+    auto delivered = std::make_unique<GCPerformanceEntry>(
+        "gc",
+        entry.start_time,
+        entry.duration,
+        GCPerformanceEntry::Details(
+            static_cast<PerformanceGCKind>(entry.kind),
+            static_cast<PerformanceGCFlags>(entry.flags)));
+    env_->SetImmediate(
+        [delivered = std::move(delivered)](Environment* env) {
+          delivered->Notify(env);
+        },
+        CallbackFlags::kUnrefed);
+  }
 }
 
 // Notify a custom PerformanceEntry to observers

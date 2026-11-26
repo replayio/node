@@ -154,6 +154,9 @@ static void CPUUsage(const FunctionCallbackInfo<Value>& args) {
 // passed to the function.
 static void ThreadCPUUsage(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  if (recordreplay::ThrowIfEventsUnavailable(env, "process.threadCpuUsage")) {
+    return;
+  }
   uv_rusage_t rusage;
 
   // Call libuv to get the values we'll return.
@@ -274,11 +277,18 @@ static void MemoryUsage(const FunctionCallbackInfo<Value>& args) {
 }
 
 static void GetConstrainedMemory(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args,
+                                             "process.constrainedMemory")) {
+    return;
+  }
   uint64_t value = uv_get_constrained_memory();
   args.GetReturnValue().Set(static_cast<double>(value));
 }
 
 static void GetAvailableMemory(const FunctionCallbackInfo<Value>& args) {
+  if (recordreplay::ThrowIfEventsUnavailable(args, "process.availableMemory")) {
+    return;
+  }
   uint64_t value = uv_get_available_memory();
   args.GetReturnValue().Set(static_cast<double>(value));
 }

@@ -7,6 +7,7 @@
 #include "module_wrap.h"
 #include "node_buffer.h"
 #include "node_deferred_finalization.h"
+#include "node_perf.h"
 #include "node_context_data.h"
 #include "node_contextify.h"
 #include "node_errors.h"
@@ -1095,6 +1096,12 @@ Environment::Environment(IsolateData* isolate_data,
       time_origin_,
       time_origin_timestamp_,
       MAYBE_FIELD_PTR(env_info, performance_state));
+
+  // Added to the GC poll after deferred_finalization_, so that an entry is
+  // delivered after the cleanup of what the same collection collected.
+  gc_performance_entries_ =
+      std::make_unique<performance::GCPerformanceEntries>(
+          this, performance_state_.get());
 
   if (*TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
           TRACING_CATEGORY_NODE1(environment)) != 0) {
