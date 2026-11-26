@@ -10,12 +10,14 @@ namespace internal {
 
 class JSPromise;
 class JSReceiver;
+class PromiseReactionJobTask;
 
 // Reports promises to the Replay dependency graph (recordreplay::
 // NewDependencyGraphNode etc.): promise creation adds newPromise nodes with
 // parentPromise edges, resolution adds promiseSettled nodes with basePromise
-// edges, adopting a thenable adds adoptedPromise edges, and promise reaction
-// jobs run inside a dependency execution of the promise's node.
+// edges, adopting a thenable adds adoptedPromise edges, enqueuing a reaction
+// job adds a promiseReactionJob node, and promise jobs run inside a dependency
+// execution of their job's node or, without one, of the promise's node.
 class RecordReplayDependencyGraph : public AllStatic {
  public:
   // Called once by recordreplay::SetRecordingOrReplaying, before any isolate
@@ -49,6 +51,14 @@ class RecordReplayDependencyGraph : public AllStatic {
   // The value OnPromiseSettle returned for the settled promise.
   static int ReactionSettleNodeId(Isolate* isolate,
                                   DirectHandle<JSPromise> settled);
+
+  // At the enqueue of a reaction job, in the execution of the later of its
+  // settle and its attach: adds its promiseReactionJob node, with
+  // reactionSettle and reactionAttach edges, as the range of its derived
+  // promise's next kBefore hook. reaction_settle_node_id: as OnPromiseSettle.
+  static void OnReactionJob(Isolate* isolate,
+                            DirectHandle<PromiseReactionJobTask> task,
+                            int reaction_settle_node_id);
 };
 
 }  // namespace internal

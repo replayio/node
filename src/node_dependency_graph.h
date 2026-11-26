@@ -41,6 +41,8 @@ enum class DependencyGraphFeature {
                         // dispatches
   kFsOps,               // "fsOps": fsOp and fsDone (InstallFsDependencyGraph),
                         // the root marker's cwd. Listed only when reported.
+  kReactionJobs,        // "reactionJobs": promiseReactionJob{reaction} with
+                        // reactionSettle and reactionAttach edges (V8)
   kCount,               // not a feature: their number
 };
 

@@ -7,6 +7,8 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "include/replayio.h"
 #include "src/api/api-inl.h"
@@ -44,6 +46,7 @@
 #include "src/objects/debug-objects-inl.h"
 #include "src/objects/js-generator-inl.h"
 #include "src/objects/js-promise-inl.h"
+#include "src/objects/promise-inl.h"
 #include "src/objects/slots.h"
 #include "src/replay/dependency-graph.h"
 #include "src/snapshot/embedded/embedded-data.h"
@@ -4450,14 +4453,26 @@ struct PromiseDependencyGraphData {
   int adopted_persistent_id = 0;
 
   // Graph node ID of the settle which triggers the promise's reactions:
-  // settled_node_id, or with an adopted thenable that thenable's
-  // reaction_settle_node_id; 0 if not recorded.
+  // settled_node_id, or with an adopted thenable the settle of the promise job
+  // which resolved it; 0 if not recorded.
   int reaction_settle_node_id = 0;
+
+  // Graph node ID of the reaction job enqueued for the promise as its derived
+  // promise, until its kBefore hook; 0 if none.
+  int job_node_id = 0;
+
+  // reaction_settle_node_id the job was enqueued with.
+  int job_settle_node_id = 0;
 };
 
 using PromiseDependencyGraphDataMap =
     std::unordered_map<int, PromiseDependencyGraphData>;
 static PromiseDependencyGraphDataMap* gPromiseDependencyGraphDataMap;
+
+// Of each promise job running between its kBefore and kAfter hooks, innermost
+// last: the graph node ID of the settle which triggered it (a reaction job's
+// reactionSettle, a thenable job's resolve); 0 if not recorded.
+static std::vector<int>* gRunningPromiseJobSettles;
 
 static PromiseDependencyGraphData& GetOrCreatePromiseDependencyGraphData(
     Isolate* isolate, DirectHandle<Object> promise) {
@@ -4495,12 +4510,17 @@ int RecordReplayDependencyGraph::OnPromiseSettle(
   DCHECK_NE(v8::Promise::kPending, promise->status());
   PromiseDependencyGraphData& data =
       GetOrCreatePromiseDependencyGraphData(isolate, promise);
-  // A reaction of the adopted thenable, which settled before, resolved it.
-  data.reaction_settle_node_id =
-      data.adopted_persistent_id
-          ? gPromiseDependencyGraphDataMap->at(data.adopted_persistent_id)
-                .reaction_settle_node_id
-          : data.settled_node_id;
+  // With an adopted thenable, the resolving function its then got settles it:
+  // in the promise job which runs that function (a reaction of the thenable,
+  // or of a promise the thenable waits on; its own thenable job); else not
+  // recorded.
+  if (!data.adopted_persistent_id) {
+    data.reaction_settle_node_id = data.settled_node_id;
+  } else if (gRunningPromiseJobSettles && !gRunningPromiseJobSettles->empty()) {
+    data.reaction_settle_node_id = gRunningPromiseJobSettles->back();
+  } else {
+    data.reaction_settle_node_id = 0;
+  }
   return data.reaction_settle_node_id;
 }
 
@@ -4511,6 +4531,38 @@ int RecordReplayDependencyGraph::ReactionSettleNodeId(
   DCHECK_NE(v8::Promise::kPending, settled->status());
   return GetOrCreatePromiseDependencyGraphData(isolate, settled)
       .reaction_settle_node_id;
+}
+
+// static
+void RecordReplayDependencyGraph::OnReactionJob(
+    Isolate* isolate, DirectHandle<PromiseReactionJobTask> task,
+    int reaction_settle_node_id) {
+  DCHECK(ReportsPromises());
+  // The promise whose kBefore hook starts the job's range.
+  DirectHandle<JSPromise> derived;
+  if (!JSPromise::ReactionPromise(
+           isolate,
+           DirectHandle<HeapObject>(task->promise_or_capability(), isolate))
+           .ToHandle(&derived)) {
+    return;
+  }
+  PromiseDependencyGraphData& data =
+      GetOrCreatePromiseDependencyGraphData(isolate, derived);
+  const char* reaction =
+      IsPromiseFulfillReactionJobTask(*task) ? "fulfill" : "reject";
+  std::string job_node_str = StringPrintf(
+      "{\"kind\":\"promiseReactionJob\",\"reaction\":\"%s\"}", reaction);
+  data.job_node_id = recordreplay::NewDependencyGraphNode(job_node_str.c_str());
+  data.job_settle_node_id = reaction_settle_node_id;
+  if (reaction_settle_node_id) {
+    recordreplay::AddDependencyGraphEdge(reaction_settle_node_id,
+                                         data.job_node_id,
+                                         "{\"kind\":\"reactionSettle\"}");
+  }
+  if (data.new_node_id) {
+    recordreplay::AddDependencyGraphEdge(data.new_node_id, data.job_node_id,
+                                         "{\"kind\":\"reactionAttach\"}");
+  }
 }
 
 // static
@@ -4551,12 +4603,24 @@ void RecordReplayDependencyGraph::OnPromiseHook(Isolate* isolate,
       break;
     }
     case PromiseHookType::kBefore: {
-      int node_id =
-          data.settled_node_id ? data.settled_node_id : data.new_node_id;
+      // Consumed: a later thenable job for the same promise is not this job.
+      int job_node_id = std::exchange(data.job_node_id, 0);
+      if (!gRunningPromiseJobSettles) {
+        gRunningPromiseJobSettles = new std::vector<int>();
+      }
+      gRunningPromiseJobSettles->push_back(
+          job_node_id ? data.job_settle_node_id : data.settled_node_id);
+      int node_id = job_node_id;
+      if (!node_id) {
+        node_id =
+            data.settled_node_id ? data.settled_node_id : data.new_node_id;
+      }
       recordreplay::BeginDependencyExecution(node_id);
       break;
     }
     case PromiseHookType::kAfter: {
+      DCHECK(gRunningPromiseJobSettles && !gRunningPromiseJobSettles->empty());
+      gRunningPromiseJobSettles->pop_back();
       recordreplay::EndDependencyExecution();
       break;
     }

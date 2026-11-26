@@ -4978,6 +4978,10 @@ void JSPromise::EnqueueReactionJob(Isolate* isolate,
   MicrotaskQueue* microtask_queue =
       task->context()->native_context()->microtask_queue();
   if (!microtask_queue) return;
+  if (RecordReplayDependencyGraph::ReportsPromises()) {
+    RecordReplayDependencyGraph::OnReactionJob(isolate, task,
+                                               reaction_settle_node_id);
+  }
   microtask_queue->EnqueueMicrotask(*task);
 }
 
