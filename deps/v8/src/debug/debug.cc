@@ -4634,12 +4634,18 @@ void RecordReplayDependencyGraph::OnPromiseHook(Isolate* isolate,
 
 // static
 size_t RecordReplayDependencyGraph::RunningPromiseJobDepth() {
-  return gRunningPromiseJobSettles ? gRunningPromiseJobSettles->size() : 0;
+  if (!ReportsPromises() || !gRunningPromiseJobSettles) {
+    return 0;
+  }
+  return gRunningPromiseJobSettles->size();
 }
 
 // static
 void RecordReplayDependencyGraph::UnwindRunningPromiseJobs(size_t depth) {
-  if (gRunningPromiseJobSettles && gRunningPromiseJobSettles->size() > depth) {
+  if (!ReportsPromises() || !gRunningPromiseJobSettles) {
+    return;
+  }
+  if (gRunningPromiseJobSettles->size() > depth) {
     gRunningPromiseJobSettles->resize(depth);
   }
 }
