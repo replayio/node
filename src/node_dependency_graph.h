@@ -43,7 +43,8 @@ enum class DependencyGraphFeature {
                         // the root marker's cwd. Listed only when reported.
   kReactionJobs,        // "reactionJobs": promiseReactionJob{reaction} with
                         // reactionSettle and reactionAttach edges (V8)
-  kCount,               // not a feature: their number
+  kWireIds,             // "wireIds": requestStart{wireIds}
+  kCount,              // not a feature: their number
 };
 
 // The classes of async op in the Replay dependency graph: the node an op's
@@ -125,12 +126,14 @@ class AsyncDependencyGraph {
   // Returns the request's node, 0 if none. method and url other than strings
   // are reported empty. raw_headers: IncomingMessage#rawHeaders, of which only
   // own string elements are read; header_element_limit: the parser's
-  // maxHeaderPairs, a count of rawHeaders elements.
+  // maxHeaderPairs, a count of rawHeaders elements. wire_ids: the
+  // x-replay-wire-id values the parser removed from rawHeaders.
   int OnBeginRequest(v8::Isolate* isolate,
                      v8::Local<v8::Value> method,
                      v8::Local<v8::Value> url,
                      v8::Local<v8::Value> raw_headers,
-                     v8::Local<v8::Value> header_element_limit);
+                     v8::Local<v8::Value> header_element_limit,
+                     v8::Local<v8::Value> wire_ids);
   // A chunk of the body of request (its node; 0: none), as received.
   void OnRequestBodyBytes(int request, v8::Local<v8::ArrayBufferView> chunk);
   // The hand-over of a body chunk of length bytes begins: a dispatch in a

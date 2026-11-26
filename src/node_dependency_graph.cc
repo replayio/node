@@ -180,9 +180,30 @@ RequestHeaders ReadRequestHeaders(Isolate* isolate,
   return headers;
 }
 
-std::string RequestStartJson(std::string_view method,
-                             std::string_view url,
-                             const RequestHeaders& headers) {
+// wire_ids: an array of the x-replay-wire-id values received
+// (lib/internal/recordreplay/dependency_graph_http.js takeWireIds). nullopt: not
+// an array of own data strings, so not read.
+std::optional<std::vector<std::string>> ReadWireIds(Isolate* isolate,
+                                                    Local<Value> wire_ids) {
+  if (!wire_ids->IsArray()) return std::nullopt;
+  Local<Array> elements = wire_ids.As<Array>();
+  Local<Context> context = isolate->GetCurrentContext();
+  std::vector<std::string> ids;
+  for (uint32_t i = 0; i < elements->Length(); i++) {
+    HandleScope scope(isolate);
+    std::optional<std::string> id =
+        OwnStringElement(isolate, context, elements, i);
+    if (!id) return std::nullopt;
+    ids.push_back(std::move(*id));
+  }
+  return ids;
+}
+
+std::string RequestStartJson(
+    std::string_view method,
+    std::string_view url,
+    const RequestHeaders& headers,
+    const std::optional<std::vector<std::string>>& wire_ids) {
   return NodeJsonWith("requestStart", [&](JSONWriter& writer) {
     writer.json_keyvalue("method", method);
     writer.json_keyvalue("url", url);
@@ -203,6 +224,13 @@ std::string RequestStartJson(std::string_view method,
     writer.json_arrayend();
     writer.json_keyvalue("headersCapped", headers.capped);
     writer.json_keyvalue("headersUnread", headers.unread);
+    if (wire_ids) {
+      writer.json_arraystart("wireIds");
+      for (const std::string& id : *wire_ids) {
+        writer.json_element(std::string_view(id));
+      }
+      writer.json_arrayend();
+    }
   });
 }
 
@@ -248,6 +276,8 @@ std::string_view DependencyGraphFeatureName(DependencyGraphFeature feature) {
       return "fsOps";
     case DependencyGraphFeature::kReactionJobs:
       return "reactionJobs";
+    case DependencyGraphFeature::kWireIds:
+      return "wireIds";
     case DependencyGraphFeature::kCount:
       break;
   }
@@ -315,7 +345,7 @@ void EndDispatch(const FunctionCallbackInfo<Value>& args) {
 
 void BeginRequest(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(GetCurrent(args).OnBeginRequest(
-      args.GetIsolate(), args[0], args[1], args[2], args[3]));
+      args.GetIsolate(), args[0], args[1], args[2], args[3], args[4]));
 }
 
 void BeginReceiveData(const FunctionCallbackInfo<Value>& args) {
@@ -1046,7 +1076,8 @@ int AsyncDependencyGraph::OnBeginRequest(Isolate* isolate,
                                          Local<Value> method,
                                          Local<Value> url,
                                          Local<Value> raw_headers,
-                                         Local<Value> header_element_limit) {
+                                         Local<Value> header_element_limit,
+                                         Local<Value> wire_ids) {
   if (!v8::recordreplay::DependencyGraphEnabled()) return 0;
   Utf8Value method_utf8(isolate, StringOrEmpty(isolate, method));
   Utf8Value url_utf8(isolate, StringOrEmpty(isolate, url));
@@ -1054,7 +1085,8 @@ int AsyncDependencyGraph::OnBeginRequest(Isolate* isolate,
       RequestStartJson(
           method_utf8.ToStringView(),
           url_utf8.ToStringView(),
-          ReadRequestHeaders(isolate, raw_headers, header_element_limit))
+          ReadRequestHeaders(isolate, raw_headers, header_element_limit),
+          ReadWireIds(isolate, wire_ids))
           .c_str());
   PushDispatch(node);
   return node;
