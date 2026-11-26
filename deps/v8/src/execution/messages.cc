@@ -1312,11 +1312,22 @@ MaybeDirectHandle<Object> ErrorUtils::GetFormattedStack(
     ASSIGN_RETURN_ON_EXCEPTION(
         isolate, formatted_stack,
         FormatStackTrace(isolate, error_object, expanded));
-    RETURN_ON_EXCEPTION(
-        isolate, Object::SetProperty(isolate, error_object,
-                                     isolate->factory()->error_stack_symbol(),
-                                     formatted_stack, StoreOrigin::kMaybeKeyed,
-                                     Just(ShouldThrow::kThrowOnError)));
+    if (!recordreplay::AreEventsDisallowed()) {
+      // [PRO-2368] Don't cache the formatted stack during replay-only
+      // invocations, as in the branch above. error_stack_symbol holds a raw
+      // FixedArray only for an Error created while the isolate wasn't
+      // capturing stack traces for uncaught exceptions, which no recording
+      // reaches here with events disallowed: on the main thread Replay's own
+      // session enables Runtime before the program's first code runs, and
+      // worker isolates, where it stays off, have no session describing their
+      // values.
+      RETURN_ON_EXCEPTION(
+          isolate, Object::SetProperty(
+                       isolate, error_object,
+                       isolate->factory()->error_stack_symbol(),
+                       formatted_stack, StoreOrigin::kMaybeKeyed,
+                       Just(ShouldThrow::kThrowOnError)));
+    }
     return formatted_stack;
   }
 
