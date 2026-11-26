@@ -180,12 +180,10 @@ RequestHeaders ReadRequestHeaders(Isolate* isolate,
   return headers;
 }
 
-// wire_ids: an array of the x-replay-wire-id values received
-// (lib/internal/recordreplay/dependency_graph_http.js takeWireIds). nullopt: not
-// an array of own data strings, so not read.
-std::optional<std::vector<std::string>> ReadWireIds(Isolate* isolate,
-                                                    Local<Value> wire_ids) {
-  if (!wire_ids->IsArray()) return std::nullopt;
+// wire_ids: the array of the x-replay-wire-id values received, own strings
+// (lib/internal/recordreplay/dependency_graph_http.js takeWireIds).
+std::vector<std::string> ReadWireIds(Isolate* isolate, Local<Value> wire_ids) {
+  CHECK(wire_ids->IsArray());
   Local<Array> elements = wire_ids.As<Array>();
   Local<Context> context = isolate->GetCurrentContext();
   std::vector<std::string> ids;
@@ -193,17 +191,16 @@ std::optional<std::vector<std::string>> ReadWireIds(Isolate* isolate,
     HandleScope scope(isolate);
     std::optional<std::string> id =
         OwnStringElement(isolate, context, elements, i);
-    if (!id) return std::nullopt;
+    CHECK(id.has_value());
     ids.push_back(std::move(*id));
   }
   return ids;
 }
 
-std::string RequestStartJson(
-    std::string_view method,
-    std::string_view url,
-    const RequestHeaders& headers,
-    const std::optional<std::vector<std::string>>& wire_ids) {
+std::string RequestStartJson(std::string_view method,
+                             std::string_view url,
+                             const RequestHeaders& headers,
+                             const std::vector<std::string>& wire_ids) {
   return NodeJsonWith("requestStart", [&](JSONWriter& writer) {
     writer.json_keyvalue("method", method);
     writer.json_keyvalue("url", url);
@@ -224,13 +221,11 @@ std::string RequestStartJson(
     writer.json_arrayend();
     writer.json_keyvalue("headersCapped", headers.capped);
     writer.json_keyvalue("headersUnread", headers.unread);
-    if (wire_ids) {
-      writer.json_arraystart("wireIds");
-      for (const std::string& id : *wire_ids) {
-        writer.json_element(std::string_view(id));
-      }
-      writer.json_arrayend();
+    writer.json_arraystart("wireIds");
+    for (const std::string& id : wire_ids) {
+      writer.json_element(std::string_view(id));
     }
+    writer.json_arrayend();
   });
 }
 
