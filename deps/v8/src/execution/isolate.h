@@ -1108,6 +1108,12 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   void RequestInvalidateNoProfilingProtector();
   void RecordReplayInvokeApiInterruptCallbacksAtProgress();
+  bool record_replay_deferred_termination() const {
+    return record_replay_deferred_termination_;
+  }
+  void set_record_replay_deferred_termination(bool deferred) {
+    record_replay_deferred_termination_ = deferred;
+  }
   // Administration
   void Iterate(RootVisitor* v);
   void Iterate(RootVisitor* v, ThreadLocalTop* t);
@@ -2763,6 +2769,10 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // callbacks, with the topmost JavaScript frame's fp when it started.
   bool record_replay_invoking_api_interrupts_ = false;
   Address record_replay_api_interrupts_js_fp_ = kNullAddress;
+
+  // Set while a termination the main thread requested for itself waits for
+  // the progress counter's next advance (see StackGuard::RequestInterrupt).
+  bool record_replay_deferred_termination_ = false;
 
   std::unique_ptr<replayio::ReplayIsolateData> replay_data_;
 
