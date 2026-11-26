@@ -352,9 +352,17 @@ Response buildScopes(v8::Isolate* isolate, v8::debug::ScopeIterator* iterator,
   // allocation a replay forces (see Variable::RecordReplayIsForced), so
   // iterating its scopes walks off the end of its context chain. A session a
   // user or the program attached still gets them, as upstream does.
-  if (v8::replayio::CheckReplayOwned() &&
-      v8::debug::RecordReplayIgnoreScript(isolate, iterator->GetScriptId())) {
-    return Response::Success();
+  if (v8::replayio::CheckReplayOwned()) {
+    // A wasm frame's scope iterator has no script and answers -1 (see
+    // DebugWasmScopeIterator in debug/debug-wasm-objects.cc), which stands for
+    // no script rather than naming one, so there is nothing to ask about.
+    // Those frames are ignored as well: Replay ignores every wasm script, so
+    // getStackFrames drops a wasm frame from the stack it reports.
+    int scopeScriptId = iterator->GetScriptId();
+    if (scopeScriptId < 0 ||
+        v8::debug::RecordReplayIgnoreScript(isolate, scopeScriptId)) {
+      return Response::Success();
+    }
   }
 
   String16 scriptId = String16::fromInteger(iterator->GetScriptId());
