@@ -43,7 +43,6 @@ enum class DependencyGraphFeature {
                         // the root marker's cwd. Listed only when reported.
   kReactionJobs,        // "reactionJobs": promiseReactionJob{reaction} with
                         // reactionSettle and reactionAttach edges (V8)
-  kWireIds,             // "wireIds": requestStart{wireIds}
   kCount,              // not a feature: their number
 };
 

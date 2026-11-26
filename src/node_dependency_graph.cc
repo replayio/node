@@ -276,8 +276,6 @@ std::string_view DependencyGraphFeatureName(DependencyGraphFeature feature) {
       return "fsOps";
     case DependencyGraphFeature::kReactionJobs:
       return "reactionJobs";
-    case DependencyGraphFeature::kWireIds:
-      return "wireIds";
     case DependencyGraphFeature::kCount:
       break;
   }
