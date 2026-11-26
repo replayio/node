@@ -6,12 +6,14 @@
 
 #include "src/base/atomicops.h"
 #include "src/compiler-dispatcher/optimizing-compile-dispatcher.h"
+#include "src/execution/frames-inl.h"
 #include "src/execution/interrupts-scope.h"
 #include "src/execution/isolate.h"
 #include "src/execution/protectors-inl.h"
 #include "src/execution/simulator.h"
 #include "src/logging/counters.h"
 #include "src/objects/backing-store.h"
+#include "src/objects/script-inl.h"
 #include "src/roots/roots-inl.h"
 #include "src/tracing/trace-event.h"
 #include "src/utils/memcopy.h"
@@ -183,10 +185,11 @@ extern void RecordReplayTriggerProgressInterrupt();
 // at the same points in every tier, and wasm never advances the counter.
 //
 // Other threads have no progress interrupts and keep taking it at the next
-// stack check, which leaves them exposed to the difference in inlining. So does
-// JS without progress instrumentation (scripts compiled with events disallowed
-// or ignored by URL), which never advances the counter, and an endless loop in
-// it keeps the termination pending.
+// stack check, which leaves them exposed to the difference in inlining. JS
+// without progress instrumentation (scripts compiled with events disallowed or
+// ignored by URL) never advances the counter, so a stack check in it stops the
+// deferral (see RecordReplayKeepsTerminationDeferred), and the termination is
+// taken there as on other threads, at a point that depends on the code's tier.
 static void RecordReplayDeferTermination(Isolate* isolate) {
   if (!recordreplay::IsRecordingOrReplaying("interrupts") || !IsMainThread() ||
       recordreplay::AreEventsDisallowed() ||
@@ -253,6 +256,30 @@ bool StackGuard::HasTerminationRequest() {
     isolate_->set_record_replay_deferred_termination(false);
     return true;
   }
+  return false;
+}
+
+// Whether a JS stack check leaves a deferred termination pending. A replay
+// that diverged from the recording has no recorded progress interrupts, at
+// which baseline and optimized code would take it. JS without progress
+// instrumentation never takes it, so the deferral ends at a check that the
+// topmost JS frame of such code makes. An optimized frame counts as its own
+// function's, so a loop inlined from such code into an instrumented function
+// keeps the termination deferred for as long as it runs.
+bool StackGuard::RecordReplayKeepsTerminationDeferred() {
+  if (V8_LIKELY(!isolate_->record_replay_deferred_termination()) ||
+      recordreplay::HasDivergedFromRecording()) {
+    return false;
+  }
+  JavaScriptStackFrameIterator it(isolate_);
+  if (!it.done()) {
+    Tagged<Object> script = it.frame()->function()->shared()->script();
+    if (IsScript(script) &&
+        Cast<Script>(script)->record_replay_instrumented()) {
+      return true;
+    }
+  }
+  isolate_->set_record_replay_deferred_termination(false);
   return false;
 }
 
@@ -373,12 +400,8 @@ Tagged<Object> StackGuard::HandleInterrupts(InterruptLevel level,
 
   // Fetch and clear interrupt bits in one go. See comments inside the method
   // for special handling of TERMINATE_EXECUTION.
-  // A replay that diverged from the recording has no recorded progress
-  // interrupt to take a deferred termination at.
   const bool defer_termination =
-      record_replay_js_stack_check &&
-      isolate_->record_replay_deferred_termination() &&
-      !recordreplay::HasDivergedFromRecording();
+      record_replay_js_stack_check && RecordReplayKeepsTerminationDeferred();
   int interrupt_flags = FetchAndClearInterrupts(level, defer_termination);
 
   // All interrupts should be fully processed when returning from this method.

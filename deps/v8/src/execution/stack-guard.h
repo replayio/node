@@ -181,6 +181,7 @@ class V8_EXPORT_PRIVATE V8_NODISCARD StackGuard final {
   void ClearInterrupt(InterruptFlag flag);
   int FetchAndClearInterrupts(InterruptLevel level,
                               bool record_replay_defer_termination = false);
+  bool RecordReplayKeepsTerminationDeferred();
 
   void SetStackLimitInternal(const ExecutionAccess& lock, uintptr_t limit,
                              uintptr_t jslimit);
