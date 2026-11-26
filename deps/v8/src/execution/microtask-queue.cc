@@ -15,6 +15,7 @@
 #include "src/handles/handles-inl.h"
 #include "src/objects/microtask-inl.h"
 #include "src/objects/visitors.h"
+#include "src/replay/dependency-graph.h"
 #include "src/roots/roots-inl.h"
 #include "src/tracing/trace-event.h"
 
@@ -185,10 +186,14 @@ int MicrotaskQueue::RunMicrotasks(Isolate* isolate) {
       TRACE_EVENT_CALL_STATS_SCOPED(isolate, "v8", "V8.RunMicrotasks");
       size_t dependency_execution_depth =
           recordreplay::DependencyExecutionDepth();
+      size_t promise_job_depth =
+          RecordReplayDependencyGraph::RunningPromiseJobDepth();
       maybe_result = Execution::TryRunMicrotasks(isolate, this);
       // An exception escaping a job (termination) skips the kAfter promise
-      // hook that ends the job's dependency execution.
+      // hook that ends the job; the kAfter of OnTerminationDuringRunMicrotasks
+      // below ends none.
       recordreplay::UnwindDependencyExecutions(dependency_execution_depth);
+      RecordReplayDependencyGraph::UnwindRunningPromiseJobs(promise_job_depth);
       processed_microtask_count =
           static_cast<int>(finished_microtask_count_ - base_count);
     }

@@ -59,6 +59,13 @@ class RecordReplayDependencyGraph : public AllStatic {
   static void OnReactionJob(Isolate* isolate,
                             DirectHandle<PromiseReactionJobTask> task,
                             int reaction_settle_node_id);
+
+  // Without precondition: the number of promise jobs between their kBefore and
+  // kAfter hooks, and the unwind to such a number. A termination escaping
+  // MicrotaskQueue::RunMicrotasks skips the kAfter hooks of its running jobs;
+  // RunMicrotasks unwinds them to its entry depth.
+  static size_t RunningPromiseJobDepth();
+  static void UnwindRunningPromiseJobs(size_t depth);
 };
 
 }  // namespace internal

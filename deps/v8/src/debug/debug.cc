@@ -4619,14 +4619,28 @@ void RecordReplayDependencyGraph::OnPromiseHook(Isolate* isolate,
       break;
     }
     case PromiseHookType::kAfter: {
-      // Isolate::OnTerminationDuringRunMicrotasks reports kAfter for the
-      // current job, whose kBefore may not have run.
-      if (gRunningPromiseJobSettles && !gRunningPromiseJobSettles->empty()) {
-        gRunningPromiseJobSettles->pop_back();
+      // The kAfter of Isolate::OnTerminationDuringRunMicrotasks: RunMicrotasks
+      // has unwound the job (UnwindRunningPromiseJobs).
+      if (isolate->is_execution_terminating()) {
+        break;
       }
+      CHECK(gRunningPromiseJobSettles && !gRunningPromiseJobSettles->empty());
+      gRunningPromiseJobSettles->pop_back();
       recordreplay::EndDependencyExecution();
       break;
     }
+  }
+}
+
+// static
+size_t RecordReplayDependencyGraph::RunningPromiseJobDepth() {
+  return gRunningPromiseJobSettles ? gRunningPromiseJobSettles->size() : 0;
+}
+
+// static
+void RecordReplayDependencyGraph::UnwindRunningPromiseJobs(size_t depth) {
+  if (gRunningPromiseJobSettles && gRunningPromiseJobSettles->size() > depth) {
+    gRunningPromiseJobSettles->resize(depth);
   }
 }
 
