@@ -351,10 +351,15 @@ Response buildScopes(v8::Isolate* isolate, v8::debug::ScopeIterator* iterator,
   // function the startup snapshot carries was compiled without the context
   // allocation a replay forces (see Variable::RecordReplayIsForced), so
   // iterating its scopes walks off the end of its context chain. A session a
-  // user or the program attached still gets them, as upstream does.
-  if (v8::replayio::CheckReplayOwned() &&
-      v8::debug::RecordReplayIgnoreScript(isolate, iterator->GetScriptId())) {
-    return Response::Success();
+  // user or the program attached still gets them, as upstream does. A wasm
+  // frame's scope iterator names no script (its id is -1), and Replay drops
+  // wasm frames, whose scripts it ignores.
+  if (v8::replayio::CheckReplayOwned()) {
+    int scriptId = iterator->GetScriptId();
+    if (scriptId == -1 ||
+        v8::debug::RecordReplayIgnoreScript(isolate, scriptId)) {
+      return Response::Success();
+    }
   }
 
   String16 scriptId = String16::fromInteger(iterator->GetScriptId());
