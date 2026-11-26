@@ -43,7 +43,7 @@ enum class DependencyGraphFeature {
                         // the root marker's cwd. Listed only when reported.
   kReactionJobs,        // "reactionJobs": promiseReactionJob{reaction} with
                         // reactionSettle and reactionAttach edges (V8)
-  kCount,              // not a feature: their number
+  kCount,               // not a feature: their number
 };
 
 // The classes of async op in the Replay dependency graph: the node an op's
