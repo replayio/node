@@ -5,8 +5,8 @@
 
 #include <algorithm>
 #include <array>
-#include <iomanip>
-#include <limits>
+#include <charconv>
+#include <locale>
 #include <set>
 #include <sstream>
 #include <string_view>
@@ -40,11 +40,33 @@ using v8::Value;
 
 namespace {
 
+// Writes a double as the shortest decimal that reads back as it. A stream's
+// own conversion calls vsnprintf, which a replay binds to its own formatter:
+// it rounds some values differently than the recording's libc.
+class ShortestDoublePut : public std::num_put<char> {
+ protected:
+  iter_type do_put(iter_type out,
+                   std::ios_base&,
+                   char,
+                   double value) const override {
+    std::array<char, 32> chars;
+    char* end =
+        std::to_chars(chars.data(), chars.data() + chars.size(), value).ptr;
+    return std::copy(chars.data(), end, out);
+  }
+};
+
+const std::locale& NodeJsonLocale() {
+  static const std::locale locale(std::locale::classic(),
+                                  new ShortestDoublePut);
+  return locale;
+}
+
 // A node's JSON: {"kind":kind, ...what write(writer) adds}.
 template <typename Write>
 std::string NodeJsonWith(std::string_view kind, Write write) {
   std::ostringstream out;
-  out << std::setprecision(std::numeric_limits<double>::max_digits10);
+  out.imbue(NodeJsonLocale());
   JSONWriter writer(out, true);
   writer.json_start();
   writer.json_keyvalue("kind", kind);
