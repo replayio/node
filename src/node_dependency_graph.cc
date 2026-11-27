@@ -118,20 +118,75 @@ constexpr std::array<std::string_view, 7> kRequestHeaderNames = {
     "transfer-encoding",
 };
 
-struct RequestHeaders {
-  // Per kRequestHeaderNames entry: its values in order.
-  std::array<std::vector<std::string>, kRequestHeaderNames.size()> values;
-  // Every name read, lowercase, also those not in kRequestHeaderNames. No
-  // values.
+// The response headers responseStart reports, lowercase: caching and content
+// metadata. Closed: no credentials (set-cookie, www-authenticate).
+constexpr std::array<std::string_view, 15> kResponseHeaderNames = {
+    "cache-control",
+    "cdn-cache-control",
+    "expires",
+    "age",
+    "vary",
+    "etag",
+    "last-modified",
+    "location",
+    "content-type",
+    "content-length",
+    "content-encoding",
+    "transfer-encoding",
+    "x-nextjs-cache",
+    "x-nextjs-prerender",
+    "x-nextjs-postponed",
+};
+
+// A message's headers as its node reports them: headers{name: values},
+// headerNames and headersUnread.
+template <const auto& kReported>
+struct ReportedHeaders {
+  // Per kReported entry: its values in order.
+  std::array<std::vector<std::string>, kReported.size()> values;
+  // Every name read, lowercase, also those not in kReported. No values.
   std::set<std::string> names;
+  // The message's headers, or a name or a reported value, were no own data
+  // string, so they were not read.
+  bool unread = false;
+
+  // Records the name; returns where its values go if kReported lists it.
+  std::vector<std::string>* Add(std::string_view name) {
+    std::string lowercase = ToLower(name);
+    auto it = std::find(
+        kReported.begin(), kReported.end(), std::string_view(lowercase));
+    names.insert(std::move(lowercase));
+    return it == kReported.end() ? nullptr : &values[it - kReported.begin()];
+  }
+
+  void Write(JSONWriter& writer) const {
+    writer.json_objectstart("headers");
+    for (size_t i = 0; i < kReported.size(); i++) {
+      if (values[i].empty()) continue;
+      writer.json_arraystart(kReported[i]);
+      for (const std::string& value : values[i]) {
+        writer.json_element(std::string_view(value));
+      }
+      writer.json_arrayend();
+    }
+    writer.json_objectend();
+    writer.json_arraystart("headerNames");
+    for (const std::string& name : names) {
+      writer.json_element(std::string_view(name));
+    }
+    writer.json_arrayend();
+    writer.json_keyvalue("headersUnread", unread);
+  }
+};
+
+struct RequestHeaders : ReportedHeaders<kRequestHeaderNames> {
   // The rawHeaders elements reached the parser's limit: elements past it, if
   // sent, were dropped. Reached, not passed: the parser keeps exactly that
   // many when it drops, so equal is also reported when none was dropped.
   bool capped = false;
-  // rawHeaders, or a name element or a reported value element up to the
-  // limit, was no own data string, so it was not read.
-  bool unread = false;
 };
+
+using ResponseHeaders = ReportedHeaders<kResponseHeaderNames>;
 
 // raw_headers: IncomingMessage#rawHeaders, [name, value, ...] elements.
 // element_limit: the parser's maxHeaderPairs, which counts elements; not a
@@ -162,20 +217,45 @@ RequestHeaders ReadRequestHeaders(Isolate* isolate,
       headers.unread = true;
       continue;
     }
-    std::string lowercase = ToLower(*name);
-    headers.names.insert(lowercase);
-    auto it = std::find(kRequestHeaderNames.begin(),
-                        kRequestHeaderNames.end(),
-                        std::string_view(lowercase));
-    if (it == kRequestHeaderNames.end()) continue;
+    std::vector<std::string>* values = headers.Add(*name);
+    if (!values) continue;
     std::optional<std::string> value =
         OwnStringElement(isolate, context, elements, i + 1);
     if (!value) {
       headers.unread = true;
       continue;
     }
-    headers.values[it - kRequestHeaderNames.begin()].push_back(
-        std::move(*value));
+    values->push_back(std::move(*value));
+  }
+  return headers;
+}
+
+// A field value without its surrounding whitespace (RFC 9110 OWS).
+std::string_view TrimOws(std::string_view value) {
+  size_t begin = value.find_first_not_of(" \t");
+  if (begin == std::string_view::npos) return {};
+  return value.substr(begin, value.find_last_not_of(" \t") - begin + 1);
+}
+
+// head: ServerResponse#_header, the head as sent: a status line, then a
+// "name: value" line per field (lib/_http_outgoing.js _storeHeader).
+ResponseHeaders ReadResponseHeaders(Isolate* isolate, Local<Value> head) {
+  ResponseHeaders headers;
+  if (!head->IsString()) {
+    headers.unread = true;
+    return headers;
+  }
+  Utf8Value utf8(isolate, head);
+  std::string_view rest = utf8.ToStringView();
+  // The status line has no field.
+  for (bool status_line = true; !rest.empty(); status_line = false) {
+    size_t end = std::min(rest.find("\r\n"), rest.size());
+    std::string_view line = rest.substr(0, end);
+    rest.remove_prefix(std::min(end + 2, rest.size()));
+    size_t colon = line.find(':');
+    if (status_line || colon == std::string_view::npos) continue;
+    std::vector<std::string>* values = headers.Add(line.substr(0, colon));
+    if (values) values->emplace_back(TrimOws(line.substr(colon + 1)));
   }
   return headers;
 }
@@ -204,23 +284,8 @@ std::string RequestStartJson(std::string_view method,
   return NodeJsonWith("requestStart", [&](JSONWriter& writer) {
     writer.json_keyvalue("method", method);
     writer.json_keyvalue("url", url);
-    writer.json_objectstart("headers");
-    for (size_t i = 0; i < kRequestHeaderNames.size(); i++) {
-      if (headers.values[i].empty()) continue;
-      writer.json_arraystart(kRequestHeaderNames[i]);
-      for (const std::string& value : headers.values[i]) {
-        writer.json_element(std::string_view(value));
-      }
-      writer.json_arrayend();
-    }
-    writer.json_objectend();
-    writer.json_arraystart("headerNames");
-    for (const std::string& name : headers.names) {
-      writer.json_element(std::string_view(name));
-    }
-    writer.json_arrayend();
+    headers.Write(writer);
     writer.json_keyvalue("headersCapped", headers.capped);
-    writer.json_keyvalue("headersUnread", headers.unread);
     writer.json_arraystart("wireIds");
     for (const std::string& id : wire_ids) {
       writer.json_element(std::string_view(id));
@@ -271,6 +336,8 @@ std::string_view DependencyGraphFeatureName(DependencyGraphFeature feature) {
       return "fsOps";
     case DependencyGraphFeature::kReactionJobs:
       return "reactionJobs";
+    case DependencyGraphFeature::kResponseHeaders:
+      return "responseHeaders";
     case DependencyGraphFeature::kCount:
       break;
   }
@@ -388,17 +455,20 @@ void RequestAbandoned(const FunctionCallbackInfo<Value>& args) {
   GetCurrent(args).OnRequestAbandoned(RequestArg(args, 0));
 }
 
-// A server response (http.ServerResponse): responseStart{status} at its head,
-// responseData{length} per body write and responseEnd at its end. Each is made
-// in the JS that writes it, which is its cause.
+// A server response (http.ServerResponse): responseStart{status,headers,...}
+// at its head, responseData{length} per body write and responseEnd at its end.
+// Each is made in the JS that writes it, which is its cause.
 void ResponseStart(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsInt32());
   int request = RequestArg(args, 1);
   if (!v8::recordreplay::DependencyGraphEnabled()) return;
+  int status = args[0].As<v8::Int32>()->Value();
+  ResponseHeaders headers = ReadResponseHeaders(args.GetIsolate(), args[2]);
   NewRequestPartNode(
-      request,
-      NodeJson("responseStart",
-               std::pair{"status", args[0].As<v8::Int32>()->Value()}));
+      request, NodeJsonWith("responseStart", [&](JSONWriter& writer) {
+        writer.json_keyvalue("status", status);
+        headers.Write(writer);
+      }));
 }
 
 void ResponseData(const FunctionCallbackInfo<Value>& args) {
