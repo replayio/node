@@ -44,7 +44,7 @@ enum class DependencyGraphFeature {
   kReactionJobs,        // "reactionJobs": promiseReactionJob{reaction} with
                         // reactionSettle and reactionAttach edges (V8)
   kResponseHeaders,     // "responseHeaders": responseStart{headers,
-                        // headerNames,headersUnread}
+                        // headersUnread,otherHeaderNames}
   kCount,               // not a feature: their number
 };
 

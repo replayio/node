@@ -120,7 +120,7 @@ constexpr std::array<std::string_view, 7> kRequestHeaderNames = {
 
 // The response headers responseStart reports, lowercase: caching and content
 // metadata. Closed: no credentials (set-cookie, www-authenticate).
-constexpr std::array<std::string_view, 15> kResponseHeaderNames = {
+constexpr std::array<std::string_view, 14> kResponseHeaderNames = {
     "cache-control",
     "cdn-cache-control",
     "expires",
@@ -128,7 +128,6 @@ constexpr std::array<std::string_view, 15> kResponseHeaderNames = {
     "vary",
     "etag",
     "last-modified",
-    "location",
     "content-type",
     "content-length",
     "content-encoding",
@@ -138,28 +137,39 @@ constexpr std::array<std::string_view, 15> kResponseHeaderNames = {
     "x-nextjs-postponed",
 };
 
+// Which header names a node lists.
+enum class HeaderNameScope {
+  kAll,       // every name read
+  kUnlisted,  // those without a headers entry: not in kReported
+};
+
 // A message's headers as its node reports them: headers{name: values},
-// headerNames and headersUnread.
+// headersUnread and the names read.
 template <const auto& kReported>
 struct ReportedHeaders {
   // Per kReported entry: its values in order.
   std::array<std::vector<std::string>, kReported.size()> values;
   // Every name read, lowercase, also those not in kReported. No values.
   std::set<std::string> names;
-  // The message's headers, or a name or a reported value, were no own data
-  // string, so they were not read.
+  // Request: rawHeaders, or a name element or a reported value element up to
+  // the limit, was no own data string, so it was not read. Response: the head
+  // was no own data string, so none was read.
   bool unread = false;
+
+  // Of a lowercase name: its kReported entry, or kReported.end().
+  static auto Find(std::string_view lowercase) {
+    return std::find(kReported.begin(), kReported.end(), lowercase);
+  }
 
   // Records the name; returns where its values go if kReported lists it.
   std::vector<std::string>* Add(std::string_view name) {
     std::string lowercase = ToLower(name);
-    auto it = std::find(
-        kReported.begin(), kReported.end(), std::string_view(lowercase));
+    auto it = Find(lowercase);
     names.insert(std::move(lowercase));
     return it == kReported.end() ? nullptr : &values[it - kReported.begin()];
   }
 
-  void Write(JSONWriter& writer) const {
+  void WriteValues(JSONWriter& writer) const {
     writer.json_objectstart("headers");
     for (size_t i = 0; i < kReported.size(); i++) {
       if (values[i].empty()) continue;
@@ -170,12 +180,21 @@ struct ReportedHeaders {
       writer.json_arrayend();
     }
     writer.json_objectend();
-    writer.json_arraystart("headerNames");
+    writer.json_keyvalue("headersUnread", unread);
+  }
+
+  void WriteNames(JSONWriter& writer,
+                  std::string_view key,
+                  HeaderNameScope scope) const {
+    writer.json_arraystart(key);
     for (const std::string& name : names) {
+      if (scope == HeaderNameScope::kUnlisted &&
+          Find(name) != kReported.end()) {
+        continue;
+      }
       writer.json_element(std::string_view(name));
     }
     writer.json_arrayend();
-    writer.json_keyvalue("headersUnread", unread);
   }
 };
 
@@ -284,7 +303,8 @@ std::string RequestStartJson(std::string_view method,
   return NodeJsonWith("requestStart", [&](JSONWriter& writer) {
     writer.json_keyvalue("method", method);
     writer.json_keyvalue("url", url);
-    headers.Write(writer);
+    headers.WriteValues(writer);
+    headers.WriteNames(writer, "headerNames", HeaderNameScope::kAll);
     writer.json_keyvalue("headersCapped", headers.capped);
     writer.json_arraystart("wireIds");
     for (const std::string& id : wire_ids) {
@@ -467,7 +487,9 @@ void ResponseStart(const FunctionCallbackInfo<Value>& args) {
   NewRequestPartNode(
       request, NodeJsonWith("responseStart", [&](JSONWriter& writer) {
         writer.json_keyvalue("status", status);
-        headers.Write(writer);
+        headers.WriteValues(writer);
+        headers.WriteNames(
+            writer, "otherHeaderNames", HeaderNameScope::kUnlisted);
       }));
 }
 
